@@ -69,6 +69,7 @@ pub struct Issue {
     pub assignee_ids: Vec<String>,
     pub tags: Vec<String>,
     pub attachments: serde_json::Value,
+    pub category: Vec<String>,
     pub position: f64,
     pub qualified_at: Option<DateTime<Utc>>,
     pub qualified_by: Option<String>,
@@ -88,6 +89,7 @@ pub struct CreateIssue {
     pub milestone_id: Option<Uuid>,
     pub parent_id: Option<Uuid>,
     pub tags: Option<Vec<String>>,
+    pub category: Option<Vec<String>>,
     pub assignee_ids: Option<Vec<String>>,
 }
 
@@ -102,6 +104,7 @@ pub struct UpdateIssue {
     pub milestone_id: Option<Option<Uuid>>,
     pub assignee_ids: Option<Vec<String>>,
     pub tags: Option<Vec<String>>,
+    pub category: Option<Vec<String>>,
     pub position: Option<f64>,
 }
 

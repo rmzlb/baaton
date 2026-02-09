@@ -62,10 +62,10 @@ export function Dashboard() {
   return (
     <div className="p-4 md:p-6">
       <div className="mb-8">
-        <h1 className="text-xl md:text-2xl font-bold text-[#fafafa]">
+        <h1 className="text-xl md:text-2xl font-bold text-primary">
           {organization?.name || 'Dashboard'}
         </h1>
-        <p className="mt-1 text-sm text-[#a1a1aa]">
+        <p className="mt-1 text-sm text-secondary">
           Overview of your projects and recent activity
         </p>
       </div>
@@ -75,9 +75,9 @@ export function Dashboard() {
         {stats.map((stat) => (
           <div
             key={stat.label}
-            className="rounded-xl border border-[#262626] bg-[#141414] p-4 md:p-5"
+            className="rounded-xl border border-border bg-surface p-4 md:p-5"
           >
-            <p className="text-[10px] md:text-xs text-[#a1a1aa] uppercase tracking-wider">
+            <p className="text-[10px] md:text-xs text-secondary uppercase tracking-wider">
               {stat.label}
             </p>
             <p className="mt-2 text-2xl md:text-3xl font-bold" style={{ color: stat.color }}>
@@ -90,29 +90,29 @@ export function Dashboard() {
       {/* Projects + Recent Activity */}
       <div className="mt-6 md:mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Projects */}
-        <div className="rounded-xl border border-[#262626] bg-[#141414] p-4 md:p-6">
+        <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-[#fafafa] uppercase tracking-wider">
+            <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">
               Projects
             </h2>
             <Link
               to="/projects"
-              className="flex items-center gap-1 text-xs text-[#f59e0b] hover:text-[#d97706] transition-colors"
+              className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
             >
               View all <ArrowRight size={12} />
             </Link>
           </div>
           {projectsLoading ? (
-            <div className="flex items-center justify-center py-12 text-sm text-[#a1a1aa]">
+            <div className="flex items-center justify-center py-12 text-sm text-secondary">
               Loading projects…
             </div>
           ) : projects.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12">
-              <Kanban size={32} className="text-[#a1a1aa] mb-2" />
-              <p className="text-sm text-[#a1a1aa]">No projects yet</p>
+              <Kanban size={32} className="text-secondary mb-2" />
+              <p className="text-sm text-secondary">No projects yet</p>
               <Link
                 to="/projects"
-                className="mt-2 text-xs text-[#f59e0b] hover:underline"
+                className="mt-2 text-xs text-accent hover:underline"
               >
                 Create your first project
               </Link>
@@ -125,20 +125,20 @@ export function Dashboard() {
                   <Link
                     key={project.id}
                     to={`/projects/${project.slug}`}
-                    className="flex items-center justify-between rounded-lg px-3 py-2.5 hover:bg-[#1f1f1f] transition-colors group min-h-[44px]"
+                    className="flex items-center justify-between rounded-lg px-3 py-2.5 hover:bg-surface-hover transition-colors group min-h-[44px]"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1f1f1f] text-xs font-bold font-mono text-[#f59e0b] group-hover:bg-[#262626]">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-hover text-xs font-bold font-mono text-accent group-hover:bg-border">
                         {project.prefix}
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-[#fafafa]">{project.name}</p>
-                        <p className="text-xs text-[#a1a1aa]">
+                        <p className="text-sm font-medium text-primary">{project.name}</p>
+                        <p className="text-xs text-secondary">
                           {projectIssues.length} issue{projectIssues.length !== 1 ? 's' : ''}
                         </p>
                       </div>
                     </div>
-                    <ArrowRight size={14} className="text-[#a1a1aa] opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <ArrowRight size={14} className="text-secondary opacity-0 group-hover:opacity-100 transition-opacity" />
                   </Link>
                 );
               })}
@@ -147,16 +147,16 @@ export function Dashboard() {
         </div>
 
         {/* Recent Activity */}
-        <div className="rounded-xl border border-[#262626] bg-[#141414] p-4 md:p-6">
-          <h2 className="text-sm font-semibold text-[#fafafa] uppercase tracking-wider mb-4">
+        <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
+          <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4">
             Recent Activity
           </h2>
           {issuesLoading ? (
-            <div className="flex items-center justify-center py-12 text-sm text-[#a1a1aa]">
+            <div className="flex items-center justify-center py-12 text-sm text-secondary">
               Loading activity…
             </div>
           ) : recentIssues.length === 0 ? (
-            <div className="flex items-center justify-center py-12 text-sm text-[#a1a1aa]">
+            <div className="flex items-center justify-center py-12 text-sm text-secondary">
               No activity yet. Create your first project to get started.
             </div>
           ) : (
@@ -201,14 +201,14 @@ function ActivityRow({ issue, project }: { issue: Issue; project?: Project }) {
   const Icon = typeIcons[issue.type] || Bug;
 
   return (
-    <div className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-[#1f1f1f] transition-colors min-h-[44px]">
+    <div className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-surface-hover transition-colors min-h-[44px]">
       <Icon size={16} className={typeColors[issue.type] || 'text-gray-400'} />
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-[#fafafa] truncate">{issue.title}</p>
+        <p className="text-sm text-primary truncate">{issue.title}</p>
         <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-[10px] font-mono text-[#a1a1aa]">{issue.display_id}</span>
+          <span className="text-[10px] font-mono text-secondary">{issue.display_id}</span>
           {project && (
-            <span className="text-[10px] text-[#a1a1aa]">· {project.name}</span>
+            <span className="text-[10px] text-secondary">· {project.name}</span>
           )}
         </div>
       </div>
@@ -216,7 +216,7 @@ function ActivityRow({ issue, project }: { issue: Issue; project?: Project }) {
         <span className={`text-[10px] font-mono uppercase hidden sm:inline ${statusColors[issue.status] || 'text-gray-400'}`}>
           {issue.status.replace('_', ' ')}
         </span>
-        <span className="text-[10px] text-[#a1a1aa]">{timeAgo(issue.updated_at)}</span>
+        <span className="text-[10px] text-secondary">{timeAgo(issue.updated_at)}</span>
       </div>
     </div>
   );

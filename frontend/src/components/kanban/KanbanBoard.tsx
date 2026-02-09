@@ -6,7 +6,7 @@ import {
 } from '@hello-pangea/dnd';
 import {
   Search, SlidersHorizontal, X, ArrowUp, ArrowDown, Minus, AlertTriangle,
-  Tag, User, ChevronDown,
+  Tag, User, ChevronDown, Layers,
 } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
 import { useIssuesStore } from '@/stores/issues';
@@ -30,6 +30,13 @@ const PRIORITY_CONFIG: { key: IssuePriority; label: string; color: string; icon:
   { key: 'low', label: 'Low', color: '#6b7280', icon: ArrowDown },
 ];
 
+const CATEGORY_CONFIG: { key: string; label: string; color: string }[] = [
+  { key: 'FRONT', label: 'Frontend', color: '#3b82f6' },
+  { key: 'BACK', label: 'Backend', color: '#22c55e' },
+  { key: 'API', label: 'API', color: '#8b5cf6' },
+  { key: 'DB', label: 'Database', color: '#f97316' },
+];
+
 interface KanbanBoardProps {
   statuses: ProjectStatus[];
   issues: Issue[];
@@ -50,8 +57,9 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
   const [selectedPriorities, setSelectedPriorities] = useState<IssuePriority[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
-  const hasActiveFilters = selectedPriorities.length > 0 || selectedTags.length > 0 || selectedAssignees.length > 0;
+  const hasActiveFilters = selectedPriorities.length > 0 || selectedTags.length > 0 || selectedAssignees.length > 0 || selectedCategories.length > 0;
 
   // Get unique assignees from issues
   const uniqueAssignees = useMemo(() => {
@@ -113,8 +121,13 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
       result = result.filter((i) => i.assignee_ids.some((a) => selectedAssignees.includes(a)));
     }
 
+    // Category filter (OR within)
+    if (selectedCategories.length > 0) {
+      result = result.filter((i) => (i.category || []).some((c) => selectedCategories.includes(c.toUpperCase())));
+    }
+
     return result;
-  }, [issues, searchQuery, selectedPriorities, selectedTags, selectedAssignees]);
+  }, [issues, searchQuery, selectedPriorities, selectedTags, selectedAssignees, selectedCategories]);
 
   // Sort function
   const sortIssues = useCallback(
@@ -197,6 +210,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
     setSelectedPriorities([]);
     setSelectedTags([]);
     setSelectedAssignees([]);
+    setSelectedCategories([]);
     setSearchQuery('');
   };
 
@@ -218,6 +232,12 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
     );
   };
 
+  const toggleCategory = (c: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c],
+    );
+  };
+
   const filterTabs: { key: FilterTab; label: string }[] = [
     { key: 'active', label: 'Active' },
     { key: 'all', label: 'All' },
@@ -235,21 +255,21 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
   return (
     <div className="flex h-full flex-col">
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-[#262626] px-4 md:px-6 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 md:px-6 py-2">
         {/* Search */}
         <div className="relative">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#555]" />
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Filter issues…"
-            className="h-8 w-40 sm:w-48 rounded-md border border-[#262626] bg-[#141414] pl-8 pr-3 text-xs text-[#fafafa] placeholder-[#555] outline-none focus:border-[#f59e0b] transition-colors"
+            className="h-8 w-40 sm:w-48 rounded-md border border-border bg-surface pl-8 pr-3 text-xs text-primary placeholder-muted outline-none focus:border-accent transition-colors"
           />
         </div>
 
         {/* Status Tabs */}
-        <div className="flex items-center rounded-md border border-[#262626] bg-[#141414] p-0.5">
+        <div className="flex items-center rounded-md border border-border bg-surface p-0.5">
           {filterTabs.map((tab) => (
             <button
               key={tab.key}
@@ -257,8 +277,8 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
               className={cn(
                 'rounded-[5px] px-2.5 py-1 text-[11px] font-medium transition-colors min-h-[28px]',
                 filterTab === tab.key
-                  ? 'bg-[#1f1f1f] text-[#fafafa]'
-                  : 'text-[#666] hover:text-[#a1a1aa]',
+                  ? 'bg-surface-hover text-primary'
+                  : 'text-muted hover:text-secondary',
               )}
             >
               {tab.label}
@@ -279,14 +299,43 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
               className={cn(
                 'flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors',
                 selectedPriorities.includes(p.key)
-                  ? 'text-[#fafafa] bg-[#1f1f1f]'
-                  : 'text-[#a1a1aa] hover:bg-[#1f1f1f]',
+                  ? 'text-primary bg-surface-hover'
+                  : 'text-secondary hover:bg-surface-hover',
               )}
             >
               <p.icon size={12} style={{ color: p.color }} />
               {p.label}
               {selectedPriorities.includes(p.key) && (
-                <span className="ml-auto text-[#f59e0b]">✓</span>
+                <span className="ml-auto text-accent">✓</span>
+              )}
+            </button>
+          ))}
+        </FilterDropdown>
+
+        {/* Category Filter Dropdown */}
+        <FilterDropdown
+          icon={<Layers size={12} />}
+          label="Category"
+          count={selectedCategories.length}
+        >
+          {CATEGORY_CONFIG.map((c) => (
+            <button
+              key={c.key}
+              onClick={() => toggleCategory(c.key)}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors',
+                selectedCategories.includes(c.key)
+                  ? 'text-primary bg-surface-hover'
+                  : 'text-secondary hover:bg-surface-hover',
+              )}
+            >
+              <span
+                className="h-2.5 w-2.5 rounded shrink-0"
+                style={{ backgroundColor: c.color }}
+              />
+              {c.label}
+              {selectedCategories.includes(c.key) && (
+                <span className="ml-auto text-accent">✓</span>
               )}
             </button>
           ))}
@@ -309,8 +358,8 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
                   className={cn(
                     'flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors',
                     selectedTags.includes(tag)
-                      ? 'text-[#fafafa] bg-[#1f1f1f]'
-                      : 'text-[#a1a1aa] hover:bg-[#1f1f1f]',
+                      ? 'text-primary bg-surface-hover'
+                      : 'text-secondary hover:bg-surface-hover',
                   )}
                 >
                   <span
@@ -319,7 +368,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
                   />
                   {tag}
                   {selectedTags.includes(tag) && (
-                    <span className="ml-auto text-[#f59e0b]">✓</span>
+                    <span className="ml-auto text-accent">✓</span>
                   )}
                 </button>
               );
@@ -341,16 +390,16 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
                 className={cn(
                   'flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors',
                   selectedAssignees.includes(a)
-                    ? 'text-[#fafafa] bg-[#1f1f1f]'
-                    : 'text-[#a1a1aa] hover:bg-[#1f1f1f]',
+                    ? 'text-primary bg-surface-hover'
+                    : 'text-secondary hover:bg-surface-hover',
                 )}
               >
-                <div className="h-5 w-5 rounded-full bg-[#262626] flex items-center justify-center text-[8px] font-mono text-[#a1a1aa]">
+                <div className="h-5 w-5 rounded-full bg-border flex items-center justify-center text-[8px] font-mono text-secondary">
                   {a.slice(0, 2).toUpperCase()}
                 </div>
                 <span className="truncate">{a}</span>
                 {selectedAssignees.includes(a) && (
-                  <span className="ml-auto text-[#f59e0b]">✓</span>
+                  <span className="ml-auto text-accent">✓</span>
                 )}
               </button>
             ))}
@@ -361,7 +410,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         {hasActiveFilters && (
           <button
             onClick={clearAllFilters}
-            className="flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-[#f59e0b] hover:bg-[#f59e0b]/10 transition-colors"
+            className="flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-accent hover:bg-accent/10 transition-colors"
           >
             <X size={12} />
             Clear all
@@ -372,7 +421,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         <div className="relative ml-auto">
           <button
             onClick={() => setShowSort(!showSort)}
-            className="flex items-center gap-1.5 rounded-md border border-[#262626] bg-[#141414] px-2.5 py-1.5 text-xs text-[#a1a1aa] hover:border-[#333] hover:text-[#fafafa] transition-colors min-h-[32px]"
+            className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary hover:border-border hover:text-primary transition-colors min-h-[32px]"
           >
             <SlidersHorizontal size={12} />
             <span className="hidden sm:inline">{sortOptions.find((s) => s.key === sortMode)?.label}</span>
@@ -380,7 +429,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
           {showSort && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowSort(false)} />
-              <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-lg border border-[#262626] bg-[#141414] py-1 shadow-xl">
+              <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-lg border border-border bg-surface py-1 shadow-xl">
                 {sortOptions.map((opt) => (
                   <button
                     key={opt.key}
@@ -391,8 +440,8 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
                     className={cn(
                       'flex w-full items-center px-3 py-2 text-xs transition-colors',
                       sortMode === opt.key
-                        ? 'text-[#fafafa] bg-[#1f1f1f]'
-                        : 'text-[#a1a1aa] hover:bg-[#1f1f1f]',
+                        ? 'text-primary bg-surface-hover'
+                        : 'text-secondary hover:bg-surface-hover',
                     )}
                   >
                     {opt.label}
@@ -462,21 +511,21 @@ function FilterDropdown({
         className={cn(
           'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition-colors min-h-[32px]',
           count > 0
-            ? 'border-[#f59e0b]/30 bg-[#f59e0b]/10 text-[#f59e0b]'
-            : 'border-[#262626] bg-[#141414] text-[#a1a1aa] hover:border-[#333] hover:text-[#fafafa]',
+            ? 'border-accent/30 bg-accent/10 text-accent'
+            : 'border-border bg-surface text-secondary hover:border-border hover:text-primary',
         )}
       >
         {icon}
         {label}
         {count > 0 && (
-          <span className="ml-0.5 rounded-full bg-[#f59e0b] px-1.5 py-0 text-[9px] text-black font-bold">
+          <span className="ml-0.5 rounded-full bg-accent px-1.5 py-0 text-[9px] text-black font-bold">
             {count}
           </span>
         )}
         <ChevronDown size={10} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border border-[#262626] bg-[#141414] py-1 shadow-xl max-h-64 overflow-y-auto">
+        <div className="absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl max-h-64 overflow-y-auto">
           {children}
         </div>
       )}

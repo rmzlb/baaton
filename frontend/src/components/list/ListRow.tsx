@@ -26,6 +26,13 @@ const priorityConfig: Record<IssuePriority, { icon: typeof ArrowUp; color: strin
   low: { icon: ArrowDown, color: '#6b7280', label: 'Low' },
 };
 
+const CATEGORY_COLORS: Record<string, string> = {
+  FRONT: '#3b82f6',
+  BACK: '#22c55e',
+  API: '#8b5cf6',
+  DB: '#f97316',
+};
+
 interface ListRowProps {
   issue: Issue;
   statuses: ProjectStatus[];
@@ -44,16 +51,18 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
     return found?.color || '#6b7280';
   };
 
+  const categories = issue.category || [];
+
   return (
     <div
       onClick={onClick}
-      className="grid grid-cols-[80px_1fr_120px_100px_90px_120px_80px_100px] gap-2 border-b border-[#1a1a1a] px-4 md:px-6 py-2.5 text-xs cursor-pointer hover:bg-[#141414] transition-colors items-center min-h-[44px]"
+      className="grid grid-cols-[80px_1fr_120px_100px_90px_90px_120px_80px_100px] gap-2 border-b border-border/50 px-4 md:px-6 py-2.5 text-xs cursor-pointer hover:bg-surface transition-colors items-center min-h-[44px]"
     >
       {/* ID */}
-      <span className="font-mono text-[#a1a1aa] text-[11px] truncate">{issue.display_id}</span>
+      <span className="font-mono text-secondary text-[11px] truncate">{issue.display_id}</span>
 
       {/* Title */}
-      <span className="text-[#fafafa] font-medium truncate">{issue.title}</span>
+      <span className="text-primary font-medium truncate">{issue.title}</span>
 
       {/* Status */}
       <span className="flex items-center gap-1.5">
@@ -61,7 +70,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
           className="h-2 w-2 rounded-full shrink-0"
           style={{ backgroundColor: status?.color }}
         />
-        <span className="text-[#a1a1aa] truncate">{status?.label || issue.status}</span>
+        <span className="text-secondary truncate">{status?.label || issue.status}</span>
       </span>
 
       {/* Priority */}
@@ -69,13 +78,36 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
         {PriorityIcon && (
           <PriorityIcon size={12} style={{ color: priority?.color }} />
         )}
-        <span className="text-[#a1a1aa]">{priority?.label || '—'}</span>
+        <span className="text-secondary">{priority?.label || '—'}</span>
       </span>
 
       {/* Type */}
       <span className="flex items-center gap-1.5">
         <TypeIcon size={12} className={typeColors[issue.type]} />
-        <span className="text-[#a1a1aa] capitalize truncate">{issue.type}</span>
+        <span className="text-secondary capitalize truncate">{issue.type}</span>
+      </span>
+
+      {/* Category */}
+      <span className="flex items-center gap-1 overflow-hidden">
+        {categories.length > 0 ? (
+          categories.slice(0, 2).map((cat) => {
+            const color = CATEGORY_COLORS[cat.toUpperCase()] || '#6b7280';
+            return (
+              <span
+                key={cat}
+                className="rounded px-1.5 py-0 text-[9px] font-bold uppercase"
+                style={{
+                  backgroundColor: `${color}20`,
+                  color: color,
+                }}
+              >
+                {cat}
+              </span>
+            );
+          })
+        ) : (
+          <span className="text-muted">—</span>
+        )}
       </span>
 
       {/* Tags */}
@@ -97,7 +129,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
           );
         })}
         {issue.tags.length > 2 && (
-          <span className="text-[9px] text-[#555]">+{issue.tags.length - 2}</span>
+          <span className="text-[9px] text-muted">+{issue.tags.length - 2}</span>
         )}
       </span>
 
@@ -106,16 +138,16 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
         {issue.assignee_ids.slice(0, 2).map((id) => (
           <div
             key={id}
-            className="h-5 w-5 rounded-full bg-[#1f1f1f] border border-[#0a0a0a] flex items-center justify-center text-[7px] font-mono text-[#a1a1aa]"
+            className="h-5 w-5 rounded-full bg-surface-hover border border-bg flex items-center justify-center text-[7px] font-mono text-secondary"
           >
             {id.slice(0, 2).toUpperCase()}
           </div>
         ))}
-        {issue.assignee_ids.length === 0 && <span className="text-[#555]">—</span>}
+        {issue.assignee_ids.length === 0 && <span className="text-muted">—</span>}
       </span>
 
       {/* Updated */}
-      <span className="text-[#666] text-[10px]">{timeAgo(issue.updated_at)}</span>
+      <span className="text-muted text-[10px]">{timeAgo(issue.updated_at)}</span>
     </div>
   );
 }

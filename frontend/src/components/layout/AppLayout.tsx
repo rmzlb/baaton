@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
+import { AIAssistant } from '@/components/ai/AIAssistant';
 import { useUIStore } from '@/stores/ui';
 import { cn } from '@/lib/utils';
 
@@ -24,6 +25,7 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <AIAssistant />
     </div>
   );
 }

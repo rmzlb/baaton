@@ -10,6 +10,7 @@ pub struct ListParams {
     pub status: Option<String>,
     pub priority: Option<String>,
     pub r#type: Option<String>,
+    pub category: Option<String>,
     pub search: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
@@ -31,8 +32,9 @@ pub async fn list_by_project(
           AND ($3::text IS NULL OR priority = $3)
           AND ($4::text IS NULL OR type = $4)
           AND ($5::text IS NULL OR title ILIKE '%' || $5 || '%')
+          AND ($6::text IS NULL OR $6 = ANY(category))
         ORDER BY position ASC
-        LIMIT $6 OFFSET $7
+        LIMIT $7 OFFSET $8
         "#,
     )
     .bind(project_id)
@@ -40,6 +42,7 @@ pub async fn list_by_project(
     .bind(&params.priority)
     .bind(&params.r#type)
     .bind(&params.search)
+    .bind(&params.category)
     .bind(limit)
     .bind(offset)
     .fetch_all(&pool)
@@ -89,9 +92,9 @@ pub async fn create(
         r#"
         INSERT INTO issues (
             project_id, display_id, title, description, type, status, priority,
-            milestone_id, parent_id, tags, assignee_ids, position, source
+            milestone_id, parent_id, tags, category, assignee_ids, position, source
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'web')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'web')
         RETURNING *
         "#,
     )
@@ -105,6 +108,7 @@ pub async fn create(
     .bind(body.milestone_id)
     .bind(body.parent_id)
     .bind(&body.tags.unwrap_or_default())
+    .bind(&body.category.unwrap_or_default())
     .bind(&body.assignee_ids.unwrap_or_default())
     .bind(position)
     .fetch_one(&pool)
@@ -171,6 +175,7 @@ pub async fn update(
             tags = COALESCE($8, tags),
             assignee_ids = COALESCE($9, assignee_ids),
             milestone_id = CASE WHEN $10::boolean THEN $11 ELSE milestone_id END,
+            category = COALESCE($12, category),
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -187,6 +192,7 @@ pub async fn update(
     .bind(&body.assignee_ids)
     .bind(milestone_provided)
     .bind(milestone_value)
+    .bind(&body.category)
     .fetch_one(&pool)
     .await
     .unwrap();

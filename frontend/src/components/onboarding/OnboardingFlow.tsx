@@ -79,7 +79,7 @@ function OnboardingOverlay() {
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
 
       {/* Modal card */}
-      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-white/10 bg-[#0a0a0a] shadow-2xl shadow-black/50 overflow-hidden flex flex-col min-h-[520px] max-h-[90vh]">
+      <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-white/10 bg-bg shadow-2xl shadow-black/50 overflow-hidden flex flex-col min-h-[520px] max-h-[90vh]">
         {/* Ambient glow */}
         <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-80 h-64 bg-amber-500/10 rounded-full blur-[100px] pointer-events-none" />
 

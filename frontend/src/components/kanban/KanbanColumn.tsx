@@ -54,13 +54,13 @@ export function KanbanColumn({
             style={{ backgroundColor: status.color }}
           />
           <span className={cn(
-            'font-medium text-[#fafafa]',
+            'font-medium text-primary',
             density === 'compact' ? 'text-xs' : 'text-sm',
           )}>
             {status.label}
           </span>
           <span className={cn(
-            'rounded-full bg-[#1f1f1f] px-2 py-0.5 text-[#a1a1aa] font-mono',
+            'rounded-full bg-surface-hover px-2 py-0.5 text-secondary font-mono',
             density === 'compact' ? 'text-[10px]' : 'text-xs',
           )}>
             {issues.length}
@@ -68,7 +68,7 @@ export function KanbanColumn({
         </div>
         <button
           onClick={() => onCreateIssue?.(status.key)}
-          className="rounded-md p-1 text-[#a1a1aa] hover:bg-[#1f1f1f] hover:text-[#fafafa] transition-colors min-h-[28px] min-w-[28px] flex items-center justify-center"
+          className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors min-h-[28px] min-w-[28px] flex items-center justify-center"
         >
           <Plus size={density === 'compact' ? 14 : 16} />
         </button>
@@ -81,7 +81,7 @@ export function KanbanColumn({
         className={cn(
           'flex-1 overflow-y-auto rounded-lg p-1 transition-colors',
           CARD_GAPS[density],
-          isDraggingOver ? 'bg-[#141414]' : '',
+          isDraggingOver ? 'bg-surface' : '',
         )}
       >
         {issues.map((issue, index) => (
@@ -104,7 +104,7 @@ export function KanbanColumn({
           <button
             onClick={() => onCreateIssue?.(status.key)}
             className={cn(
-              'flex w-full items-center justify-center rounded-lg border border-dashed border-[#262626] text-xs text-[#a1a1aa] hover:border-[#f59e0b] hover:text-[#f59e0b] transition-colors',
+              'flex w-full items-center justify-center rounded-lg border border-dashed border-border text-xs text-secondary hover:border-accent hover:text-accent transition-colors',
               density === 'compact' ? 'h-16' : density === 'spacious' ? 'h-28' : 'h-24',
             )}
           >

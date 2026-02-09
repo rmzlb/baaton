@@ -86,7 +86,7 @@ export function MyTasks() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-[#a1a1aa]">
+      <div className="flex h-full items-center justify-center text-sm text-secondary">
         Loading your tasks…
       </div>
     );
@@ -95,13 +95,13 @@ export function MyTasks() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#262626] px-4 md:px-6 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 md:px-6 py-3">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-[#fafafa] flex items-center gap-2">
-            <CheckSquare size={20} className="text-[#f59e0b]" />
+          <h1 className="text-lg font-semibold text-primary flex items-center gap-2">
+            <CheckSquare size={20} className="text-accent" />
             My Tasks
           </h1>
-          <p className="text-xs text-[#a1a1aa] font-mono uppercase tracking-wider">
+          <p className="text-xs text-secondary font-mono uppercase tracking-wider">
             {myIssues.length} issue{myIssues.length !== 1 ? 's' : ''} assigned to you
           </p>
         </div>
@@ -111,9 +111,9 @@ export function MyTasks() {
       <div className="flex-1 overflow-y-auto p-4 md:p-6">
         {Object.keys(groupedByProject).length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <CheckSquare size={40} className="text-[#333] mb-3" />
-            <p className="text-sm text-[#a1a1aa]">No tasks assigned to you</p>
-            <p className="text-xs text-[#555] mt-1">Issues you're assigned to will appear here.</p>
+            <CheckSquare size={40} className="text-border mb-3" />
+            <p className="text-sm text-secondary">No tasks assigned to you</p>
+            <p className="text-xs text-muted mt-1">Issues you're assigned to will appear here.</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -121,19 +121,19 @@ export function MyTasks() {
               <div key={projectId}>
                 {/* Project Header */}
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="h-6 w-6 rounded-md bg-[#f59e0b]/20 flex items-center justify-center text-[10px] font-bold text-[#f59e0b]">
+                  <div className="h-6 w-6 rounded-md bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent">
                     {getProjectPrefix(projectId).slice(0, 2)}
                   </div>
-                  <h2 className="text-sm font-semibold text-[#fafafa]">
+                  <h2 className="text-sm font-semibold text-primary">
                     {getProjectName(projectId)}
                   </h2>
-                  <span className="rounded-full bg-[#1f1f1f] px-2 py-0.5 text-[10px] text-[#666] font-mono">
+                  <span className="rounded-full bg-surface-hover px-2 py-0.5 text-[10px] text-muted font-mono">
                     {issues.length}
                   </span>
                 </div>
 
                 {/* Issue rows */}
-                <div className="rounded-lg border border-[#262626] bg-[#141414] overflow-hidden">
+                <div className="rounded-lg border border-border bg-surface overflow-hidden">
                   {issues.map((issue, idx) => {
                     const TypeIcon = typeIcons[issue.type] ?? Sparkles;
                     const priority = issue.priority ? priorityConfig[issue.priority] : null;
@@ -143,8 +143,8 @@ export function MyTasks() {
                       <div
                         key={issue.id}
                         onClick={() => openDetail(issue.id)}
-                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[#1a1a1a] transition-colors min-h-[44px] ${
-                          idx < issues.length - 1 ? 'border-b border-[#1f1f1f]' : ''
+                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface-hover transition-colors min-h-[44px] ${
+                          idx < issues.length - 1 ? 'border-b border-border/50' : ''
                         }`}
                       >
                         {/* Status dot */}
@@ -157,12 +157,12 @@ export function MyTasks() {
                         <TypeIcon size={14} className={typeColors[issue.type]} />
 
                         {/* ID */}
-                        <span className="text-[11px] font-mono text-[#666] shrink-0">
+                        <span className="text-[11px] font-mono text-muted shrink-0">
                           {issue.display_id}
                         </span>
 
                         {/* Title */}
-                        <span className="text-sm text-[#fafafa] font-medium truncate flex-1">
+                        <span className="text-sm text-primary font-medium truncate flex-1">
                           {issue.title}
                         </span>
 
@@ -175,14 +175,14 @@ export function MyTasks() {
                         {issue.tags.slice(0, 2).map((tag) => (
                           <span
                             key={tag}
-                            className="rounded-full bg-[#1f1f1f] px-2 py-0.5 text-[9px] text-[#a1a1aa] hidden sm:inline"
+                            className="rounded-full bg-surface-hover px-2 py-0.5 text-[9px] text-secondary hidden sm:inline"
                           >
                             {tag}
                           </span>
                         ))}
 
                         {/* Updated */}
-                        <span className="text-[10px] text-[#555] shrink-0 hidden md:inline">
+                        <span className="text-[10px] text-muted shrink-0 hidden md:inline">
                           {timeAgo(issue.updated_at)}
                         </span>
                       </div>

@@ -98,7 +98,7 @@ export function ProjectBoard() {
 
   if (projectLoading || issuesLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-[#a1a1aa]">
+      <div className="flex h-full items-center justify-center text-sm text-secondary">
         Loading board…
       </div>
     );
@@ -111,7 +111,7 @@ export function ProjectBoard() {
           <p className="text-sm text-red-400">
             {projectError instanceof Error ? projectError.message : 'Failed to load project'}
           </p>
-          <p className="mt-1 text-xs text-[#a1a1aa]">
+          <p className="mt-1 text-xs text-secondary">
             Project "{slug}" may not exist or you don't have access.
           </p>
         </div>
@@ -122,10 +122,10 @@ export function ProjectBoard() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[#262626] px-4 md:px-6 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 md:px-6 py-3">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-[#fafafa] truncate">{project?.name || slug}</h1>
-          <p className="text-xs text-[#a1a1aa] font-mono uppercase tracking-wider">
+          <h1 className="text-lg font-semibold text-primary truncate">{project?.name || slug}</h1>
+          <p className="text-xs text-secondary font-mono uppercase tracking-wider">
             {project?.prefix} · {viewMode} view · {issues.length} issue{issues.length !== 1 ? 's' : ''}
           </p>
         </div>
@@ -134,13 +134,13 @@ export function ProjectBoard() {
           <DensityToggle />
 
           {/* View Toggle */}
-          <div className="flex items-center rounded-md border border-[#262626] bg-[#141414] p-0.5">
+          <div className="flex items-center rounded-md border border-border bg-surface p-0.5">
             <button
               onClick={() => setViewMode('kanban')}
               className={`rounded-[5px] p-1.5 transition-colors ${
                 viewMode === 'kanban'
-                  ? 'bg-[#1f1f1f] text-[#fafafa]'
-                  : 'text-[#666] hover:text-[#a1a1aa]'
+                  ? 'bg-surface-hover text-primary'
+                  : 'text-muted hover:text-secondary'
               }`}
               title="Kanban view"
             >
@@ -150,8 +150,8 @@ export function ProjectBoard() {
               onClick={() => setViewMode('list')}
               className={`rounded-[5px] p-1.5 transition-colors ${
                 viewMode === 'list'
-                  ? 'bg-[#1f1f1f] text-[#fafafa]'
-                  : 'text-[#666] hover:text-[#a1a1aa]'
+                  ? 'bg-surface-hover text-primary'
+                  : 'text-muted hover:text-secondary'
               }`}
               title="List view"
             >
@@ -161,7 +161,7 @@ export function ProjectBoard() {
 
           <button
             onClick={() => setShowCreateIssue(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-[#f59e0b] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#d97706] transition-colors min-h-[36px]"
+            className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-black hover:bg-accent-hover transition-colors min-h-[36px]"
           >
             <Plus size={14} strokeWidth={2.5} />
             <span className="hidden sm:inline">New Issue</span>
@@ -268,16 +268,16 @@ function CreateIssueModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-xl border border-[#262626] bg-[#141414] p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-[#fafafa]">
+          <h2 className="text-lg font-semibold text-primary">
             New Issue
-            <span className="ml-2 text-xs font-mono text-[#a1a1aa]">{project.prefix}</span>
+            <span className="ml-2 text-xs font-mono text-secondary">{project.prefix}</span>
           </h2>
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-[#a1a1aa] hover:bg-[#1f1f1f] hover:text-[#fafafa] transition-colors"
+            className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
           >
             <X size={18} />
           </button>
@@ -291,35 +291,35 @@ function CreateIssueModal({
           )}
 
           <div>
-            <label className="block text-xs text-[#a1a1aa] mb-1.5">Title *</label>
+            <label className="block text-xs text-secondary mb-1.5">Title *</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Brief summary of the issue"
-              className="w-full rounded-lg border border-[#262626] bg-[#0a0a0a] px-3 py-2.5 text-sm text-[#fafafa] placeholder-[#a1a1aa] focus:border-[#f59e0b] focus:outline-none transition-colors"
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none transition-colors"
               autoFocus
             />
           </div>
 
           <div>
-            <label className="block text-xs text-[#a1a1aa] mb-1.5">Description</label>
+            <label className="block text-xs text-secondary mb-1.5">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Detailed description (markdown supported)"
               rows={4}
-              className="w-full rounded-lg border border-[#262626] bg-[#0a0a0a] px-3 py-2.5 text-sm text-[#fafafa] placeholder-[#a1a1aa] focus:border-[#f59e0b] focus:outline-none resize-none transition-colors"
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none resize-none transition-colors"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-[#a1a1aa] mb-1.5">Type</label>
+              <label className="block text-xs text-secondary mb-1.5">Type</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as IssueType)}
-                className="w-full rounded-lg border border-[#262626] bg-[#0a0a0a] px-3 py-2.5 text-sm text-[#fafafa] focus:border-[#f59e0b] focus:outline-none transition-colors"
+                className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary focus:border-accent focus:outline-none transition-colors"
               >
                 <option value="feature">Feature</option>
                 <option value="bug">Bug</option>
@@ -328,11 +328,11 @@ function CreateIssueModal({
               </select>
             </div>
             <div>
-              <label className="block text-xs text-[#a1a1aa] mb-1.5">Priority</label>
+              <label className="block text-xs text-secondary mb-1.5">Priority</label>
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as IssuePriority | '')}
-                className="w-full rounded-lg border border-[#262626] bg-[#0a0a0a] px-3 py-2.5 text-sm text-[#fafafa] focus:border-[#f59e0b] focus:outline-none transition-colors"
+                className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary focus:border-accent focus:outline-none transition-colors"
               >
                 <option value="">None</option>
                 <option value="urgent">Urgent</option>
@@ -346,7 +346,7 @@ function CreateIssueModal({
           {/* Tags */}
           {projectTags.length > 0 && (
             <div>
-              <label className="block text-xs text-[#a1a1aa] mb-1.5">Tags</label>
+              <label className="block text-xs text-secondary mb-1.5">Tags</label>
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {selectedTags.map((tag) => {
                   const tagObj = projectTags.find((t) => t.name === tag);
@@ -371,19 +371,19 @@ function CreateIssueModal({
                 <button
                   type="button"
                   onClick={() => setShowTagDropdown(!showTagDropdown)}
-                  className="w-full text-left rounded-lg border border-[#262626] bg-[#0a0a0a] px-3 py-2 text-xs text-[#666] hover:border-[#333] transition-colors"
+                  className="w-full text-left rounded-lg border border-border bg-bg px-3 py-2 text-xs text-muted hover:border-border transition-colors"
                 >
                   Select tags…
                 </button>
                 {showTagDropdown && (
-                  <div className="absolute left-0 top-full z-10 mt-1 w-full rounded-lg border border-[#262626] bg-[#141414] py-1 shadow-xl max-h-40 overflow-y-auto">
+                  <div className="absolute left-0 top-full z-10 mt-1 w-full rounded-lg border border-border bg-surface py-1 shadow-xl max-h-40 overflow-y-auto">
                     {projectTags.map((tag) => (
                       <button
                         key={tag.id}
                         type="button"
                         onClick={() => toggleTag(tag.name)}
                         className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
-                          selectedTags.includes(tag.name) ? 'text-[#fafafa] bg-[#1f1f1f]' : 'text-[#a1a1aa] hover:bg-[#1f1f1f]'
+                          selectedTags.includes(tag.name) ? 'text-primary bg-surface-hover' : 'text-secondary hover:bg-surface-hover'
                         }`}
                       >
                         <span
@@ -392,7 +392,7 @@ function CreateIssueModal({
                         />
                         {tag.name}
                         {selectedTags.includes(tag.name) && (
-                          <span className="ml-auto text-[#f59e0b]">✓</span>
+                          <span className="ml-auto text-accent">✓</span>
                         )}
                       </button>
                     ))}
@@ -406,14 +406,14 @@ function CreateIssueModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-[#a1a1aa] hover:text-[#fafafa] transition-colors"
+              className="rounded-lg px-4 py-2 text-sm text-secondary hover:text-primary transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!title.trim() || createMutation.isPending}
-              className="flex items-center gap-2 rounded-lg bg-[#f59e0b] px-4 py-2 text-sm font-medium text-black hover:bg-[#d97706] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {createMutation.isPending ? 'Creating…' : 'Create Issue'}
             </button>
@@ -437,7 +437,7 @@ function DensityToggle() {
   const setDensity = useUIStore((s) => s.setDensity);
 
   return (
-    <div className="flex items-center rounded-md border border-[#262626] bg-[#141414] p-0.5">
+    <div className="flex items-center rounded-md border border-border bg-surface p-0.5">
       {DENSITY_CONFIG.map(({ key, icon: Icon, title }) => (
         <button
           key={key}
@@ -445,8 +445,8 @@ function DensityToggle() {
           className={cn(
             'rounded-[5px] p-1.5 transition-colors',
             density === key
-              ? 'bg-[#1f1f1f] text-[#fafafa]'
-              : 'text-[#666] hover:text-[#a1a1aa]',
+              ? 'bg-surface-hover text-primary'
+              : 'text-muted hover:text-secondary',
           )}
           title={title}
         >

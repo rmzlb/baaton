@@ -73,6 +73,7 @@ export interface Issue {
   reporter_email: string | null;
   assignee_ids: string[];
   tags: string[];
+  category: string[];
   attachments: Attachment[];
   position: number;
   qualified_at: string | null;
@@ -145,6 +146,7 @@ export interface CreateIssueRequest {
   milestone_id?: string;
   parent_id?: string;
   tags?: string[];
+  category?: string[];
   assignee_ids?: string[];
 }
 
@@ -157,6 +159,7 @@ export interface UpdateIssueRequest {
   milestone_id?: string | null;
   assignee_ids?: string[];
   tags?: string[];
+  category?: string[];
 }
 
 export interface CreateTLDRRequest {

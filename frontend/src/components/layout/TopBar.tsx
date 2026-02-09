@@ -39,25 +39,25 @@ export function TopBar() {
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex h-12 items-center justify-between border-b border-[#262626] bg-[#0a0a0a] px-3 md:px-5 shrink-0">
+      <header className="sticky top-0 z-20 flex h-12 items-center justify-between border-b border-border bg-bg px-3 md:px-5 shrink-0">
         {/* Left: mobile menu + breadcrumb */}
         <div className="flex items-center gap-2 min-w-0">
           <button
             onClick={openMobileSidebar}
-            className="rounded-md p-1.5 text-[#a1a1aa] hover:bg-[#141414] hover:text-[#fafafa] transition-colors md:hidden"
+            className="rounded-md p-1.5 text-secondary hover:bg-surface hover:text-primary transition-colors md:hidden"
           >
             <Menu size={18} />
           </button>
           <nav className="flex items-center gap-1 text-sm min-w-0">
             {breadcrumbs.map((crumb, i) => (
               <span key={i} className="flex items-center gap-1 min-w-0">
-                {i > 0 && <ChevronRight size={12} className="text-[#555] shrink-0" />}
+                {i > 0 && <ChevronRight size={12} className="text-muted shrink-0" />}
                 <span
                   className={cn(
                     'truncate',
                     i === breadcrumbs.length - 1
-                      ? 'text-[#fafafa] font-medium'
-                      : 'text-[#a1a1aa]',
+                      ? 'text-primary font-medium'
+                      : 'text-secondary',
                   )}
                 >
                   {crumb}
@@ -70,11 +70,11 @@ export function TopBar() {
         {/* Right: search trigger */}
         <button
           onClick={openCommandBar}
-          className="flex items-center gap-2 rounded-lg border border-[#262626] bg-[#141414] px-2.5 py-1.5 text-xs text-[#a1a1aa] hover:border-[#333] hover:text-[#fafafa] transition-colors"
+          className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary hover:border-border hover:text-primary transition-colors"
         >
           <Search size={14} />
           <span className="hidden sm:inline">Search…</span>
-          <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded bg-[#1f1f1f] px-1.5 py-0.5 text-[10px] font-mono text-[#666]">
+          <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-mono text-muted">
             ⌘K
           </kbd>
         </button>
@@ -182,30 +182,30 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] sm:pt-[20vh]">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
 
       {/* Dialog */}
-      <div className="relative w-full max-w-lg mx-4 rounded-xl border border-[#262626] bg-[#141414] shadow-2xl shadow-black/50 overflow-hidden">
+      <div className="relative w-full max-w-lg mx-4 rounded-xl border border-border bg-surface shadow-2xl shadow-black/20 dark:shadow-black/50 overflow-hidden">
         <Command label="Global search" shouldFilter={false}>
-          <div className="flex items-center border-b border-[#262626] px-3">
-            <Search size={16} className="text-[#a1a1aa] shrink-0" />
+          <div className="flex items-center border-b border-border px-3">
+            <Search size={16} className="text-secondary shrink-0" />
             <Command.Input
               ref={inputRef}
               value={search}
               onValueChange={setSearch}
               placeholder="Search issues, projects, pages…"
               autoFocus
-              className="h-12 w-full bg-transparent px-3 text-sm text-[#fafafa] placeholder-[#666] outline-none"
+              className="h-12 w-full bg-transparent px-3 text-sm text-primary placeholder-muted outline-none"
             />
-            <kbd className="hidden sm:inline-flex shrink-0 items-center rounded bg-[#1f1f1f] px-1.5 py-0.5 text-[10px] font-mono text-[#555]">
+            <kbd className="hidden sm:inline-flex shrink-0 items-center rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-mono text-muted">
               ESC
             </kbd>
           </div>
 
           <Command.List className="max-h-80 overflow-y-auto p-2">
-            <Command.Empty className="px-4 py-8 text-center text-sm text-[#666]">
+            <Command.Empty className="px-4 py-8 text-center text-sm text-muted">
               No results found.
             </Command.Empty>
 
@@ -230,7 +230,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                 {filteredProjects.map((p: Project) => (
                   <PaletteItem
                     key={p.id}
-                    icon={<span className="text-[10px] font-mono font-bold text-[#f59e0b]">{p.prefix}</span>}
+                    icon={<span className="text-[10px] font-mono font-bold text-accent">{p.prefix}</span>}
                     onSelect={() => runAction(`/projects/${p.slug}`)}
                   >
                     {p.name}
@@ -245,7 +245,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                 {filteredIssues.map((issue: Issue) => (
                   <PaletteItem
                     key={issue.id}
-                    icon={<FileText size={14} className="text-[#a1a1aa]" />}
+                    icon={<FileText size={14} className="text-secondary" />}
                     onSelect={() => {
                       // Navigate to the project board (issue detail will open)
                       const project = projects.find((p) => p.id === issue.project_id);
@@ -255,9 +255,9 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                     }}
                     subtitle={
                       <span className="flex items-center gap-1.5">
-                        <span className="font-mono text-[10px] text-[#a1a1aa]">{issue.display_id}</span>
+                        <span className="font-mono text-[10px] text-secondary">{issue.display_id}</span>
                         {issue.tags.slice(0, 2).map((t) => (
-                          <span key={t} className="rounded-full bg-[#1f1f1f] px-1.5 py-0.5 text-[9px] text-[#a1a1aa]">
+                          <span key={t} className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[9px] text-secondary">
                             <Hash size={8} className="inline mr-0.5" />{t}
                           </span>
                         ))}
@@ -278,7 +278,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
 function GroupHeading({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-[10px] font-semibold uppercase tracking-wider text-[#555] px-2">
+    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted px-2">
       {children}
     </span>
   );
@@ -298,9 +298,9 @@ function PaletteItem({
   return (
     <Command.Item
       onSelect={onSelect}
-      className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#fafafa] data-[selected=true]:bg-[#1f1f1f] transition-colors"
+      className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-primary data-[selected=true]:bg-surface-hover transition-colors"
     >
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-[#a1a1aa]">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-secondary">
         {icon}
       </span>
       <span className="flex-1 truncate min-w-0">

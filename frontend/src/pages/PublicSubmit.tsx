@@ -66,16 +66,16 @@ export function PublicSubmit() {
 
   if (submitted) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] p-6">
+      <div className="flex min-h-screen items-center justify-center bg-bg p-6">
         <div className="text-center">
-          <CheckCircle2 size={64} className="mx-auto text-[#22c55e] mb-4" />
-          <h2 className="text-xl font-bold text-[#fafafa]">Submitted!</h2>
-          <p className="mt-2 text-sm text-[#a1a1aa]">
+          <CheckCircle2 size={64} className="mx-auto text-green-500 mb-4" />
+          <h2 className="text-xl font-bold text-primary">Submitted!</h2>
+          <p className="mt-2 text-sm text-secondary">
             Your feedback has been received and will be reviewed by the team.
           </p>
           <button
             onClick={resetForm}
-            className="mt-6 text-sm text-[#f59e0b] hover:underline"
+            className="mt-6 text-sm text-accent hover:underline"
           >
             Submit another
           </button>
@@ -85,14 +85,14 @@ export function PublicSubmit() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] p-6">
+    <div className="flex min-h-screen items-center justify-center bg-bg p-6">
       <div className="w-full max-w-lg">
         {/* Header */}
         <div className="mb-8 text-center">
           <PixelBaton size={48} className="mx-auto mb-3" />
-          <h1 className="text-xl font-bold text-[#fafafa]">Submit Feedback</h1>
-          <p className="mt-1 text-sm text-[#a1a1aa]">
-            for <span className="font-mono text-[#f59e0b]">{slug}</span>
+          <h1 className="text-xl font-bold text-primary">Submit Feedback</h1>
+          <p className="mt-1 text-sm text-secondary">
+            for <span className="font-mono text-accent">{slug}</span>
           </p>
         </div>
 
@@ -114,8 +114,8 @@ export function PublicSubmit() {
                 onClick={() => setSelectedType(value)}
                 className={`flex flex-col items-center gap-1 rounded-lg border p-3 text-xs transition-colors min-h-[44px] ${
                   selectedType === value
-                    ? `${color} bg-[#141414]`
-                    : 'border-[#262626] text-[#a1a1aa] hover:border-[#333]'
+                    ? `${color} bg-surface`
+                    : 'border-border text-secondary hover:border-border'
                 }`}
               >
                 <Icon size={20} />
@@ -131,7 +131,7 @@ export function PublicSubmit() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            className="w-full rounded-lg border border-[#262626] bg-[#141414] px-4 py-3 text-sm text-[#fafafa] placeholder-[#a1a1aa] focus:border-[#f59e0b] focus:outline-none transition-colors"
+            className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none transition-colors"
           />
 
           {/* Description */}
@@ -140,7 +140,7 @@ export function PublicSubmit() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={5}
-            className="w-full rounded-lg border border-[#262626] bg-[#141414] px-4 py-3 text-sm text-[#fafafa] placeholder-[#a1a1aa] focus:border-[#f59e0b] focus:outline-none resize-none transition-colors"
+            className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none resize-none transition-colors"
           />
 
           {/* Name + Email (optional) */}
@@ -150,14 +150,14 @@ export function PublicSubmit() {
               placeholder="Your name (optional)"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="rounded-lg border border-[#262626] bg-[#141414] px-4 py-3 text-sm text-[#fafafa] placeholder-[#a1a1aa] focus:border-[#f59e0b] focus:outline-none transition-colors"
+              className="rounded-lg border border-border bg-surface px-4 py-3 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none transition-colors"
             />
             <input
               type="email"
               placeholder="Email (optional)"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="rounded-lg border border-[#262626] bg-[#141414] px-4 py-3 text-sm text-[#fafafa] placeholder-[#a1a1aa] focus:border-[#f59e0b] focus:outline-none transition-colors"
+              className="rounded-lg border border-border bg-surface px-4 py-3 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none transition-colors"
             />
           </div>
 
@@ -165,15 +165,15 @@ export function PublicSubmit() {
           <button
             type="submit"
             disabled={!title.trim() || submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#f59e0b] px-4 py-3 text-sm font-medium text-black hover:bg-[#d97706] disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[44px]"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-black hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[44px]"
           >
             <Send size={16} />
             {submitting ? 'Submitting…' : 'Submit'}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-[10px] text-[#a1a1aa]">
-          Powered by <span className="text-[#f59e0b]">baaton.dev</span>
+        <p className="mt-6 text-center text-[10px] text-secondary">
+          Powered by <span className="text-accent">baaton.dev</span>
         </p>
       </div>
     </div>

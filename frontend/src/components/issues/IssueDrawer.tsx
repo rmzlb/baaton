@@ -11,6 +11,7 @@ import {
 import { useIssuesStore } from '@/stores/issues';
 import { useApi } from '@/hooks/useApi';
 import { cn, timeAgo } from '@/lib/utils';
+import { MarkdownView } from '@/components/shared/MarkdownView';
 import type { IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus } from '@/lib/types';
 
 const TAG_COLORS = [
@@ -61,6 +62,8 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const [newTagName, setNewTagName] = useState('');
   const [commentText, setCommentText] = useState('');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState('');
 
   // Fetch full issue details
   const { data: issue, isLoading } = useQuery({
@@ -149,6 +152,13 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     setEditingTitle(false);
   }, [titleDraft, issue?.title, updateMutation]);
 
+  const handleDescriptionSave = useCallback(() => {
+    if (descriptionDraft !== (issue?.description || '')) {
+      updateMutation.mutate({ field: 'description', value: descriptionDraft });
+    }
+    setEditingDescription(false);
+  }, [descriptionDraft, issue?.description, updateMutation]);
+
   const handleFieldUpdate = useCallback(
     (field: string, value: unknown) => {
       updateMutation.mutate({ field, value });
@@ -222,19 +232,19 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   if (isLoading || !issue) {
     return (
       <>
-        <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+        <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40" onClick={onClose} />
         <div
           ref={panelRef}
-          className="fixed inset-y-0 right-0 z-50 w-full md:w-[45%] lg:w-[40%] bg-[#0a0a0a] border-l border-[#262626] flex items-center justify-center animate-slide-in-right"
+          className="fixed inset-y-0 right-0 z-50 w-full md:w-[45%] lg:w-[40%] bg-bg border-l border-border flex items-center justify-center animate-slide-in-right"
         >
-          <span className="text-sm text-[#a1a1aa]">Loading…</span>
+          <span className="text-sm text-secondary">Loading…</span>
         </div>
       </>
     );
   }
 
   const TypeIcon = TYPE_CONFIG[issue.type]?.icon || FileText;
-  const typeColor = TYPE_CONFIG[issue.type]?.color || 'text-[#a1a1aa]';
+  const typeColor = TYPE_CONFIG[issue.type]?.color || 'text-secondary';
   const currentStatus = availableStatuses.find(
     (s) => s.key === issue.status,
   );
@@ -245,22 +255,22 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-40 bg-black/40" />
+      <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40" />
 
       {/* Panel */}
       <div
         ref={panelRef}
-        className="fixed inset-y-0 right-0 z-50 w-full md:w-[45%] lg:w-[40%] bg-[#0a0a0a] border-l border-[#262626] flex flex-col animate-slide-in-right overflow-hidden"
+        className="fixed inset-y-0 right-0 z-50 w-full md:w-[45%] lg:w-[40%] bg-bg border-l border-border flex flex-col animate-slide-in-right overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#262626] px-5 py-3 shrink-0">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3 shrink-0">
           <div className="flex items-center gap-2">
             <TypeIcon size={16} className={typeColor} />
-            <span className="text-xs font-mono text-[#a1a1aa]">{issue.display_id}</span>
+            <span className="text-xs font-mono text-secondary">{issue.display_id}</span>
           </div>
           <button
             onClick={onClose}
-            className="rounded-md p-1.5 text-[#a1a1aa] hover:bg-[#1f1f1f] hover:text-[#fafafa] transition-colors"
+            className="rounded-md p-1.5 text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
           >
             <X size={16} />
           </button>
@@ -282,7 +292,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     if (e.key === 'Escape') setEditingTitle(false);
                   }}
                   autoFocus
-                  className="w-full bg-transparent text-xl font-semibold text-[#fafafa] outline-none border-b border-[#f59e0b] pb-1"
+                  className="w-full bg-transparent text-xl font-semibold text-primary outline-none border-b border-accent pb-1"
                 />
               ) : (
                 <h2
@@ -290,7 +300,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     setTitleDraft(issue.title);
                     setEditingTitle(true);
                   }}
-                  className="text-xl font-semibold text-[#fafafa] cursor-pointer hover:text-[#f59e0b] transition-colors"
+                  className="text-xl font-semibold text-primary cursor-pointer hover:text-accent transition-colors"
                 >
                   {issue.title}
                 </h2>
@@ -315,7 +325,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                         className="h-2.5 w-2.5 rounded-full shrink-0"
                         style={{ backgroundColor: currentStatus?.color }}
                       />
-                      <span className="text-sm text-[#fafafa]">
+                      <span className="text-sm text-primary">
                         {currentStatus?.label || issue.status}
                       </span>
                     </span>
@@ -344,12 +354,12 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                             size={14}
                             style={{ color: currentPriority.color }}
                           />
-                          <span className="text-sm text-[#fafafa]">
+                          <span className="text-sm text-primary">
                             {currentPriority.label}
                           </span>
                         </>
                       ) : (
-                        <span className="text-sm text-[#666]">None</span>
+                        <span className="text-sm text-muted">None</span>
                       )}
                     </span>
                   )}
@@ -360,7 +370,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               <PropertyRow label="Type">
                 <span className="flex items-center gap-2">
                   <TypeIcon size={14} className={typeColor} />
-                  <span className="text-sm text-[#fafafa]">
+                  <span className="text-sm text-primary">
                     {TYPE_CONFIG[issue.type]?.label || issue.type}
                   </span>
                 </span>
@@ -368,13 +378,13 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
 
               {/* Source */}
               <PropertyRow label="Source">
-                <span className="text-sm text-[#a1a1aa] capitalize">{issue.source}</span>
+                <span className="text-sm text-secondary capitalize">{issue.source}</span>
               </PropertyRow>
             </div>
 
             {/* Tags with Picker */}
             <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
+              <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <Tag size={12} />
                 Tags
               </label>
@@ -400,7 +410,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                 })}
                 <button
                   onClick={() => setShowTagPicker(!showTagPicker)}
-                  className="rounded-full border border-dashed border-[#262626] px-2.5 py-1 text-xs text-[#666] hover:border-[#f59e0b] hover:text-[#f59e0b] transition-colors"
+                  className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted hover:border-accent hover:text-accent transition-colors"
                 >
                   <Plus size={10} className="inline mr-1" />
                   Add tag
@@ -409,7 +419,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
 
               {/* Tag Picker Dropdown */}
               {showTagPicker && (
-                <div className="mt-2 rounded-lg border border-[#262626] bg-[#141414] p-2 max-h-48 overflow-y-auto">
+                <div className="mt-2 rounded-lg border border-border bg-surface p-2 max-h-48 overflow-y-auto">
                   {projectTags
                     .filter((t) => !issue.tags.includes(t.name))
                     .map((tag) => (
@@ -419,7 +429,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                           handleToggleTag(tag.name);
                           setShowTagPicker(false);
                         }}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-[#a1a1aa] hover:bg-[#1f1f1f] transition-colors"
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-secondary hover:bg-surface-hover transition-colors"
                       >
                         <span
                           className="h-3 w-3 rounded-full shrink-0"
@@ -429,7 +439,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                       </button>
                     ))}
                   {/* Create new tag */}
-                  <div className="flex items-center gap-2 mt-1 pt-1 border-t border-[#262626]">
+                  <div className="flex items-center gap-2 mt-1 pt-1 border-t border-border">
                     <input
                       type="text"
                       value={newTagName}
@@ -438,12 +448,12 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                         if (e.key === 'Enter') handleCreateAndAddTag();
                       }}
                       placeholder="New tag name…"
-                      className="flex-1 bg-transparent text-xs text-[#fafafa] outline-none placeholder-[#555] px-2 py-1"
+                      className="flex-1 bg-transparent text-xs text-primary outline-none placeholder-muted px-2 py-1"
                     />
                     <button
                       onClick={handleCreateAndAddTag}
                       disabled={!newTagName.trim()}
-                      className="rounded-md px-2 py-1 text-[10px] bg-[#f59e0b] text-black font-medium disabled:opacity-40 hover:bg-[#d97706] transition-colors"
+                      className="rounded-md px-2 py-1 text-[10px] bg-accent text-black font-medium disabled:opacity-40 hover:bg-accent-hover transition-colors"
                     >
                       Create
                     </button>
@@ -455,7 +465,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             {/* Assignees */}
             {issue.assignee_ids.length > 0 && (
               <div>
-                <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
+                <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                   <User size={12} />
                   Assignees
                 </label>
@@ -463,7 +473,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                   {issue.assignee_ids.map((id) => (
                     <div
                       key={id}
-                      className="h-8 w-8 rounded-full bg-[#1f1f1f] border-2 border-[#0a0a0a] flex items-center justify-center text-[10px] font-mono text-[#a1a1aa]"
+                      className="h-8 w-8 rounded-full bg-surface-hover border-2 border-bg flex items-center justify-center text-[10px] font-mono text-secondary"
                       title={id}
                     >
                       {id.slice(0, 2).toUpperCase()}
@@ -475,22 +485,65 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
 
             {/* Description */}
             <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
+              <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <FileText size={12} />
                 Description
+                {!editingDescription && (
+                  <span className="text-[9px] text-muted/60 ml-1">(double-click to edit)</span>
+                )}
               </label>
-              {issue.description ? (
-                <div className="rounded-lg bg-[#141414] border border-[#262626] p-4 text-sm text-[#d4d4d4] leading-relaxed whitespace-pre-wrap">
-                  {issue.description}
+              {editingDescription ? (
+                <div className="rounded-lg bg-surface border border-border overflow-hidden">
+                  <textarea
+                    value={descriptionDraft}
+                    onChange={(e) => setDescriptionDraft(e.target.value)}
+                    onBlur={handleDescriptionSave}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setEditingDescription(false);
+                      }
+                    }}
+                    autoFocus
+                    rows={10}
+                    className="w-full bg-transparent text-sm text-primary p-4 outline-none resize-y min-h-[120px] font-mono"
+                    placeholder="Write description in Markdown…"
+                  />
+                  <div className="flex items-center justify-between border-t border-border px-4 py-2">
+                    <span className="text-[10px] text-muted">Markdown supported • Escape to cancel</span>
+                    <button
+                      onClick={handleDescriptionSave}
+                      className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-black hover:bg-accent-hover transition-colors"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : issue.description ? (
+                <div
+                  onDoubleClick={() => {
+                    setDescriptionDraft(issue.description || '');
+                    setEditingDescription(true);
+                  }}
+                  className="rounded-lg bg-surface border border-border p-4 cursor-text hover:border-accent/30 transition-colors"
+                >
+                  <MarkdownView content={issue.description} />
                 </div>
               ) : (
-                <p className="text-sm text-[#555] italic">No description</p>
+                <p
+                  className="text-sm text-muted italic cursor-pointer hover:text-accent transition-colors"
+                  onDoubleClick={() => {
+                    setDescriptionDraft('');
+                    setEditingDescription(true);
+                  }}
+                >
+                  No description — double-click to add
+                </p>
               )}
             </div>
 
             {/* Attachments */}
             <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
+              <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <Paperclip size={12} />
                 Attachments
               </label>
@@ -501,14 +554,14 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     <button
                       key={idx}
                       onClick={() => setLightboxIndex(idx)}
-                      className="group relative aspect-square rounded-lg border border-[#262626] overflow-hidden hover:border-[#f59e0b] transition-colors"
+                      className="group relative aspect-square rounded-lg border border-border overflow-hidden hover:border-accent transition-colors"
                     >
                       <img
                         src={att.url}
                         alt={att.name}
                         className="h-full w-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <div className="absolute inset-0 bg-black/30 dark:bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         <Image size={16} className="text-white" />
                       </div>
                     </button>
@@ -519,16 +572,16 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               {(issue.attachments || [])
                 .filter((a) => !a.mime_type?.startsWith('image/') && !a.url?.startsWith('data:image/'))
                 .map((att, idx) => (
-                  <div key={idx} className="flex items-center gap-2 rounded-md bg-[#141414] border border-[#262626] px-3 py-2 mb-1">
-                    <FileText size={12} className="text-[#a1a1aa]" />
-                    <span className="text-xs text-[#a1a1aa] truncate">{att.name}</span>
-                    <span className="text-[10px] text-[#555] ml-auto">
+                  <div key={idx} className="flex items-center gap-2 rounded-md bg-surface border border-border px-3 py-2 mb-1">
+                    <FileText size={12} className="text-secondary" />
+                    <span className="text-xs text-secondary truncate">{att.name}</span>
+                    <span className="text-[10px] text-muted ml-auto">
                       {(att.size / 1024).toFixed(0)}KB
                     </span>
                   </div>
                 ))}
               {/* Upload area */}
-              <label className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-[#262626] p-3 text-xs text-[#666] cursor-pointer hover:border-[#f59e0b] hover:text-[#f59e0b] transition-colors mt-1">
+              <label className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted cursor-pointer hover:border-accent hover:text-accent transition-colors mt-1">
                 <Upload size={14} />
                 Drop files or click to upload
                 <input
@@ -544,7 +597,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             {/* TLDRs (Agent Summaries) */}
             {issue.tldrs && issue.tldrs.length > 0 && (
               <div>
-                <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
+                <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                   <Bot size={12} />
                   Agent TLDRs
                 </label>
@@ -558,7 +611,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
 
             {/* Comments */}
             <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
+              <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <MessageSquare size={12} />
                 Comments ({issue.comments?.length || 0})
               </label>
@@ -569,25 +622,25 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               </div>
 
               {/* Comment input */}
-              <div className="mt-3 rounded-lg border border-[#262626] bg-[#141414] p-3">
+              <div className="mt-3 rounded-lg border border-border bg-surface p-3">
                 <textarea
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
                   placeholder="Add a comment…"
                   rows={3}
-                  className="w-full bg-transparent text-sm text-[#fafafa] placeholder-[#555] outline-none resize-none"
+                  className="w-full bg-transparent text-sm text-primary placeholder-muted outline-none resize-none"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                       handleSubmitComment();
                     }
                   }}
                 />
-                <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#262626]">
-                  <span className="text-[10px] text-[#555]">⌘+Enter to submit</span>
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
+                  <span className="text-[10px] text-muted">⌘+Enter to submit</span>
                   <button
                     onClick={handleSubmitComment}
                     disabled={!commentText.trim() || commentMutation.isPending}
-                    className="flex items-center gap-1.5 rounded-md bg-[#f59e0b] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#d97706] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-black hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <Send size={12} />
                     {commentMutation.isPending ? 'Sending…' : 'Comment'}
@@ -597,12 +650,12 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             </div>
 
             {/* Metadata */}
-            <div className="border-t border-[#262626] pt-4">
-              <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
+            <div className="border-t border-border pt-4">
+              <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <Activity size={12} />
                 Activity
               </label>
-              <div className="space-y-2 text-xs text-[#666]">
+              <div className="space-y-2 text-xs text-muted">
                 <div className="flex items-center gap-2">
                   <Calendar size={12} />
                   <span>Created {timeAgo(issue.created_at)}</span>
@@ -641,7 +694,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10px] text-[#555] uppercase tracking-wider font-medium">
+      <span className="text-[10px] text-muted uppercase tracking-wider font-medium">
         {label}
       </span>
       <div className="min-h-[32px] flex items-center">{children}</div>
@@ -678,13 +731,13 @@ function DropdownSelect({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-[#1f1f1f] transition-colors w-full"
+        className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-hover transition-colors w-full"
       >
         {renderSelected()}
-        <ChevronDown size={12} className="text-[#555] ml-auto shrink-0" />
+        <ChevronDown size={12} className="text-muted ml-auto shrink-0" />
       </button>
       {open && (
-        <div className="absolute top-full left-0 z-10 mt-1 w-44 rounded-lg border border-[#262626] bg-[#141414] py-1 shadow-xl">
+        <div className="absolute top-full left-0 z-10 mt-1 w-44 rounded-lg border border-border bg-surface py-1 shadow-xl">
           {options.map((opt) => (
             <button
               key={opt.key}
@@ -693,8 +746,8 @@ function DropdownSelect({
                 setOpen(false);
               }}
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-[#1f1f1f] transition-colors',
-                value === opt.key ? 'text-[#fafafa]' : 'text-[#a1a1aa]',
+                'flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-surface-hover transition-colors',
+                value === opt.key ? 'text-primary' : 'text-secondary',
               )}
             >
               <span
@@ -715,22 +768,22 @@ function TldrCard({ tldr }: { tldr: TLDR }) {
     passed: 'text-green-400',
     failed: 'text-red-400',
     skipped: 'text-yellow-400',
-    none: 'text-[#555]',
+    none: 'text-muted',
   };
 
   return (
-    <div className="rounded-lg border border-[#262626] bg-[#141414] p-4">
+    <div className="rounded-lg border border-border bg-surface p-4">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <Bot size={14} className="text-[#f59e0b]" />
-          <span className="text-xs font-medium text-[#fafafa]">{tldr.agent_name}</span>
+          <Bot size={14} className="text-accent" />
+          <span className="text-xs font-medium text-primary">{tldr.agent_name}</span>
         </div>
-        <span className="text-[10px] text-[#666]">{timeAgo(tldr.created_at)}</span>
+        <span className="text-[10px] text-muted">{timeAgo(tldr.created_at)}</span>
       </div>
-      <p className="text-sm text-[#d4d4d4] leading-relaxed mb-3">{tldr.summary}</p>
+      <p className="text-sm text-primary/90 leading-relaxed mb-3">{tldr.summary}</p>
       <div className="flex items-center gap-3 text-[10px]">
         {tldr.files_changed.length > 0 && (
-          <span className="flex items-center gap-1 text-[#a1a1aa]">
+          <span className="flex items-center gap-1 text-secondary">
             <FileText size={10} />
             {tldr.files_changed.length} files
           </span>
@@ -744,7 +797,7 @@ function TldrCard({ tldr }: { tldr: TLDR }) {
             href={tldr.pr_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 text-[#f59e0b] hover:underline"
+            className="flex items-center gap-1 text-accent hover:underline"
           >
             <GitPullRequest size={10} />
             PR
@@ -757,17 +810,17 @@ function TldrCard({ tldr }: { tldr: TLDR }) {
 
 function CommentCard({ comment }: { comment: Comment }) {
   return (
-    <div className="rounded-lg border border-[#262626] bg-[#141414] p-4">
+    <div className="rounded-lg border border-border bg-surface p-4">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded-full bg-[#1f1f1f] flex items-center justify-center text-[9px] font-bold text-[#a1a1aa]">
+          <div className="h-6 w-6 rounded-full bg-surface-hover flex items-center justify-center text-[9px] font-bold text-secondary">
             {comment.author_name.slice(0, 2).toUpperCase()}
           </div>
-          <span className="text-xs font-medium text-[#fafafa]">{comment.author_name}</span>
+          <span className="text-xs font-medium text-primary">{comment.author_name}</span>
         </div>
-        <span className="text-[10px] text-[#666]">{timeAgo(comment.created_at)}</span>
+        <span className="text-[10px] text-muted">{timeAgo(comment.created_at)}</span>
       </div>
-      <p className="text-sm text-[#d4d4d4] leading-relaxed whitespace-pre-wrap">
+      <p className="text-sm text-primary/90 leading-relaxed whitespace-pre-wrap">
         {comment.body}
       </p>
     </div>
