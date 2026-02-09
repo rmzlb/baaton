@@ -1,17 +1,20 @@
--- Baaton Schema v1
+-- Baaton Schema v1 (idempotent — safe to re-run)
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Organizations (synced from Clerk)
-CREATE TABLE organizations (
+CREATE TABLE IF NOT EXISTS organizations (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   slug TEXT UNIQUE NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Seed default org for dev
+INSERT INTO organizations (id, name, slug) VALUES ('default', 'Default', 'default') ON CONFLICT DO NOTHING;
+
 -- Projects
-CREATE TABLE projects (
+CREATE TABLE IF NOT EXISTS projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -31,7 +34,7 @@ CREATE TABLE projects (
 );
 
 -- Milestones
-CREATE TABLE milestones (
+CREATE TABLE IF NOT EXISTS milestones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -42,7 +45,7 @@ CREATE TABLE milestones (
 );
 
 -- Issues
-CREATE TABLE issues (
+CREATE TABLE IF NOT EXISTS issues (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL,
@@ -67,12 +70,12 @@ CREATE TABLE issues (
   UNIQUE(project_id, display_id)
 );
 
-CREATE INDEX idx_issues_project_status ON issues(project_id, status);
-CREATE INDEX idx_issues_milestone ON issues(milestone_id);
-CREATE INDEX idx_issues_parent ON issues(parent_id);
+CREATE INDEX IF NOT EXISTS idx_issues_project_status ON issues(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_issues_milestone ON issues(milestone_id);
+CREATE INDEX IF NOT EXISTS idx_issues_parent ON issues(parent_id);
 
--- TLDRs
-CREATE TABLE tldrs (
+-- TLDRs (agent work summaries)
+CREATE TABLE IF NOT EXISTS tldrs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   issue_id UUID NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
   agent_name TEXT NOT NULL,
@@ -83,10 +86,10 @@ CREATE TABLE tldrs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_tldrs_issue ON tldrs(issue_id);
+CREATE INDEX IF NOT EXISTS idx_tldrs_issue ON tldrs(issue_id);
 
 -- Comments
-CREATE TABLE comments (
+CREATE TABLE IF NOT EXISTS comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   issue_id UUID NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
   author_id TEXT NOT NULL,
@@ -96,10 +99,10 @@ CREATE TABLE comments (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_comments_issue ON comments(issue_id);
+CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(issue_id);
 
--- API Keys
-CREATE TABLE api_keys (
+-- API Keys (for agent auth)
+CREATE TABLE IF NOT EXISTS api_keys (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -111,11 +114,11 @@ CREATE TABLE api_keys (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_api_keys_org ON api_keys(org_id);
-CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_org ON api_keys(org_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 
 -- Activity Log
-CREATE TABLE activity_log (
+CREATE TABLE IF NOT EXISTS activity_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   issue_id UUID NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
   actor_id TEXT,
@@ -125,4 +128,4 @@ CREATE TABLE activity_log (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_activity_issue ON activity_log(issue_id);
+CREATE INDEX IF NOT EXISTS idx_activity_issue ON activity_log(issue_id);

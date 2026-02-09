@@ -3,7 +3,6 @@ use sqlx::PgPool;
 
 mod projects;
 mod issues;
-mod health;
 
 pub fn api_router(pool: PgPool) -> Router {
     Router::new()
