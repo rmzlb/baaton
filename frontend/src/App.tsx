@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp, OrganizationProfile, useUser } from '@clerk/clerk-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Landing } from '@/pages/Landing';
@@ -13,13 +13,34 @@ const isAppDomain = window.location.hostname === 'app.baaton.dev';
 
 function RootRoute() {
   const { isSignedIn, isLoaded } = useUser();
-  // On app.baaton.dev: always go to dashboard (or sign-in if not logged in)
   if (isAppDomain) {
     if (!isLoaded) return null;
     return isSignedIn ? <Navigate to="/dashboard" replace /> : <Navigate to="/sign-in" replace />;
   }
-  // On baaton.dev: show landing
   return <Landing />;
+}
+
+function ProtectedLayout() {
+  return (
+    <SignedIn>
+      <ErrorBoundary>
+        <AppLayout />
+      </ErrorBoundary>
+    </SignedIn>
+  );
+}
+
+function AuthGate() {
+  return (
+    <>
+      <SignedIn>
+        <Outlet />
+      </SignedIn>
+      <SignedOut>
+        <RedirectToSignIn />
+      </SignedOut>
+    </>
+  );
 }
 
 export function App() {
@@ -47,33 +68,22 @@ export function App() {
         }
       />
 
-      {/* Protected routes */}
-      <Route
-        element={
-          <>
-            <SignedIn>
-              <ErrorBoundary>
-                <AppLayout />
-              </ErrorBoundary>
-            </SignedIn>
-            <SignedOut>
-              <RedirectToSignIn />
-            </SignedOut>
-          </>
-        }
-      >
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/projects" element={<ProjectList />} />
-        <Route path="/projects/:slug" element={<ProjectBoard />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route
-          path="/org/*"
-          element={
-            <div className="flex min-h-screen items-center justify-center bg-neutral-950">
-              <OrganizationProfile routing="path" path="/org" />
-            </div>
-          }
-        />
+      {/* Protected routes — wrapped in auth gate + layout */}
+      <Route element={<AuthGate />}>
+        <Route element={<ProtectedLayout />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/projects" element={<ProjectList />} />
+          <Route path="/projects/:slug" element={<ProjectBoard />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route
+            path="/org/*"
+            element={
+              <div className="flex min-h-screen items-center justify-center bg-neutral-950">
+                <OrganizationProfile routing="path" path="/org" />
+              </div>
+            }
+          />
+        </Route>
       </Route>
     </Routes>
   );
