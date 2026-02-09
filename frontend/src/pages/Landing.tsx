@@ -23,7 +23,7 @@ export function Landing() {
   const { dark, toggle } = useTheme();
 
   return (
-    <>
+    <div className={`min-h-screen ${dark ? 'bg-[#080808]' : 'bg-[#F3EFE7]'} transition-colors duration-500`}>
       <div className="noise" />
 
       {/* ── Navbar ──────────────────────────────── */}
@@ -57,7 +57,7 @@ export function Landing() {
 
       {/* ── Hero ────────────────────────────────── */}
       <main className="sm:pt-48 sm:pb-32 overflow-hidden pt-36 pb-20 relative">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-glow-light dark:bg-glow opacity-100 pointer-events-none transition-opacity duration-700" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-glow-light dark:bg-glow-dark opacity-100 pointer-events-none transition-opacity duration-700" />
         <div className="absolute inset-0 bg-grid-pattern-light dark:bg-grid-pattern bg-[size:4rem_4rem] opacity-[0.04] dark:opacity-[0.03] pointer-events-none" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#F3EFE7] dark:to-[#080808] pointer-events-none" />
 
@@ -71,7 +71,7 @@ export function Landing() {
           {/* Headline */}
           <h1 className="font-display text-[15vw] sm:text-[11vw] md:text-[9rem] leading-[0.8] text-black dark:text-white mb-8 opacity-0 animate-reveal-up-delay uppercase tracking-tight">
             <span className="block">You Lead.</span>
-            <span className="block text-neutral-400 dark:text-neutral-600">AI Builds.</span>
+            <span className="block text-neutral-400 dark:text-neutral-500">AI Builds.</span>
           </h1>
 
           <p className="text-xl md:text-2xl text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto leading-relaxed mb-12 opacity-0 animate-reveal-up-delay-2 font-medium">
@@ -95,9 +95,9 @@ export function Landing() {
         {/* ── Kanban Mockup ──────────────────────── */}
         <div className="mt-32 max-w-6xl mx-auto px-4 perspective-container relative z-10 opacity-0 animate-fade-in-delay">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] h-[90%] bg-amber-500/10 blur-[80px] rounded-full pointer-events-none" />
-          <div className="tilted-board bg-[#FAFAFA] dark:bg-[#0A0A0A] border border-black/5 dark:border-white/10 rounded-xl shadow-2xl dark:shadow-none overflow-hidden ring-1 ring-black/5 dark:ring-white/5">
+          <div className="tilted-board bg-[#FAFAFA] dark:bg-[#0C0C0C] border border-black/5 dark:border-amber-500/10 rounded-xl shadow-2xl dark:shadow-[0_0_80px_-20px_rgba(245,158,11,0.15)] overflow-hidden ring-1 ring-black/5 dark:ring-amber-500/10">
             {/* Toolbar */}
-            <div className="h-14 border-b border-neutral-200 dark:border-white/5 flex items-center px-5 justify-between bg-white dark:bg-[#111]">
+            <div className="h-14 border-b border-neutral-200 dark:border-white/8 flex items-center px-5 justify-between bg-white dark:bg-[#111]">
               <div className="flex items-center gap-4">
                 <div className="flex gap-2">
                   <div className="w-3 h-3 rounded-full bg-neutral-300 dark:bg-neutral-800 border border-black/5" />
@@ -120,7 +120,7 @@ export function Landing() {
             </div>
 
             {/* Kanban Columns */}
-            <div className="grid grid-cols-1 md:grid-cols-3 divide-x divide-neutral-200 dark:divide-white/5 h-[550px] bg-[#F8F8F8] dark:bg-[#0A0A0A]">
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-x divide-neutral-200 dark:divide-white/8 h-[550px] bg-[#F8F8F8] dark:bg-[#0C0C0C]">
               {/* Backlog */}
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-center justify-between mb-2">
@@ -275,7 +275,7 @@ export function Landing() {
           <div className="text-neutral-500 font-medium">© 2026 Baaton Inc.</div>
         </div>
       </footer>
-    </>
+    </div>
   );
 }
 
@@ -283,7 +283,7 @@ export function Landing() {
 
 function KanbanCard({ id, title, tag }: { id: string; title: string; tag: string }) {
   return (
-    <div className="group p-4 rounded-lg border border-black/5 dark:border-white/5 bg-white dark:bg-[#111] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] hover:shadow-md hover:border-black/10 dark:hover:border-white/10 transition-all cursor-pointer">
+    <div className="group p-4 rounded-lg border border-black/5 dark:border-white/10 bg-white dark:bg-[#151515] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] hover:shadow-md hover:border-black/10 dark:hover:border-white/15 transition-all cursor-pointer">
       <div className="flex justify-between items-start mb-3">
         <span className="text-[10px] text-neutral-400 font-mono font-bold">{id}</span>
         <MoreHorizontal className="w-4 h-4 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity" />

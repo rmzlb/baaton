@@ -88,6 +88,7 @@ html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
 /* ─── Glow Backgrounds ─────────────────────── */
 .bg-glow { background: radial-gradient(circle at center, rgba(245, 158, 11, 0.15) 0%, rgba(0, 0, 0, 0) 70%); }
 .bg-glow-light { background: radial-gradient(circle at center, rgba(245, 158, 11, 0.08) 0%, rgba(0, 0, 0, 0) 60%); }
+.bg-glow-dark { background: radial-gradient(circle at center, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.05) 40%, rgba(0, 0, 0, 0) 70%); }
 .bg-grid-pattern { background-image: linear-gradient(to right, #262626 1px, transparent 1px), linear-gradient(to bottom, #262626 1px, transparent 1px); }
 .bg-grid-pattern-light { background-image: linear-gradient(to right, #e5e5e5 1px, transparent 1px), linear-gradient(to bottom, #e5e5e5 1px, transparent 1px); }
 
