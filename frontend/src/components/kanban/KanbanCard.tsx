@@ -108,8 +108,8 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
         aria-label={`${issue.display_id}: ${issue.title}`}
         style={{ ...provided.draggableProps.style, ...borderStyle }}
         className={cn(
-          'cursor-pointer rounded-md border border-border bg-surface px-2.5 py-1.5 transition-all hover:border-border',
-          isDragging && 'shadow-xl shadow-black/20 dark:shadow-black/40 border-accent/30 rotate-1',
+          'cursor-pointer rounded-md border border-border bg-surface px-2.5 py-1.5 will-change-transform transition-[box-shadow,border-color,transform] duration-200 ease-out hover:border-border',
+          isDragging && 'shadow-xl shadow-black/20 dark:shadow-black/40 border-accent/30 rotate-1 scale-[1.02]',
         )}
       >
         <CategoryBadges />

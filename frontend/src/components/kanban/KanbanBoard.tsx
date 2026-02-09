@@ -6,12 +6,14 @@ import {
 } from '@hello-pangea/dnd';
 import {
   Search, SlidersHorizontal, X, ArrowUp, ArrowDown, Minus, AlertTriangle,
-  Tag, User, ChevronDown, Layers,
+  Tag, User, ChevronDown, Layers, Inbox, SearchX,
 } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
 import { useIssuesStore } from '@/stores/issues';
+import { useNotificationStore } from '@/stores/notifications';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
+import { EmptyState } from '@/components/shared/EmptyState';
 import type { Issue, IssueStatus, IssuePriority, ProjectStatus, ProjectTag } from '@/lib/types';
 
 type FilterTab = 'active' | 'all' | 'backlog' | 'cancelled';
@@ -49,7 +51,9 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCreateIssue, projectTags = [] }: KanbanBoardProps) {
   const { t } = useTranslation();
-  const moveIssue = useIssuesStore((s) => s.moveIssue);
+  const moveIssueOptimistic = useIssuesStore((s) => s.moveIssueOptimistic);
+  const restoreIssues = useIssuesStore((s) => s.restoreIssues);
+  const addNotification = useNotificationStore((s) => s.addNotification);
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [sortMode, setSortMode] = useState<SortMode>('manual');
   const [searchQuery, setSearchQuery] = useState('');
@@ -211,8 +215,8 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         newPosition = (before + after) / 2;
       }
 
-      // Optimistic update
-      moveIssue(draggableId, newStatus, newPosition);
+      // Optimistic update: immediately update store, get snapshot for rollback
+      const previousSnapshot = moveIssueOptimistic(draggableId, newStatus, newPosition);
 
       // Announce status change
       const movedIssue = issues.find((i) => i.id === draggableId);
@@ -221,10 +225,19 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         `Issue ${movedIssue?.display_id || ''} moved to ${statusLabel}, position ${destination.index + 1}.`,
       );
 
-      // API call
-      onMoveIssue(draggableId, newStatus, newPosition);
+      // API call in background — rollback on failure
+      try {
+        onMoveIssue(draggableId, newStatus, newPosition);
+      } catch {
+        restoreIssues(previousSnapshot);
+        addNotification({
+          type: 'warning',
+          title: t('optimistic.moveError'),
+          message: t('optimistic.moveErrorDesc'),
+        });
+      }
     },
-    [issuesByStatus, moveIssue, onMoveIssue, announceToScreenReader, issues, visibleStatuses],
+    [issuesByStatus, moveIssueOptimistic, restoreIssues, addNotification, onMoveIssue, announceToScreenReader, issues, visibleStatuses, t],
   );
 
   const clearAllFilters = () => {
@@ -479,25 +492,43 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
       </div>
 
       {/* Board */}
-      <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="flex flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth">
-          {visibleStatuses.map((status) => (
-            <Droppable key={status.key} droppableId={status.key}>
-              {(provided, snapshot) => (
-                <KanbanColumn
-                  status={status}
-                  issues={issuesByStatus[status.key] || []}
-                  provided={provided}
-                  isDraggingOver={snapshot.isDraggingOver}
-                  onIssueClick={onIssueClick}
-                  onCreateIssue={onCreateIssue}
-                  projectTags={projectTags}
-                />
-              )}
-            </Droppable>
-          ))}
-        </div>
-      </DragDropContext>
+      {issues.length === 0 && !searchQuery && !hasActiveFilters ? (
+        <EmptyState
+          icon={Inbox}
+          title={t('empty.noIssues')}
+          description={t('empty.noIssuesDesc')}
+          action={onCreateIssue ? { label: t('projectBoard.newIssue'), onClick: () => onCreateIssue('todo') } : undefined}
+          className="flex-1"
+        />
+      ) : filteredIssues.length === 0 && (searchQuery || hasActiveFilters) ? (
+        <EmptyState
+          icon={SearchX}
+          title={t('empty.noFilterResults')}
+          description={t('empty.noFilterResultsDesc')}
+          action={{ label: t('kanban.clearAll'), onClick: clearAllFilters }}
+          className="flex-1"
+        />
+      ) : (
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <div className="flex flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth">
+            {visibleStatuses.map((status) => (
+              <Droppable key={status.key} droppableId={status.key}>
+                {(provided, snapshot) => (
+                  <KanbanColumn
+                    status={status}
+                    issues={issuesByStatus[status.key] || []}
+                    provided={provided}
+                    isDraggingOver={snapshot.isDraggingOver}
+                    onIssueClick={onIssueClick}
+                    onCreateIssue={onCreateIssue}
+                    projectTags={projectTags}
+                  />
+                )}
+              </Droppable>
+            ))}
+          </div>
+        </DragDropContext>
+      )}
     </div>
   );
 }

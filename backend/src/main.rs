@@ -49,8 +49,6 @@ async fn main() -> anyhow::Result<()> {
     sqlx::raw_sql(migration_006).execute(&pool).await?;
     let migration_007 = include_str!("../migrations/007_issue_creator_duedate.sql");
     sqlx::raw_sql(migration_007).execute(&pool).await?;
-    let migration_008 = include_str!("../migrations/008_activity_log.sql");
-    sqlx::raw_sql(migration_008).execute(&pool).await?;
     tracing::info!("Migrations applied");
 
     // Start GitHub sync job runner (background task)

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Kanban, ArrowRight, Trash2, X } from 'lucide-react';
+import { Plus, Kanban, ArrowRight, Trash2, X, Github } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
@@ -128,6 +128,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [prefix, setPrefix] = useState('');
   const [description, setDescription] = useState('');
+  const [githubRepoUrl, setGithubRepoUrl] = useState('');
   const [error, setError] = useState('');
 
   const slug = name

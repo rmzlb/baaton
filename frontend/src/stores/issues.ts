@@ -14,10 +14,15 @@ interface IssuesState {
   selectIssue: (id: string | null) => void;
   openDetail: (id: string) => void;
   closeDetail: () => void;
+
+  // Optimistic operations
+  moveIssueOptimistic: (issueId: string, newStatus: IssueStatus, newPosition: number) => Record<string, Issue>;
+  updateIssueOptimistic: (id: string, patch: Partial<Issue>) => Record<string, Issue>;
+  restoreIssues: (snapshot: Record<string, Issue>) => void;
 }
 
 export const useIssuesStore = create<IssuesState>()(
-  immer((set) => ({
+  immer((set, get) => ({
     issues: {},
     selectedIssueId: null,
     isDetailOpen: false,
@@ -59,6 +64,41 @@ export const useIssuesStore = create<IssuesState>()(
     closeDetail: () =>
       set((state) => {
         state.isDetailOpen = false;
+      }),
+
+    // ── Optimistic: move issue, return previous snapshot for rollback ──
+    moveIssueOptimistic: (issueId, newStatus, newPosition) => {
+      // Deep-copy current state for rollback (plain JS objects from immer)
+      const previousIssues = JSON.parse(JSON.stringify(get().issues)) as Record<string, Issue>;
+
+      set((state) => {
+        const issue = state.issues[issueId];
+        if (issue) {
+          issue.status = newStatus;
+          issue.position = newPosition;
+        }
+      });
+
+      return previousIssues;
+    },
+
+    // ── Optimistic: update any issue fields, return previous snapshot ──
+    updateIssueOptimistic: (id, patch) => {
+      const previousIssues = JSON.parse(JSON.stringify(get().issues)) as Record<string, Issue>;
+
+      set((state) => {
+        if (state.issues[id]) {
+          Object.assign(state.issues[id], patch);
+        }
+      });
+
+      return previousIssues;
+    },
+
+    // ── Restore state from snapshot (rollback) ──
+    restoreIssues: (snapshot) =>
+      set((state) => {
+        state.issues = snapshot;
       }),
   })),
 );

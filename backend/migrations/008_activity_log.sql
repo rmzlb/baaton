@@ -1,4 +1,8 @@
 -- Activity log for tracking all changes to issues
+-- Drop the old schema (different columns) so we can recreate with the correct structure.
+-- The old table had: issue_id, actor_id, actor_name, action, details
+-- The new one adds: org_id, project_id, user_id, user_name, field, old_value, new_value, metadata
+DROP TABLE IF EXISTS activity_log;
 CREATE TABLE IF NOT EXISTS activity_log (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id TEXT NOT NULL,

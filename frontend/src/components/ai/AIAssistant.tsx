@@ -1,8 +1,8 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles, X, Send, Trash2, Bot, User, Loader2,
-  Wrench, CheckCircle2, XCircle, ChevronDown,
+  Wrench, CheckCircle2, XCircle, ChevronDown, Wifi, WifiOff,
 } from 'lucide-react';
 import { useAIAssistantStore, type AIMessage } from '@/stores/ai-assistant';
 import { useApi } from '@/hooks/useApi';
@@ -13,6 +13,8 @@ import { MarkdownView } from '@/components/shared/MarkdownView';
 import type { Issue } from '@/lib/types';
 import type { SkillResult} from '@/lib/ai-skills';
 import { SKILL_TOOLS } from '@/lib/ai-skills';
+
+type AIMode = 'gemini' | 'openclaw';
 
 function useSuggestions() {
   const { t } = useTranslation();
@@ -115,10 +117,18 @@ export function AIAssistant() {
     toggle, setOpen, setInput, addMessage, setLoading, clearMessages,
   } = useAIAssistantStore();
 
+  const [aiMode, setAiMode] = useState<AIMode>('gemini');
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Fetch OpenClaw connection status
+  const { data: openclawConnection } = useQuery({
+    queryKey: ['openclaw-connection'],
+    queryFn: () => apiClient.openclaw.get(),
+    retry: false,
+  });
 
   // Fetch all projects
   const { data: projects = [] } = useQuery({
@@ -158,6 +168,46 @@ export function AIAssistant() {
     if (open) setTimeout(() => inputRef.current?.focus(), 200);
   }, [open]);
 
+  const openclawConnected = openclawConnection?.status === 'connected';
+
+  const handleSendOpenClaw = useCallback(
+    async (msg: string) => {
+      if (!openclawConnected) {
+        addMessage('assistant', `⚠️ ${t('ai.openclawNotConnected')}`);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Build org context
+        const contextParts: string[] = [];
+        contextParts.push(`Projects (${projects.length}):`);
+        for (const p of projects) {
+          const issues = allIssuesByProject[p.id] ?? [];
+          const byStatus: Record<string, number> = {};
+          for (const issue of issues) {
+            byStatus[issue.status] = (byStatus[issue.status] || 0) + 1;
+          }
+          const statusSummary = Object.entries(byStatus)
+            .map(([s, c]) => `${s}: ${c}`)
+            .join(', ');
+          contextParts.push(`- ${p.name} (${p.prefix}): ${issues.length} issues${statusSummary ? ` [${statusSummary}]` : ''}`);
+        }
+
+        const context = contextParts.join('\n');
+        const response = await apiClient.openclaw.chat(msg, context);
+        addMessage('assistant', response.response);
+      } catch (err) {
+        console.error('OpenClaw error:', err);
+        addMessage(
+          'assistant',
+          `⚠️ ${t('ai.error', { message: err instanceof Error ? err.message : t('ai.errorGeneric') })}`,
+        );
+      }
+    },
+    [openclawConnected, projects, allIssuesByProject, apiClient, addMessage, t],
+  );
+
   const handleSend = useCallback(
     async (text?: string) => {
       const msg = (text ?? input).trim();
@@ -166,6 +216,12 @@ export function AIAssistant() {
       setInput('');
       addMessage('user', msg);
       setLoading(true);
+
+      if (aiMode === 'openclaw') {
+        await handleSendOpenClaw(msg);
+        setLoading(false);
+        return;
+      }
 
       try {
         const history = messages.map((m) => ({ role: m.role, content: m.content }));
@@ -198,7 +254,7 @@ export function AIAssistant() {
         setLoading(false);
       }
     },
-    [input, loading, messages, projects, allIssuesByProject, apiClient, setInput, addMessage, setLoading, queryClient],
+    [input, loading, messages, projects, allIssuesByProject, apiClient, setInput, addMessage, setLoading, queryClient, aiMode, handleSendOpenClaw],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -239,40 +295,90 @@ export function AIAssistant() {
           style={{ maxHeight: 'min(580px, calc(100vh - 120px))' }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-border px-4 py-3 shrink-0 bg-surface">
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-500">
-                <Sparkles size={14} />
+          <div className="flex flex-col border-b border-border shrink-0 bg-surface">
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-500">
+                  <Sparkles size={14} />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-primary flex items-center gap-1.5">
+                    {t('ai.title')}
+                    {aiMode === 'gemini' && (
+                      <span className="rounded-full bg-emerald-500/20 text-emerald-400 px-1.5 py-0 text-[9px] font-medium">
+                        {t('ai.skills', { count: skillCount })}
+                      </span>
+                    )}
+                    {aiMode === 'openclaw' && (
+                      <span className={cn(
+                        'rounded-full px-1.5 py-0 text-[9px] font-medium flex items-center gap-0.5',
+                        openclawConnected
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : 'bg-red-500/20 text-red-400',
+                      )}>
+                        {openclawConnected ? <Wifi size={8} /> : <WifiOff size={8} />}
+                        {openclawConnected ? t('settings.connected') : t('settings.disconnected')}
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-[9px] text-muted">
+                    {aiMode === 'gemini'
+                      ? (totalIssues > 0 ? `${totalIssues} issues · ${projects.length} projects · Gemini Flash` : t('ai.loading'))
+                      : (openclawConnected
+                          ? `${totalIssues} issues · ${projects.length} projects · OpenClaw`
+                          : t('ai.openclawNotConnected')
+                        )
+                    }
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-xs font-bold text-primary flex items-center gap-1.5">
-                  {t('ai.title')}
-                  <span className="rounded-full bg-emerald-500/20 text-emerald-400 px-1.5 py-0 text-[9px] font-medium">
-                    {t('ai.skills', { count: skillCount })}
-                  </span>
-                </h3>
-                <p className="text-[9px] text-muted">
-                  {totalIssues > 0 ? `${totalIssues} issues · ${projects.length} projects · Gemini Flash` : t('ai.loading')}
-                </p>
+              <div className="flex items-center gap-1">
+                {messages.length > 0 && (
+                  <button
+                    onClick={clearMessages}
+                    className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
+                    title={t('ai.clearHistory')}
+                    aria-label={t('ai.clearHistory') || 'Clear chat history'}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
+                )}
+                <button
+                  onClick={() => setOpen(false)}
+                  aria-label={t('ai.closeAssistant') || 'Close AI assistant'}
+                  className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-1">
-              {messages.length > 0 && (
-                <button
-                  onClick={clearMessages}
-                  className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
-                  title={t('ai.clearHistory')}
-                  aria-label={t('ai.clearHistory') || 'Clear chat history'}
-                >
-                  <Trash2 size={14} aria-hidden="true" />
-                </button>
-              )}
+
+            {/* Mode Toggle */}
+            <div className="flex px-4 pb-2 gap-1">
               <button
-                onClick={() => setOpen(false)}
-                aria-label={t('ai.closeAssistant') || 'Close AI assistant'}
-                className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
+                onClick={() => setAiMode('gemini')}
+                className={cn(
+                  'flex-1 rounded-md px-2.5 py-1.5 text-[10px] font-medium transition-colors',
+                  aiMode === 'gemini'
+                    ? 'bg-accent text-black'
+                    : 'bg-surface-hover text-secondary hover:text-primary',
+                )}
               >
-                <X size={14} aria-hidden="true" />
+                {t('ai.modeGemini')}
+              </button>
+              <button
+                onClick={() => setAiMode('openclaw')}
+                className={cn(
+                  'flex-1 rounded-md px-2.5 py-1.5 text-[10px] font-medium transition-colors flex items-center justify-center gap-1',
+                  aiMode === 'openclaw'
+                    ? 'bg-accent text-black'
+                    : 'bg-surface-hover text-secondary hover:text-primary',
+                )}
+              >
+                {t('ai.modeOpenclaw')}
+                {openclawConnected && aiMode !== 'openclaw' && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                )}
               </button>
             </div>
           </div>
@@ -382,7 +488,10 @@ export function AIAssistant() {
               </button>
             </div>
             <p className="text-[9px] text-muted mt-1 text-center">
-              Gemini Flash · {SKILL_TOOLS[0].functionDeclarations.length} skills · {t('ai.realTimeData')}
+              {aiMode === 'gemini'
+                ? `Gemini Flash · ${SKILL_TOOLS[0].functionDeclarations.length} skills · ${t('ai.realTimeData')}`
+                : `OpenClaw · ${t('ai.realTimeData')}`
+              }
             </p>
           </div>
         </div>
