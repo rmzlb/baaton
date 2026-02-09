@@ -420,7 +420,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={onClose} />
         <div
           ref={panelRef}
-          className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:max-w-3xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right"
+          className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right"
         >
           <LoadingSkeleton />
         </div>
@@ -444,7 +444,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         role="dialog"
         aria-modal="true"
         aria-labelledby="issue-drawer-title"
-        className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:max-w-3xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right overflow-hidden"
+        className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right overflow-hidden"
       >
         {/* ── Header ── */}
         <div className="flex items-center justify-between border-b border-border px-4 py-2.5 shrink-0">
@@ -471,7 +471,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         <div className="flex-1 overflow-y-auto">
           <div className="flex flex-col md:flex-row min-h-full">
             {/* LEFT COLUMN: Title, Description, Comments */}
-            <div className="flex-1 min-w-0 p-4 space-y-4 border-b md:border-b-0 md:border-r border-border">
+            <div className="flex-1 min-w-0 p-5 md:p-6 space-y-5 border-b md:border-b-0 md:border-r border-border overflow-y-auto">
               {/* Title */}
               <div>
                 {editingTitle ? (
@@ -486,7 +486,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     }}
                     autoFocus
                     aria-label={t('issueDrawer.editTitle') || 'Edit issue title'}
-                    className="w-full bg-transparent text-base font-semibold text-primary outline-none border-b border-accent pb-1"
+                    className="w-full bg-transparent text-lg font-semibold text-primary outline-none border-b border-accent pb-1"
                   />
                 ) : (
                   <h2
@@ -495,7 +495,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                       setTitleDraft(issue.title);
                       setEditingTitle(true);
                     }}
-                    className="text-base font-semibold text-primary cursor-pointer hover:text-accent transition-colors leading-snug"
+                    className="text-lg font-semibold text-primary cursor-pointer hover:text-accent transition-colors leading-snug"
                   >
                     {issue.title}
                   </h2>
@@ -562,7 +562,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             </div>
 
             {/* RIGHT COLUMN: Metadata Sidebar */}
-            <div className="w-full md:w-64 shrink-0 p-4 space-y-4">
+            <div className="w-full md:w-56 lg:w-60 shrink-0 p-3 space-y-3 bg-surface/30">
               <MetadataSidebar
                 issue={issue}
                 availableStatuses={availableStatuses}
@@ -734,7 +734,7 @@ function DescriptionView({ description, editing, draft, onStartEdit, onDraftChan
       {description ? (
         <div
           onDoubleClick={onStartEdit}
-          className="rounded-lg bg-surface border border-border p-3 cursor-text hover:border-accent/30 transition-colors min-h-[60px]"
+          className="rounded-lg bg-surface border border-border p-4 cursor-text hover:border-accent/30 transition-colors min-h-[80px]"
         >
           {hasHtml ? (
             <div
