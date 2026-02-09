@@ -1,20 +1,26 @@
 import { useState } from 'react';
 import { OrganizationProfile } from '@clerk/clerk-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Plus, Trash2, Copy, Eye, EyeOff, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { KeyRound, Plus, Trash2, Copy, Eye, EyeOff, CheckCircle2, AlertTriangle, Globe } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
+import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
 import type { ApiKey } from '@/lib/types';
 
 export function Settings() {
+  const { t } = useTranslation();
+
   return (
     <div className="p-4 md:p-6 space-y-8">
       <div>
-        <h1 className="text-xl md:text-2xl font-bold text-primary">Settings</h1>
+        <h1 className="text-xl md:text-2xl font-bold text-primary">{t('settings.title')}</h1>
         <p className="mt-1 text-sm text-secondary">
-          Organization settings and API keys
+          {t('settings.description')}
         </p>
       </div>
+
+      {/* Language Section */}
+      <LanguageSection />
 
       {/* API Keys Section */}
       <ApiKeysSection />
@@ -22,7 +28,7 @@ export function Settings() {
       {/* Clerk Organization Profile */}
       <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
         <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4">
-          Organization
+          {t('settings.organization')}
         </h2>
         <OrganizationProfile
           appearance={{
@@ -37,7 +43,40 @@ export function Settings() {
   );
 }
 
+function LanguageSection() {
+  const { t, i18n } = useTranslation();
+
+  const handleLanguageChange = (lang: string) => {
+    i18n.changeLanguage(lang);
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <Globe size={20} className="text-accent" />
+        <div>
+          <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">
+            {t('settings.language')}
+          </h2>
+          <p className="text-xs text-secondary mt-0.5">
+            {t('settings.languageDesc')}
+          </p>
+        </div>
+      </div>
+      <select
+        value={i18n.language}
+        onChange={(e) => handleLanguageChange(e.target.value)}
+        className="w-full max-w-xs rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary focus:border-accent focus:outline-none transition-colors"
+      >
+        <option value="en">English</option>
+        <option value="fr">Français</option>
+      </select>
+    </div>
+  );
+}
+
 function ApiKeysSection() {
+  const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
@@ -89,10 +128,10 @@ function ApiKeysSection() {
           <KeyRound size={20} className="text-accent" />
           <div>
             <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">
-              API Keys
+              {t('settings.apiKeys')}
             </h2>
             <p className="text-xs text-secondary mt-0.5">
-              Create API keys for AI agents to access your projects
+              {t('settings.apiKeysDesc')}
             </p>
           </div>
         </div>
@@ -105,7 +144,7 @@ function ApiKeysSection() {
             <AlertTriangle size={20} className="text-amber-400 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-amber-200">
-                Copy your API key now — it won't be shown again!
+                {t('settings.copyWarning')}
               </p>
               <div className="mt-2 flex items-center gap-2">
                 <code className="flex-1 rounded-md bg-bg px-3 py-2 text-xs font-mono text-primary border border-border truncate">
@@ -122,7 +161,7 @@ function ApiKeysSection() {
                 onClick={() => setNewKeySecret(null)}
                 className="mt-2 text-xs text-amber-400 hover:underline"
               >
-                I've copied it, dismiss
+                {t('settings.dismiss')}
               </button>
             </div>
           </div>
@@ -133,12 +172,12 @@ function ApiKeysSection() {
       {showCreate ? (
         <form onSubmit={handleCreate} className="mb-6 flex items-end gap-3">
           <div className="flex-1">
-            <label className="block text-xs text-secondary mb-1.5">Key Name</label>
+            <label className="block text-xs text-secondary mb-1.5">{t('settings.keyName')}</label>
             <input
               type="text"
               value={newKeyName}
               onChange={(e) => setNewKeyName(e.target.value)}
-              placeholder="e.g., claude-code-agent"
+              placeholder={t('settings.keyNamePlaceholder')}
               className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none transition-colors"
               autoFocus
             />
@@ -148,14 +187,14 @@ function ApiKeysSection() {
             disabled={!newKeyName.trim() || createMutation.isPending}
             className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-black hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {createMutation.isPending ? 'Creating…' : 'Create'}
+            {createMutation.isPending ? t('settings.creatingKey') : t('settings.createKey')}
           </button>
           <button
             type="button"
             onClick={() => { setShowCreate(false); setNewKeyName(''); }}
             className="rounded-lg px-3 py-2.5 text-sm text-secondary hover:text-primary transition-colors"
           >
-            Cancel
+            {t('settings.cancel')}
           </button>
         </form>
       ) : (
@@ -164,21 +203,21 @@ function ApiKeysSection() {
           className="mb-6 flex items-center gap-2 rounded-lg border border-dashed border-border px-4 py-2.5 text-sm text-secondary hover:border-accent hover:text-accent transition-colors w-full justify-center min-h-[44px]"
         >
           <Plus size={16} />
-          Generate New API Key
+          {t('settings.generateKey')}
         </button>
       )}
 
       {/* Existing Keys List */}
       {!endpointAvailable ? (
         <div className="text-center py-6 text-xs text-secondary">
-          <p>API key management not available yet.</p>
-          <p className="mt-1">The backend endpoint <code className="font-mono text-accent">/api/v1/api-keys</code> is not implemented.</p>
+          <p>{t('settings.noKeysEndpoint')}</p>
+          <p className="mt-1">{t('settings.noKeysEndpointHint')}</p>
         </div>
       ) : isLoading ? (
-        <div className="text-center py-6 text-sm text-secondary">Loading keys…</div>
+        <div className="text-center py-6 text-sm text-secondary">{t('settings.loadingKeys')}</div>
       ) : apiKeys.length === 0 ? (
         <div className="text-center py-6 text-xs text-secondary">
-          No API keys yet. Create one to connect AI agents.
+          {t('settings.noKeys')}
         </div>
       ) : (
         <div className="space-y-2">
@@ -187,7 +226,7 @@ function ApiKeysSection() {
               key={key.id}
               apiKey={key}
               onDelete={() => {
-                if (confirm(`Revoke API key "${key.name}"? This cannot be undone.`)) {
+                if (confirm(t('settings.revokeConfirm', { name: key.name }))) {
                   deleteMutation.mutate(key.id);
                 }
               }}
@@ -198,10 +237,10 @@ function ApiKeysSection() {
 
       {/* Usage info */}
       <div className="mt-6 rounded-lg border border-border bg-bg p-4">
-        <h3 className="text-xs font-semibold text-primary mb-2">Usage</h3>
+        <h3 className="text-xs font-semibold text-primary mb-2">{t('settings.usage')}</h3>
         <div className="space-y-2 text-xs text-secondary font-mono">
-          <p># Use the API key in requests:</p>
-          <p className="text-primary">curl -H "Authorization: Bearer baa_your_key_here" \</p>
+          <p>{t('settings.usageComment')}</p>
+          <p className="text-primary">curl -H &quot;Authorization: Bearer baa_your_key_here&quot; \</p>
           <p className="text-primary pl-4">https://api.baaton.dev/api/v1/projects</p>
         </div>
       </div>
@@ -210,6 +249,7 @@ function ApiKeysSection() {
 }
 
 function ApiKeyRow({ apiKey, onDelete }: { apiKey: ApiKey; onDelete: () => void }) {
+  const { t } = useTranslation();
   const [showPrefix, setShowPrefix] = useState(false);
 
   return (
@@ -236,11 +276,11 @@ function ApiKeyRow({ apiKey, onDelete }: { apiKey: ApiKey; onDelete: () => void 
               )}
             </button>
             <span className="text-[10px] text-secondary">
-              · created {timeAgo(apiKey.created_at)}
+              · {t('settings.created', { time: timeAgo(apiKey.created_at) })}
             </span>
             {apiKey.last_used_at && (
               <span className="text-[10px] text-secondary hidden sm:inline">
-                · used {timeAgo(apiKey.last_used_at)}
+                · {t('settings.used', { time: timeAgo(apiKey.last_used_at) })}
               </span>
             )}
           </div>

@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Kanban, ArrowRight, Trash2, X } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
+import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
 
 export function ProjectList() {
+  const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
@@ -26,9 +28,9 @@ export function ProjectList() {
     <div className="p-4 md:p-6">
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-primary">Projects</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-primary">{t('projectList.title')}</h1>
           <p className="mt-1 text-sm text-secondary">
-            Manage your projects and boards
+            {t('projectList.description')}
           </p>
         </div>
         <button
@@ -36,33 +38,33 @@ export function ProjectList() {
           className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover transition-colors min-h-[40px]"
         >
           <Plus size={16} strokeWidth={2.5} />
-          <span className="hidden sm:inline">New Project</span>
+          <span className="hidden sm:inline">{t('projectList.newProject')}</span>
         </button>
       </div>
 
       {error && (
         <div className="mb-6 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-          Failed to load projects: {error instanceof Error ? error.message : 'Unknown error'}
+          {t('projectList.failedLoad', { message: error instanceof Error ? error.message : 'Unknown error' })}
         </div>
       )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-24 text-sm text-secondary">
-          Loading projects…
+          {t('projectList.loadingProjects')}
         </div>
       ) : projects.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-24">
           <Kanban size={48} className="text-secondary mb-4" />
-          <p className="text-sm text-secondary">No projects yet</p>
+          <p className="text-sm text-secondary">{t('projectList.noProjects')}</p>
           <p className="mt-1 text-xs text-secondary">
-            Create your first project to start collecting issues
+            {t('projectList.noProjectsDesc')}
           </p>
           <button
             onClick={() => setShowCreate(true)}
             className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover transition-colors"
           >
             <Plus size={16} strokeWidth={2.5} />
-            Create Project
+            {t('projectList.createProject')}
           </button>
         </div>
       ) : (
@@ -82,7 +84,7 @@ export function ProjectList() {
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (confirm(`Delete project "${project.name}"? This cannot be undone.`)) {
+                      if (confirm(t('projectList.deleteConfirm', { name: project.name }))) {
                         deleteMutation.mutate(project.id);
                       }
                     }}
@@ -119,6 +121,7 @@ export function ProjectList() {
 }
 
 function CreateProjectModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
@@ -151,7 +154,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      setError('Project name is required');
+      setError(t('projectList.projectNameRequired'));
       return;
     }
     setError('');
@@ -162,7 +165,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm p-4">
       <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-primary">Create Project</h2>
+          <h2 className="text-lg font-semibold text-primary">{t('projectList.createProject')}</h2>
           <button
             onClick={onClose}
             className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
@@ -179,25 +182,25 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
           )}
 
           <div>
-            <label className="block text-xs text-secondary mb-1.5">Project Name *</label>
+            <label className="block text-xs text-secondary mb-1.5">{t('projectList.projectName')}</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My Project"
+              placeholder={t('projectList.projectNamePlaceholder')}
               className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none transition-colors"
               autoFocus
             />
             {slug && (
               <p className="mt-1 text-[10px] text-secondary font-mono">
-                Slug: {slug}
+                {t('projectList.slug', { slug })}
               </p>
             )}
           </div>
 
           <div>
             <label className="block text-xs text-secondary mb-1.5">
-              Prefix <span className="text-muted">(for issue IDs like BAA-1)</span>
+              {t('projectList.prefix')} <span className="text-muted">({t('projectList.prefixHint')})</span>
             </label>
             <input
               type="text"
@@ -210,11 +213,11 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div>
-            <label className="block text-xs text-secondary mb-1.5">Description</label>
+            <label className="block text-xs text-secondary mb-1.5">{t('projectList.descriptionLabel')}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What is this project about?"
+              placeholder={t('projectList.descriptionPlaceholder')}
               rows={3}
               className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none resize-none transition-colors"
             />
@@ -226,14 +229,14 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
               onClick={onClose}
               className="rounded-lg px-4 py-2 text-sm text-secondary hover:text-primary transition-colors"
             >
-              Cancel
+              {t('projectList.cancel')}
             </button>
             <button
               type="submit"
               disabled={!name.trim() || createMutation.isPending}
               className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              {createMutation.isPending ? 'Creating…' : 'Create Project'}
+              {createMutation.isPending ? t('projectList.creatingProject') : t('projectList.createProject')}
             </button>
           </div>
         </form>

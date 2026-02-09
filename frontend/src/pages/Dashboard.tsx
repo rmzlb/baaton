@@ -1,12 +1,14 @@
 import { useOrganization } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
+import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
 import { Kanban, Bug, Sparkles, Zap, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Issue, Project } from '@/lib/types';
 
 export function Dashboard() {
+  const { t } = useTranslation();
   const { organization } = useOrganization();
   const apiClient = useApi();
 
@@ -48,10 +50,10 @@ export function Dashboard() {
     .slice(0, 10);
 
   const stats = [
-    { label: 'Open Issues', value: openIssues.length, color: '#3b82f6' },
-    { label: 'In Progress', value: inProgress.length, color: '#f59e0b' },
-    { label: 'In Review', value: inReview.length, color: '#8b5cf6' },
-    { label: 'Done This Week', value: doneThisWeek.length, color: '#22c55e' },
+    { label: t('dashboard.openIssues'), value: openIssues.length, color: '#3b82f6' },
+    { label: t('dashboard.inProgress'), value: inProgress.length, color: '#f59e0b' },
+    { label: t('dashboard.inReview'), value: inReview.length, color: '#8b5cf6' },
+    { label: t('dashboard.doneThisWeek'), value: doneThisWeek.length, color: '#22c55e' },
   ];
 
   const projectMap = projects.reduce((acc, p) => {
@@ -63,10 +65,10 @@ export function Dashboard() {
     <div className="p-4 md:p-6">
       <div className="mb-8">
         <h1 className="text-xl md:text-2xl font-bold text-primary">
-          {organization?.name || 'Dashboard'}
+          {organization?.name || t('dashboard.title')}
         </h1>
         <p className="mt-1 text-sm text-secondary">
-          Overview of your projects and recent activity
+          {t('dashboard.overview')}
         </p>
       </div>
 
@@ -93,28 +95,28 @@ export function Dashboard() {
         <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">
-              Projects
+              {t('dashboard.projects')}
             </h2>
             <Link
               to="/projects"
               className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
             >
-              View all <ArrowRight size={12} />
+              {t('dashboard.viewAll')} <ArrowRight size={12} />
             </Link>
           </div>
           {projectsLoading ? (
             <div className="flex items-center justify-center py-12 text-sm text-secondary">
-              Loading projects…
+              {t('dashboard.loadingProjects')}
             </div>
           ) : projects.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12">
               <Kanban size={32} className="text-secondary mb-2" />
-              <p className="text-sm text-secondary">No projects yet</p>
+              <p className="text-sm text-secondary">{t('dashboard.noProjects')}</p>
               <Link
                 to="/projects"
                 className="mt-2 text-xs text-accent hover:underline"
               >
-                Create your first project
+                {t('dashboard.createFirst')}
               </Link>
             </div>
           ) : (
@@ -134,7 +136,7 @@ export function Dashboard() {
                       <div>
                         <p className="text-sm font-medium text-primary">{project.name}</p>
                         <p className="text-xs text-secondary">
-                          {projectIssues.length} issue{projectIssues.length !== 1 ? 's' : ''}
+                          {projectIssues.length} {projectIssues.length !== 1 ? t('dashboard.issues') : t('dashboard.issue')}
                         </p>
                       </div>
                     </div>
@@ -149,15 +151,15 @@ export function Dashboard() {
         {/* Recent Activity */}
         <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
           <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4">
-            Recent Activity
+            {t('dashboard.recentActivity')}
           </h2>
           {issuesLoading ? (
             <div className="flex items-center justify-center py-12 text-sm text-secondary">
-              Loading activity…
+              {t('dashboard.loadingActivity')}
             </div>
           ) : recentIssues.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-sm text-secondary">
-              No activity yet. Create your first project to get started.
+              {t('dashboard.noActivity')}
             </div>
           ) : (
             <div className="space-y-1">

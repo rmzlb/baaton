@@ -7,6 +7,7 @@ import {
 import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { useApi } from '@/hooks/useApi';
 import { useIssuesStore } from '@/stores/issues';
+import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
 import type { Issue, IssuePriority, IssueType } from '@/lib/types';
 
@@ -24,11 +25,11 @@ const typeColors: Record<IssueType, string> = {
   question: 'text-purple-400',
 };
 
-const priorityConfig: Record<IssuePriority, { icon: typeof ArrowUp; color: string; label: string }> = {
-  urgent: { icon: AlertTriangle, color: '#ef4444', label: 'Urgent' },
-  high: { icon: ArrowUp, color: '#f97316', label: 'High' },
-  medium: { icon: Minus, color: '#eab308', label: 'Medium' },
-  low: { icon: ArrowDown, color: '#6b7280', label: 'Low' },
+const priorityConfig: Record<IssuePriority, { icon: typeof ArrowUp; color: string }> = {
+  urgent: { icon: AlertTriangle, color: '#ef4444' },
+  high: { icon: ArrowUp, color: '#f97316' },
+  medium: { icon: Minus, color: '#eab308' },
+  low: { icon: ArrowDown, color: '#6b7280' },
 };
 
 const statusColors: Record<string, string> = {
@@ -41,6 +42,7 @@ const statusColors: Record<string, string> = {
 };
 
 export function MyTasks() {
+  const { t } = useTranslation();
   const { user } = useUser();
   const apiClient = useApi();
   const openDetail = useIssuesStore((s) => s.openDetail);
@@ -87,7 +89,7 @@ export function MyTasks() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-secondary">
-        Loading your tasks…
+        {t('myTasks.loading')}
       </div>
     );
   }
@@ -99,10 +101,10 @@ export function MyTasks() {
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-primary flex items-center gap-2">
             <CheckSquare size={20} className="text-accent" />
-            My Tasks
+            {t('myTasks.title')}
           </h1>
           <p className="text-xs text-secondary font-mono uppercase tracking-wider">
-            {myIssues.length} issue{myIssues.length !== 1 ? 's' : ''} assigned to you
+            {t('myTasks.assignedToYou', { count: myIssues.length })}
           </p>
         </div>
       </div>
@@ -112,8 +114,8 @@ export function MyTasks() {
         {Object.keys(groupedByProject).length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <CheckSquare size={40} className="text-border mb-3" />
-            <p className="text-sm text-secondary">No tasks assigned to you</p>
-            <p className="text-xs text-muted mt-1">Issues you're assigned to will appear here.</p>
+            <p className="text-sm text-secondary">{t('myTasks.noTasks')}</p>
+            <p className="text-xs text-muted mt-1">{t('myTasks.noTasksDesc')}</p>
           </div>
         ) : (
           <div className="space-y-6">

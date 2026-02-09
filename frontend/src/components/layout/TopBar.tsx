@@ -8,10 +8,12 @@ import {
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useApi } from '@/hooks/useApi';
+import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import type { Issue, Project } from '@/lib/types';
 
 export function TopBar() {
+  const { t } = useTranslation();
   const commandBarOpen = useUIStore((s) => s.commandBarOpen);
   const openCommandBar = useUIStore((s) => s.openCommandBar);
   const closeCommandBar = useUIStore((s) => s.closeCommandBar);
@@ -35,7 +37,7 @@ export function TopBar() {
   }, [commandBarOpen, openCommandBar, closeCommandBar]);
 
   // Breadcrumb from URL
-  const breadcrumbs = buildBreadcrumbs(location.pathname);
+  const breadcrumbs = buildBreadcrumbs(location.pathname, t);
 
   return (
     <>
@@ -73,7 +75,7 @@ export function TopBar() {
           className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary hover:border-border hover:text-primary transition-colors"
         >
           <Search size={14} />
-          <span className="hidden sm:inline">Search…</span>
+          <span className="hidden sm:inline">{t('topbar.search')}</span>
           <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-mono text-muted">
             ⌘K
           </kbd>
@@ -86,24 +88,30 @@ export function TopBar() {
   );
 }
 
-function buildBreadcrumbs(pathname: string): string[] {
+function buildBreadcrumbs(pathname: string, t: (key: string) => string): string[] {
   const parts = pathname.split('/').filter(Boolean);
-  if (parts.length === 0) return ['Dashboard'];
+  if (parts.length === 0) return [t('sidebar.dashboard')];
 
   const crumbs: string[] = [];
   for (const part of parts) {
     switch (part) {
       case 'dashboard':
-        crumbs.push('Dashboard');
+        crumbs.push(t('sidebar.dashboard'));
         break;
       case 'projects':
-        crumbs.push('Projects');
+        crumbs.push(t('sidebar.projects'));
         break;
       case 'settings':
-        crumbs.push('Settings');
+        crumbs.push(t('sidebar.settings'));
         break;
       case 'org':
-        crumbs.push('Team');
+        crumbs.push(t('sidebar.team'));
+        break;
+      case 'my-tasks':
+        crumbs.push(t('sidebar.myTasks'));
+        break;
+      case 'all-issues':
+        crumbs.push(t('sidebar.allIssues'));
         break;
       default:
         // Project slug or other
@@ -115,6 +123,7 @@ function buildBreadcrumbs(pathname: string): string[] {
 }
 
 function CommandPalette({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const apiClient = useApi();
   const [search, setSearch] = useState('');
@@ -195,7 +204,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
               ref={inputRef}
               value={search}
               onValueChange={setSearch}
-              placeholder="Search issues, projects, pages…"
+              placeholder={t('topbar.searchPlaceholder')}
               autoFocus
               className="h-12 w-full bg-transparent px-3 text-sm text-primary placeholder-muted outline-none"
             />
@@ -206,27 +215,27 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
           <Command.List className="max-h-80 overflow-y-auto p-2">
             <Command.Empty className="px-4 py-8 text-center text-sm text-muted">
-              No results found.
+              {t('topbar.noResults')}
             </Command.Empty>
 
             {/* Pages */}
             {!q && (
-              <Command.Group heading={<GroupHeading>Pages</GroupHeading>}>
+              <Command.Group heading={<GroupHeading>{t('topbar.pages')}</GroupHeading>}>
                 <PaletteItem icon={<LayoutDashboard size={16} />} onSelect={() => runAction('/dashboard')}>
-                  Dashboard
+                  {t('sidebar.dashboard')}
                 </PaletteItem>
                 <PaletteItem icon={<Kanban size={16} />} onSelect={() => runAction('/projects')}>
-                  Projects
+                  {t('sidebar.projects')}
                 </PaletteItem>
                 <PaletteItem icon={<Settings size={16} />} onSelect={() => runAction('/settings')}>
-                  Settings
+                  {t('sidebar.settings')}
                 </PaletteItem>
               </Command.Group>
             )}
 
             {/* Projects */}
             {filteredProjects.length > 0 && (
-              <Command.Group heading={<GroupHeading>Projects</GroupHeading>}>
+              <Command.Group heading={<GroupHeading>{t('topbar.projects')}</GroupHeading>}>
                 {filteredProjects.map((p: Project) => (
                   <PaletteItem
                     key={p.id}
@@ -241,13 +250,12 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
             {/* Issues */}
             {filteredIssues.length > 0 && (
-              <Command.Group heading={<GroupHeading>Issues</GroupHeading>}>
+              <Command.Group heading={<GroupHeading>{t('topbar.issues')}</GroupHeading>}>
                 {filteredIssues.map((issue: Issue) => (
                   <PaletteItem
                     key={issue.id}
                     icon={<FileText size={14} className="text-secondary" />}
                     onSelect={() => {
-                      // Navigate to the project board (issue detail will open)
                       const project = projects.find((p) => p.id === issue.project_id);
                       if (project) {
                         runAction(`/projects/${project.slug}`);

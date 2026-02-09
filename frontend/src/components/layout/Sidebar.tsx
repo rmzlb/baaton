@@ -3,27 +3,34 @@ import { NavLink } from 'react-router-dom';
 import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import {
   LayoutDashboard, Kanban, Settings, ChevronLeft, ChevronRight, Users, X,
-  Sun, Moon, CheckSquare, Layers,
+  Sun, Moon, CheckSquare, Layers, Globe,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
+import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 
-const navItems = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/my-tasks', icon: CheckSquare, label: 'My Tasks' },
-  { to: '/all-issues', icon: Layers, label: 'All Issues' },
-  { to: '/projects', icon: Kanban, label: 'Projects' },
-  { to: '/org', icon: Users, label: 'Team' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-];
-
 export function Sidebar() {
+  const { t, i18n } = useTranslation();
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggle = useUIStore((s) => s.toggleSidebar);
   const mobileOpen = useUIStore((s) => s.sidebarMobileOpen);
   const closeMobile = useUIStore((s) => s.closeMobileSidebar);
   const theme = useUIStore((s) => s.theme);
   const toggleTheme = useUIStore((s) => s.toggleTheme);
+
+  const navItems = [
+    { to: '/dashboard', icon: LayoutDashboard, label: t('sidebar.dashboard') },
+    { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks') },
+    { to: '/all-issues', icon: Layers, label: t('sidebar.allIssues') },
+    { to: '/projects', icon: Kanban, label: t('sidebar.projects') },
+    { to: '/org', icon: Users, label: t('sidebar.team') },
+    { to: '/settings', icon: Settings, label: t('sidebar.settings') },
+  ];
+
+  const toggleLanguage = () => {
+    const next = i18n.language === 'fr' ? 'en' : 'fr';
+    i18n.changeLanguage(next);
+  };
 
   // Close mobile sidebar on route change (via escape or backdrop)
   useEffect(() => {
@@ -123,6 +130,22 @@ export function Sidebar() {
 
         {/* Footer */}
         <div className="border-t border-border p-3 space-y-2">
+          {/* Language toggle */}
+          <button
+            onClick={toggleLanguage}
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors w-full min-h-[40px]',
+              'text-secondary hover:bg-surface-hover hover:text-primary',
+              collapsed && !mobileOpen && 'justify-center px-0',
+            )}
+            title={t('sidebar.language')}
+          >
+            <Globe size={18} />
+            {(!collapsed || mobileOpen) && (
+              <span className="text-xs font-mono uppercase">{i18n.language === 'fr' ? 'FR' : 'EN'}</span>
+            )}
+          </button>
+
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}
@@ -131,11 +154,11 @@ export function Sidebar() {
               'text-secondary hover:bg-surface-hover hover:text-primary',
               collapsed && !mobileOpen && 'justify-center px-0',
             )}
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}
           >
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             {(!collapsed || mobileOpen) && (
-              <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+              <span>{theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}</span>
             )}
           </button>
 

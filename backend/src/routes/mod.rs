@@ -1,5 +1,7 @@
-use axum::{Router, routing::{get, post, patch, delete}};
+use axum::{Router, routing::{get, post, patch, delete}, middleware as axum_mw};
 use sqlx::PgPool;
+
+use crate::middleware::auth_middleware;
 
 mod projects;
 mod issues;
@@ -8,8 +10,9 @@ mod tldrs;
 mod tags;
 
 pub fn api_router(pool: PgPool) -> Router {
-    Router::new()
-        // Projects
+    // Protected routes — require valid Clerk JWT with org_id filtering
+    let protected = Router::new()
+        // Projects (org-scoped)
         .route("/projects", get(projects::list).post(projects::create))
         .route("/projects/{id}", get(projects::get_one).patch(projects::update).delete(projects::remove))
         .route("/projects/{id}/issues", get(issues::list_by_project))
@@ -23,7 +26,14 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/issues/{id}/tldr", post(tldrs::create))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
-        // Public
-        .route("/public/{slug}/submit", post(issues::public_submit))
+        .layer(axum_mw::from_fn(auth_middleware));
+
+    // Public routes — no auth needed
+    let public = Router::new()
+        .route("/public/{slug}/submit", post(issues::public_submit));
+
+    Router::new()
+        .merge(protected)
+        .merge(public)
         .with_state(pool)
 }

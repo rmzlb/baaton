@@ -6,6 +6,7 @@ import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { useApi } from '@/hooks/useApi';
 import { useIssuesStore } from '@/stores/issues';
 import { useUIStore, type BoardDensity } from '@/stores/ui';
+import { useTranslation } from '@/hooks/useTranslation';
 import {
   Layers, Kanban, List, Rows3, Rows4, StretchHorizontal,
   Filter, ChevronDown, X,
@@ -124,6 +125,7 @@ function DensityToggle() {
 
 // ─── Main Component ───────────────────────────
 export function AllIssues() {
+  const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const openDetail = useIssuesStore((s) => s.openDetail);
@@ -222,7 +224,7 @@ export function AllIssues() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-secondary">
-        Loading all issues…
+        {t('allIssues.loading')}
       </div>
     );
   }
@@ -234,10 +236,10 @@ export function AllIssues() {
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-primary truncate flex items-center gap-2">
             <Layers size={20} className="text-accent shrink-0" />
-            All Issues
+            {t('allIssues.title')}
           </h1>
           <p className="text-xs text-secondary font-mono uppercase tracking-wider">
-            {filteredIssues.length} issue{filteredIssues.length !== 1 ? 's' : ''} · {projects.length} project{projects.length !== 1 ? 's' : ''} · {viewMode} view
+            {t('allIssues.issueCount', { count: filteredIssues.length })} · {t('allIssues.projectCount', { count: projects.length })} · {viewMode} view
           </p>
         </div>
 
@@ -253,7 +255,7 @@ export function AllIssues() {
             )}
           >
             <Filter size={12} />
-            Filter
+            {t('allIssues.filter')}
             {hasFilters && (
               <span className="rounded-full bg-accent text-black px-1.5 text-[10px] font-bold">
                 {projectFilter.length}
@@ -274,7 +276,7 @@ export function AllIssues() {
                   ? 'bg-surface-hover text-primary'
                   : 'text-muted hover:text-secondary',
               )}
-              title="Kanban view"
+              title={t('projectBoard.kanbanView')}
             >
               <Kanban size={16} />
             </button>
@@ -286,7 +288,7 @@ export function AllIssues() {
                   ? 'bg-surface-hover text-primary'
                   : 'text-muted hover:text-secondary',
               )}
-              title="List view"
+              title={t('projectBoard.listView')}
             >
               <List size={16} />
             </button>
@@ -298,7 +300,7 @@ export function AllIssues() {
       {showFilters && (
         <div className="flex items-center gap-2 border-b border-border px-4 md:px-6 py-2 bg-surface/50">
           <MultiSelect
-            label="Project"
+            label={t('allIssues.project')}
             options={projects.map((p) => ({ value: p.id, label: `${p.prefix} — ${p.name}` }))}
             selected={projectFilter}
             onChange={setProjectFilter}
@@ -308,7 +310,7 @@ export function AllIssues() {
               onClick={() => setProjectFilter([])}
               className="flex items-center gap-1 text-xs text-muted hover:text-primary transition-colors"
             >
-              <X size={12} /> Clear
+              <X size={12} /> {t('allIssues.clear')}
             </button>
           )}
         </div>

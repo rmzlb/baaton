@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
 import { useIssuesStore } from '@/stores/issues';
+import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import type { Issue, IssueStatus, IssuePriority, ProjectStatus, ProjectTag } from '@/lib/types';
 
@@ -47,6 +48,7 @@ interface KanbanBoardProps {
 }
 
 export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCreateIssue, projectTags = [] }: KanbanBoardProps) {
+  const { t } = useTranslation();
   const moveIssue = useIssuesStore((s) => s.moveIssue);
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [sortMode, setSortMode] = useState<SortMode>('manual');
@@ -239,17 +241,17 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
   };
 
   const filterTabs: { key: FilterTab; label: string }[] = [
-    { key: 'active', label: 'Active' },
-    { key: 'all', label: 'All' },
-    { key: 'backlog', label: 'Backlog' },
-    { key: 'cancelled', label: 'Cancelled' },
+    { key: 'active', label: t('kanban.active') },
+    { key: 'all', label: t('kanban.all') },
+    { key: 'backlog', label: t('kanban.backlog') },
+    { key: 'cancelled', label: t('kanban.cancelled') },
   ];
 
   const sortOptions: { key: SortMode; label: string }[] = [
-    { key: 'manual', label: 'Manual' },
-    { key: 'priority', label: 'Priority' },
-    { key: 'created', label: 'Created' },
-    { key: 'updated', label: 'Updated' },
+    { key: 'manual', label: t('kanban.manual') },
+    { key: 'priority', label: t('kanban.priority') },
+    { key: 'created', label: t('kanban.created') },
+    { key: 'updated', label: t('kanban.updated') },
   ];
 
   return (
@@ -263,7 +265,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter issues…"
+            placeholder={t('kanban.filterIssues')}
             className="h-8 w-40 sm:w-48 rounded-md border border-border bg-surface pl-8 pr-3 text-xs text-primary placeholder-muted outline-none focus:border-accent transition-colors"
           />
         </div>
@@ -289,7 +291,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         {/* Priority Filter Dropdown */}
         <FilterDropdown
           icon={<AlertTriangle size={12} />}
-          label="Priority"
+          label={t('kanban.priority')}
           count={selectedPriorities.length}
         >
           {PRIORITY_CONFIG.map((p) => (
@@ -315,7 +317,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         {/* Category Filter Dropdown */}
         <FilterDropdown
           icon={<Layers size={12} />}
-          label="Category"
+          label={t('kanban.category')}
           count={selectedCategories.length}
         >
           {CATEGORY_CONFIG.map((c) => (
@@ -345,7 +347,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         {uniqueTags.length > 0 && (
           <FilterDropdown
             icon={<Tag size={12} />}
-            label="Tags"
+            label={t('kanban.tags')}
             count={selectedTags.length}
           >
             {uniqueTags.map((tag) => {
@@ -380,7 +382,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         {uniqueAssignees.length > 0 && (
           <FilterDropdown
             icon={<User size={12} />}
-            label="Assignee"
+            label={t('kanban.assignee')}
             count={selectedAssignees.length}
           >
             {uniqueAssignees.map((a) => (
@@ -413,7 +415,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
             className="flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-accent hover:bg-accent/10 transition-colors"
           >
             <X size={12} />
-            Clear all
+            {t('kanban.clearAll')}
           </button>
         )}
 

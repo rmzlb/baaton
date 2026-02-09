@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useIssuesStore } from '@/stores/issues';
 import { useApi } from '@/hooks/useApi';
+import { useTranslation } from '@/hooks/useTranslation';
 import { cn, timeAgo } from '@/lib/utils';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import type { IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus } from '@/lib/types';
@@ -51,6 +52,7 @@ interface IssueDrawerProps {
 }
 
 export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDrawerProps) {
+  const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const { user } = useUser();
@@ -237,7 +239,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
           ref={panelRef}
           className="fixed inset-y-0 right-0 z-50 w-full md:w-[45%] lg:w-[40%] bg-bg border-l border-border flex items-center justify-center animate-slide-in-right"
         >
-          <span className="text-sm text-secondary">Loading…</span>
+          <span className="text-sm text-secondary">{t('issueDrawer.loading')}</span>
         </div>
       </>
     );
@@ -310,7 +312,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             {/* Properties Grid */}
             <div className="grid grid-cols-2 gap-3">
               {/* Status */}
-              <PropertyRow label="Status">
+              <PropertyRow label={t('issueDrawer.status')}>
                 <DropdownSelect
                   value={issue.status}
                   options={availableStatuses.map((s) => ({
@@ -334,7 +336,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               </PropertyRow>
 
               {/* Priority */}
-              <PropertyRow label="Priority">
+              <PropertyRow label={t('issueDrawer.priority')}>
                 <DropdownSelect
                   value={issue.priority || ''}
                   options={[
@@ -359,7 +361,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                           </span>
                         </>
                       ) : (
-                        <span className="text-sm text-muted">None</span>
+                        <span className="text-sm text-muted">{t('issueDrawer.none')}</span>
                       )}
                     </span>
                   )}
@@ -367,7 +369,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               </PropertyRow>
 
               {/* Type */}
-              <PropertyRow label="Type">
+              <PropertyRow label={t('issueDrawer.type')}>
                 <span className="flex items-center gap-2">
                   <TypeIcon size={14} className={typeColor} />
                   <span className="text-sm text-primary">
@@ -377,7 +379,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               </PropertyRow>
 
               {/* Source */}
-              <PropertyRow label="Source">
+              <PropertyRow label={t('issueDrawer.source')}>
                 <span className="text-sm text-secondary capitalize">{issue.source}</span>
               </PropertyRow>
             </div>
@@ -386,7 +388,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             <div>
               <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <Tag size={12} />
-                Tags
+                {t('issueDrawer.tags')}
               </label>
               <div className="flex flex-wrap gap-1.5">
                 {issue.tags.map((tag) => {
@@ -402,7 +404,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                         color: color,
                       }}
                       onClick={() => handleToggleTag(tag)}
-                      title="Click to remove"
+                      title={t('issueDrawer.removeTag')}
                     >
                       {tag} ×
                     </span>

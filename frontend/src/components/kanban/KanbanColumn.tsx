@@ -2,6 +2,7 @@ import { Draggable, type DroppableProvided } from '@hello-pangea/dnd';
 import { Plus } from 'lucide-react';
 import { KanbanCard } from './KanbanCard';
 import { useUIStore } from '@/stores/ui';
+import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import type { Issue, ProjectStatus, ProjectTag } from '@/lib/types';
 
@@ -36,6 +37,7 @@ export function KanbanColumn({
   onCreateIssue,
   projectTags,
 }: KanbanColumnProps) {
+  const { t } = useTranslation();
   const density = useUIStore((s) => s.density);
 
   return (
@@ -109,7 +111,7 @@ export function KanbanColumn({
             )}
           >
             <Plus size={14} className="mr-1" />
-            Add issue
+            {t('kanban.addIssue')}
           </button>
         )}
       </div>
