@@ -2,6 +2,7 @@ use axum::{extract::Extension, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::middleware::AuthUser;
+use crate::models::ApiResponse;
 
 #[derive(Debug, Deserialize)]
 pub struct InviteRequest {
@@ -44,7 +45,7 @@ fn get_clerk_secret() -> Result<String, (StatusCode, String)> {
 /// GET /api/v1/invites — List pending org invitations with their URLs.
 pub async fn list(
     Extension(auth): Extension<AuthUser>,
-) -> Result<Json<Vec<InviteResponse>>, (StatusCode, String)> {
+) -> Result<Json<ApiResponse<Vec<InviteResponse>>>, (StatusCode, String)> {
     let org_id = auth.org_id.as_deref().ok_or((
         StatusCode::BAD_REQUEST,
         r#"{"error":"No active organization"}"#.to_string(),
@@ -85,7 +86,7 @@ pub async fn list(
         })
         .collect();
 
-    Ok(Json(invites))
+    Ok(Json(ApiResponse::new(invites)))
 }
 
 /// POST /api/v1/invites — Create an org invitation via Clerk Backend API.
@@ -93,7 +94,7 @@ pub async fn list(
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
     Json(body): Json<InviteRequest>,
-) -> Result<Json<InviteResponse>, (StatusCode, String)> {
+) -> Result<Json<ApiResponse<InviteResponse>>, (StatusCode, String)> {
     let org_id = auth.org_id.as_deref().ok_or((
         StatusCode::BAD_REQUEST,
         r#"{"error":"No active organization"}"#.to_string(),
@@ -142,11 +143,11 @@ pub async fn create(
         )
     })?;
 
-    Ok(Json(InviteResponse {
+    Ok(Json(ApiResponse::new(InviteResponse {
         id: clerk_resp.id,
         email_address: clerk_resp.email_address,
         status: clerk_resp.status,
         role: clerk_resp.role,
         url: clerk_resp.url,
-    }))
+    })))
 }
