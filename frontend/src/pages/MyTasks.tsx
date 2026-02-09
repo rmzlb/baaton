@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useUser } from '@clerk/clerk-react';
@@ -51,7 +51,8 @@ export function MyTasks() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkHandled = useRef(false);
 
   // Fetch all projects for name mapping
   const { data: projects = [] } = useQuery({
@@ -66,32 +67,30 @@ export function MyTasks() {
     enabled: !!user?.id,
   });
 
-  // ── Deep link: ?issue=HLM-18 ──
+  // ── Deep link: open from ?issue=HLM-18 on initial load only ──
   useEffect(() => {
+    if (deepLinkHandled.current) return;
     const issueParam = searchParams.get('issue');
-    if (issueParam && myIssues.length > 0 && !isDetailOpen) {
+    if (issueParam && myIssues.length > 0) {
       const found = myIssues.find((i) => i.display_id.toLowerCase() === issueParam.toLowerCase());
       if (found) openDetail(found.id);
+      deepLinkHandled.current = true;
     }
-  }, [searchParams, myIssues, isDetailOpen, openDetail]);
+  }, [searchParams, myIssues, openDetail]);
 
   useEffect(() => {
     if (isDetailOpen && selectedIssueId) {
       const issue = myIssues.find((i) => i.id === selectedIssueId);
       if (issue) {
-        const url = new URL(window.location.href);
-        url.searchParams.set('issue', issue.display_id);
-        window.history.replaceState(null, '', url.toString());
+        setSearchParams((prev) => { prev.set('issue', issue.display_id); return prev; }, { replace: true });
       }
     }
-  }, [isDetailOpen, selectedIssueId, myIssues]);
+  }, [isDetailOpen, selectedIssueId, myIssues, setSearchParams]);
 
   const handleCloseDetail = useCallback(() => {
     closeDetail();
-    const url = new URL(window.location.href);
-    url.searchParams.delete('issue');
-    window.history.replaceState(null, '', url.toString());
-  }, [closeDetail]);
+    setSearchParams((prev) => { prev.delete('issue'); return prev; }, { replace: true });
+  }, [closeDetail, setSearchParams]);
 
   // Group by project
   const groupedByProject = myIssues.reduce(

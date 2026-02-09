@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
@@ -134,7 +134,8 @@ export function AllIssues() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkHandled = useRef(false);
 
   // View mode
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -219,32 +220,30 @@ export function AllIssues() {
     positionMutation.mutate({ id: issueId, status: newStatus, position: newPosition });
   };
 
-  // ── Deep link: ?issue=HLM-18 ──
+  // ── Deep link: open from ?issue=HLM-18 on initial load only ──
   useEffect(() => {
+    if (deepLinkHandled.current) return;
     const issueParam = searchParams.get('issue');
-    if (issueParam && allIssuesRaw.length > 0 && !isDetailOpen) {
+    if (issueParam && allIssuesRaw.length > 0) {
       const found = allIssuesRaw.find((i) => i.display_id.toLowerCase() === issueParam.toLowerCase());
       if (found) openDetail(found.id);
+      deepLinkHandled.current = true;
     }
-  }, [searchParams, allIssuesRaw, isDetailOpen, openDetail]);
+  }, [searchParams, allIssuesRaw, openDetail]);
 
   useEffect(() => {
     if (isDetailOpen && selectedIssueId) {
       const issue = allIssuesRaw.find((i) => i.id === selectedIssueId);
       if (issue) {
-        const url = new URL(window.location.href);
-        url.searchParams.set('issue', issue.display_id);
-        window.history.replaceState(null, '', url.toString());
+        setSearchParams((prev) => { prev.set('issue', issue.display_id); return prev; }, { replace: true });
       }
     }
-  }, [isDetailOpen, selectedIssueId, allIssuesRaw]);
+  }, [isDetailOpen, selectedIssueId, allIssuesRaw, setSearchParams]);
 
   const handleCloseDetail = useCallback(() => {
     closeDetail();
-    const url = new URL(window.location.href);
-    url.searchParams.delete('issue');
-    window.history.replaceState(null, '', url.toString());
-  }, [closeDetail]);
+    setSearchParams((prev) => { prev.delete('issue'); return prev; }, { replace: true });
+  }, [closeDetail, setSearchParams]);
 
   // Find selected issue for drawer
   const selectedIssue = allIssuesRaw.find((i) => i.id === selectedIssueId);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
@@ -39,7 +39,8 @@ export function ProjectBoard() {
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
   const [showCreateIssue, setShowCreateIssue] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkHandled = useRef(false);
 
   // View mode with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -69,39 +70,42 @@ export function ProjectBoard() {
     enabled: !!project?.id,
   });
 
-  // ── Deep link: sync URL ?issue=HLM-18 ↔ drawer ──
-  // On load: if ?issue=HLM-18, find and open it
+  // ── Deep link: open drawer from ?issue=HLM-18 on initial load only ──
   useEffect(() => {
+    if (deepLinkHandled.current) return;
     const issueParam = searchParams.get('issue');
-    if (issueParam && issuesList.length > 0 && !isDetailOpen) {
+    if (issueParam && issuesList.length > 0) {
       const found = issuesList.find(
         (i) => i.display_id.toLowerCase() === issueParam.toLowerCase(),
       );
       if (found) {
         openDetail(found.id);
       }
+      deepLinkHandled.current = true;
     }
-  }, [searchParams, issuesList, isDetailOpen, openDetail]);
+  }, [searchParams, issuesList, openDetail]);
 
-  // When drawer opens: update URL with display_id (no React re-render)
+  // When drawer opens: update URL with display_id
   useEffect(() => {
     if (isDetailOpen && selectedIssueId) {
       const issue = issuesList.find((i) => i.id === selectedIssueId);
       if (issue) {
-        const url = new URL(window.location.href);
-        url.searchParams.set('issue', issue.display_id);
-        window.history.replaceState(null, '', url.toString());
+        setSearchParams((prev) => {
+          prev.set('issue', issue.display_id);
+          return prev;
+        }, { replace: true });
       }
     }
-  }, [isDetailOpen, selectedIssueId, issuesList]);
+  }, [isDetailOpen, selectedIssueId, issuesList, setSearchParams]);
 
-  // Wrap closeDetail to also clear URL param (no React re-render)
+  // Wrap closeDetail to also clear URL param
   const handleCloseDetail = useCallback(() => {
     closeDetail();
-    const url = new URL(window.location.href);
-    url.searchParams.delete('issue');
-    window.history.replaceState(null, '', url.toString());
-  }, [closeDetail]);
+    setSearchParams((prev) => {
+      prev.delete('issue');
+      return prev;
+    }, { replace: true });
+  }, [closeDetail, setSearchParams]);
 
   // Fetch project tags
   const { data: projectTags = [] } = useQuery({
