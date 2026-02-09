@@ -1,5 +1,5 @@
-import { Routes, Route } from 'react-router-dom';
-import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp, OrganizationProfile } from '@clerk/clerk-react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp, OrganizationProfile, useUser } from '@clerk/clerk-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Landing } from '@/pages/Landing';
 import { Dashboard } from '@/pages/Dashboard';
@@ -9,11 +9,24 @@ import { Settings } from '@/pages/Settings';
 import { PublicSubmit } from '@/pages/PublicSubmit';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 
+const isAppDomain = window.location.hostname === 'app.baaton.dev';
+
+function RootRoute() {
+  const { isSignedIn, isLoaded } = useUser();
+  // On app.baaton.dev: always go to dashboard (or sign-in if not logged in)
+  if (isAppDomain) {
+    if (!isLoaded) return null;
+    return isSignedIn ? <Navigate to="/dashboard" replace /> : <Navigate to="/sign-in" replace />;
+  }
+  // On baaton.dev: show landing
+  return <Landing />;
+}
+
 export function App() {
   return (
     <Routes>
-      {/* Public routes */}
-      <Route path="/" element={<Landing />} />
+      {/* Root: landing on baaton.dev, dashboard redirect on app.baaton.dev */}
+      <Route path="/" element={<RootRoute />} />
       <Route path="/submit/:slug" element={<PublicSubmit />} />
 
       {/* Auth routes */}
