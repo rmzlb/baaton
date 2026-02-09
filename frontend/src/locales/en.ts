@@ -525,6 +525,7 @@ As a [user], I want to [action] so that [benefit].
   'topbar.organizations': 'Organizations',
   'topbar.activeOrg': 'Active',
   'topbar.switchOrg': 'Switch',
+  'topbar.recentIssues': 'Recent Issues',
   'topbar.searchHint': 'Search issues, projects, orgs...',
   'topbar.navigate': 'navigate',
   'topbar.select': 'select',

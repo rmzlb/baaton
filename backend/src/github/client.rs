@@ -105,7 +105,7 @@ impl GitHubClient {
 
         // POST /app/installations/{installation_id}/access_tokens
         let token_response: serde_json::Value = app_crab
-            ._post(
+            .post(
                 format!("/app/installations/{}/access_tokens", installation_id),
                 None::<&()>,
             )

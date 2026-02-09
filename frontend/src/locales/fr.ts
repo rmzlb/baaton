@@ -525,6 +525,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'topbar.organizations': 'Organisations',
   'topbar.activeOrg': 'Active',
   'topbar.switchOrg': 'Basculer',
+  'topbar.recentIssues': 'Issues récentes',
   'topbar.searchHint': 'Chercher issues, projets, orgs...',
   'topbar.navigate': 'naviguer',
   'topbar.select': 'sélectionner',

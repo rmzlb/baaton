@@ -190,14 +190,19 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   // Filter
   const q = search.toLowerCase();
 
+  // Sort all issues by updated_at descending (recent first)
+  const sortedIssues = [...allIssues].sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  );
+
   const filteredIssues = q
     ? allIssues.filter(
         (i) =>
           i.title.toLowerCase().includes(q) ||
           i.display_id.toLowerCase().includes(q) ||
           i.tags.some((tag) => tag.toLowerCase().includes(q)),
-      ).slice(0, 8)
-    : [];
+      ).slice(0, 10)
+    : sortedIssues.slice(0, 6); // show recent issues even without search
 
   const filteredProjects = q
     ? projects.filter(
@@ -320,7 +325,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
             {/* Issues */}
             {filteredIssues.length > 0 && (
-              <Command.Group heading={<GroupHeading>{t('topbar.issues')}</GroupHeading>}>
+              <Command.Group heading={<GroupHeading>{q ? t('topbar.issues') : t('topbar.recentIssues')}</GroupHeading>}>
                 {filteredIssues.map((issue: Issue) => (
                   <PaletteItem
                     key={issue.id}

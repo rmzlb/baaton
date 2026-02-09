@@ -70,7 +70,10 @@ pub async fn callback(
 
     // GET /app/installations/{installation_id}
     let install_info: serde_json::Value = app_crab
-        ._get(format!("/app/installations/{}", installation_id))
+        .get(
+            format!("/app/installations/{}", installation_id),
+            None::<&()>,
+        )
         .await
         .map_err(|e| {
             tracing::error!("Failed to fetch installation info: {}", e);
@@ -215,10 +218,10 @@ async fn sync_installation_repos(
     let mut page: u32 = 1;
     loop {
         let response: serde_json::Value = crab
-            ._get(format!(
-                "/installation/repositories?per_page=100&page={}",
-                page
-            ))
+            .get(
+                format!("/installation/repositories?per_page=100&page={}", page),
+                None::<&()>,
+            )
             .await?;
 
         let repos = response["repositories"]
