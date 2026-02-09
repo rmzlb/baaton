@@ -4,9 +4,10 @@ type RequestOptions = {
   method?: string;
   body?: unknown;
   token?: string | null;
+  isPublic?: boolean;
 };
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     public status: number,
     public code: string,
@@ -18,13 +19,13 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, token } = opts;
+  const { method = 'GET', body, token, isPublic = false } = opts;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  if (token) {
+  if (token && !isPublic) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
@@ -34,13 +35,34 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const json = await res.json();
+  // Handle 204 No Content
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await res.text();
+
+  // Handle empty responses
+  if (!text) {
+    if (!res.ok) {
+      throw new ApiError(res.status, 'UNKNOWN', `Request failed with status ${res.status}`);
+    }
+    return undefined as T;
+  }
+
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new ApiError(res.status, 'PARSE_ERROR', 'Invalid JSON response from server');
+  }
 
   if (!res.ok) {
+    const errorBody = json.error as Record<string, string> | undefined;
     throw new ApiError(
       res.status,
-      json.error?.code || 'UNKNOWN',
-      json.error?.message || 'An error occurred',
+      errorBody?.code || 'UNKNOWN',
+      errorBody?.message || 'An error occurred',
     );
   }
 
@@ -59,6 +81,13 @@ export const api = {
 
   delete: <T>(path: string, token?: string | null) =>
     request<T>(path, { method: 'DELETE', token }),
-};
 
-export { ApiError };
+  // Public endpoints (no auth token needed)
+  public: {
+    post: <T>(path: string, body: unknown) =>
+      request<T>(path, { method: 'POST', body, isPublic: true }),
+
+    get: <T>(path: string) =>
+      request<T>(path, { isPublic: true }),
+  },
+};

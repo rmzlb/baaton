@@ -7,6 +7,7 @@ import { ProjectBoard } from '@/pages/ProjectBoard';
 import { ProjectList } from '@/pages/ProjectList';
 import { Settings } from '@/pages/Settings';
 import { PublicSubmit } from '@/pages/PublicSubmit';
+import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 
 export function App() {
   return (
@@ -33,12 +34,14 @@ export function App() {
         }
       />
 
-      {/* Protected routes */}
+      {/* Protected routes — wrapped with onboarding */}
       <Route
         element={
           <>
             <SignedIn>
-              <AppLayout />
+              <OnboardingFlow>
+                <AppLayout />
+              </OnboardingFlow>
             </SignedIn>
             <SignedOut>
               <RedirectToSignIn />

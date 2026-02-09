@@ -31,8 +31,10 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Connected to database");
 
     // Run migrations at runtime (reads .sql files from disk or embedded)
-    let migration_sql = include_str!("../migrations/001_init.sql");
-    sqlx::raw_sql(migration_sql).execute(&pool).await?;
+    let migration_001 = include_str!("../migrations/001_init.sql");
+    sqlx::raw_sql(migration_001).execute(&pool).await?;
+    let migration_002 = include_str!("../migrations/002_sprints.sql");
+    sqlx::raw_sql(migration_002).execute(&pool).await?;
     tracing::info!("Migrations applied");
 
     // CORS

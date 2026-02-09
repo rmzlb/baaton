@@ -63,6 +63,15 @@
 .bg-grid-pattern { background-image: linear-gradient(to right, #262626 1px, transparent 1px), linear-gradient(to bottom, #262626 1px, transparent 1px); }
 .bg-grid-pattern-light { background-image: linear-gradient(to right, #e5e5e5 1px, transparent 1px), linear-gradient(to bottom, #e5e5e5 1px, transparent 1px); }
 
+/* ─── Drawer Animation ─────────────────────── */
+@keyframes slideInRight {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slideInRight 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* ─── Transitions ──────────────────────────── */
 body, .bg-transition {
   transition: background-color 0.5s ease, color 0.5s ease, border-color 0.5s ease;

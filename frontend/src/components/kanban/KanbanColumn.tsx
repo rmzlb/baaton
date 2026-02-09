@@ -1,5 +1,5 @@
 import { Draggable, type DroppableProvided } from '@hello-pangea/dnd';
-import { Plus } from '@phosphor-icons/react';
+import { Plus } from 'lucide-react';
 import { KanbanCard } from './KanbanCard';
 import type { Issue, ProjectStatus } from '@/lib/types';
 
@@ -9,6 +9,7 @@ interface KanbanColumnProps {
   provided: DroppableProvided;
   isDraggingOver: boolean;
   onIssueClick: (issue: Issue) => void;
+  onCreateIssue?: (statusKey: string) => void;
 }
 
 export function KanbanColumn({
@@ -17,14 +18,15 @@ export function KanbanColumn({
   provided,
   isDraggingOver,
   onIssueClick,
+  onCreateIssue,
 }: KanbanColumnProps) {
   return (
-    <div className="flex h-full w-72 min-w-72 flex-col">
+    <div className="flex h-full w-72 min-w-[280px] flex-col">
       {/* Column Header */}
       <div className="flex items-center justify-between px-2 pb-3">
         <div className="flex items-center gap-2">
           <div
-            className="h-2.5 w-2.5 rounded-full"
+            className="h-2.5 w-2.5 rounded-full shrink-0"
             style={{ backgroundColor: status.color }}
           />
           <span className="text-sm font-medium text-[#fafafa]">
@@ -34,7 +36,10 @@ export function KanbanColumn({
             {issues.length}
           </span>
         </div>
-        <button className="rounded-md p-1 text-[#a1a1aa] hover:bg-[#1f1f1f] hover:text-[#fafafa] transition-colors">
+        <button
+          onClick={() => onCreateIssue?.(status.key)}
+          className="rounded-md p-1 text-[#a1a1aa] hover:bg-[#1f1f1f] hover:text-[#fafafa] transition-colors min-h-[32px] min-w-[32px] flex items-center justify-center"
+        >
           <Plus size={16} />
         </button>
       </div>
@@ -63,9 +68,13 @@ export function KanbanColumn({
 
         {/* Empty state */}
         {issues.length === 0 && !isDraggingOver && (
-          <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-[#262626] text-xs text-[#a1a1aa]">
-            No issues
-          </div>
+          <button
+            onClick={() => onCreateIssue?.(status.key)}
+            className="flex h-24 w-full items-center justify-center rounded-lg border border-dashed border-[#262626] text-xs text-[#a1a1aa] hover:border-[#f59e0b] hover:text-[#f59e0b] transition-colors min-h-[44px]"
+          >
+            <Plus size={14} className="mr-1" />
+            Add issue
+          </button>
         )}
       </div>
     </div>

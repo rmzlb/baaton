@@ -6,6 +6,7 @@ export type IssuePriority = 'urgent' | 'high' | 'medium' | 'low';
 export type IssueSource = 'web' | 'api' | 'form' | 'email';
 export type TestsStatus = 'passed' | 'failed' | 'skipped' | 'none';
 export type MilestoneStatus = 'active' | 'completed' | 'cancelled';
+export type SprintStatus = 'planning' | 'active' | 'completed';
 
 // ─── Models ───────────────────────────────────────────
 
@@ -44,10 +45,22 @@ export interface Milestone {
   created_at: string;
 }
 
+export interface Sprint {
+  id: string;
+  project_id: string;
+  name: string;
+  goal: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  status: SprintStatus;
+  created_at: string;
+}
+
 export interface Issue {
   id: string;
   project_id: string;
   milestone_id: string | null;
+  sprint_id: string | null;
   parent_id: string | null;
   display_id: string;
   title: string;
