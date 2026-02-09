@@ -35,8 +35,8 @@ const priorityConfig: Record<IssuePriority, { icon: typeof ArrowUp; color: strin
 };
 
 export function KanbanCard({ issue, provided, isDragging, onClick }: KanbanCardProps) {
-  const TypeIcon = typeIcons[issue.type];
-  const PriorityConfig = issue.priority ? priorityConfig[issue.priority] : null;
+  const TypeIcon = typeIcons[issue.type] ?? Sparkles;
+  const PriorityConfig = issue.priority ? (priorityConfig[issue.priority] ?? null) : null;
 
   return (
     <div
