@@ -1,9 +1,8 @@
 /**
  * Notion-style WYSIWYG editor powered by Novel (Tiptap).
- * Lightweight (~40KB), slash commands, bubble menu, dark/light mode.
- * https://novel.sh
+ * Slash commands, bubble menu, dark/light mode.
  */
-import { useCallback, useRef } from 'react';
+import { useMemo, useCallback, useRef } from 'react';
 import {
   EditorRoot,
   EditorContent,
@@ -17,6 +16,8 @@ import {
   useEditor as useNovelEditor,
   createSuggestionItems,
   handleCommandNavigation,
+  Command,
+  renderItems,
   Placeholder,
   StarterKit,
   TaskList,
@@ -29,7 +30,6 @@ import {
   Color,
   TextStyle,
   GlobalDragHandle,
-  CustomKeymap,
 } from 'novel';
 import { generateJSON } from '@tiptap/core';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -37,30 +37,121 @@ import { cn } from '@/lib/utils';
 import {
   Heading1, Heading2, Heading3, List, ListOrdered, CheckSquare,
   Code, Quote, Minus, Bold, Italic, Underline, Strikethrough,
-  Code2, Highlighter,
+  Code2, Highlighter, Type,
 } from 'lucide-react';
 
-// ─── Slash command items ────────────────────────
-const suggestionItems = createSuggestionItems([
-  { title: 'Heading 1', description: 'Large heading', searchTerms: ['h1', 'title'], icon: <Heading1 size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setNode('heading', { level: 1 }).run(); } },
-  { title: 'Heading 2', description: 'Medium heading', searchTerms: ['h2', 'subtitle'], icon: <Heading2 size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setNode('heading', { level: 2 }).run(); } },
-  { title: 'Heading 3', description: 'Small heading', searchTerms: ['h3'], icon: <Heading3 size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setNode('heading', { level: 3 }).run(); } },
-  { title: 'Bullet List', description: 'Unordered list', searchTerms: ['ul', 'unordered'], icon: <List size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleBulletList().run(); } },
-  { title: 'Numbered List', description: 'Ordered list', searchTerms: ['ol', 'ordered'], icon: <ListOrdered size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleOrderedList().run(); } },
-  { title: 'Task List', description: 'Checklist', searchTerms: ['todo', 'checkbox'], icon: <CheckSquare size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleTaskList().run(); } },
-  { title: 'Code Block', description: 'Code snippet', searchTerms: ['code', 'pre'], icon: <Code size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleCodeBlock().run(); } },
-  { title: 'Blockquote', description: 'Quote block', searchTerms: ['quote', 'cite'], icon: <Quote size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleBlockquote().run(); } },
-  { title: 'Divider', description: 'Horizontal rule', searchTerms: ['hr', 'separator', 'line'], icon: <Minus size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setHorizontalRule().run(); } },
+// ─── Slash command items (static, never re-created) ─
+const SUGGESTION_ITEMS = createSuggestionItems([
+  {
+    title: 'Text',
+    description: 'Plain paragraph',
+    searchTerms: ['p', 'paragraph', 'text'],
+    icon: <Type size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleNode('paragraph', 'paragraph').run();
+    },
+  },
+  {
+    title: 'Heading 1',
+    description: 'Large heading',
+    searchTerms: ['h1', 'title', 'big'],
+    icon: <Heading1 size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode('heading', { level: 1 }).run();
+    },
+  },
+  {
+    title: 'Heading 2',
+    description: 'Medium heading',
+    searchTerms: ['h2', 'subtitle'],
+    icon: <Heading2 size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode('heading', { level: 2 }).run();
+    },
+  },
+  {
+    title: 'Heading 3',
+    description: 'Small heading',
+    searchTerms: ['h3'],
+    icon: <Heading3 size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode('heading', { level: 3 }).run();
+    },
+  },
+  {
+    title: 'Bullet List',
+    description: 'Unordered list',
+    searchTerms: ['ul', 'unordered', 'list'],
+    icon: <List size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleBulletList().run();
+    },
+  },
+  {
+    title: 'Numbered List',
+    description: 'Ordered list',
+    searchTerms: ['ol', 'ordered', 'numbered'],
+    icon: <ListOrdered size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleOrderedList().run();
+    },
+  },
+  {
+    title: 'Task List',
+    description: 'Checklist with checkboxes',
+    searchTerms: ['todo', 'checkbox', 'task'],
+    icon: <CheckSquare size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleTaskList().run();
+    },
+  },
+  {
+    title: 'Code Block',
+    description: 'Code snippet',
+    searchTerms: ['code', 'pre', 'snippet'],
+    icon: <Code size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleCodeBlock().run();
+    },
+  },
+  {
+    title: 'Blockquote',
+    description: 'Quote block',
+    searchTerms: ['quote', 'cite', 'blockquote'],
+    icon: <Quote size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleBlockquote().run();
+    },
+  },
+  {
+    title: 'Divider',
+    description: 'Horizontal rule',
+    searchTerms: ['hr', 'separator', 'line', 'divider'],
+    icon: <Minus size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setHorizontalRule().run();
+    },
+  },
 ]);
 
-// ─── Extensions config ──────────────────────────
-function getExtensions(placeholder: string) {
+// ─── Build extensions (must include Command for slash menu) ─
+function buildExtensions(placeholder: string) {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
       dropcursor: { color: '#f59e0b', width: 2 },
     }),
-    Placeholder.configure({ placeholder }),
+    Placeholder.configure({
+      placeholder,
+      showOnlyWhenEditable: true,
+    }),
+    // Slash command extension — this is what makes "/" trigger the menu
+    Command.configure({
+      suggestion: {
+        items: () => SUGGESTION_ITEMS,
+        render: renderItems,
+      },
+    }),
     TaskList,
     TaskItem.configure({ nested: true }),
     TiptapLink.configure({ openOnClick: false, autolink: true }),
@@ -71,11 +162,10 @@ function getExtensions(placeholder: string) {
     Color,
     TextStyle,
     GlobalDragHandle,
-    CustomKeymap,
   ];
 }
 
-// ─── Bubble toolbar (uses useEditor hook) ───────
+// ─── Bubble toolbar ─────────────────────────────
 function BubbleToolbar() {
   const { editor } = useNovelEditor();
   if (!editor) return null;
@@ -116,7 +206,6 @@ function markdownToTiptap(md: string): JSONContent {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Headings
     const h3 = line.match(/^### (.+)/);
     if (h3) { content.push({ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: h3[1] }] }); continue; }
     const h2 = line.match(/^## (.+)/);
@@ -127,7 +216,6 @@ function markdownToTiptap(md: string): JSONContent {
     // Task list items
     const task = line.match(/^- \[( |x)\] (.*)/);
     if (task) {
-      // Collect consecutive task items
       const items: JSONContent[] = [];
       let j = i;
       while (j < lines.length) {
@@ -145,7 +233,6 @@ function markdownToTiptap(md: string): JSONContent {
       continue;
     }
 
-    // Unordered list items
     const ul = line.match(/^- (.+)/);
     if (ul) {
       const items: JSONContent[] = [];
@@ -160,7 +247,6 @@ function markdownToTiptap(md: string): JSONContent {
       continue;
     }
 
-    // Ordered list items
     const ol = line.match(/^\d+\. (.*)/);
     if (ol) {
       const items: JSONContent[] = [];
@@ -178,13 +264,7 @@ function markdownToTiptap(md: string): JSONContent {
       continue;
     }
 
-    // Empty line → empty paragraph
-    if (!line.trim()) {
-      content.push({ type: 'paragraph' });
-      continue;
-    }
-
-    // Regular text
+    if (!line.trim()) { content.push({ type: 'paragraph' }); continue; }
     content.push({ type: 'paragraph', content: [{ type: 'text', text: line }] });
   }
 
@@ -194,12 +274,10 @@ function markdownToTiptap(md: string): JSONContent {
 // ─── Props ──────────────────────────────────────
 interface NotionEditorProps {
   initialContent?: JSONContent | string;
-  /** Called on every change. Receives plain text (for storage as markdown/string). */
-  onChange?: (text: string) => void;
+  onChange?: (html: string) => void;
   placeholder?: string;
   editable?: boolean;
   className?: string;
-  theme?: 'light' | 'dark';
 }
 
 export function NotionEditor({
@@ -213,33 +291,33 @@ export function NotionEditor({
   const resolvedPlaceholder = placeholder || t('editor.placeholder');
   const editorRef = useRef<EditorInstance | null>(null);
 
-  // Parse initial content — supports HTML, Markdown, and JSONContent
-  const extensions = getExtensions(resolvedPlaceholder);
-  let parsedContent: JSONContent | undefined;
-  if (typeof initialContent === 'string' && initialContent.trim()) {
-    if (initialContent.trim().startsWith('<')) {
-      // HTML string → convert to Tiptap JSON
-      parsedContent = generateJSON(initialContent, extensions) as JSONContent;
-    } else {
-      // Markdown string → convert to Tiptap JSON
-      parsedContent = markdownToTiptap(initialContent);
+  // Memoize extensions so they don't re-create on every render
+  const extensions = useMemo(
+    () => buildExtensions(resolvedPlaceholder),
+    [resolvedPlaceholder],
+  );
+
+  // Parse initial content — memoize to avoid re-parsing
+  const parsedContent = useMemo((): JSONContent | undefined => {
+    if (typeof initialContent === 'string' && initialContent.trim()) {
+      if (initialContent.trim().startsWith('<')) {
+        return generateJSON(initialContent, extensions) as JSONContent;
+      }
+      return markdownToTiptap(initialContent);
     }
-  } else {
-    parsedContent = initialContent as JSONContent | undefined;
-  }
+    return initialContent as JSONContent | undefined;
+  }, [initialContent, extensions]);
 
   const handleUpdate = useCallback(
     ({ editor }: { editor: EditorInstance }) => {
       editorRef.current = editor;
-      // Output HTML for storage — preserves all formatting
-      const html = editor.getHTML();
-      onChange?.(html);
+      onChange?.(editor.getHTML());
     },
     [onChange],
   );
 
   return (
-    <div className={cn('novel-editor rounded-lg border border-border bg-surface overflow-hidden', className)}>
+    <div className={cn('novel-editor', className)}>
       <EditorRoot>
         <EditorContent
           initialContent={parsedContent}
@@ -248,45 +326,43 @@ export function NotionEditor({
           onUpdate={handleUpdate}
           editorProps={{
             handleDOMEvents: {
-              keydown: (_view, event) => handleCommandNavigation(event),
+              keydown: (_view, event) => {
+                return handleCommandNavigation(event) ?? false;
+              },
             },
             attributes: {
-              class: cn(
-                'prose prose-sm dark:prose-invert prose-headings:font-bold',
-                'prose-p:my-1 prose-headings:my-2',
-                'focus:outline-none min-h-[120px] px-4 py-3',
-                'max-w-none',
-                !editable && 'cursor-default',
-              ),
+              class: 'focus:outline-none min-h-[120px]',
             },
           }}
         >
-          {/* Slash commands menu */}
-          <EditorCommand className="z-50 rounded-lg border border-border bg-surface shadow-xl overflow-hidden">
-            <EditorCommandEmpty className="px-3 py-2 text-sm text-muted">
-              {t('editor.nothingToPreview')}
-            </EditorCommandEmpty>
-            <EditorCommandList>
-              {suggestionItems.map((item) => (
-                <EditorCommandItem
-                  key={item.title}
-                  value={item.title}
-                  onCommand={(val) => item.command?.(val)}
-                  className="flex items-center gap-3 px-3 py-2 text-sm text-primary hover:bg-surface-hover cursor-pointer aria-selected:bg-surface-hover"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg text-secondary">
-                    {item.icon}
-                  </span>
-                  <div>
-                    <p className="font-medium">{item.title}</p>
-                    <p className="text-xs text-muted">{item.description}</p>
-                  </div>
-                </EditorCommandItem>
-              ))}
-            </EditorCommandList>
-          </EditorCommand>
+          {/* Slash commands menu — appears when user types "/" */}
+          {editable && (
+            <EditorCommand className="z-50 rounded-lg border border-border bg-surface shadow-xl overflow-hidden max-h-[330px] overflow-y-auto">
+              <EditorCommandEmpty className="px-4 py-3 text-sm text-muted">
+                No results
+              </EditorCommandEmpty>
+              <EditorCommandList>
+                {SUGGESTION_ITEMS.map((item) => (
+                  <EditorCommandItem
+                    key={item.title}
+                    value={item.title}
+                    onCommand={(val) => item.command?.(val)}
+                    className="flex items-center gap-3 px-3 py-2.5 text-sm text-primary hover:bg-surface-hover cursor-pointer aria-selected:bg-surface-hover transition-colors"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-bg text-secondary">
+                      {item.icon}
+                    </span>
+                    <div>
+                      <p className="font-medium">{item.title}</p>
+                      <p className="text-xs text-muted">{item.description}</p>
+                    </div>
+                  </EditorCommandItem>
+                ))}
+              </EditorCommandList>
+            </EditorCommand>
+          )}
 
-          {/* Bubble menu (appears on text selection) */}
+          {/* Bubble toolbar — appears on text selection */}
           {editable && (
             <EditorBubble className="flex items-center gap-0.5 rounded-lg border border-border bg-surface px-1.5 py-1 shadow-xl">
               <BubbleToolbar />
@@ -299,7 +375,7 @@ export function NotionEditor({
 }
 
 /**
- * Read-only viewer — renders JSON content with Novel.
+ * Read-only viewer.
  */
 export function NotionViewer({
   content,
@@ -307,7 +383,6 @@ export function NotionViewer({
 }: {
   content: JSONContent | string;
   className?: string;
-  theme?: 'light' | 'dark';
 }) {
   return <NotionEditor initialContent={content} editable={false} className={className} />;
 }
