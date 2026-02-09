@@ -7,19 +7,53 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose};
 use serde::Deserialize;
 
-/// Claims extracted from a Clerk JWT token.
+/// Clerk JWT v2 Organization claim — nested under "o" in the token payload.
+/// See: https://clerk.com/docs/guides/sessions/session-tokens
+#[derive(Debug, Clone, Deserialize)]
+pub struct OrgClaim {
+    /// Organization ID (e.g., "org_39Qp1H4YIEmVbPx8v8J0Q2hn5Wx")
+    pub id: String,
+    /// Organization slug (e.g., "sqhelm")
+    #[serde(default)]
+    pub slg: Option<String>,
+    /// Role without "org:" prefix (e.g., "admin", "member")
+    #[serde(default)]
+    pub rol: Option<String>,
+    /// Permissions list
+    #[serde(default)]
+    pub per: Option<Vec<String>>,
+}
+
+/// Claims extracted from a Clerk JWT v2 session token.
 /// We decode the payload without signature verification for speed,
 /// since Clerk's frontend SDK already validates the session.
-/// For production hardening, add JWKS signature verification.
+///
+/// Clerk v2 format:
+///   sub: "user_xxx"
+///   o: { id: "org_xxx", slg: "my-org", rol: "admin", per: [...] }
+///
+/// For backward compatibility, we also check legacy v1 fields (org_id, org_slug, org_role).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ClerkClaims {
     /// Clerk user ID (e.g., "user_2abc...")
     pub sub: String,
-    /// Organization ID (e.g., "org_2xyz...") — None if personal account
+
+    /// JWT version (1 or 2)
+    #[serde(default)]
+    pub v: Option<u8>,
+
+    /// v2: Organization claim as nested object
+    #[serde(default)]
+    pub o: Option<OrgClaim>,
+
+    /// v1 legacy: org_id at top level
+    #[serde(default)]
     pub org_id: Option<String>,
-    /// Organization slug (e.g., "squelm")
+    /// v1 legacy: org_slug at top level
+    #[serde(default)]
     pub org_slug: Option<String>,
-    /// Organization role (e.g., "org:admin", "org:member")
+    /// v1 legacy: org_role at top level
+    #[serde(default)]
     pub org_role: Option<String>,
 }
 
@@ -52,7 +86,8 @@ fn decode_jwt_payload(token: &str) -> Result<ClerkClaims, String> {
 }
 
 /// Auth middleware — extracts Clerk JWT claims and adds AuthUser to request extensions.
-/// Skips auth for public routes (paths starting with /api/v1/public/).
+/// Supports both Clerk JWT v1 (org_id at top level) and v2 (o.id nested).
+/// Skips auth for public routes and health checks.
 /// Returns 401 if no valid Bearer token is present on protected routes.
 pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
     // Skip auth for public routes and health checks
@@ -80,17 +115,32 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
 
     match decode_jwt_payload(token) {
         Ok(claims) => {
+            // Extract org info: prefer v2 "o" claim, fallback to v1 top-level fields
+            let (org_id, org_slug, org_role) = if let Some(ref o) = claims.o {
+                (
+                    Some(o.id.clone()),
+                    o.slg.clone(),
+                    o.rol.as_ref().map(|r| format!("org:{}", r)),
+                )
+            } else {
+                (claims.org_id.clone(), claims.org_slug.clone(), claims.org_role.clone())
+            };
+
             let auth_user = AuthUser {
                 user_id: claims.sub,
-                org_id: claims.org_id,
-                org_slug: claims.org_slug,
-                org_role: claims.org_role,
+                org_id,
+                org_slug,
+                org_role,
             };
+
             tracing::debug!(
                 user_id = %auth_user.user_id,
                 org_id = ?auth_user.org_id,
+                org_slug = ?auth_user.org_slug,
+                jwt_version = ?claims.v,
                 "Authenticated request"
             );
+
             req.extensions_mut().insert(auth_user);
             next.run(req).await
         }
