@@ -11,9 +11,6 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.1.0",
-    "@blocknote/core": "^0.46.2",
-    "@blocknote/react": "^0.46.2",
-    "@blocknote/shadcn": "^0.46.2",
     "@clerk/clerk-react": "^5.60.0",
     "@hello-pangea/dnd": "^18.0.1",
     "@lexical/code": "^0.40.0",
