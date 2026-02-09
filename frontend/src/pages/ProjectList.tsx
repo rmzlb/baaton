@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom';
 import { Plus, Kanban } from '@phosphor-icons/react';
 
 export function ProjectList() {
