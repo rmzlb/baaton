@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { SignedIn, SignedOut } from '@clerk/clerk-react';
 import { ArrowRight, Kanban, Robot, ShieldCheck } from '@phosphor-icons/react';
-import { PixelTanuki } from '@/components/shared/PixelTanuki';
+import { PixelBaton } from '@/components/shared/PixelBaton';
 
 export function Landing() {
   return (
@@ -43,7 +43,7 @@ export function Landing() {
       {/* Hero */}
       <section className="flex flex-col items-center justify-center px-6 py-32 text-center">
         <div className="mb-8">
-          <PixelTanuki size={64} />
+          <PixelBaton size={80} />
         </div>
         <p className="mb-4 text-xs uppercase tracking-[0.3em] text-[#f59e0b] font-mono">
           the orchestration board

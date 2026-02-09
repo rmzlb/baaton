@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { PaperPlaneTilt, Bug, Sparkle, Lightning, Question, CheckCircle } from '@phosphor-icons/react';
-import { PixelTanuki } from '@/components/shared/PixelTanuki';
+import { PixelBaton } from '@/components/shared/PixelBaton';
 import type { IssueType } from '@/lib/types';
 
 const types: { value: IssueType; label: string; icon: typeof Bug; color: string }[] = [
@@ -51,7 +51,7 @@ export function PublicSubmit() {
       <div className="w-full max-w-lg">
         {/* Header */}
         <div className="mb-8 text-center">
-          <PixelTanuki size={40} className="mx-auto mb-3" />
+          <PixelBaton size={48} className="mx-auto mb-3" />
           <h1 className="text-xl font-bold text-[#fafafa]">Submit Feedback</h1>
           <p className="mt-1 text-sm text-[#a1a1aa]">
             for <span className="font-mono text-[#f59e0b]">{slug}</span>
