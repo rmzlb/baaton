@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { ListView } from '@/components/list/ListView';
@@ -36,6 +36,7 @@ export function ProjectBoard() {
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
   const [showCreateIssue, setShowCreateIssue] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // View mode with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -55,7 +56,7 @@ export function ProjectBoard() {
   });
 
   // Fetch issues for this project
-  const { data: issues = [], isLoading: issuesLoading } = useQuery({
+  const { data: issuesList = [], isLoading: issuesLoading } = useQuery({
     queryKey: ['issues', project?.id],
     queryFn: async () => {
       const result = await apiClient.issues.listByProject(project!.id);
@@ -64,6 +65,42 @@ export function ProjectBoard() {
     },
     enabled: !!project?.id,
   });
+
+  // ── Deep link: sync URL ?issue=HLM-18 ↔ drawer ──
+  // On load: if ?issue=HLM-18, find and open it
+  useEffect(() => {
+    const issueParam = searchParams.get('issue');
+    if (issueParam && issuesList.length > 0 && !isDetailOpen) {
+      const found = issuesList.find(
+        (i) => i.display_id.toLowerCase() === issueParam.toLowerCase(),
+      );
+      if (found) {
+        openDetail(found.id);
+      }
+    }
+  }, [searchParams, issuesList, isDetailOpen, openDetail]);
+
+  // When drawer opens: update URL with display_id
+  useEffect(() => {
+    if (isDetailOpen && selectedIssueId) {
+      const issue = issuesList.find((i) => i.id === selectedIssueId);
+      if (issue) {
+        setSearchParams((prev) => {
+          prev.set('issue', issue.display_id);
+          return prev;
+        }, { replace: true });
+      }
+    }
+  }, [isDetailOpen, selectedIssueId, issuesList, setSearchParams]);
+
+  // Wrap closeDetail to also clear URL param
+  const handleCloseDetail = useCallback(() => {
+    closeDetail();
+    setSearchParams((prev) => {
+      prev.delete('issue');
+      return prev;
+    }, { replace: true });
+  }, [closeDetail, setSearchParams]);
 
   // Fetch project tags
   const { data: projectTags = [] } = useQuery({
@@ -129,7 +166,7 @@ export function ProjectBoard() {
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-primary truncate">{project?.name || slug}</h1>
           <p className="text-xs text-secondary font-mono uppercase tracking-wider">
-            {project?.prefix} · {t('projectBoard.view', { mode: viewMode })} · {t('projectBoard.issueCount', { count: issues.length })}
+            {project?.prefix} · {t('projectBoard.view', { mode: viewMode })} · {t('projectBoard.issueCount', { count: issuesList.length })}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -178,7 +215,7 @@ export function ProjectBoard() {
         {viewMode === 'kanban' ? (
           <KanbanBoard
             statuses={statuses}
-            issues={issues}
+            issues={issuesList}
             onMoveIssue={handleMoveIssue}
             onIssueClick={(issue) => openDetail(issue.id)}
             onCreateIssue={() => setShowCreateIssue(true)}
@@ -187,7 +224,7 @@ export function ProjectBoard() {
         ) : (
           <ListView
             statuses={statuses}
-            issues={issues}
+            issues={issuesList}
             onIssueClick={(issue) => openDetail(issue.id)}
             projectTags={projectTags}
           />
@@ -200,7 +237,7 @@ export function ProjectBoard() {
           issueId={selectedIssueId}
           statuses={statuses}
           projectId={project?.id}
-          onClose={closeDetail}
+          onClose={handleCloseDetail}
         />
       )}
 

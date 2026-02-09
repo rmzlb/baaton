@@ -1,3 +1,5 @@
+import { useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useUser } from '@clerk/clerk-react';
 import {
@@ -49,6 +51,7 @@ export function MyTasks() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Fetch all projects for name mapping
   const { data: projects = [] } = useQuery({
@@ -62,6 +65,29 @@ export function MyTasks() {
     queryFn: () => apiClient.issues.listMine(user!.id),
     enabled: !!user?.id,
   });
+
+  // ── Deep link: ?issue=HLM-18 ──
+  useEffect(() => {
+    const issueParam = searchParams.get('issue');
+    if (issueParam && myIssues.length > 0 && !isDetailOpen) {
+      const found = myIssues.find((i) => i.display_id.toLowerCase() === issueParam.toLowerCase());
+      if (found) openDetail(found.id);
+    }
+  }, [searchParams, myIssues, isDetailOpen, openDetail]);
+
+  useEffect(() => {
+    if (isDetailOpen && selectedIssueId) {
+      const issue = myIssues.find((i) => i.id === selectedIssueId);
+      if (issue) {
+        setSearchParams((prev) => { prev.set('issue', issue.display_id); return prev; }, { replace: true });
+      }
+    }
+  }, [isDetailOpen, selectedIssueId, myIssues, setSearchParams]);
+
+  const handleCloseDetail = useCallback(() => {
+    closeDetail();
+    setSearchParams((prev) => { prev.delete('issue'); return prev; }, { replace: true });
+  }, [closeDetail, setSearchParams]);
 
   // Group by project
   const groupedByProject = myIssues.reduce(
@@ -202,7 +228,7 @@ export function MyTasks() {
         <IssueDrawer
           issueId={selectedIssueId}
           projectId={selectedIssue?.project_id}
-          onClose={closeDetail}
+          onClose={handleCloseDetail}
         />
       )}
     </div>

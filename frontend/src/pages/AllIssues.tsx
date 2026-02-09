@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { ListView } from '@/components/list/ListView';
@@ -133,6 +134,7 @@ export function AllIssues() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // View mode
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -216,6 +218,29 @@ export function AllIssues() {
   const handleMoveIssue = (issueId: string, newStatus: IssueStatus, newPosition: number) => {
     positionMutation.mutate({ id: issueId, status: newStatus, position: newPosition });
   };
+
+  // ── Deep link: ?issue=HLM-18 ──
+  useEffect(() => {
+    const issueParam = searchParams.get('issue');
+    if (issueParam && allIssuesRaw.length > 0 && !isDetailOpen) {
+      const found = allIssuesRaw.find((i) => i.display_id.toLowerCase() === issueParam.toLowerCase());
+      if (found) openDetail(found.id);
+    }
+  }, [searchParams, allIssuesRaw, isDetailOpen, openDetail]);
+
+  useEffect(() => {
+    if (isDetailOpen && selectedIssueId) {
+      const issue = allIssuesRaw.find((i) => i.id === selectedIssueId);
+      if (issue) {
+        setSearchParams((prev) => { prev.set('issue', issue.display_id); return prev; }, { replace: true });
+      }
+    }
+  }, [isDetailOpen, selectedIssueId, allIssuesRaw, setSearchParams]);
+
+  const handleCloseDetail = useCallback(() => {
+    closeDetail();
+    setSearchParams((prev) => { prev.delete('issue'); return prev; }, { replace: true });
+  }, [closeDetail, setSearchParams]);
 
   // Find selected issue for drawer
   const selectedIssue = allIssuesRaw.find((i) => i.id === selectedIssueId);
@@ -347,7 +372,7 @@ export function AllIssues() {
           issueId={selectedIssueId}
           statuses={STATUSES}
           projectId={selectedIssue?.project_id}
-          onClose={closeDetail}
+          onClose={handleCloseDetail}
         />
       )}
     </div>
