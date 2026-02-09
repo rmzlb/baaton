@@ -7,7 +7,7 @@ import { ProjectBoard } from '@/pages/ProjectBoard';
 import { ProjectList } from '@/pages/ProjectList';
 import { Settings } from '@/pages/Settings';
 import { PublicSubmit } from '@/pages/PublicSubmit';
-import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const isAppDomain = window.location.hostname === 'app.baaton.dev';
 
@@ -47,14 +47,14 @@ export function App() {
         }
       />
 
-      {/* Protected routes — wrapped with onboarding */}
+      {/* Protected routes */}
       <Route
         element={
           <>
             <SignedIn>
-              <OnboardingFlow>
+              <ErrorBoundary>
                 <AppLayout />
-              </OnboardingFlow>
+              </ErrorBoundary>
             </SignedIn>
             <SignedOut>
               <RedirectToSignIn />

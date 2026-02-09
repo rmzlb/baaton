@@ -32,11 +32,15 @@ export function useApi() {
   const { getToken, signOut } = useAuth();
 
   const getAuthToken = useCallback(async () => {
-    const token = await getToken();
-    if (!token) {
-      throw new ApiError(401, 'UNAUTHORIZED', 'No active session');
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new ApiError(401, 'UNAUTHORIZED', 'No active session');
+      }
+      return token;
+    } catch (err) {
+      throw new ApiError(401, 'UNAUTHORIZED', 'Failed to get auth token');
     }
-    return token;
   }, [getToken]);
 
   /**
