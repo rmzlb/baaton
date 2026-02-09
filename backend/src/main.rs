@@ -3,7 +3,6 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use std::net::SocketAddr;
-use tokio::sync::broadcast;
 
 mod routes;
 mod models;
@@ -54,9 +53,6 @@ async fn main() -> anyhow::Result<()> {
     sqlx::raw_sql(migration_008).execute(&pool).await?;
     tracing::info!("Migrations applied");
 
-    // SSE broadcast channel for real-time events
-    let (event_tx, _) = broadcast::channel::<routes::sse::SseEvent>(100);
-
     // Start GitHub sync job runner (background task)
     let job_pool = pool.clone();
     tokio::spawn(async move {
@@ -87,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
     // Router
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
-        .nest("/api/v1", routes::api_router(pool.clone(), event_tx.clone()))
+        .nest("/api/v1", routes::api_router(pool.clone()))
         .layer(axum_mw::from_fn(middleware::security::security_headers))
         .layer(cors)
         .layer(TraceLayer::new_for_http());

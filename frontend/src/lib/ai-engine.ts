@@ -8,8 +8,11 @@ import { SKILL_TOOLS } from './ai-skills';
 import { executeSkill } from './ai-executor';
 import type { SkillResult } from './ai-skills';
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const API_URL = import.meta.env.VITE_API_URL || '';
 const GEMINI_MODEL = 'gemini-2.0-flash';
+// Use backend proxy to keep API key server-side. Fallback to direct Gemini if no backend.
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const USE_PROXY = !!API_URL;
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
 // ─── Context Builder ──────────────────────────
@@ -117,6 +120,7 @@ interface GeminiFunctionCall {
 async function callGemini(
   contents: GeminiContent[],
   systemPrompt: string,
+  authToken?: string,
 ): Promise<{
   text?: string;
   functionCalls?: GeminiFunctionCall[];
@@ -132,7 +136,43 @@ async function callGemini(
     },
   };
 
-  const res = await fetch(GEMINI_URL, {
+  let res: Response;
+
+  // Try backend proxy first (keeps API key server-side)
+  if (USE_PROXY && authToken) {
+    try {
+      // Convert Gemini format to simple messages for the proxy
+      const messages = contents.map((c) => ({
+        role: c.role === 'model' ? 'assistant' : 'user',
+        content: c.parts.map((p) => p.text || JSON.stringify(p.functionCall || p.functionResponse || '')).join('\n'),
+      }));
+
+      res = await fetch(`${API_URL}/api/v1/ai/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ messages, model: GEMINI_MODEL }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return { text: data.content || data.data?.content };
+      }
+      // If proxy fails, fall through to direct call
+      console.warn('AI proxy failed, falling back to direct Gemini call');
+    } catch {
+      console.warn('AI proxy unavailable, falling back to direct Gemini call');
+    }
+  }
+
+  // Direct Gemini call (fallback)
+  if (!GEMINI_API_KEY) {
+    throw new Error('AI non configuré. Contactez l\'administrateur.');
+  }
+
+  res = await fetch(GEMINI_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -189,6 +229,7 @@ export async function generateAIResponse(
   allIssuesByProject: Record<string, Issue[]>,
   conversationHistory: { role: string; content: string }[],
   apiClient: ApiClientType,
+  authToken?: string,
 ): Promise<AIResponse> {
   const context = buildProjectContext(projects, allIssuesByProject);
   const systemPrompt = buildSystemPrompt(context);
@@ -213,7 +254,7 @@ export async function generateAIResponse(
 
   // Agentic loop — keep calling Gemini until we get a text response (max 5 rounds)
   for (let round = 0; round < 5; round++) {
-    const response = await callGemini(contents, systemPrompt);
+    const response = await callGemini(contents, systemPrompt, authToken);
 
     // If we got function calls, execute them and feed results back
     if (response.functionCalls && response.functionCalls.length > 0) {

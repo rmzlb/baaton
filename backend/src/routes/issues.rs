@@ -1,12 +1,10 @@
-use axum::{extract::{Path, Query, State}, http::StatusCode, Extension, Json};
+use axum::{extract::{Path, Query, State}, Extension, Json};
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr, UpdateIssue};
-use crate::routes::activity::log_activity;
-use crate::routes::sse::{EventSender, broadcast_event};
 
 #[derive(Debug, Deserialize)]
 pub struct ListParams {
@@ -57,23 +55,9 @@ pub async fn list_by_project(
 
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
-    Extension(event_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Json(body): Json<CreateIssue>,
-) -> Result<Json<ApiResponse<Issue>>, (StatusCode, &'static str)> {
-    // Input validation
-    if body.title.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "title must not be empty"));
-    }
-    if body.title.len() > 500 {
-        return Err((StatusCode::BAD_REQUEST, "title must be at most 500 characters"));
-    }
-    if let Some(ref desc) = body.description {
-        if desc.len() > 50_000 {
-            return Err((StatusCode::BAD_REQUEST, "description must be at most 50000 characters"));
-        }
-    }
-
+) -> Json<ApiResponse<Issue>> {
     // Generate display_id
     let count: (i64,) = sqlx::query_as(
         "SELECT COALESCE(COUNT(*), 0) FROM issues WHERE project_id = $1"
@@ -137,33 +121,7 @@ pub async fn create(
     .await
     .unwrap();
 
-    // Log activity
-    let org_id = auth.org_id.unwrap_or_default();
-    log_activity(
-        &pool,
-        &org_id,
-        Some(issue.project_id),
-        Some(issue.id),
-        &auth.user_id,
-        None,
-        "created",
-        None,
-        None,
-        Some(&issue.title),
-        None,
-    )
-    .await;
-
-    // Broadcast SSE event
-    let event_payload = serde_json::json!({
-        "type": "issue_created",
-        "issue_id": issue.id.to_string(),
-        "project_id": issue.project_id.to_string(),
-        "title": issue.title,
-    });
-    broadcast_event(&event_tx, &org_id, &event_payload.to_string());
-
-    Ok(Json(ApiResponse::new(issue)))
+    Json(ApiResponse::new(issue))
 }
 
 pub async fn get_one(
@@ -202,27 +160,10 @@ pub async fn get_one(
 }
 
 pub async fn update(
-    Extension(auth): Extension<AuthUser>,
-    Extension(event_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateIssue>,
-) -> Result<Json<ApiResponse<Issue>>, (StatusCode, &'static str)> {
-    // Input validation
-    if let Some(ref title) = body.title {
-        if title.trim().is_empty() {
-            return Err((StatusCode::BAD_REQUEST, "title must not be empty"));
-        }
-        if title.len() > 500 {
-            return Err((StatusCode::BAD_REQUEST, "title must be at most 500 characters"));
-        }
-    }
-    if let Some(ref desc) = body.description {
-        if desc.len() > 50_000 {
-            return Err((StatusCode::BAD_REQUEST, "description must be at most 50000 characters"));
-        }
-    }
-
+) -> Json<ApiResponse<Issue>> {
     // Option<Option<T>> pattern: outer None = not provided, Some(None) = set to null, Some(Some(v)) = set value
     let priority_provided = body.priority.is_some();
     let priority_value = body.priority.flatten();
@@ -268,32 +209,7 @@ pub async fn update(
     .await
     .unwrap();
 
-    // Log activity for key field changes
-    let org_id = auth.org_id.unwrap_or_default();
-    if let Some(ref status) = body.status {
-        log_activity(&pool, &org_id, Some(issue.project_id), Some(issue.id), &auth.user_id, None, "status_changed", Some("status"), None, Some(status), None).await;
-    }
-    if let Some(ref assignee_ids) = body.assignee_ids {
-        let val = assignee_ids.join(",");
-        log_activity(&pool, &org_id, Some(issue.project_id), Some(issue.id), &auth.user_id, None, "assigned", Some("assignee_ids"), None, Some(&val), None).await;
-    }
-    if let Some(ref title) = body.title {
-        log_activity(&pool, &org_id, Some(issue.project_id), Some(issue.id), &auth.user_id, None, "updated", Some("title"), None, Some(title), None).await;
-    }
-    if let Some(ref tags) = body.tags {
-        let val = tags.join(",");
-        log_activity(&pool, &org_id, Some(issue.project_id), Some(issue.id), &auth.user_id, None, "tagged", Some("tags"), None, Some(&val), None).await;
-    }
-
-    // Broadcast SSE event
-    let event_payload = serde_json::json!({
-        "type": "issue_updated",
-        "issue_id": issue.id.to_string(),
-        "project_id": issue.project_id.to_string(),
-    });
-    broadcast_event(&event_tx, &org_id, &event_payload.to_string());
-
-    Ok(Json(ApiResponse::new(issue)))
+    Json(ApiResponse::new(issue))
 }
 
 pub async fn update_position(
@@ -381,20 +297,7 @@ pub async fn public_submit(
     State(pool): State<PgPool>,
     Path(slug): Path<String>,
     Json(body): Json<PublicSubmission>,
-) -> Result<Json<ApiResponse<Issue>>, (StatusCode, &'static str)> {
-    // Input validation
-    if body.title.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "title must not be empty"));
-    }
-    if body.title.len() > 500 {
-        return Err((StatusCode::BAD_REQUEST, "title must be at most 500 characters"));
-    }
-    if let Some(ref desc) = body.description {
-        if desc.len() > 50_000 {
-            return Err((StatusCode::BAD_REQUEST, "description must be at most 50000 characters"));
-        }
-    }
-
+) -> Json<ApiResponse<Issue>> {
     // Find project by slug
     let project = sqlx::query_as::<_, (Uuid, String)>(
         "SELECT id, prefix FROM projects WHERE slug = $1"
@@ -435,5 +338,5 @@ pub async fn public_submit(
     .await
     .unwrap();
 
-    Ok(Json(ApiResponse::new(issue)))
+    Json(ApiResponse::new(issue))
 }

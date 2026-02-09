@@ -11,10 +11,8 @@ mod tags;
 mod invites;
 mod ai;
 pub mod github;
-pub mod sse;
-pub mod activity;
 
-pub fn api_router(pool: PgPool, event_tx: sse::EventSender) -> Router {
+pub fn api_router(pool: PgPool) -> Router {
     // All API routes — auth middleware applied on top
     let routes = Router::new()
         // Projects (org-scoped via auth middleware)
@@ -41,26 +39,19 @@ pub fn api_router(pool: PgPool, event_tx: sse::EventSender) -> Router {
         .route("/github/mappings/{id}", patch(github::repos::update_mapping).delete(github::repos::delete_mapping))
         // Issue-level GitHub data
         .route("/issues/{id}/github", get(github::repos::get_issue_github_data))
-        // AI proxy (Gemini)
-        .route("/ai/chat", post(ai::chat))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
         .route("/invites", get(invites::list).post(invites::create))
         // Public (no auth)
         .route("/invite/{code}", get(invites::redirect_invite))
         .route("/public/{slug}/submit", post(issues::public_submit))
-        // SSE real-time events
-        .route("/events", get(sse::event_stream))
-        // Activity feed
-        .route("/issues/{id}/activity", get(activity::list_by_issue))
-        .route("/activity", get(activity::list_recent))
+        // AI proxy (Gemini — keeps API key server-side)
+        .route("/ai/chat", post(ai::chat))
         // Webhook endpoint (public — uses HMAC verification, NOT Clerk auth)
         .route("/webhooks/github", post(github::webhooks::handle))
         .with_state(pool);
 
-    // Apply auth middleware and event sender extension
+    // Apply auth middleware — it runs on all routes but public ones
     // skip auth for public routes (handled in the middleware itself based on path)
-    routes
-        .layer(axum::Extension(event_tx))
-        .layer(axum_mw::from_fn(auth_middleware))
+    routes.layer(axum_mw::from_fn(auth_middleware))
 }
