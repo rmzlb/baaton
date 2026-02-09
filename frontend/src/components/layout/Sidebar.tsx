@@ -1,25 +1,21 @@
 import { NavLink } from 'react-router-dom';
-import { UserButton, useOrganization } from '@clerk/clerk-react';
+import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import {
-  House,
-  Kanban,
-  GearSix,
-  CaretLeft,
-  CaretRight,
-} from '@phosphor-icons/react';
+  LayoutDashboard, Kanban, Settings, ChevronLeft, ChevronRight, Users,
+} from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { to: '/dashboard', icon: House, label: 'Dashboard' },
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/projects', icon: Kanban, label: 'Projects' },
-  { to: '/settings', icon: GearSix, label: 'Settings' },
+  { to: '/org', icon: Users, label: 'Team' },
+  { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 export function Sidebar() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggle = useUIStore((s) => s.toggleSidebar);
-  const { organization } = useOrganization();
 
   return (
     <aside
@@ -28,18 +24,23 @@ export function Sidebar() {
         collapsed ? 'w-16' : 'w-60',
       )}
     >
-      {/* Logo */}
-      <div className="flex h-14 items-center gap-3 border-b border-[#262626] px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#f59e0b] text-black font-bold text-sm">
-          B
-        </div>
-        {!collapsed && (
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-[#fafafa]">baaton</span>
-            <span className="text-[10px] text-[#a1a1aa] uppercase tracking-widest font-mono">
-              {organization?.name || 'workspace'}
-            </span>
+      {/* Org Switcher */}
+      <div className="flex h-14 items-center border-b border-[#262626] px-3">
+        {collapsed ? (
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#f59e0b] text-black font-bold text-sm mx-auto">
+            B
           </div>
+        ) : (
+          <OrganizationSwitcher
+            appearance={{
+              elements: {
+                rootBox: 'w-full',
+                organizationSwitcherTrigger: 'w-full justify-start px-1 py-1 rounded-lg hover:bg-[#1f1f1f] text-white border-none',
+              },
+            }}
+            afterCreateOrganizationUrl="/dashboard"
+            afterSelectOrganizationUrl="/dashboard"
+          />
         )}
       </div>
 
@@ -59,7 +60,7 @@ export function Sidebar() {
               )
             }
           >
-            <Icon size={20} weight="regular" />
+            <Icon size={20} />
             {!collapsed && <span>{label}</span>}
           </NavLink>
         ))}
@@ -76,7 +77,7 @@ export function Sidebar() {
           onClick={toggle}
           className="rounded-md p-1.5 text-[#a1a1aa] hover:bg-[#141414] hover:text-[#fafafa] transition-colors"
         >
-          {collapsed ? <CaretRight size={16} /> : <CaretLeft size={16} />}
+          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
       </div>
     </aside>

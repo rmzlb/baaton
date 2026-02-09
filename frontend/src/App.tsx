@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
-import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp, OrganizationProfile } from '@clerk/clerk-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Landing } from '@/pages/Landing';
 import { Dashboard } from '@/pages/Dashboard';
@@ -50,6 +50,14 @@ export function App() {
         <Route path="/projects" element={<ProjectList />} />
         <Route path="/projects/:slug" element={<ProjectBoard />} />
         <Route path="/settings" element={<Settings />} />
+        <Route
+          path="/org/*"
+          element={
+            <div className="flex min-h-screen items-center justify-center bg-neutral-950">
+              <OrganizationProfile routing="path" path="/org" />
+            </div>
+          }
+        />
       </Route>
     </Routes>
   );
