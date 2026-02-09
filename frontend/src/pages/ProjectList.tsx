@@ -34,6 +34,7 @@ export function ProjectList() {
           </p>
         </div>
         <button
+          data-tour="create-project"
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover transition-colors min-h-[40px]"
         >

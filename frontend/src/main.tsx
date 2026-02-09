@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from './App';
 import { ThemeProvider } from './components/ThemeProvider';
 import '@/lib/i18n';
+import 'driver.js/dist/driver.css';
+import './styles/onboarding.css';
 import './styles/globals.css';
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;

@@ -137,7 +137,7 @@ export function ProjectBoard() {
           <DensityToggle />
 
           {/* View Toggle */}
-          <div className="flex items-center rounded-md border border-border bg-surface p-0.5">
+          <div data-tour="view-toggle" className="flex items-center rounded-md border border-border bg-surface p-0.5">
             <button
               onClick={() => setViewMode('kanban')}
               className={`rounded-[5px] p-1.5 transition-colors ${
@@ -163,6 +163,7 @@ export function ProjectBoard() {
           </div>
 
           <button
+            data-tour="create-issue"
             onClick={() => setShowCreateIssue(true)}
             className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-black hover:bg-accent-hover transition-colors min-h-[36px]"
           >
@@ -173,7 +174,7 @@ export function ProjectBoard() {
       </div>
 
       {/* Board or List */}
-      <div className="flex-1 overflow-hidden">
+      <div data-tour="board-area" className="flex-1 overflow-hidden">
         {viewMode === 'kanban' ? (
           <KanbanBoard
             statuses={statuses}

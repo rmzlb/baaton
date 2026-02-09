@@ -1,0 +1,164 @@
+/* ── Baaton Onboarding Tour — Driver.js Dark Theme ────────── */
+
+/* Overlay */
+.driver-overlay {
+  background: rgba(0, 0, 0, 0.75) !important;
+}
+
+/* Spotlight: amber glow ring */
+.driver-active-element {
+  box-shadow:
+    0 0 0 2px rgba(245, 158, 11, 0.5),
+    0 0 20px 4px rgba(245, 158, 11, 0.15) !important;
+  border-radius: 8px;
+}
+
+/* Popover container */
+.baaton-tour-popover {
+  background: #141414 !important;
+  border: 1px solid #262626 !important;
+  border-radius: 12px !important;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(245, 158, 11, 0.08) !important;
+  color: #f5f5f5 !important;
+  max-width: 340px !important;
+  padding: 0 !important;
+}
+
+/* Arrow */
+.baaton-tour-popover .driver-popover-arrow {
+  border: 5px solid transparent;
+}
+
+.baaton-tour-popover .driver-popover-arrow-side-left {
+  border-right-color: #262626 !important;
+}
+.baaton-tour-popover .driver-popover-arrow-side-right {
+  border-left-color: #262626 !important;
+}
+.baaton-tour-popover .driver-popover-arrow-side-top {
+  border-bottom-color: #262626 !important;
+}
+.baaton-tour-popover .driver-popover-arrow-side-bottom {
+  border-top-color: #262626 !important;
+}
+
+/* Title */
+.baaton-tour-popover .driver-popover-title {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: #f5f5f5 !important;
+  padding: 16px 20px 4px !important;
+  margin: 0 !important;
+  line-height: 1.4 !important;
+}
+
+/* Description */
+.baaton-tour-popover .driver-popover-description {
+  font-size: 13px !important;
+  color: #a3a3a3 !important;
+  line-height: 1.6 !important;
+  padding: 4px 20px 16px !important;
+  margin: 0 !important;
+}
+
+/* Footer (buttons area) */
+.baaton-tour-popover .driver-popover-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 12px 20px !important;
+  border-top: 1px solid #262626 !important;
+  gap: 8px !important;
+}
+
+/* Step counter / progress */
+.baaton-tour-popover .driver-popover-progress-text {
+  font-size: 11px !important;
+  color: #525252 !important;
+  font-weight: 500 !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+/* Navigation buttons group */
+.baaton-tour-popover .driver-popover-navigation-btns {
+  display: flex !important;
+  gap: 6px !important;
+}
+
+/* All buttons base */
+.baaton-tour-popover .driver-popover-footer button {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+  padding: 6px 14px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  border: none !important;
+  outline: none !important;
+  line-height: 1.4 !important;
+}
+
+/* Previous button */
+.baaton-tour-popover .driver-popover-prev-btn {
+  background: transparent !important;
+  color: #a3a3a3 !important;
+  border: 1px solid #262626 !important;
+}
+
+.baaton-tour-popover .driver-popover-prev-btn:hover {
+  background: #1a1a1a !important;
+  color: #f5f5f5 !important;
+  border-color: #3a3a3a !important;
+}
+
+/* Next / Done button */
+.baaton-tour-popover .driver-popover-next-btn {
+  background: #f59e0b !important;
+  color: #000 !important;
+}
+
+.baaton-tour-popover .driver-popover-next-btn:hover {
+  background: #d97706 !important;
+}
+
+/* Close button */
+.baaton-tour-popover .driver-popover-close-btn {
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  width: 24px !important;
+  height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  color: #525252 !important;
+  border-radius: 6px !important;
+  padding: 0 !important;
+  font-size: 16px !important;
+  transition: all 0.15s ease !important;
+}
+
+.baaton-tour-popover .driver-popover-close-btn:hover {
+  background: #1a1a1a !important;
+  color: #a3a3a3 !important;
+}
+
+/* ── Animations ─────────────────────────────── */
+
+@keyframes baaton-tour-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.baaton-tour-popover {
+  animation: baaton-tour-fade-in 0.25s ease-out !important;
+}

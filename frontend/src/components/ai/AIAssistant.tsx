@@ -215,6 +215,7 @@ export function AIAssistant() {
     <>
       {/* Floating Button */}
       <button
+        data-tour="ai-assistant"
         onClick={toggle}
         className={cn(
           'fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-all duration-300 hover:scale-105',

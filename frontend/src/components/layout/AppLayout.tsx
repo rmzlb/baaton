@@ -3,10 +3,14 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { AIAssistant } from '@/components/ai/AIAssistant';
 import { useUIStore } from '@/stores/ui';
+import { useOnboarding } from '@/hooks/useOnboarding';
 import { cn } from '@/lib/utils';
 
 export function AppLayout() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
+
+  // Onboarding tour — auto-starts for first-time users
+  useOnboarding();
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg text-primary">

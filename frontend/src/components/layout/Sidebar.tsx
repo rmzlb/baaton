@@ -19,12 +19,12 @@ export function Sidebar() {
   const toggleTheme = useUIStore((s) => s.toggleTheme);
 
   const navItems = [
-    { to: '/dashboard', icon: LayoutDashboard, label: t('sidebar.dashboard') },
-    { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks') },
-    { to: '/all-issues', icon: Layers, label: t('sidebar.allIssues') },
-    { to: '/projects', icon: Kanban, label: t('sidebar.projects') },
-    { to: '/org', icon: Users, label: t('sidebar.team') },
-    { to: '/settings', icon: Settings, label: t('sidebar.settings') },
+    { to: '/dashboard', icon: LayoutDashboard, label: t('sidebar.dashboard'), tourId: undefined },
+    { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks'), tourId: 'my-tasks' as const },
+    { to: '/all-issues', icon: Layers, label: t('sidebar.allIssues'), tourId: undefined },
+    { to: '/projects', icon: Kanban, label: t('sidebar.projects'), tourId: 'projects-list' as const },
+    { to: '/org', icon: Users, label: t('sidebar.team'), tourId: undefined },
+    { to: '/settings', icon: Settings, label: t('sidebar.settings'), tourId: 'settings' as const },
   ];
 
   const toggleLanguage = () => {
@@ -65,6 +65,7 @@ export function Sidebar() {
       )}
 
       <aside
+        data-tour="sidebar"
         className={cn(
           // Desktop: fixed left
           'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border bg-bg transition-all duration-200',
@@ -107,11 +108,12 @@ export function Sidebar() {
 
         {/* Nav */}
         <nav className="flex-1 space-y-1 p-2">
-          {navItems.map(({ to, icon: Icon, label }) => (
+          {navItems.map(({ to, icon: Icon, label, tourId }) => (
             <NavLink
               key={to}
               to={to}
               onClick={closeMobile}
+              {...(tourId ? { 'data-tour': tourId } : {})}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors min-h-[44px]',

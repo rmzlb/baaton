@@ -1,15 +1,21 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { OrganizationProfile, useOrganization } from '@clerk/clerk-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Plus, Trash2, Copy, Eye, EyeOff, CheckCircle2, AlertTriangle, Globe, UserPlus, Link2, Mail } from 'lucide-react';
+import { KeyRound, Plus, Trash2, Copy, Eye, EyeOff, CheckCircle2, AlertTriangle, Globe, UserPlus, Link2, Mail, GraduationCap } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
 import { IntegrationsTab } from '@/components/settings/IntegrationsTab';
+import { createOnboardingTour } from '@/lib/onboarding';
 import type { ApiKey } from '@/lib/types';
 
 export function Settings() {
   const { t } = useTranslation();
+
+  const handleReplayTour = useCallback(() => {
+    const tourDriver = createOnboardingTour(t);
+    tourDriver.drive();
+  }, [t]);
 
   return (
     <div className="p-4 md:p-6 space-y-8">
@@ -25,6 +31,26 @@ export function Settings() {
 
       {/* Language Section */}
       <LanguageSection />
+
+      {/* Replay Onboarding Tour */}
+      <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <GraduationCap size={20} className="text-accent" />
+            <div>
+              <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">
+                {t('settings.replayTour')}
+              </h2>
+            </div>
+          </div>
+          <button
+            onClick={handleReplayTour}
+            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover transition-colors"
+          >
+            {t('settings.replayTour')}
+          </button>
+        </div>
+      </div>
 
       {/* Integrations Section */}
       <IntegrationsTab />
