@@ -12,7 +12,7 @@ import { useIssuesStore } from '@/stores/issues';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn, timeAgo } from '@/lib/utils';
-import { MarkdownView } from '@/components/shared/MarkdownView';
+import { NotionEditor } from '@/components/shared/NotionEditor';
 import type { IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus } from '@/lib/types';
 
 const TAG_COLORS = [
@@ -415,7 +415,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                   className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted hover:border-accent hover:text-accent transition-colors"
                 >
                   <Plus size={10} className="inline mr-1" />
-                  Add tag
+                  {t('issueDrawer.addTag')}
                 </button>
               </div>
 
@@ -449,7 +449,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') handleCreateAndAddTag();
                       }}
-                      placeholder="New tag name…"
+                      placeholder={t('issueDrawer.newTagPlaceholder')}
                       className="flex-1 bg-transparent text-xs text-primary outline-none placeholder-muted px-2 py-1"
                     />
                     <button
@@ -457,7 +457,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                       disabled={!newTagName.trim()}
                       className="rounded-md px-2 py-1 text-[10px] bg-accent text-black font-medium disabled:opacity-40 hover:bg-accent-hover transition-colors"
                     >
-                      Create
+                      {t('issueDrawer.createTag')}
                     </button>
                   </div>
                 </div>
@@ -469,7 +469,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               <div>
                 <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                   <User size={12} />
-                  Assignees
+                  {t('issueDrawer.assignees')}
                 </label>
                 <div className="flex -space-x-2">
                   {issue.assignee_ids.map((id) => (
@@ -489,34 +489,32 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             <div>
               <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <FileText size={12} />
-                Description
+                {t('issueDrawer.description')}
                 {!editingDescription && (
-                  <span className="text-[9px] text-muted/60 ml-1">(double-click to edit)</span>
+                  <span className="text-[9px] text-muted/60 ml-1">{t('issueDrawer.descriptionEdit')}</span>
                 )}
               </label>
               {editingDescription ? (
                 <div className="rounded-lg bg-surface border border-border overflow-hidden">
-                  <textarea
-                    value={descriptionDraft}
-                    onChange={(e) => setDescriptionDraft(e.target.value)}
-                    onBlur={handleDescriptionSave}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        setEditingDescription(false);
-                      }
-                    }}
-                    autoFocus
-                    rows={10}
-                    className="w-full bg-transparent text-sm text-primary p-4 outline-none resize-y min-h-[120px] font-mono"
-                    placeholder="Write description in Markdown…"
-                  />
+                  <div className="min-h-[200px]">
+                    <NotionEditor
+                      initialContent={descriptionDraft}
+                      onChange={setDescriptionDraft}
+                      placeholder={t('issueDrawer.descriptionPlaceholder')}
+                    />
+                  </div>
                   <div className="flex items-center justify-between border-t border-border px-4 py-2">
-                    <span className="text-[10px] text-muted">Markdown supported • Escape to cancel</span>
+                    <button
+                      onClick={() => setEditingDescription(false)}
+                      className="text-xs text-muted hover:text-primary transition-colors"
+                    >
+                      {t('common.cancel')}
+                    </button>
                     <button
                       onClick={handleDescriptionSave}
                       className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-black hover:bg-accent-hover transition-colors"
                     >
-                      Save
+                      {t('issueDrawer.descriptionSave')}
                     </button>
                   </div>
                 </div>
@@ -526,9 +524,12 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     setDescriptionDraft(issue.description || '');
                     setEditingDescription(true);
                   }}
-                  className="rounded-lg bg-surface border border-border p-4 cursor-text hover:border-accent/30 transition-colors"
+                  className="rounded-lg bg-surface border border-border p-4 cursor-text hover:border-accent/30 transition-colors min-h-[80px]"
                 >
-                  <MarkdownView content={issue.description} />
+                  <NotionEditor
+                    initialContent={issue.description}
+                    editable={false}
+                  />
                 </div>
               ) : (
                 <p
@@ -538,7 +539,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     setEditingDescription(true);
                   }}
                 >
-                  No description — double-click to add
+                  {t('issueDrawer.noDescription')}
                 </p>
               )}
             </div>
@@ -547,7 +548,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             <div>
               <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <Paperclip size={12} />
-                Attachments
+                {t('issueDrawer.attachments')}
               </label>
               {/* Thumbnail grid */}
               {imageAttachments.length > 0 && (
@@ -585,7 +586,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               {/* Upload area */}
               <label className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted cursor-pointer hover:border-accent hover:text-accent transition-colors mt-1">
                 <Upload size={14} />
-                Drop files or click to upload
+                {t('issueDrawer.dropFiles')}
                 <input
                   type="file"
                   multiple
@@ -601,7 +602,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               <div>
                 <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                   <Bot size={12} />
-                  Agent TLDRs
+                  {t('issueDrawer.agentTldrs')}
                 </label>
                 <div className="space-y-2">
                   {issue.tldrs.map((tldr: TLDR) => (
@@ -615,7 +616,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             <div>
               <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <MessageSquare size={12} />
-                Comments ({issue.comments?.length || 0})
+                {t('issueDrawer.commentCount', { count: issue.comments?.length || 0 })}
               </label>
               <div className="space-y-3">
                 {(issue.comments || []).map((comment: Comment) => (
@@ -628,7 +629,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                 <textarea
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
-                  placeholder="Add a comment…"
+                  placeholder={t('issueDrawer.addComment')}
                   rows={3}
                   className="w-full bg-transparent text-sm text-primary placeholder-muted outline-none resize-none"
                   onKeyDown={(e) => {
@@ -638,14 +639,14 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                   }}
                 />
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
-                  <span className="text-[10px] text-muted">⌘+Enter to submit</span>
+                  <span className="text-[10px] text-muted">{t('issueDrawer.submitHint')}</span>
                   <button
                     onClick={handleSubmitComment}
                     disabled={!commentText.trim() || commentMutation.isPending}
                     className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-black hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <Send size={12} />
-                    {commentMutation.isPending ? 'Sending…' : 'Comment'}
+                    {commentMutation.isPending ? t('issueDrawer.sending') : t('issueDrawer.comment')}
                   </button>
                 </div>
               </div>
@@ -655,21 +656,21 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             <div className="border-t border-border pt-4">
               <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <Activity size={12} />
-                Activity
+                {t('issueDrawer.activity')}
               </label>
               <div className="space-y-2 text-xs text-muted">
                 <div className="flex items-center gap-2">
                   <Calendar size={12} />
-                  <span>Created {timeAgo(issue.created_at)}</span>
+                  <span>{t('issueDrawer.createdTime', { time: timeAgo(issue.created_at) })}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Calendar size={12} />
-                  <span>Updated {timeAgo(issue.updated_at)}</span>
+                  <span>{t('issueDrawer.updatedTime', { time: timeAgo(issue.updated_at) })}</span>
                 </div>
                 {issue.qualified_at && (
                   <div className="flex items-center gap-2">
                     <CheckCircle2 size={12} className="text-green-500" />
-                    <span>Qualified {timeAgo(issue.qualified_at)}</span>
+                    <span>{t('issueDrawer.qualifiedTime', { time: timeAgo(issue.qualified_at) })}</span>
                   </div>
                 )}
               </div>

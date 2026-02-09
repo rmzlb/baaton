@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useApi } from '@/hooks/useApi';
-import { MarkdownEditor } from '@/components/shared/MarkdownEditor';
+import { NotionEditor } from '@/components/shared/NotionEditor';
 import { cn } from '@/lib/utils';
 import type { IssueType, IssuePriority, Project, ProjectTag } from '@/lib/types';
 
@@ -589,12 +589,13 @@ function StepDescription({
           {useTemplate ? t('createIssue.hideTemplate') : t('createIssue.useTemplate')}
         </button>
       </div>
-      <MarkdownEditor
-        value={description}
-        onChange={setDescription}
-        placeholder={t('createIssue.descriptionPlaceholder')}
-        minRows={10}
-      />
+      <div className="min-h-[250px] rounded-lg border border-border overflow-hidden">
+        <NotionEditor
+          initialContent={description}
+          onChange={setDescription}
+          placeholder={t('createIssue.descriptionPlaceholder')}
+        />
+      </div>
     </div>
   );
 }

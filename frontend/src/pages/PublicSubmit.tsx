@@ -2,17 +2,19 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Send, Bug, Sparkles, Zap, HelpCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { PixelBaton } from '@/components/shared/PixelBaton';
+import { useTranslation } from '@/hooks/useTranslation';
 import { api, ApiError } from '@/lib/api';
 import type { IssueType } from '@/lib/types';
 
-const types: { value: IssueType; label: string; icon: typeof Bug; color: string }[] = [
-  { value: 'bug', label: 'Bug', icon: Bug, color: 'text-red-400 border-red-400/30' },
-  { value: 'feature', label: 'Feature', icon: Sparkles, color: 'text-emerald-400 border-emerald-400/30' },
-  { value: 'improvement', label: 'Improvement', icon: Zap, color: 'text-blue-400 border-blue-400/30' },
-  { value: 'question', label: 'Question', icon: HelpCircle, color: 'text-purple-400 border-purple-400/30' },
+const types: { value: IssueType; labelKey: string; icon: typeof Bug; color: string }[] = [
+  { value: 'bug', labelKey: 'publicSubmit.typeBug', icon: Bug, color: 'text-red-400 border-red-400/30' },
+  { value: 'feature', labelKey: 'publicSubmit.typeFeature', icon: Sparkles, color: 'text-emerald-400 border-emerald-400/30' },
+  { value: 'improvement', labelKey: 'publicSubmit.typeImprovement', icon: Zap, color: 'text-blue-400 border-blue-400/30' },
+  { value: 'question', labelKey: 'publicSubmit.typeQuestion', icon: HelpCircle, color: 'text-purple-400 border-purple-400/30' },
 ];
 
 export function PublicSubmit() {
+  const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -42,14 +44,14 @@ export function PublicSubmit() {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 404) {
-          setError(`Project "${slug}" not found. Please check the URL.`);
+          setError(t('publicSubmit.projectNotFound', { slug }));
         } else if (err.status === 429) {
-          setError('Too many submissions. Please wait a few minutes and try again.');
+          setError(t('publicSubmit.tooManyRequests'));
         } else {
           setError(err.message);
         }
       } else {
-        setError('Something went wrong. Please try again.');
+        setError(t('publicSubmit.genericError'));
       }
     } finally {
       setSubmitting(false);
@@ -69,15 +71,15 @@ export function PublicSubmit() {
       <div className="flex min-h-screen items-center justify-center bg-bg p-6">
         <div className="text-center">
           <CheckCircle2 size={64} className="mx-auto text-green-500 mb-4" />
-          <h2 className="text-xl font-bold text-primary">Submitted!</h2>
+          <h2 className="text-xl font-bold text-primary">{t('publicSubmit.submitted')}</h2>
           <p className="mt-2 text-sm text-secondary">
-            Your feedback has been received and will be reviewed by the team.
+            {t('publicSubmit.submittedDesc')}
           </p>
           <button
             onClick={resetForm}
             className="mt-6 text-sm text-accent hover:underline"
           >
-            Submit another
+            {t('publicSubmit.submitAnother')}
           </button>
         </div>
       </div>
@@ -107,7 +109,7 @@ export function PublicSubmit() {
 
           {/* Type selector */}
           <div className="grid grid-cols-4 gap-2">
-            {types.map(({ value, label, icon: Icon, color }) => (
+            {types.map(({ value, labelKey, icon: Icon, color }) => (
               <button
                 key={value}
                 type="button"
@@ -119,7 +121,7 @@ export function PublicSubmit() {
                 }`}
               >
                 <Icon size={20} />
-                {label}
+                {t(labelKey)}
               </button>
             ))}
           </div>

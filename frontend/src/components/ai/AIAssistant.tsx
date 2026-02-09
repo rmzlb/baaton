@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAIAssistantStore, type AIMessage } from '@/stores/ai-assistant';
 import { useApi } from '@/hooks/useApi';
+import { useTranslation } from '@/hooks/useTranslation';
 import { generateAIResponse } from '@/lib/ai-engine';
 import { cn } from '@/lib/utils';
 import { MarkdownView } from '@/components/shared/MarkdownView';
@@ -13,14 +14,17 @@ import type { Issue } from '@/lib/types';
 import type { SkillResult} from '@/lib/ai-skills';
 import { SKILL_TOOLS } from '@/lib/ai-skills';
 
-const SUGGESTIONS = [
-  { label: '📊 Résumé', prompt: 'Fais-moi un résumé de l\'avancement de chaque projet' },
-  { label: '🎯 Reste à faire', prompt: 'Qu\'est-ce qui reste à faire sur tous les projets ? Liste par priorité.' },
-  { label: '🚧 Blockers', prompt: 'Quels sont les blockers actuels ?' },
-  { label: '🔄 Reprioriser', prompt: 'Repriorise les issues ouvertes de manière intelligente' },
-  { label: '📋 Sprint', prompt: 'Analyse la vélocité et propose un sprint plan' },
-  { label: '📝 Créer PRD', prompt: 'Aide-moi à écrire un PRD pour une nouvelle fonctionnalité' },
-];
+function useSuggestions() {
+  const { t } = useTranslation();
+  return [
+    { label: t('ai.suggestionSummary'), prompt: t('ai.suggestionSummaryPrompt') },
+    { label: t('ai.suggestionTodo'), prompt: t('ai.suggestionTodoPrompt') },
+    { label: t('ai.suggestionBlockers'), prompt: t('ai.suggestionBlockersPrompt') },
+    { label: t('ai.suggestionReprioritize'), prompt: t('ai.suggestionReprioritizePrompt') },
+    { label: t('ai.suggestionSprint'), prompt: t('ai.suggestionSprintPrompt') },
+    { label: t('ai.suggestionPrd'), prompt: t('ai.suggestionPrdPrompt') },
+  ];
+}
 
 // ─── Skill Badge ──────────────────────────────
 function SkillBadge({ result }: { result: SkillResult }) {
@@ -84,6 +88,7 @@ function MessageBubble({ message }: { message: AIMessage }) {
 }
 
 function TypingIndicator({ skillName }: { skillName?: string }) {
+  const { t } = useTranslation();
   return (
     <div className="flex gap-2">
       <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-hover text-secondary mt-0.5">
@@ -93,7 +98,7 @@ function TypingIndicator({ skillName }: { skillName?: string }) {
         <div className="flex items-center gap-1.5">
           <Loader2 size={12} className="animate-spin text-accent" />
           <span className="text-xs text-muted">
-            {skillName ? `Exécution: ${skillName}…` : 'Analyse en cours…'}
+            {skillName ? t('ai.executingSkill', { name: skillName }) : t('ai.analyzing')}
           </span>
         </div>
       </div>
@@ -103,6 +108,8 @@ function TypingIndicator({ skillName }: { skillName?: string }) {
 
 // ─── Main Component ───────────────────────────
 export function AIAssistant() {
+  const { t } = useTranslation();
+  const SUGGESTIONS = useSuggestions();
   const {
     open, messages, loading, input,
     toggle, setOpen, setInput, addMessage, setLoading, clearMessages,
@@ -185,7 +192,7 @@ export function AIAssistant() {
         console.error('AI error:', err);
         addMessage(
           'assistant',
-          `⚠️ Erreur: ${err instanceof Error ? err.message : 'Impossible de générer une réponse'}`,
+          `⚠️ ${t('ai.error', { message: err instanceof Error ? err.message : t('ai.errorGeneric') })}`,
         );
       } finally {
         setLoading(false);
@@ -233,13 +240,13 @@ export function AIAssistant() {
               </div>
               <div>
                 <h3 className="text-xs font-bold text-primary flex items-center gap-1.5">
-                  Baaton AI
+                  {t('ai.title')}
                   <span className="rounded-full bg-emerald-500/20 text-emerald-400 px-1.5 py-0 text-[9px] font-medium">
-                    {skillCount} skills
+                    {t('ai.skills', { count: skillCount })}
                   </span>
                 </h3>
                 <p className="text-[9px] text-muted">
-                  {totalIssues > 0 ? `${totalIssues} issues · ${projects.length} projets · Gemini Flash` : 'Chargement…'}
+                  {totalIssues > 0 ? `${totalIssues} issues · ${projects.length} projects · Gemini Flash` : t('ai.loading')}
                 </p>
               </div>
             </div>
@@ -248,7 +255,7 @@ export function AIAssistant() {
                 <button
                   onClick={clearMessages}
                   className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
-                  title="Effacer l'historique"
+                  title={t('ai.clearHistory')}
                 >
                   <Trash2 size={14} />
                 </button>
@@ -269,9 +276,9 @@ export function AIAssistant() {
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500 mb-3">
                   <Sparkles size={24} />
                 </div>
-                <h4 className="text-sm font-semibold text-primary mb-1">Agent AI avec Skills</h4>
+                <h4 className="text-sm font-semibold text-primary mb-1">{t('ai.agentWithSkills')}</h4>
                 <p className="text-xs text-muted mb-3 max-w-[280px]">
-                  Je peux lire, créer, modifier et analyser tes issues. Demande-moi n'importe quoi.
+                  {t('ai.agentDesc')}
                 </p>
 
                 {/* Skills list */}
@@ -279,19 +286,19 @@ export function AIAssistant() {
                   <details className="group">
                     <summary className="flex items-center justify-center gap-1 cursor-pointer text-[10px] text-muted hover:text-secondary transition-colors">
                       <Wrench size={10} />
-                      Skills disponibles
+                      {t('ai.availableSkills')}
                       <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
                     </summary>
                     <div className="mt-2 grid grid-cols-2 gap-1 text-[9px]">
                       {[
-                        ['search_issues', 'Rechercher'],
-                        ['create_issue', 'Créer issue'],
-                        ['update_issue', 'Modifier issue'],
-                        ['bulk_update', 'Bulk update'],
-                        ['add_comment', 'Commenter'],
-                        ['generate_prd', 'Générer PRD'],
-                        ['analyze_sprint', 'Analyser sprint'],
-                        ['get_metrics', 'Métriques'],
+                        ['search_issues', t('ai.skillSearch')],
+                        ['create_issue', t('ai.skillCreate')],
+                        ['update_issue', t('ai.skillUpdate')],
+                        ['bulk_update', t('ai.skillBulkUpdate')],
+                        ['add_comment', t('ai.skillComment')],
+                        ['generate_prd', t('ai.skillPrd')],
+                        ['analyze_sprint', t('ai.skillSprint')],
+                        ['get_metrics', t('ai.skillMetrics')],
                       ].map(([skill, label]) => (
                         <div key={skill} className="flex items-center gap-1 rounded border border-border/50 bg-surface/50 px-2 py-1">
                           <span className="text-accent">⚡</span>
@@ -351,7 +358,7 @@ export function AIAssistant() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Crée une issue, repriorise, analyse…"
+                placeholder={t('ai.placeholder')}
                 disabled={loading}
                 rows={1}
                 className="flex-1 bg-transparent text-sm text-primary placeholder-muted outline-none resize-none max-h-20"
@@ -365,7 +372,7 @@ export function AIAssistant() {
               </button>
             </div>
             <p className="text-[9px] text-muted mt-1 text-center">
-              Gemini Flash · {SKILL_TOOLS[0].functionDeclarations.length} skills · données temps réel
+              Gemini Flash · {SKILL_TOOLS[0].functionDeclarations.length} skills · {t('ai.realTimeData')}
             </p>
           </div>
         </div>

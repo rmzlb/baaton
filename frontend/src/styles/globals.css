@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* BlockNote editor — ensure Tailwind generates required utility classes */
+@source "../../node_modules/@blocknote/shadcn";
+
 /* ─── Fonts & Brand ────────────────────────── */
 @theme {
   --font-sans: 'Inter', sans-serif;
