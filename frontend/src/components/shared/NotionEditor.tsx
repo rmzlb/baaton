@@ -108,6 +108,89 @@ function BubbleToolbar() {
   );
 }
 
+// ─── Markdown → Tiptap JSON converter ───────────
+function markdownToTiptap(md: string): JSONContent {
+  const lines = md.split('\n');
+  const content: JSONContent[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Headings
+    const h3 = line.match(/^### (.+)/);
+    if (h3) { content.push({ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: h3[1] }] }); continue; }
+    const h2 = line.match(/^## (.+)/);
+    if (h2) { content.push({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: h2[1] }] }); continue; }
+    const h1 = line.match(/^# (.+)/);
+    if (h1) { content.push({ type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: h1[1] }] }); continue; }
+
+    // Task list items
+    const task = line.match(/^- \[( |x)\] (.*)/);
+    if (task) {
+      // Collect consecutive task items
+      const items: JSONContent[] = [];
+      let j = i;
+      while (j < lines.length) {
+        const tm = lines[j].match(/^- \[( |x)\] (.*)/);
+        if (!tm) break;
+        items.push({
+          type: 'taskItem',
+          attrs: { checked: tm[1] === 'x' },
+          content: tm[2] ? [{ type: 'paragraph', content: [{ type: 'text', text: tm[2] }] }] : [{ type: 'paragraph' }],
+        });
+        j++;
+      }
+      content.push({ type: 'taskList', content: items });
+      i = j - 1;
+      continue;
+    }
+
+    // Unordered list items
+    const ul = line.match(/^- (.+)/);
+    if (ul) {
+      const items: JSONContent[] = [];
+      let j = i;
+      while (j < lines.length && lines[j].match(/^- (.+)/)) {
+        const m = lines[j].match(/^- (.+)/)!;
+        items.push({ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: m[1] }] }] });
+        j++;
+      }
+      content.push({ type: 'bulletList', content: items });
+      i = j - 1;
+      continue;
+    }
+
+    // Ordered list items
+    const ol = line.match(/^\d+\. (.*)/);
+    if (ol) {
+      const items: JSONContent[] = [];
+      let j = i;
+      while (j < lines.length && lines[j].match(/^\d+\. (.*)/)) {
+        const m = lines[j].match(/^\d+\. (.*)/)!;
+        items.push({
+          type: 'listItem',
+          content: [{ type: 'paragraph', content: m[1] ? [{ type: 'text', text: m[1] }] : [] }],
+        });
+        j++;
+      }
+      content.push({ type: 'orderedList', content: items });
+      i = j - 1;
+      continue;
+    }
+
+    // Empty line → empty paragraph
+    if (!line.trim()) {
+      content.push({ type: 'paragraph' });
+      continue;
+    }
+
+    // Regular text
+    content.push({ type: 'paragraph', content: [{ type: 'text', text: line }] });
+  }
+
+  return { type: 'doc', content: content.length > 0 ? content : [{ type: 'paragraph' }] };
+}
+
 // ─── Props ──────────────────────────────────────
 interface NotionEditorProps {
   initialContent?: JSONContent | string;
@@ -130,9 +213,9 @@ export function NotionEditor({
   const resolvedPlaceholder = placeholder || t('editor.placeholder');
   const editorRef = useRef<EditorInstance | null>(null);
 
-  // Parse initial content
+  // Parse initial content — convert markdown string to Tiptap JSON
   const parsedContent: JSONContent | undefined = typeof initialContent === 'string' && initialContent.trim()
-    ? { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: initialContent }] }] }
+    ? markdownToTiptap(initialContent)
     : (initialContent as JSONContent | undefined);
 
   const handleUpdate = useCallback(
