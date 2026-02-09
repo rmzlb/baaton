@@ -168,6 +168,29 @@ export const SKILL_TOOLS = [
           },
         },
       },
+      {
+        name: 'weekly_recap',
+        description:
+          'Generate a weekly recap of activity across all projects. Shows issues completed, in progress, newly created, and blocked. Use when the user asks "what happened this week", "recap", "résumé", "avancement", or "status update".',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            project_id: { type: 'STRING', description: 'Project ID (omit for all projects)' },
+            days: { type: 'NUMBER', description: 'Number of days to look back (default 7)' },
+          },
+        },
+      },
+      {
+        name: 'suggest_priorities',
+        description:
+          'Analyze open issues and suggest priority changes. Identifies: urgents without progress, low-priority blockers, stale issues (no update in 7+ days), and priority imbalances. Use when user asks to "reprioritize", "what should I focus on", or "suggest priorities".',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            project_id: { type: 'STRING', description: 'Project ID (omit for all projects)' },
+          },
+        },
+      },
     ],
   },
 ];

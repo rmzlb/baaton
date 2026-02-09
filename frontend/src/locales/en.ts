@@ -275,10 +275,10 @@ const en = {
   'ai.suggestionBlockersPrompt': 'What are the current blockers?',
   'ai.suggestionReprioritize': '🔄 Reprioritize',
   'ai.suggestionReprioritizePrompt': 'Intelligently reprioritize open issues',
-  'ai.suggestionSprint': '📋 Sprint',
-  'ai.suggestionSprintPrompt': 'Analyze velocity and propose a sprint plan',
-  'ai.suggestionPrd': '📝 Create PRD',
-  'ai.suggestionPrdPrompt': 'Help me write a PRD for a new feature',
+  'ai.suggestionRecap': '📋 Weekly Recap',
+  'ai.suggestionRecapPrompt': 'Give me a weekly recap: what was done, what is in progress, what is blocked?',
+  'ai.suggestionCreate': '➕ Create Issue',
+  'ai.suggestionCreatePrompt': 'Create a new issue for me. What do you need to know?',
 
   // ─── ErrorBoundary ──────────────────────────
   'error.title': 'Something went wrong',

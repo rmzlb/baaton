@@ -21,8 +21,8 @@ function useSuggestions() {
     { label: t('ai.suggestionTodo'), prompt: t('ai.suggestionTodoPrompt') },
     { label: t('ai.suggestionBlockers'), prompt: t('ai.suggestionBlockersPrompt') },
     { label: t('ai.suggestionReprioritize'), prompt: t('ai.suggestionReprioritizePrompt') },
-    { label: t('ai.suggestionSprint'), prompt: t('ai.suggestionSprintPrompt') },
-    { label: t('ai.suggestionPrd'), prompt: t('ai.suggestionPrdPrompt') },
+    { label: t('ai.suggestionRecap'), prompt: t('ai.suggestionRecapPrompt') },
+    { label: t('ai.suggestionCreate'), prompt: t('ai.suggestionCreatePrompt') },
   ];
 }
 

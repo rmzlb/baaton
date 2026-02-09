@@ -275,10 +275,10 @@ const fr = {
   'ai.suggestionBlockersPrompt': 'Quels sont les blockers actuels ?',
   'ai.suggestionReprioritize': '🔄 Reprioriser',
   'ai.suggestionReprioritizePrompt': 'Repriorise les issues ouvertes de manière intelligente',
-  'ai.suggestionSprint': '📋 Sprint',
-  'ai.suggestionSprintPrompt': 'Analyse la vélocité et propose un sprint plan',
-  'ai.suggestionPrd': '📝 Créer PRD',
-  'ai.suggestionPrdPrompt': 'Aide-moi à écrire un PRD pour une nouvelle fonctionnalité',
+  'ai.suggestionRecap': '📋 Récap Semaine',
+  'ai.suggestionRecapPrompt': 'Fais-moi un récap de la semaine : quoi de fait, en cours, bloqué ?',
+  'ai.suggestionCreate': '➕ Créer Issue',
+  'ai.suggestionCreatePrompt': 'Crée une nouvelle issue. De quoi as-tu besoin ?',
 
   // ─── ErrorBoundary ──────────────────────────
   'error.title': 'Une erreur est survenue',

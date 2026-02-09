@@ -262,6 +262,122 @@ async function executeGetMetrics(
   }
 }
 
+// ─── Weekly Recap ─────────────────────────────
+
+async function executeWeeklyRecap(
+  args: Record<string, unknown>,
+  allIssues: Record<string, Issue[]>,
+  projects: Project[],
+): Promise<SkillResult> {
+  try {
+    const projectId = args.project_id as string | undefined;
+    const days = (args.days as number) || 7;
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const targetProjects = projectId ? projects.filter((p) => p.id === projectId) : projects;
+
+    const recap: Record<string, unknown>[] = [];
+
+    for (const project of targetProjects) {
+      const issues = allIssues[project.id] || [];
+      const recentlyDone = issues.filter((i) => i.status === 'done' && new Date(i.updated_at) > cutoff);
+      const inProgress = issues.filter((i) => i.status === 'in_progress');
+      const inReview = issues.filter((i) => i.status === 'in_review');
+      const recentlyCreated = issues.filter((i) => new Date(i.created_at) > cutoff);
+      const blocked = issues.filter((i) => i.priority === 'urgent' && i.status !== 'done' && i.status !== 'cancelled');
+      const stale = issues.filter((i) => {
+        const daysSinceUpdate = (Date.now() - new Date(i.updated_at).getTime()) / (24 * 60 * 60 * 1000);
+        return daysSinceUpdate > 7 && i.status !== 'done' && i.status !== 'cancelled' && i.status !== 'backlog';
+      });
+
+      recap.push({
+        project: project.name,
+        prefix: project.prefix,
+        period: `${days} days`,
+        completed: recentlyDone.map((i) => ({ display_id: i.display_id, title: i.title })),
+        completed_count: recentlyDone.length,
+        in_progress: inProgress.map((i) => ({ display_id: i.display_id, title: i.title, priority: i.priority })),
+        in_review: inReview.map((i) => ({ display_id: i.display_id, title: i.title })),
+        newly_created: recentlyCreated.length,
+        urgent_open: blocked.map((i) => ({ display_id: i.display_id, title: i.title, status: i.status })),
+        stale_issues: stale.map((i) => ({ display_id: i.display_id, title: i.title, status: i.status, updated_at: i.updated_at })),
+        total_issues: issues.length,
+        done_total: issues.filter((i) => i.status === 'done').length,
+        velocity: recentlyDone.length,
+      });
+    }
+
+    return {
+      skill: 'weekly_recap',
+      success: true,
+      data: recap,
+      summary: `Recap for ${targetProjects.length} project(s) over ${days} days`,
+    };
+  } catch (err) {
+    return { skill: 'weekly_recap', success: false, error: String(err), summary: 'Recap failed' };
+  }
+}
+
+// ─── Priority Suggestions ─────────────────────
+
+async function executeSuggestPriorities(
+  args: Record<string, unknown>,
+  allIssues: Record<string, Issue[]>,
+  projects: Project[],
+): Promise<SkillResult> {
+  try {
+    const projectId = args.project_id as string | undefined;
+    const targetProjects = projectId ? projects.filter((p) => p.id === projectId) : projects;
+
+    const suggestions: Record<string, unknown>[] = [];
+
+    for (const project of targetProjects) {
+      const issues = allIssues[project.id] || [];
+      const open = issues.filter((i) => i.status !== 'done' && i.status !== 'cancelled');
+
+      // Urgent issues not making progress
+      const urgentStuck = open.filter((i) => {
+        const daysSinceUpdate = (Date.now() - new Date(i.updated_at).getTime()) / (24 * 60 * 60 * 1000);
+        return i.priority === 'urgent' && daysSinceUpdate > 2;
+      });
+
+      // High priority in backlog (should be moved to todo)
+      const highInBacklog = open.filter((i) => i.priority === 'high' && i.status === 'backlog');
+
+      // Stale issues (no update in 14+ days, not in backlog)
+      const stale = open.filter((i) => {
+        const daysSinceUpdate = (Date.now() - new Date(i.updated_at).getTime()) / (24 * 60 * 60 * 1000);
+        return daysSinceUpdate > 14 && i.status !== 'backlog';
+      });
+
+      // Priority distribution analysis
+      const priorityCounts: Record<string, number> = {};
+      for (const i of open) {
+        const p = i.priority || 'none';
+        priorityCounts[p] = (priorityCounts[p] || 0) + 1;
+      }
+
+      suggestions.push({
+        project: project.name,
+        prefix: project.prefix,
+        urgent_stuck: urgentStuck.map((i) => ({ id: i.id, display_id: i.display_id, title: i.title, days_since_update: Math.floor((Date.now() - new Date(i.updated_at).getTime()) / 86400000) })),
+        high_in_backlog: highInBacklog.map((i) => ({ id: i.id, display_id: i.display_id, title: i.title })),
+        stale: stale.map((i) => ({ id: i.id, display_id: i.display_id, title: i.title, status: i.status, days_since_update: Math.floor((Date.now() - new Date(i.updated_at).getTime()) / 86400000) })),
+        priority_distribution: priorityCounts,
+        total_open: open.length,
+      });
+    }
+
+    return {
+      skill: 'suggest_priorities',
+      success: true,
+      data: suggestions,
+      summary: `Priority analysis for ${targetProjects.length} project(s)`,
+    };
+  } catch (err) {
+    return { skill: 'suggest_priorities', success: false, error: String(err), summary: 'Priority analysis failed' };
+  }
+}
+
 // ─── Main Executor ────────────────────────────
 
 export async function executeSkill(
@@ -285,9 +401,12 @@ export async function executeSkill(
     case 'get_project_metrics':
       return executeGetMetrics(args, allIssues, projects);
     case 'analyze_sprint':
-      return executeGetMetrics(args, allIssues, projects); // reuse metrics for sprint analysis
+      return executeGetMetrics(args, allIssues, projects);
+    case 'weekly_recap':
+      return executeWeeklyRecap(args, allIssues, projects);
+    case 'suggest_priorities':
+      return executeSuggestPriorities(args, allIssues, projects);
     case 'generate_prd':
-      // PRD generation is handled by the LLM itself — return the brief as context
       return {
         skill: 'generate_prd',
         success: true,
