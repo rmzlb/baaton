@@ -171,16 +171,28 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
     );
   }, [visibleStatuses, filteredIssues, sortIssues]);
 
+  // Announce DnD results to screen readers
+  const announceToScreenReader = useCallback((message: string) => {
+    const announcer = document.getElementById('a11y-announcer');
+    if (announcer) {
+      announcer.textContent = message;
+    }
+  }, []);
+
   const handleDragEnd = useCallback(
     (result: DropResult) => {
       const { draggableId, destination, source } = result;
 
-      if (!destination) return;
+      if (!destination) {
+        announceToScreenReader('Item drop cancelled.');
+        return;
+      }
       if (
         destination.droppableId === source.droppableId &&
         destination.index === source.index
-      )
+      ) {
         return;
+      }
 
       const newStatus = destination.droppableId as IssueStatus;
       const columnIssues = issuesByStatus[newStatus] || [];
@@ -202,10 +214,17 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
       // Optimistic update
       moveIssue(draggableId, newStatus, newPosition);
 
+      // Announce status change
+      const movedIssue = issues.find((i) => i.id === draggableId);
+      const statusLabel = visibleStatuses.find((s) => s.key === newStatus)?.label || newStatus;
+      announceToScreenReader(
+        `Issue ${movedIssue?.display_id || ''} moved to ${statusLabel}, position ${destination.index + 1}.`,
+      );
+
       // API call
       onMoveIssue(draggableId, newStatus, newPosition);
     },
-    [issuesByStatus, moveIssue, onMoveIssue],
+    [issuesByStatus, moveIssue, onMoveIssue, announceToScreenReader, issues, visibleStatuses],
   );
 
   const clearAllFilters = () => {
@@ -266,6 +285,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('kanban.filterIssues')}
+            aria-label={t('kanban.filterIssues') || 'Filter issues'}
             className="h-8 w-32 sm:w-48 rounded-md border border-border bg-surface pl-8 pr-3 text-xs text-primary placeholder-muted outline-none focus:border-accent transition-colors"
           />
         </div>
@@ -423,9 +443,12 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         <div className="relative ml-auto">
           <button
             onClick={() => setShowSort(!showSort)}
+            aria-expanded={showSort}
+            aria-haspopup="listbox"
+            aria-label={`Sort by: ${sortOptions.find((s) => s.key === sortMode)?.label}`}
             className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary hover:border-border hover:text-primary transition-colors min-h-[32px]"
           >
-            <SlidersHorizontal size={12} />
+            <SlidersHorizontal size={12} aria-hidden="true" />
             <span className="hidden sm:inline">{sortOptions.find((s) => s.key === sortMode)?.label}</span>
           </button>
           {showSort && (
@@ -510,6 +533,8 @@ function FilterDropdown({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
         className={cn(
           'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition-colors min-h-[32px]',
           count > 0
@@ -517,17 +542,17 @@ function FilterDropdown({
             : 'border-border bg-surface text-secondary hover:border-border hover:text-primary',
         )}
       >
-        {icon}
+        <span aria-hidden="true">{icon}</span>
         {label}
         {count > 0 && (
-          <span className="ml-0.5 rounded-full bg-accent px-1.5 py-0 text-[9px] text-black font-bold">
+          <span className="ml-0.5 rounded-full bg-accent px-1.5 py-0 text-[9px] text-black font-bold" aria-label={`${count} selected`}>
             {count}
           </span>
         )}
-        <ChevronDown size={10} />
+        <ChevronDown size={10} aria-hidden="true" />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl max-h-64 overflow-y-auto">
+        <div role="listbox" aria-label={label} className="absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl max-h-64 overflow-y-auto">
           {children}
         </div>
       )}

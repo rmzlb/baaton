@@ -217,6 +217,8 @@ export function AIAssistant() {
       <button
         data-tour="ai-assistant"
         onClick={toggle}
+        aria-label={open ? (t('ai.closeAssistant') || 'Close AI assistant') : (t('ai.openAssistant') || 'Open AI assistant')}
+        aria-expanded={open}
         className={cn(
           'fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-all duration-300 hover:scale-105',
           open
@@ -224,12 +226,15 @@ export function AIAssistant() {
             : 'bg-amber-500 text-black hover:bg-amber-400',
         )}
       >
-        {open ? <X size={20} /> : <Sparkles size={20} />}
+        {open ? <X size={20} aria-hidden="true" /> : <Sparkles size={20} aria-hidden="true" />}
       </button>
 
       {/* Panel */}
       {open && (
         <div
+          role="dialog"
+          aria-modal="false"
+          aria-label={t('ai.title') || 'AI Assistant'}
           className="fixed bottom-20 right-6 z-40 flex w-[420px] max-h-[580px] flex-col rounded-xl border border-border bg-bg shadow-2xl overflow-hidden animate-slide-in-right"
           style={{ maxHeight: 'min(580px, calc(100vh - 120px))' }}
         >
@@ -257,15 +262,17 @@ export function AIAssistant() {
                   onClick={clearMessages}
                   className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
                   title={t('ai.clearHistory')}
+                  aria-label={t('ai.clearHistory') || 'Clear chat history'}
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={14} aria-hidden="true" />
                 </button>
               )}
               <button
                 onClick={() => setOpen(false)}
+                aria-label={t('ai.closeAssistant') || 'Close AI assistant'}
                 className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
               >
-                <X size={14} />
+                <X size={14} aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -360,6 +367,7 @@ export function AIAssistant() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={t('ai.placeholder')}
+                aria-label={t('ai.placeholder') || 'Ask the AI assistant'}
                 disabled={loading}
                 rows={1}
                 className="flex-1 bg-transparent text-sm text-primary placeholder-muted outline-none resize-none max-h-20"
@@ -367,9 +375,10 @@ export function AIAssistant() {
               <button
                 onClick={() => handleSend()}
                 disabled={!input.trim() || loading}
+                aria-label="Send message"
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                <Send size={14} />
+                <Send size={14} aria-hidden="true" />
               </button>
             </div>
             <p className="text-[9px] text-muted mt-1 text-center">

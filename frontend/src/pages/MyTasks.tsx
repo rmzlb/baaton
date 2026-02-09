@@ -234,3 +234,5 @@ export function MyTasks() {
     </div>
   );
 }
+
+export default MyTasks;

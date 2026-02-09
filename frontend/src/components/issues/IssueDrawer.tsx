@@ -14,6 +14,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { cn, timeAgo } from '@/lib/utils';
 import { NotionEditor } from '@/components/shared/NotionEditor';
 import { GitHubSection } from '@/components/github/GitHubSection';
+import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment } from '@/lib/types';
 
 /* ── Constants ─────────────────────────────────── */
@@ -94,12 +95,33 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     enabled: !!resolvedProjectId,
   });
 
-  // ── Mutations ──
+  // ── Mutations ── (with optimistic updates for instant UI feedback)
   const updateMutation = useMutation({
     mutationFn: ({ field, value }: { field: string; value: unknown }) =>
       apiClient.issues.update(issueId, { [field]: value }),
+    onMutate: async ({ field, value }) => {
+      // Cancel in-flight queries
+      await queryClient.cancelQueries({ queryKey: ['issue', issueId] });
+      const previousIssue = queryClient.getQueryData<Issue>(['issue', issueId]);
+      // Optimistically update the single-issue cache
+      queryClient.setQueryData<Issue>(['issue', issueId], (old) =>
+        old ? { ...old, [field]: value } : old,
+      );
+      // Optimistically update the Zustand store too
+      updateIssue(issueId, { [field]: value } as Partial<Issue>);
+      return { previousIssue };
+    },
+    onError: (_err, _vars, context) => {
+      // Roll back on error
+      if (context?.previousIssue) {
+        queryClient.setQueryData(['issue', issueId], context.previousIssue);
+        updateIssue(issueId, context.previousIssue);
+      }
+    },
     onSuccess: (updated) => {
       updateIssue(issueId, updated);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
     },
@@ -126,6 +148,16 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     },
   });
 
+  // ── Focus trap: focus first focusable element when drawer opens ──
+  useEffect(() => {
+    if (panelRef.current) {
+      const firstFocusable = panelRef.current.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      firstFocusable?.focus();
+    }
+  }, [issueId]);
+
   // ── Keyboard / Click-outside ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -134,6 +166,26 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
           setLightboxIndex(null);
         } else {
           onClose();
+        }
+      }
+      // Focus trap: keep Tab within the drawer
+      if (e.key === 'Tab' && panelRef.current) {
+        const focusableElements = panelRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusableElements.length === 0) return;
+        const first = focusableElements[0];
+        const last = focusableElements[focusableElements.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
         }
       }
     };
@@ -384,11 +436,14 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   return (
     <>
       {/* Backdrop — hidden on mobile since drawer is full-screen */}
-      <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" />
+      <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" />
 
       {/* Panel — full-screen on mobile, side panel on tablet+ */}
       <div
         ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="issue-drawer-title"
         className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:max-w-2xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right overflow-hidden"
       >
         {/* ── Header ── */}
@@ -413,9 +468,10 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
           </div>
           <button
             onClick={onClose}
+            aria-label="Close issue drawer"
             className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors shrink-0"
           >
-            <X size={16} />
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 
@@ -437,10 +493,12 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                       if (e.key === 'Escape') setEditingTitle(false);
                     }}
                     autoFocus
+                    aria-label={t('issueDrawer.editTitle') || 'Edit issue title'}
                     className="w-full bg-transparent text-base font-semibold text-primary outline-none border-b border-accent pb-1"
                   />
                 ) : (
                   <h2
+                    id="issue-drawer-title"
                     onClick={() => {
                       setTitleDraft(issue.title);
                       setEditingTitle(true);
@@ -483,13 +541,14 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               {/* GitHub Integration */}
               <GitHubSection issueId={issueId} />
 
-              {/* Activity (timestamps) */}
+              {/* Activity Feed */}
               <div className="border-t border-border pt-3">
                 <label className="flex items-center gap-1.5 text-[10px] text-muted mb-2 uppercase tracking-wider font-medium">
                   <Activity size={10} />
                   {t('issueDrawer.activity')}
                 </label>
-                <div className="space-y-1.5 text-[11px] text-muted">
+                {/* Timestamps */}
+                <div className="space-y-1.5 text-[11px] text-muted mb-3">
                   <div className="flex items-center gap-1.5">
                     <Calendar size={10} />
                     <span>{t('issueDrawer.createdTime', { time: timeAgo(issue.created_at) })}</span>
@@ -505,6 +564,8 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     </div>
                   )}
                 </div>
+                {/* Activity log timeline */}
+                <ActivityFeed issueId={issueId} limit={15} compact />
               </div>
             </div>
 
@@ -931,6 +992,7 @@ function MetadataSidebar({
                 onFieldUpdate('due_date', val || null);
                 if (!val) setEditingDueDate(false);
               }}
+              aria-label={t('issueDrawer.dueDate') || 'Due date'}
               className="rounded-md border border-border bg-surface px-2 py-1 text-[11px] text-primary outline-none focus:border-accent transition-colors w-full"
             />
             {issue.due_date && (
@@ -1033,6 +1095,7 @@ function MetadataSidebar({
                   if (e.key === 'Enter') onCreateAndAddTag();
                 }}
                 placeholder={t('issueDrawer.newTagPlaceholder')}
+                aria-label={t('issueDrawer.newTagPlaceholder') || 'New tag name'}
                 className="flex-1 bg-transparent text-[11px] text-primary outline-none placeholder-muted px-1.5 py-0.5"
               />
               <button
@@ -1200,6 +1263,7 @@ function AttachmentSection({
           multiple
           accept="image/*,.pdf,.doc,.docx,.txt"
           className="hidden"
+          aria-label={t('issueDrawer.dropFiles') || 'Upload files'}
           onChange={(e) => onFileUpload(e.target.files)}
         />
       </label>
@@ -1246,6 +1310,7 @@ function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, 
           value={commentText}
           onChange={(e) => onCommentTextChange(e.target.value)}
           placeholder={t('issueDrawer.addComment')}
+          aria-label={t('issueDrawer.addComment') || 'Write a comment'}
           rows={2}
           className="w-full bg-transparent text-xs text-primary placeholder-muted outline-none resize-none"
           onKeyDown={handleKeyDown}
@@ -1297,16 +1362,20 @@ function DropdownSelect({
     <div ref={ref} className="relative w-full">
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
         className="flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-surface-hover transition-colors w-full"
       >
         {renderSelected()}
-        <ChevronDown size={10} className="text-muted ml-auto shrink-0" />
+        <ChevronDown size={10} className="text-muted ml-auto shrink-0" aria-hidden="true" />
       </button>
       {open && (
-        <div className="absolute top-full left-0 z-10 mt-1 w-40 rounded-lg border border-border bg-surface py-0.5 shadow-xl">
+        <div role="listbox" className="absolute top-full left-0 z-10 mt-1 w-40 rounded-lg border border-border bg-surface py-0.5 shadow-xl">
           {options.map((opt) => (
             <button
               key={opt.key}
+              role="option"
+              aria-selected={value === opt.key}
               onClick={() => {
                 onChange(opt.key);
                 setOpen(false);
@@ -1319,6 +1388,7 @@ function DropdownSelect({
               <span
                 className="h-2 w-2 rounded-full shrink-0"
                 style={{ backgroundColor: opt.color }}
+                aria-hidden="true"
               />
               {opt.label}
             </button>
@@ -1424,12 +1494,16 @@ function ImageLightbox({
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Image viewer: ${images[currentIndex]?.name || 'Image'}`}
     >
       <button
         onClick={onClose}
+        aria-label="Close image viewer"
         className="absolute top-4 right-4 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
       >
-        <X size={20} />
+        <X size={20} aria-hidden="true" />
       </button>
 
       {currentIndex > 0 && (
@@ -1438,6 +1512,7 @@ function ImageLightbox({
             e.stopPropagation();
             onNavigate(currentIndex - 1);
           }}
+          aria-label="Previous image"
           className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-3 text-white hover:bg-black/80 transition-colors"
         >
           ←
@@ -1449,6 +1524,7 @@ function ImageLightbox({
             e.stopPropagation();
             onNavigate(currentIndex + 1);
           }}
+          aria-label="Next image"
           className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-3 text-white hover:bg-black/80 transition-colors"
         >
           →

@@ -41,7 +41,7 @@ export function KanbanColumn({
   const density = useUIStore((s) => s.density);
 
   return (
-    <div className={cn('flex h-full flex-col shrink-0 snap-center', COLUMN_WIDTHS[density])}>
+    <div role="group" aria-label={`${status.label} — ${issues.length} issues`} className={cn('flex h-full flex-col shrink-0 snap-center', COLUMN_WIDTHS[density])}>
       {/* Column Header */}
       <div className={cn(
         'flex items-center justify-between px-2',
@@ -54,6 +54,7 @@ export function KanbanColumn({
               density === 'compact' ? 'h-2 w-2' : 'h-2.5 w-2.5',
             )}
             style={{ backgroundColor: status.color }}
+            aria-hidden="true"
           />
           <span className={cn(
             'font-medium text-primary',
@@ -64,15 +65,16 @@ export function KanbanColumn({
           <span className={cn(
             'rounded-full bg-surface-hover px-2 py-0.5 text-secondary font-mono',
             density === 'compact' ? 'text-[10px]' : 'text-xs',
-          )}>
+          )} aria-label={`${issues.length} issues`}>
             {issues.length}
           </span>
         </div>
         <button
           onClick={() => onCreateIssue?.(status.key)}
+          aria-label={`${t('kanban.addIssue')} in ${status.label}`}
           className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors min-h-[28px] min-w-[28px] flex items-center justify-center"
         >
-          <Plus size={density === 'compact' ? 14 : 16} />
+          <Plus size={density === 'compact' ? 14 : 16} aria-hidden="true" />
         </button>
       </div>
 

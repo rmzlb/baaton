@@ -361,3 +361,5 @@ function LogLine({ time, level, color, text, dim }: { time: string; level: strin
     </div>
   );
 }
+
+export default Landing;

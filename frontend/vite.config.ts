@@ -15,6 +15,27 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          clerk: ['@clerk/clerk-react'],
+          editor: [
+            'lexical',
+            '@lexical/react',
+            '@lexical/rich-text',
+            '@lexical/list',
+            '@lexical/link',
+            '@lexical/code',
+            '@lexical/markdown',
+            'novel',
+          ],
+          query: ['@tanstack/react-query'],
+          dnd: ['@hello-pangea/dnd'],
+          motion: ['framer-motion'],
+        },
+      },
+    },
   },
 });

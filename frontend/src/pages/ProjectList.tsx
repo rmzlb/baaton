@@ -245,3 +245,5 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
+
+export default ProjectList;

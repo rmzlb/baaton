@@ -39,6 +39,21 @@ pub async fn create(
         None => return Err(axum::http::StatusCode::BAD_REQUEST), // Must have active org
     };
 
+    // Input validation
+    if body.name.trim().is_empty() || body.name.len() > 200 {
+        return Err(axum::http::StatusCode::BAD_REQUEST);
+    }
+    // Slug: non-empty, max 100 chars, alphanumeric + dash only
+    if body.slug.trim().is_empty()
+        || body.slug.len() > 100
+        || !body.slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return Err(axum::http::StatusCode::BAD_REQUEST);
+    }
+    if body.prefix.trim().is_empty() || body.prefix.len() > 10 {
+        return Err(axum::http::StatusCode::BAD_REQUEST);
+    }
+
     // Ensure the org exists in the organizations table (upsert)
     let _ = sqlx::query(
         "INSERT INTO organizations (id, name, slug) VALUES ($1, $1, $1) ON CONFLICT (id) DO NOTHING"

@@ -18,6 +18,7 @@ import type {
   IssueGitHubData,
   CreateRepoMappingRequest,
   UpdateRepoMappingRequest,
+  ActivityEntry,
 } from '@/lib/types';
 
 /**
@@ -374,6 +375,21 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.post('/github/disconnect', {}, token);
+        }),
+    },
+
+    // ─── Activity ──────────────────────────────
+    activity: {
+      listByIssue: async (issueId: string): Promise<ActivityEntry[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<ActivityEntry[]>(`/issues/${issueId}/activity`, token);
+        }),
+
+      listRecent: async (): Promise<ActivityEntry[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<ActivityEntry[]>('/activity', token);
         }),
     },
 

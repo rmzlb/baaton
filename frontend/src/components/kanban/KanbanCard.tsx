@@ -103,6 +103,9 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
         {...provided.draggableProps}
         {...provided.dragHandleProps}
         onClick={onClick}
+        role="article"
+        aria-roledescription="draggable item"
+        aria-label={`${issue.display_id}: ${issue.title}`}
         style={{ ...provided.draggableProps.style, ...borderStyle }}
         className={cn(
           'cursor-pointer rounded-md border border-border bg-surface px-2.5 py-1.5 transition-all hover:border-border',
@@ -136,6 +139,9 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
         {...provided.draggableProps}
         {...provided.dragHandleProps}
         onClick={onClick}
+        role="article"
+        aria-roledescription="draggable item"
+        aria-label={`${issue.display_id}: ${issue.title}`}
         style={{ ...provided.draggableProps.style, ...borderStyle }}
         className={cn(
           'cursor-pointer rounded-lg border border-border bg-surface p-4 transition-all hover:border-border',
@@ -242,6 +248,9 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
       {...provided.draggableProps}
       {...provided.dragHandleProps}
       onClick={onClick}
+      role="article"
+      aria-roledescription="draggable item"
+      aria-label={`${issue.display_id}: ${issue.title}`}
       style={{ ...provided.draggableProps.style, ...borderStyle }}
       className={cn(
         'cursor-pointer rounded-lg border border-border bg-surface p-3 transition-all hover:border-border min-h-[44px]',

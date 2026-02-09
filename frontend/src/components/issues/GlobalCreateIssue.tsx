@@ -101,15 +101,15 @@ function GlobalCreateModal({ onClose }: { onClose: () => void }) {
 
   // Step 0: Project selection
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="select-project-title">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
 
       {/* Modal */}
       <div className="relative w-full max-w-md mx-3 sm:mx-4 rounded-2xl border border-border bg-surface shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-6 pb-4">
-          <h2 className="text-lg font-bold text-primary">{t('global.selectProject')}</h2>
+          <h2 id="select-project-title" className="text-lg font-bold text-primary">{t('global.selectProject')}</h2>
           <p className="mt-1 text-sm text-secondary">{t('global.selectProjectDesc')}</p>
         </div>
 
@@ -122,6 +122,7 @@ function GlobalCreateModal({ onClose }: { onClose: () => void }) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('global.searchProject')}
+              aria-label={t('global.searchProject') || 'Search projects'}
               className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-border bg-bg text-sm text-primary placeholder-muted outline-none focus:border-accent transition-colors"
               autoFocus
             />

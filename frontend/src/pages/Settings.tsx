@@ -476,3 +476,5 @@ function ApiKeyRow({ apiKey, onDelete }: { apiKey: ApiKey; onDelete: () => void 
     </div>
   );
 }
+
+export default Settings;

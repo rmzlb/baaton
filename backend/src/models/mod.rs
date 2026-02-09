@@ -193,6 +193,24 @@ pub struct ApiKey {
     pub created_at: DateTime<Utc>,
 }
 
+// ─── Activity Log ─────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct ActivityEntry {
+    pub id: Uuid,
+    pub org_id: String,
+    pub project_id: Option<Uuid>,
+    pub issue_id: Option<Uuid>,
+    pub user_id: String,
+    pub user_name: Option<String>,
+    pub action: String,
+    pub field: Option<String>,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
 // ─── API Response Wrapper ─────────────────────────────
 
 #[derive(Debug, Serialize)]

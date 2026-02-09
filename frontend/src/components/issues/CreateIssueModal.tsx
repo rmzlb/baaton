@@ -192,12 +192,12 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-labelledby="create-issue-title">
       <div className="w-full sm:max-w-lg rounded-t-xl sm:rounded-xl border border-border bg-surface shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-border shrink-0">
           <div>
-            <h2 className="text-lg font-semibold text-primary">
+            <h2 id="create-issue-title" className="text-lg font-semibold text-primary">
               {t('createIssue.title')}
               <span className="ml-2 text-xs font-mono text-secondary">{project.prefix}</span>
             </h2>
@@ -220,9 +220,10 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
           </div>
           <button
             onClick={onClose}
+            aria-label={t('createIssue.close') || 'Close'}
             className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
@@ -433,12 +434,14 @@ function StepDetails({
     <div className="space-y-5">
       {/* Title */}
       <div>
-        <label className="block text-xs text-secondary mb-1.5">{t('createIssue.titleLabel')}</label>
+        <label htmlFor="create-issue-title-input" className="block text-xs text-secondary mb-1.5">{t('createIssue.titleLabel')}</label>
         <input
+          id="create-issue-title-input"
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={t('createIssue.titlePlaceholder')}
+          aria-required="true"
           className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none transition-colors"
           autoFocus
         />
@@ -608,11 +611,12 @@ function StepDetails({
 
         {/* Due Date */}
         <div>
-          <label className="flex items-center gap-1.5 text-xs text-secondary mb-1.5">
-            <Calendar size={12} />
+          <label htmlFor="create-issue-due-date" className="flex items-center gap-1.5 text-xs text-secondary mb-1.5">
+            <Calendar size={12} aria-hidden="true" />
             {t('createIssue.dueDateLabel')}
           </label>
           <input
+            id="create-issue-due-date"
             type="date"
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}

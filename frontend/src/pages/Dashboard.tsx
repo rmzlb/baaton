@@ -2,11 +2,10 @@ import { useOrganization } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { timeAgo } from '@/lib/utils';
-import { Kanban, Bug, Sparkles, Zap, ArrowRight } from 'lucide-react';
+import { Kanban, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
-import type { Issue, Project } from '@/lib/types';
+import { ActivityFeed } from '@/components/activity/ActivityFeed';
 
 export function Dashboard() {
   const { t } = useTranslation();
@@ -45,22 +44,12 @@ export function Dashboard() {
     i => i.status === 'done' && new Date(i.updated_at) >= oneWeekAgo
   );
 
-  // Recent activity: recently updated issues
-  const recentIssues = [...allIssues]
-    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-    .slice(0, 10);
-
   const stats = [
     { label: t('dashboard.openIssues'), value: openIssues.length, color: '#3b82f6' },
     { label: t('dashboard.inProgress'), value: inProgress.length, color: '#f59e0b' },
     { label: t('dashboard.inReview'), value: inReview.length, color: '#8b5cf6' },
     { label: t('dashboard.doneThisWeek'), value: doneThisWeek.length, color: '#22c55e' },
   ];
-
-  const projectMap = projects.reduce((acc, p) => {
-    acc[p.id] = p;
-    return acc;
-  }, {} as Record<string, Project>);
 
   return (
     <div className="p-4 md:p-6">
@@ -154,78 +143,16 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Recent Activity */}
+        {/* Recent Activity — real activity log */}
         <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
           <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4">
             {t('dashboard.recentActivity')}
           </h2>
-          {issuesLoading ? (
-            <div className="flex items-center justify-center py-12 text-sm text-secondary">
-              {t('dashboard.loadingActivity')}
-            </div>
-          ) : recentIssues.length === 0 ? (
-            <div className="flex items-center justify-center py-12 text-sm text-secondary">
-              {t('dashboard.noActivity')}
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {recentIssues.map((issue) => (
-                <ActivityRow
-                  key={issue.id}
-                  issue={issue}
-                  project={projectMap[issue.project_id]}
-                />
-              ))}
-            </div>
-          )}
+          <ActivityFeed limit={15} />
         </div>
       </div>
     </div>
   );
 }
 
-function ActivityRow({ issue, project }: { issue: Issue; project?: Project }) {
-  const typeIcons = {
-    bug: Bug,
-    feature: Sparkles,
-    improvement: Zap,
-    question: Bug,
-  };
-  const typeColors = {
-    bug: 'text-red-400',
-    feature: 'text-emerald-400',
-    improvement: 'text-blue-400',
-    question: 'text-purple-400',
-  };
-  const statusColors: Record<string, string> = {
-    backlog: 'text-gray-400',
-    todo: 'text-blue-400',
-    in_progress: 'text-amber-400',
-    in_review: 'text-purple-400',
-    done: 'text-green-400',
-    cancelled: 'text-red-400',
-  };
-
-  const Icon = typeIcons[issue.type] || Bug;
-
-  return (
-    <div className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-surface-hover transition-colors min-h-[44px]">
-      <Icon size={16} className={typeColors[issue.type] || 'text-gray-400'} />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-primary truncate">{issue.title}</p>
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-[10px] font-mono text-secondary">{issue.display_id}</span>
-          {project && (
-            <span className="text-[10px] text-secondary">· {project.name}</span>
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <span className={`text-[10px] font-mono uppercase hidden sm:inline ${statusColors[issue.status] || 'text-gray-400'}`}>
-          {issue.status.replace('_', ' ')}
-        </span>
-        <span className="text-[10px] text-secondary">{timeAgo(issue.updated_at)}</span>
-      </div>
-    </div>
-  );
-}
+export default Dashboard;

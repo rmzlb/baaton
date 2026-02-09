@@ -1,8 +1,9 @@
-use axum::{Router, routing::get};
+use axum::{Router, routing::get, middleware as axum_mw};
 use tower_http::cors::{CorsLayer, Any};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use std::net::SocketAddr;
+use tokio::sync::broadcast;
 
 mod routes;
 mod models;
@@ -49,7 +50,12 @@ async fn main() -> anyhow::Result<()> {
     sqlx::raw_sql(migration_006).execute(&pool).await?;
     let migration_007 = include_str!("../migrations/007_issue_creator_duedate.sql");
     sqlx::raw_sql(migration_007).execute(&pool).await?;
+    let migration_008 = include_str!("../migrations/008_activity_log.sql");
+    sqlx::raw_sql(migration_008).execute(&pool).await?;
     tracing::info!("Migrations applied");
+
+    // SSE broadcast channel for real-time events
+    let (event_tx, _) = broadcast::channel::<routes::sse::SseEvent>(100);
 
     // Start GitHub sync job runner (background task)
     let job_pool = pool.clone();
@@ -57,16 +63,23 @@ async fn main() -> anyhow::Result<()> {
         github::jobs::start_job_runner(job_pool).await;
     });
 
-    // CORS
+    // CORS — restrict to known origins
+    let allowed_origins = [
+        "https://app.baaton.dev".parse().unwrap(),
+        "https://baaton.dev".parse().unwrap(),
+        "http://localhost:3000".parse().unwrap(),
+    ];
     let cors = CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin(allowed_origins)
         .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_headers(Any)
+        .allow_credentials(true);
 
     // Router
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
-        .nest("/api/v1", routes::api_router(pool.clone()))
+        .nest("/api/v1", routes::api_router(pool.clone(), event_tx.clone()))
+        .layer(axum_mw::from_fn(middleware::security::security_headers))
         .layer(cors)
         .layer(TraceLayer::new_for_http());
 

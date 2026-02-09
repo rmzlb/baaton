@@ -1,17 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { ListView } from '@/components/list/ListView';
 import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { CreateIssueModal } from '@/components/issues/CreateIssueModal';
+import { ShortcutHelp } from '@/components/shared/ShortcutHelp';
 import { useApi } from '@/hooks/useApi';
 import { useIssuesStore } from '@/stores/issues';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal } from 'lucide-react';
 import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { cn } from '@/lib/utils';
-import type { IssueStatus, ProjectStatus } from '@/lib/types';
+import type { Issue, IssueStatus, ProjectStatus } from '@/lib/types';
 
 // Default statuses (used when project statuses aren't loaded yet)
 const DEFAULT_STATUSES: ProjectStatus[] = [
@@ -36,6 +38,7 @@ export function ProjectBoard() {
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
   const [showCreateIssue, setShowCreateIssue] = useState(false);
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // View mode with localStorage persistence
@@ -109,11 +112,27 @@ export function ProjectBoard() {
     enabled: !!project?.id,
   });
 
-  // Mutation for updating issue position (drag & drop)
+  // Mutation for updating issue position (drag & drop) — with optimistic update
   const positionMutation = useMutation({
     mutationFn: ({ id, status, position }: { id: string; status: string; position: number }) =>
       apiClient.issues.updatePosition(id, status, position),
-    onSuccess: () => {
+    onMutate: async ({ id, status, position }) => {
+      // Cancel in-flight queries so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: ['issues', project?.id] });
+      const previous = queryClient.getQueryData<Issue[]>(['issues', project?.id]);
+      // Optimistically update the cache
+      queryClient.setQueryData<Issue[]>(['issues', project?.id], (old) =>
+        old?.map((i) => (i.id === id ? { ...i, status: status as IssueStatus, position } : i)),
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      // Roll back on error
+      if (context?.previous) {
+        queryClient.setQueryData(['issues', project?.id], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['issues', project?.id] });
     },
   });
@@ -121,6 +140,16 @@ export function ProjectBoard() {
   const handleMoveIssue = (issueId: string, newStatus: IssueStatus, newPosition: number) => {
     positionMutation.mutate({ id: issueId, status: newStatus, position: newPosition });
   };
+
+  // Stable list of issue IDs for keyboard navigation
+  const issueIds = useMemo(() => issuesList.map((i) => i.id), [issuesList]);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    issueIds,
+    onNewIssue: useCallback(() => setShowCreateIssue(true), []),
+    onToggleHelp: useCallback(() => setShowShortcutHelp((v) => !v), []),
+  });
 
   // Parse project statuses (could be JSON string or array)
   const statuses: ProjectStatus[] = (() => {
@@ -251,6 +280,11 @@ export function ProjectBoard() {
           onClose={() => setShowCreateIssue(false)}
         />
       )}
+
+      {/* Keyboard Shortcut Help Overlay */}
+      {showShortcutHelp && (
+        <ShortcutHelp onClose={() => setShowShortcutHelp(false)} />
+      )}
     </div>
   );
 }
@@ -288,3 +322,5 @@ function DensityToggle() {
     </div>
   );
 }
+
+export default ProjectBoard;

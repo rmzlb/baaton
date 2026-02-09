@@ -206,6 +206,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: L
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('kanban.filterIssues')}
+            aria-label={t('kanban.filterIssues') || 'Filter issues'}
             className="h-8 w-32 sm:w-48 rounded-md border border-border bg-surface pl-8 pr-3 text-xs text-primary placeholder-muted outline-none focus:border-accent transition-colors"
           />
         </div>
@@ -426,6 +427,8 @@ function FilterDropdown({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
         className={cn(
           'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition-colors min-h-[32px]',
           count > 0
@@ -433,17 +436,17 @@ function FilterDropdown({
             : 'border-border bg-surface text-secondary hover:border-border hover:text-primary',
         )}
       >
-        {icon}
+        <span aria-hidden="true">{icon}</span>
         {label}
         {count > 0 && (
-          <span className="ml-0.5 rounded-full bg-accent px-1.5 py-0 text-[9px] text-black font-bold">
+          <span className="ml-0.5 rounded-full bg-accent px-1.5 py-0 text-[9px] text-black font-bold" aria-label={`${count} selected`}>
             {count}
           </span>
         )}
-        <ChevronDown size={10} />
+        <ChevronDown size={10} aria-hidden="true" />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl max-h-64 overflow-y-auto">
+        <div role="listbox" aria-label={label} className="absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl max-h-64 overflow-y-auto">
           {children}
         </div>
       )}

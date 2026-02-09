@@ -441,6 +441,21 @@ const en = {
   'tour.btn.progress': '{{current}} of {{total}}',
   'settings.replayTour': '🎓 Replay Onboarding Tour',
 
+  // ─── Activity Feed ──────────────────────────
+  'activity.created': 'created issue',
+  'activity.updated': 'updated',
+  'activity.commented': 'commented',
+  'activity.statusChanged': 'changed status',
+  'activity.assigned': 'assigned',
+  'activity.tagged': 'updated tags',
+  'activity.title': 'Activity',
+  'activity.empty': 'No activity yet',
+  'activity.recentActivity': 'Recent Activity',
+
+  // ─── Notifications ─────────────────────────
+  'notification.assigned': 'You were assigned to an issue',
+  'notification.commented': 'Someone commented on your issue',
+
   // ─── Common ─────────────────────────────────
   'common.urgent': 'Urgent',
   'common.high': 'High',

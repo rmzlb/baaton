@@ -130,12 +130,28 @@ export interface ApiKey {
 
 export interface ActivityEntry {
   id: string;
-  issue_id: string;
-  actor_id: string | null;
-  actor_name: string;
+  org_id: string;
+  project_id: string | null;
+  issue_id: string | null;
+  user_id: string;
+  user_name: string | null;
   action: string;
-  details: Record<string, unknown> | null;
+  field: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  metadata: Record<string, unknown>;
   created_at: string;
+}
+
+export type SSEEventType = 'issue_created' | 'issue_updated' | 'comment_created';
+
+export interface SSEEvent {
+  type: SSEEventType;
+  issue_id?: string;
+  project_id?: string;
+  title?: string;
+  comment_id?: string;
+  author_name?: string;
 }
 
 // ─── API Request Types ────────────────────────────────

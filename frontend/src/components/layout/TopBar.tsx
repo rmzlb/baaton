@@ -43,16 +43,17 @@ export function TopBar() {
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex h-12 items-center justify-between border-b border-border bg-bg px-3 md:px-5 shrink-0">
+      <header className="sticky top-0 z-20 flex h-12 items-center justify-between border-b border-border bg-bg px-3 md:px-5 shrink-0" role="banner">
         {/* Left: mobile menu + breadcrumb */}
         <div className="flex items-center gap-2 min-w-0">
           <button
             onClick={openMobileSidebar}
+            aria-label={t('topbar.openMenu') || 'Open menu'}
             className="rounded-md p-1.5 text-secondary hover:bg-surface hover:text-primary transition-colors md:hidden"
           >
-            <Menu size={18} />
+            <Menu size={18} aria-hidden="true" />
           </button>
-          <nav className="flex items-center gap-1 text-sm min-w-0">
+          <nav aria-label={t('topbar.breadcrumb') || 'Breadcrumb'} className="flex items-center gap-1 text-sm min-w-0">
             {breadcrumbs.map((crumb, i) => (
               <span key={i} className="flex items-center gap-1 min-w-0">
                 {i > 0 && <ChevronRight size={12} className="text-muted shrink-0" />}
@@ -74,9 +75,10 @@ export function TopBar() {
         {/* Right: search trigger */}
         <button
           onClick={openCommandBar}
+          aria-label={t('topbar.search') || 'Search'}
           className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary hover:border-border hover:text-primary transition-colors"
         >
-          <Search size={14} />
+          <Search size={14} aria-hidden="true" />
           <span className="hidden sm:inline">{t('topbar.search')}</span>
           <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-mono text-muted">
             ⌘K
@@ -227,11 +229,12 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   }, {} as Record<string, Project>);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] sm:pt-[18vh]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] sm:pt-[18vh]" role="dialog" aria-modal="true" aria-label={t('topbar.commandPalette') || 'Command palette'}>
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Dialog */}

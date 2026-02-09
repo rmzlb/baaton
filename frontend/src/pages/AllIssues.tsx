@@ -380,3 +380,5 @@ export function AllIssues() {
     </div>
   );
 }
+
+export default AllIssues;

@@ -441,6 +441,21 @@ const fr = {
   'tour.btn.progress': '{{current}} sur {{total}}',
   'settings.replayTour': '🎓 Relancer le tour d\'introduction',
 
+  // ─── Flux d'activité ────────────────────────
+  'activity.created': 'a créé l\'issue',
+  'activity.updated': 'a mis à jour',
+  'activity.commented': 'a commenté',
+  'activity.statusChanged': 'a changé le statut',
+  'activity.assigned': 'a assigné',
+  'activity.tagged': 'a mis à jour les tags',
+  'activity.title': 'Activité',
+  'activity.empty': 'Pas encore d\'activité',
+  'activity.recentActivity': 'Activité récente',
+
+  // ─── Notifications ─────────────────────────
+  'notification.assigned': 'Vous avez été assigné à une issue',
+  'notification.commented': 'Quelqu\'un a commenté sur votre issue',
+
   // ─── Common ─────────────────────────────────
   'common.urgent': 'Urgent',
   'common.high': 'Haute',

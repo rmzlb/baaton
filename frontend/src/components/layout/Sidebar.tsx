@@ -61,11 +61,14 @@ export function Sidebar() {
         <div
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
           onClick={closeMobile}
+          aria-hidden="true"
         />
       )}
 
       <aside
         data-tour="sidebar"
+        role="complementary"
+        aria-label={t('sidebar.navigation') || 'Sidebar'}
         className={cn(
           // Desktop: fixed left
           'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border bg-bg transition-all duration-200',
@@ -99,20 +102,22 @@ export function Sidebar() {
           {mobileOpen && (
             <button
               onClick={closeMobile}
+              aria-label={t('sidebar.closeMenu') || 'Close menu'}
               className="rounded-md p-1.5 text-secondary hover:bg-surface hover:text-primary transition-colors md:hidden shrink-0 ml-1"
             >
-              <X size={16} />
+              <X size={16} aria-hidden="true" />
             </button>
           )}
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 space-y-1 p-2">
+        <nav aria-label={t('sidebar.mainNavigation') || 'Main navigation'} className="flex-1 space-y-1 p-2">
           {navItems.map(({ to, icon: Icon, label, tourId }) => (
             <NavLink
               key={to}
               to={to}
               onClick={closeMobile}
+              aria-label={collapsed && !mobileOpen ? label : undefined}
               {...(tourId ? { 'data-tour': tourId } : {})}
               className={({ isActive }) =>
                 cn(
@@ -124,8 +129,13 @@ export function Sidebar() {
                 )
               }
             >
-              <Icon size={20} />
-              {(!collapsed || mobileOpen) && <span>{label}</span>}
+              {({ isActive }) => (
+                <>
+                  <Icon size={20} aria-hidden="true" />
+                  {(!collapsed || mobileOpen) && <span>{label}</span>}
+                  {isActive && <span className="sr-only">(current page)</span>}
+                </>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -141,8 +151,9 @@ export function Sidebar() {
               collapsed && !mobileOpen && 'justify-center px-0',
             )}
             title={t('sidebar.language')}
+            aria-label={t('sidebar.language') || 'Switch language'}
           >
-            <Globe size={18} />
+            <Globe size={18} aria-hidden="true" />
             {(!collapsed || mobileOpen) && (
               <span className="text-xs font-mono uppercase">{i18n.language === 'fr' ? 'FR' : 'EN'}</span>
             )}
@@ -157,8 +168,9 @@ export function Sidebar() {
               collapsed && !mobileOpen && 'justify-center px-0',
             )}
             title={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}
+            aria-label={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}
           >
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            {theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
             {(!collapsed || mobileOpen) && (
               <span>{theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}</span>
             )}
@@ -173,9 +185,10 @@ export function Sidebar() {
             />
             <button
               onClick={toggle}
+              aria-label={collapsed ? (t('sidebar.expand') || 'Expand sidebar') : (t('sidebar.collapse') || 'Collapse sidebar')}
               className="rounded-md p-1.5 text-secondary hover:bg-surface-hover hover:text-primary transition-colors hidden md:block"
             >
-              {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+              {collapsed ? <ChevronRight size={16} aria-hidden="true" /> : <ChevronLeft size={16} aria-hidden="true" />}
             </button>
           </div>
         </div>

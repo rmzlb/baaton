@@ -1,16 +1,20 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp, OrganizationProfile, useUser } from '@clerk/clerk-react';
 import { useOrgGuard } from '@/hooks/useOrgGuard';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Landing } from '@/pages/Landing';
-import { Dashboard } from '@/pages/Dashboard';
-import { ProjectBoard } from '@/pages/ProjectBoard';
-import { ProjectList } from '@/pages/ProjectList';
-import { Settings } from '@/pages/Settings';
-import { MyTasks } from '@/pages/MyTasks';
-import { AllIssues } from '@/pages/AllIssues';
-import { PublicSubmit } from '@/pages/PublicSubmit';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { PageLoader } from '@/components/shared/PageLoader';
+
+// Lazy-loaded page components (code splitting)
+const Landing = lazy(() => import('./pages/Landing'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const ProjectBoard = lazy(() => import('./pages/ProjectBoard'));
+const ProjectList = lazy(() => import('./pages/ProjectList'));
+const MyTasks = lazy(() => import('./pages/MyTasks'));
+const AllIssues = lazy(() => import('./pages/AllIssues'));
+const Settings = lazy(() => import('./pages/Settings'));
+const PublicSubmit = lazy(() => import('./pages/PublicSubmit'));
 
 const isAppDomain = window.location.hostname === 'app.baaton.dev';
 
@@ -20,7 +24,11 @@ function RootRoute() {
     if (!isLoaded) return null;
     return isSignedIn ? <Navigate to="/dashboard" replace /> : <Navigate to="/sign-in" replace />;
   }
-  return <Landing />;
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <Landing />
+    </Suspense>
+  );
 }
 
 function ProtectedLayout() {
@@ -59,48 +67,50 @@ function AuthGate() {
 
 export function App() {
   return (
-    <Routes>
-      {/* Root: landing on baaton.dev, dashboard redirect on app.baaton.dev */}
-      <Route path="/" element={<RootRoute />} />
-      <Route path="/submit/:slug" element={<PublicSubmit />} />
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        {/* Root: landing on baaton.dev, dashboard redirect on app.baaton.dev */}
+        <Route path="/" element={<RootRoute />} />
+        <Route path="/submit/:slug" element={<PublicSubmit />} />
 
-      {/* Auth routes */}
-      <Route
-        path="/sign-in/*"
-        element={
-          <div className="flex min-h-screen items-center justify-center bg-neutral-950">
-            <SignIn routing="path" path="/sign-in" />
-          </div>
-        }
-      />
-      <Route
-        path="/sign-up/*"
-        element={
-          <div className="flex min-h-screen items-center justify-center bg-neutral-950">
-            <SignUp routing="path" path="/sign-up" />
-          </div>
-        }
-      />
+        {/* Auth routes */}
+        <Route
+          path="/sign-in/*"
+          element={
+            <div className="flex min-h-screen items-center justify-center bg-neutral-950">
+              <SignIn routing="path" path="/sign-in" />
+            </div>
+          }
+        />
+        <Route
+          path="/sign-up/*"
+          element={
+            <div className="flex min-h-screen items-center justify-center bg-neutral-950">
+              <SignUp routing="path" path="/sign-up" />
+            </div>
+          }
+        />
 
-      {/* Protected routes — wrapped in auth gate + layout */}
-      <Route element={<AuthGate />}>
-        <Route element={<ProtectedLayout />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/my-tasks" element={<MyTasks />} />
-          <Route path="/all-issues" element={<AllIssues />} />
-          <Route path="/projects" element={<ProjectList />} />
-          <Route path="/projects/:slug" element={<ProjectBoard />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route
-            path="/org/*"
-            element={
-              <div className="flex min-h-screen items-center justify-center bg-neutral-950">
-                <OrganizationProfile routing="path" path="/org" />
-              </div>
-            }
-          />
+        {/* Protected routes — wrapped in auth gate + layout */}
+        <Route element={<AuthGate />}>
+          <Route element={<ProtectedLayout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/my-tasks" element={<MyTasks />} />
+            <Route path="/all-issues" element={<AllIssues />} />
+            <Route path="/projects" element={<ProjectList />} />
+            <Route path="/projects/:slug" element={<ProjectBoard />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route
+              path="/org/*"
+              element={
+                <div className="flex min-h-screen items-center justify-center bg-neutral-950">
+                  <OrganizationProfile routing="path" path="/org" />
+                </div>
+              }
+            />
+          </Route>
         </Route>
-      </Route>
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
