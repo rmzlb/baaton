@@ -10,6 +10,7 @@ import {
   Link, Image, Eye, EyeOff, Quote, CheckSquare,
 } from 'lucide-react';
 import { MarkdownView } from './MarkdownView';
+import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 
 interface NotionEditorProps {
@@ -40,14 +41,16 @@ const ACTIONS: Action[] = [
 export function NotionEditor({
   initialContent = '',
   onChange,
-  placeholder = 'Write in Markdown…',
+  placeholder,
   editable = true,
   className,
   minRows = 8,
 }: NotionEditorProps) {
+  const { t } = useTranslation();
   const [value, setValue] = useState(initialContent);
   const [preview, setPreview] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const resolvedPlaceholder = placeholder || t('editor.placeholder');
 
   // Read-only mode — just render markdown
   if (!editable) {
@@ -209,7 +212,7 @@ export function NotionEditor({
           )}
         >
           {preview ? <EyeOff size={12} /> : <Eye size={12} />}
-          {preview ? 'Edit' : 'Preview'}
+          {preview ? t('editor.edit') : t('editor.preview')}
         </button>
       </div>
 
@@ -219,7 +222,7 @@ export function NotionEditor({
           {value ? (
             <MarkdownView content={value} />
           ) : (
-            <p className="text-muted italic text-sm">Nothing to preview</p>
+            <p className="text-muted italic text-sm">{t('editor.nothingToPreview')}</p>
           )}
         </div>
       ) : (
@@ -229,7 +232,7 @@ export function NotionEditor({
           onChange={(e) => handleChange(e.target.value)}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          placeholder={resolvedPlaceholder}
           rows={minRows}
           className="w-full bg-transparent text-sm text-primary p-4 outline-none resize-y min-h-[160px] placeholder-muted"
         />

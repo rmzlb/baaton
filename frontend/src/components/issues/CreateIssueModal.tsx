@@ -13,47 +13,12 @@ import type { IssueType, IssuePriority, Project, ProjectTag } from '@/lib/types'
 
 /* ── Templates per type ─────────────────────── */
 
-const TEMPLATES: Record<IssueType, string> = {
-  bug: `## Steps to Reproduce
-1. 
-2. 
-3. 
-
-## Expected Behavior
-
-
-## Actual Behavior
-
-
-## Environment
-- Browser: 
-- OS: 
-`,
-  feature: `## User Story
-As a [user], I want to [action] so that [benefit].
-
-## Acceptance Criteria
-- [ ] 
-- [ ] 
-
-## Design Notes
-
-`,
-  improvement: `## Current Behavior
-
-
-## Proposed Improvement
-
-
-## Impact
-
-`,
-  question: `## Question
-
-
-## Context
-
-`,
+// Templates are loaded from i18n — see locales/en.ts and locales/fr.ts
+const TEMPLATE_KEYS: Record<IssueType, string> = {
+  bug: 'template.bug',
+  feature: 'template.feature',
+  improvement: 'template.improvement',
+  question: 'template.question',
 };
 
 /* ── Type card config ───────────────────────── */
@@ -124,7 +89,7 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
   // When type is selected, pre-fill template in description
   useEffect(() => {
     if (type && useTemplate && !description) {
-      setDescription(TEMPLATES[type]);
+      setDescription(t(TEMPLATE_KEYS[type]));
     }
   }, [type, useTemplate]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -145,11 +110,11 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
   }, [step]);
 
   // Handle type selection — auto-advance
-  const handleTypeSelect = (t: IssueType) => {
-    setType(t);
+  const handleTypeSelect = (selectedType: IssueType) => {
+    setType(selectedType);
     // Pre-fill template
     if (useTemplate) {
-      setDescription(TEMPLATES[t]);
+      setDescription(t(TEMPLATE_KEYS[selectedType]));
     }
     // Auto-advance to details
     setTimeout(() => setStep('details'), 150);
@@ -161,7 +126,7 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
       setDescription('');
       setUseTemplate(false);
     } else {
-      if (type) setDescription(TEMPLATES[type]);
+      if (type) setDescription(t(TEMPLATE_KEYS[type]));
       setUseTemplate(true);
     }
   };

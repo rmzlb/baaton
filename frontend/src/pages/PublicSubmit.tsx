@@ -92,7 +92,7 @@ export function PublicSubmit() {
         {/* Header */}
         <div className="mb-8 text-center">
           <PixelBaton size={48} className="mx-auto mb-3" />
-          <h1 className="text-xl font-bold text-primary">Submit Feedback</h1>
+          <h1 className="text-xl font-bold text-primary">{t('publicSubmit.title')}</h1>
           <p className="mt-1 text-sm text-secondary">
             for <span className="font-mono text-accent">{slug}</span>
           </p>
@@ -170,7 +170,7 @@ export function PublicSubmit() {
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-black hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[44px]"
           >
             <Send size={16} />
-            {submitting ? 'Submitting…' : 'Submit'}
+            {submitting ? t('publicSubmit.submitting') : t('publicSubmit.submit')}
           </button>
         </form>
 

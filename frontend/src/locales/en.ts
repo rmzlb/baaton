@@ -348,6 +348,71 @@ const en = {
   'common.backend': 'Backend',
   'common.api': 'API',
   'common.database': 'Database',
+  'common.cancel': 'Cancel',
+  'common.save': 'Save',
+  'common.delete': 'Delete',
+  'common.edit': 'Edit',
+  'common.preview': 'Preview',
+  'common.loading': 'Loading…',
+
+  // ─── Editor ─────────────────────────────────
+  'editor.placeholder': 'Write in Markdown…',
+  'editor.preview': 'Preview',
+  'editor.edit': 'Edit',
+  'editor.nothingToPreview': 'Nothing to preview',
+  'editor.bold': 'Bold',
+  'editor.italic': 'Italic',
+  'editor.code': 'Code',
+  'editor.heading': 'Heading',
+  'editor.quote': 'Quote',
+  'editor.list': 'Bullet list',
+  'editor.orderedList': 'Numbered list',
+  'editor.taskList': 'Task list',
+  'editor.link': 'Link',
+  'editor.image': 'Upload image',
+
+  // ─── Templates ──────────────────────────────
+  'template.bug': `## Steps to Reproduce
+1. 
+2. 
+3. 
+
+## Expected Behavior
+
+
+## Actual Behavior
+
+
+## Environment
+- Browser: 
+- OS: 
+`,
+  'template.feature': `## User Story
+As a [user], I want to [action] so that [benefit].
+
+## Acceptance Criteria
+- [ ] 
+- [ ] 
+
+## Design Notes
+
+`,
+  'template.improvement': `## Current Behavior
+
+
+## Proposed Improvement
+
+
+## Impact
+
+`,
+  'template.question': `## Question
+
+
+## Context
+
+`,
+
 } as const;
 
 export default en;

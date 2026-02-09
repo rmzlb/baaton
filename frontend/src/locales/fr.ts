@@ -348,6 +348,71 @@ const fr = {
   'common.backend': 'Backend',
   'common.api': 'API',
   'common.database': 'Base de données',
+  'common.cancel': 'Annuler',
+  'common.save': 'Enregistrer',
+  'common.delete': 'Supprimer',
+  'common.edit': 'Modifier',
+  'common.preview': 'Aperçu',
+  'common.loading': 'Chargement…',
+
+  // ─── Éditeur ────────────────────────────────
+  'editor.placeholder': 'Écrire en Markdown…',
+  'editor.preview': 'Aperçu',
+  'editor.edit': 'Éditer',
+  'editor.nothingToPreview': 'Rien à afficher',
+  'editor.bold': 'Gras',
+  'editor.italic': 'Italique',
+  'editor.code': 'Code',
+  'editor.heading': 'Titre',
+  'editor.quote': 'Citation',
+  'editor.list': 'Liste à puces',
+  'editor.orderedList': 'Liste numérotée',
+  'editor.taskList': 'Liste de tâches',
+  'editor.link': 'Lien',
+  'editor.image': 'Importer une image',
+
+  // ─── Templates ──────────────────────────────
+  'template.bug': `## Étapes de reproduction
+1. 
+2. 
+3. 
+
+## Comportement attendu
+
+
+## Comportement actuel
+
+
+## Environnement
+- Navigateur : 
+- OS : 
+`,
+  'template.feature': `## User Story
+En tant que [utilisateur], je veux [action] afin de [bénéfice].
+
+## Critères d'acceptation
+- [ ] 
+- [ ] 
+
+## Notes de design
+
+`,
+  'template.improvement': `## Comportement actuel
+
+
+## Amélioration proposée
+
+
+## Impact
+
+`,
+  'template.question': `## Question
+
+
+## Contexte
+
+`,
+
 } as const;
 
 export default fr;

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useTranslation } from '@/hooks/useTranslation';
 
 interface OnboardingStepProps {
   children: ReactNode;
@@ -17,6 +18,7 @@ export function OnboardingStepUI({
   onSkip,
   isLast,
 }: OnboardingStepProps) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col h-full">
       {/* Step content */}
@@ -54,7 +56,7 @@ export function OnboardingStepUI({
             onClick={onNext}
             className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold rounded-lg transition-all shadow-[0_4px_0_0_#d97706] hover:shadow-[0_2px_0_0_#d97706] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] flex items-center gap-2"
           >
-            {isLast ? 'Get Started' : 'Continue'}
+            {isLast ? t('onboarding.getStarted') : t('onboarding.continue')}
             {!isLast && (
               <svg
                 className="w-4 h-4"
