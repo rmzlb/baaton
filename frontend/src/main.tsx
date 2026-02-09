@@ -27,8 +27,8 @@ createRoot(document.getElementById('root')!).render(
       publishableKey={CLERK_KEY}
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
-      signInFallbackRedirectUrl="/dashboard"
-      signUpFallbackRedirectUrl="/dashboard"
+      signInFallbackRedirectUrl="/"
+      signUpFallbackRedirectUrl="/"
     >
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>

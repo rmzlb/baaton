@@ -7,10 +7,10 @@ import {
 
 function useTheme() {
   const [dark, setDark] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    if (localStorage.theme === 'light') return false;
+    if (typeof window === 'undefined') return false;
     if (localStorage.theme === 'dark') return true;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (localStorage.theme === 'light') return false;
+    return false; // Light mode by default
   });
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
