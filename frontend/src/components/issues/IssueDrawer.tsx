@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useUser } from '@clerk/clerk-react';
 import {
   X, ChevronDown, Tag, User, Calendar,
   MessageSquare, Activity, Bot, CheckCircle2, AlertTriangle,
   Minus, ArrowUp, ArrowDown, Bug, Sparkles, Zap, HelpCircle,
-  FileText, GitPullRequest, TestTube2,
+  FileText, GitPullRequest, TestTube2, Paperclip, Upload, Image,
+  Send, Plus,
 } from 'lucide-react';
 import { useIssuesStore } from '@/stores/issues';
 import { useApi } from '@/hooks/useApi';
 import { cn, timeAgo } from '@/lib/utils';
 import type { IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus } from '@/lib/types';
+
+const TAG_COLORS = [
+  '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
+  '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#14b8a6',
+  '#a855f7', '#6366f1', '#0ea5e9', '#84cc16', '#fb923c',
+];
 
 const STATUS_OPTIONS: { key: IssueStatus; label: string; color: string }[] = [
   { key: 'backlog', label: 'Backlog', color: '#6b7280' },
@@ -37,22 +45,36 @@ const TYPE_CONFIG: Record<IssueType, { icon: typeof Bug; color: string; label: s
 interface IssueDrawerProps {
   issueId: string;
   statuses?: ProjectStatus[];
+  projectId?: string;
   onClose: () => void;
 }
 
-export function IssueDrawer({ issueId, statuses, onClose }: IssueDrawerProps) {
+export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDrawerProps) {
   const apiClient = useApi();
   const queryClient = useQueryClient();
+  const { user } = useUser();
   const updateIssue = useIssuesStore((s) => s.updateIssue);
   const panelRef = useRef<HTMLDivElement>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+  const [showTagPicker, setShowTagPicker] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [commentText, setCommentText] = useState('');
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   // Fetch full issue details
   const { data: issue, isLoading } = useQuery({
     queryKey: ['issue', issueId],
     queryFn: () => apiClient.issues.get(issueId),
     staleTime: 10_000,
+  });
+
+  // Fetch project tags
+  const resolvedProjectId = projectId || issue?.project_id;
+  const { data: projectTags = [] } = useQuery({
+    queryKey: ['project-tags', resolvedProjectId],
+    queryFn: () => apiClient.tags.listByProject(resolvedProjectId!),
+    enabled: !!resolvedProjectId,
   });
 
   // Update mutation
@@ -66,14 +88,43 @@ export function IssueDrawer({ issueId, statuses, onClose }: IssueDrawerProps) {
     },
   });
 
+  // Create comment mutation
+  const commentMutation = useMutation({
+    mutationFn: (body: string) =>
+      apiClient.comments.create(issueId, {
+        author_id: user?.id || 'anonymous',
+        author_name: user?.fullName || user?.firstName || 'Anonymous',
+        body,
+      }),
+    onSuccess: () => {
+      setCommentText('');
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+    },
+  });
+
+  // Create tag mutation
+  const createTagMutation = useMutation({
+    mutationFn: (body: { name: string; color: string }) =>
+      apiClient.tags.create(resolvedProjectId!, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-tags', resolvedProjectId] });
+    },
+  });
+
   // Close on escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (lightboxIndex !== null) {
+          setLightboxIndex(null);
+        } else {
+          onClose();
+        }
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [onClose, lightboxIndex]);
 
   // Click outside to close
   useEffect(() => {
@@ -82,7 +133,6 @@ export function IssueDrawer({ issueId, statuses, onClose }: IssueDrawerProps) {
         onClose();
       }
     };
-    // Delay to avoid closing immediately on the same click that opens
     const timer = setTimeout(() => {
       document.addEventListener('mousedown', handler);
     }, 100);
@@ -106,7 +156,68 @@ export function IssueDrawer({ issueId, statuses, onClose }: IssueDrawerProps) {
     [updateMutation],
   );
 
+  const handleToggleTag = (tagName: string) => {
+    const currentTags = issue?.tags || [];
+    const newTags = currentTags.includes(tagName)
+      ? currentTags.filter((t) => t !== tagName)
+      : [...currentTags, tagName];
+    handleFieldUpdate('tags', newTags);
+  };
+
+  const handleCreateAndAddTag = () => {
+    if (!newTagName.trim()) return;
+    const color = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+    createTagMutation.mutate(
+      { name: newTagName.trim(), color },
+      {
+        onSuccess: () => {
+          // Also add to issue
+          const currentTags = issue?.tags || [];
+          if (!currentTags.includes(newTagName.trim())) {
+            handleFieldUpdate('tags', [...currentTags, newTagName.trim()]);
+          }
+          setNewTagName('');
+        },
+      },
+    );
+  };
+
+  const handleSubmitComment = () => {
+    if (!commentText.trim()) return;
+    commentMutation.mutate(commentText.trim());
+  };
+
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const newAttachments = [...(issue?.attachments || [])];
+
+    for (const file of Array.from(files)) {
+      if (file.size > 5 * 1024 * 1024) continue; // 5MB limit
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      newAttachments.push({
+        url: base64,
+        name: file.name,
+        size: file.size,
+        mime_type: file.type,
+      });
+    }
+
+    // Update via API — for now this goes through the generic update
+    // The backend stores this in the attachments JSONB column
+    await apiClient.issues.update(issueId, { attachments: newAttachments } as any);
+    queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+  };
+
   const availableStatuses = statuses ?? STATUS_OPTIONS;
+
+  // Get image attachments for lightbox
+  const imageAttachments = (issue?.attachments || []).filter(
+    (a) => a.mime_type?.startsWith('image/') || a.url?.startsWith('data:image/'),
+  );
 
   if (isLoading || !issue) {
     return (
@@ -261,25 +372,85 @@ export function IssueDrawer({ issueId, statuses, onClose }: IssueDrawerProps) {
               </PropertyRow>
             </div>
 
-            {/* Tags */}
-            {issue.tags.length > 0 && (
-              <div>
-                <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
-                  <Tag size={12} />
-                  Tags
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {issue.tags.map((tag) => (
+            {/* Tags with Picker */}
+            <div>
+              <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
+                <Tag size={12} />
+                Tags
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {issue.tags.map((tag) => {
+                  const tagObj = projectTags.find((t) => t.name === tag);
+                  const color = tagObj?.color || '#6b7280';
+                  return (
                     <span
                       key={tag}
-                      className="rounded-full bg-[#1f1f1f] border border-[#262626] px-2.5 py-1 text-xs text-[#a1a1aa]"
+                      className="rounded-full px-2.5 py-1 text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity"
+                      style={{
+                        backgroundColor: `${color}20`,
+                        borderColor: `${color}40`,
+                        color: color,
+                      }}
+                      onClick={() => handleToggleTag(tag)}
+                      title="Click to remove"
                     >
-                      {tag}
+                      {tag} ×
                     </span>
-                  ))}
-                </div>
+                  );
+                })}
+                <button
+                  onClick={() => setShowTagPicker(!showTagPicker)}
+                  className="rounded-full border border-dashed border-[#262626] px-2.5 py-1 text-xs text-[#666] hover:border-[#f59e0b] hover:text-[#f59e0b] transition-colors"
+                >
+                  <Plus size={10} className="inline mr-1" />
+                  Add tag
+                </button>
               </div>
-            )}
+
+              {/* Tag Picker Dropdown */}
+              {showTagPicker && (
+                <div className="mt-2 rounded-lg border border-[#262626] bg-[#141414] p-2 max-h-48 overflow-y-auto">
+                  {projectTags
+                    .filter((t) => !issue.tags.includes(t.name))
+                    .map((tag) => (
+                      <button
+                        key={tag.id}
+                        onClick={() => {
+                          handleToggleTag(tag.name);
+                          setShowTagPicker(false);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-[#a1a1aa] hover:bg-[#1f1f1f] transition-colors"
+                      >
+                        <span
+                          className="h-3 w-3 rounded-full shrink-0"
+                          style={{ backgroundColor: tag.color }}
+                        />
+                        {tag.name}
+                      </button>
+                    ))}
+                  {/* Create new tag */}
+                  <div className="flex items-center gap-2 mt-1 pt-1 border-t border-[#262626]">
+                    <input
+                      type="text"
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleCreateAndAddTag();
+                      }}
+                      placeholder="New tag name…"
+                      className="flex-1 bg-transparent text-xs text-[#fafafa] outline-none placeholder-[#555] px-2 py-1"
+                    />
+                    <button
+                      onClick={handleCreateAndAddTag}
+                      disabled={!newTagName.trim()}
+                      className="rounded-md px-2 py-1 text-[10px] bg-[#f59e0b] text-black font-medium disabled:opacity-40 hover:bg-[#d97706] transition-colors"
+                    >
+                      Create
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Assignees */}
             {issue.assignee_ids.length > 0 && (
@@ -317,6 +488,59 @@ export function IssueDrawer({ issueId, statuses, onClose }: IssueDrawerProps) {
               )}
             </div>
 
+            {/* Attachments */}
+            <div>
+              <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
+                <Paperclip size={12} />
+                Attachments
+              </label>
+              {/* Thumbnail grid */}
+              {imageAttachments.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mb-2">
+                  {imageAttachments.map((att, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setLightboxIndex(idx)}
+                      className="group relative aspect-square rounded-lg border border-[#262626] overflow-hidden hover:border-[#f59e0b] transition-colors"
+                    >
+                      <img
+                        src={att.url}
+                        alt={att.name}
+                        className="h-full w-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Image size={16} className="text-white" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Non-image attachments */}
+              {(issue.attachments || [])
+                .filter((a) => !a.mime_type?.startsWith('image/') && !a.url?.startsWith('data:image/'))
+                .map((att, idx) => (
+                  <div key={idx} className="flex items-center gap-2 rounded-md bg-[#141414] border border-[#262626] px-3 py-2 mb-1">
+                    <FileText size={12} className="text-[#a1a1aa]" />
+                    <span className="text-xs text-[#a1a1aa] truncate">{att.name}</span>
+                    <span className="text-[10px] text-[#555] ml-auto">
+                      {(att.size / 1024).toFixed(0)}KB
+                    </span>
+                  </div>
+                ))}
+              {/* Upload area */}
+              <label className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-[#262626] p-3 text-xs text-[#666] cursor-pointer hover:border-[#f59e0b] hover:text-[#f59e0b] transition-colors mt-1">
+                <Upload size={14} />
+                Drop files or click to upload
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleFileUpload(e.target.files)}
+                />
+              </label>
+            </div>
+
             {/* TLDRs (Agent Summaries) */}
             {issue.tldrs && issue.tldrs.length > 0 && (
               <div>
@@ -333,19 +557,44 @@ export function IssueDrawer({ issueId, statuses, onClose }: IssueDrawerProps) {
             )}
 
             {/* Comments */}
-            {issue.comments && issue.comments.length > 0 && (
-              <div>
-                <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
-                  <MessageSquare size={12} />
-                  Comments ({issue.comments.length})
-                </label>
-                <div className="space-y-3">
-                  {issue.comments.map((comment: Comment) => (
-                    <CommentCard key={comment.id} comment={comment} />
-                  ))}
+            <div>
+              <label className="flex items-center gap-1.5 text-xs text-[#666] mb-2">
+                <MessageSquare size={12} />
+                Comments ({issue.comments?.length || 0})
+              </label>
+              <div className="space-y-3">
+                {(issue.comments || []).map((comment: Comment) => (
+                  <CommentCard key={comment.id} comment={comment} />
+                ))}
+              </div>
+
+              {/* Comment input */}
+              <div className="mt-3 rounded-lg border border-[#262626] bg-[#141414] p-3">
+                <textarea
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="Add a comment…"
+                  rows={3}
+                  className="w-full bg-transparent text-sm text-[#fafafa] placeholder-[#555] outline-none resize-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      handleSubmitComment();
+                    }
+                  }}
+                />
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#262626]">
+                  <span className="text-[10px] text-[#555]">⌘+Enter to submit</span>
+                  <button
+                    onClick={handleSubmitComment}
+                    disabled={!commentText.trim() || commentMutation.isPending}
+                    className="flex items-center gap-1.5 rounded-md bg-[#f59e0b] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#d97706] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Send size={12} />
+                    {commentMutation.isPending ? 'Sending…' : 'Comment'}
+                  </button>
                 </div>
               </div>
-            )}
+            </div>
 
             {/* Metadata */}
             <div className="border-t border-[#262626] pt-4">
@@ -373,6 +622,16 @@ export function IssueDrawer({ issueId, statuses, onClose }: IssueDrawerProps) {
           </div>
         </div>
       </div>
+
+      {/* Image Lightbox */}
+      {lightboxIndex !== null && imageAttachments.length > 0 && (
+        <ImageLightbox
+          images={imageAttachments.map((a) => ({ url: a.url, name: a.name }))}
+          currentIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onNavigate={(idx) => setLightboxIndex(idx)}
+        />
+      )}
     </>
   );
 }
@@ -511,6 +770,81 @@ function CommentCard({ comment }: { comment: Comment }) {
       <p className="text-sm text-[#d4d4d4] leading-relaxed whitespace-pre-wrap">
         {comment.body}
       </p>
+    </div>
+  );
+}
+
+/* ── Image Lightbox ────────────────────────────── */
+
+function ImageLightbox({
+  images,
+  currentIndex,
+  onClose,
+  onNavigate,
+}: {
+  images: { url: string; name: string }[];
+  currentIndex: number;
+  onClose: () => void;
+  onNavigate: (index: number) => void;
+}) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft' && currentIndex > 0) onNavigate(currentIndex - 1);
+      if (e.key === 'ArrowRight' && currentIndex < images.length - 1) onNavigate(currentIndex + 1);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [currentIndex, images.length, onClose, onNavigate]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
+      >
+        <X size={20} />
+      </button>
+
+      {/* Navigation */}
+      {currentIndex > 0 && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onNavigate(currentIndex - 1);
+          }}
+          className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-3 text-white hover:bg-black/80 transition-colors"
+        >
+          ←
+        </button>
+      )}
+      {currentIndex < images.length - 1 && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onNavigate(currentIndex + 1);
+          }}
+          className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-3 text-white hover:bg-black/80 transition-colors"
+        >
+          →
+        </button>
+      )}
+
+      {/* Image */}
+      <img
+        src={images[currentIndex].url}
+        alt={images[currentIndex].name}
+        className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
+        onClick={(e) => e.stopPropagation()}
+      />
+
+      {/* Counter */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs text-white">
+        {currentIndex + 1} / {images.length}
+      </div>
     </div>
   );
 }

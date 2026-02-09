@@ -8,7 +8,7 @@ export function AppLayout() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0a0a0a]">
+    <div className="flex h-screen overflow-hidden bg-bg text-primary">
       <Sidebar />
       <div
         className={cn(

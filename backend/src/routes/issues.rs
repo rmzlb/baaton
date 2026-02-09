@@ -3,7 +3,7 @@ use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::{ApiResponse, CreateIssue, Issue, UpdateIssue};
+use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr, UpdateIssue};
 
 #[derive(Debug, Deserialize)]
 pub struct ListParams {
@@ -117,16 +117,36 @@ pub async fn create(
 pub async fn get_one(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
-) -> Json<ApiResponse<Issue>> {
+) -> Json<ApiResponse<IssueDetail>> {
     let issue = sqlx::query_as::<_, Issue>(
-        "SELECT * FROM issues WHERE id = $1"
+        "SELECT * FROM issues WHERE id = $1",
     )
     .bind(id)
     .fetch_one(&pool)
     .await
     .unwrap();
 
-    Json(ApiResponse::new(issue))
+    let tldrs = sqlx::query_as::<_, Tldr>(
+        "SELECT * FROM tldrs WHERE issue_id = $1 ORDER BY created_at DESC",
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let comments = sqlx::query_as::<_, Comment>(
+        "SELECT * FROM comments WHERE issue_id = $1 ORDER BY created_at ASC",
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    Json(ApiResponse::new(IssueDetail {
+        issue,
+        tldrs,
+        comments,
+    }))
 }
 
 pub async fn update(
@@ -134,6 +154,12 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateIssue>,
 ) -> Json<ApiResponse<Issue>> {
+    // Option<Option<T>> pattern: outer None = not provided, Some(None) = set to null, Some(Some(v)) = set value
+    let priority_provided = body.priority.is_some();
+    let priority_value = body.priority.flatten();
+    let milestone_provided = body.milestone_id.is_some();
+    let milestone_value = body.milestone_id.flatten();
+
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         UPDATE issues SET
@@ -141,6 +167,10 @@ pub async fn update(
             description = COALESCE($3, description),
             type = COALESCE($4, type),
             status = COALESCE($5, status),
+            priority = CASE WHEN $6::boolean THEN $7 ELSE priority END,
+            tags = COALESCE($8, tags),
+            assignee_ids = COALESCE($9, assignee_ids),
+            milestone_id = CASE WHEN $10::boolean THEN $11 ELSE milestone_id END,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -151,6 +181,12 @@ pub async fn update(
     .bind(&body.description)
     .bind(&body.issue_type)
     .bind(&body.status)
+    .bind(priority_provided)
+    .bind(&priority_value)
+    .bind(&body.tags)
+    .bind(&body.assignee_ids)
+    .bind(milestone_provided)
+    .bind(milestone_value)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -181,6 +217,38 @@ pub async fn update_position(
     .unwrap();
 
     Json(ApiResponse::new(issue))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MineParams {
+    pub assignee_id: String,
+}
+
+pub async fn list_mine(
+    State(pool): State<PgPool>,
+    Query(params): Query<MineParams>,
+) -> Json<ApiResponse<Vec<Issue>>> {
+    let issues = sqlx::query_as::<_, Issue>(
+        r#"
+        SELECT * FROM issues
+        WHERE $1 = ANY(assignee_ids)
+        ORDER BY
+            CASE priority
+                WHEN 'urgent' THEN 0
+                WHEN 'high' THEN 1
+                WHEN 'medium' THEN 2
+                WHEN 'low' THEN 3
+                ELSE 4
+            END,
+            updated_at DESC
+        "#,
+    )
+    .bind(&params.assignee_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    Json(ApiResponse::new(issues))
 }
 
 pub async fn remove(

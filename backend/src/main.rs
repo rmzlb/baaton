@@ -38,6 +38,8 @@ async fn main() -> anyhow::Result<()> {
     sqlx::raw_sql(migration_001).execute(&pool).await?;
     let migration_002 = include_str!("../migrations/002_sprints.sql");
     sqlx::raw_sql(migration_002).execute(&pool).await?;
+    let migration_003 = include_str!("../migrations/003_project_tags.sql");
+    sqlx::raw_sql(migration_003).execute(&pool).await?;
     tracing::info!("Migrations applied");
 
     // CORS

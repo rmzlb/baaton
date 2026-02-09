@@ -10,7 +10,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
-  <body class="bg-[#F3EFE7] dark:bg-[#080808] text-neutral-900 dark:text-neutral-300 antialiased selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-black overflow-x-hidden">
+  <body class="bg-bg text-primary antialiased selection:bg-accent selection:text-black overflow-x-hidden">
+    <script>
+      // Sync theme before first paint to avoid flash
+      (function(){var t=localStorage.getItem('baaton-theme');if(t==='light')document.documentElement.classList.remove('dark');})();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -4,10 +4,14 @@ import { api, ApiError } from '@/lib/api';
 import type {
   Project,
   Issue,
+  IssueDetail,
   ApiKey,
   CreateIssueRequest,
   UpdateIssueRequest,
   CreateTLDRRequest,
+  CreateCommentRequest,
+  Comment,
+  ProjectTag,
 } from '@/lib/types';
 
 /**
@@ -174,10 +178,16 @@ export function useApi() {
           );
         }),
 
-      get: async (id: string): Promise<Issue> =>
+      get: async (id: string): Promise<IssueDetail> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
-          return api.get<Issue>(`/issues/${id}`, token);
+          return api.get<IssueDetail>(`/issues/${id}`, token);
+        }),
+
+      listMine: async (assigneeId: string): Promise<Issue[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<Issue[]>(`/issues/mine?assignee_id=${encodeURIComponent(assigneeId)}`, token);
         }),
 
       create: async (body: CreateIssueRequest): Promise<Issue> =>
@@ -242,6 +252,42 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.delete(`/api-keys/${id}`, token);
+        }),
+    },
+
+    // ─── Comments ──────────────────────────────
+    comments: {
+      list: async (issueId: string): Promise<Comment[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<Comment[]>(`/issues/${issueId}/comments`, token);
+        }),
+
+      create: async (issueId: string, body: CreateCommentRequest): Promise<Comment> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<Comment>(`/issues/${issueId}/comments`, body, token);
+        }),
+    },
+
+    // ─── Tags ──────────────────────────────────
+    tags: {
+      listByProject: async (projectId: string): Promise<ProjectTag[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<ProjectTag[]>(`/projects/${projectId}/tags`, token);
+        }),
+
+      create: async (projectId: string, body: { name: string; color: string }): Promise<ProjectTag> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<ProjectTag>(`/projects/${projectId}/tags`, body, token);
+        }),
+
+      delete: async (tagId: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/tags/${tagId}`, token);
         }),
     },
 

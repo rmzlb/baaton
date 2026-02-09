@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* ─── Fonts ────────────────────────────────── */
+/* ─── Fonts & Brand ────────────────────────── */
 @theme {
   --font-sans: 'Inter', sans-serif;
   --font-display: 'Anton', sans-serif;
@@ -12,7 +12,34 @@
   --color-beige-200: #E8E2D2;
   --color-beige-300: #DED8CC;
   --color-beige-900: #1A1917;
+
+  /* ── Semantic tokens (dark default) ── */
+  --color-bg: #0a0a0a;
+  --color-surface: #141414;
+  --color-surface-hover: #1f1f1f;
+  --color-border: #262626;
+  --color-primary: #fafafa;
+  --color-secondary: #a1a1aa;
+  --color-muted: #666666;
+  --color-accent: #f59e0b;
+  --color-accent-hover: #d97706;
 }
+
+/* ─── Light Theme Overrides ────────────────── */
+html:not(.dark) {
+  --color-bg: #fafafa;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f4f4f5;
+  --color-border: #e4e4e7;
+  --color-primary: #09090b;
+  --color-secondary: #52525b;
+  --color-muted: #a1a1aa;
+  --color-accent: #d97706;
+  --color-accent-hover: #b45309;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb { background: #c4c4c4; }
+html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
 
 /* ─── Custom Scrollbar ─────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }

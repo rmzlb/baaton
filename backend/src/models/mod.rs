@@ -141,6 +141,33 @@ pub struct Comment {
     pub updated_at: DateTime<Utc>,
 }
 
+// ─── Issue Detail (with relations) ────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct IssueDetail {
+    #[serde(flatten)]
+    pub issue: Issue,
+    pub tldrs: Vec<Tldr>,
+    pub comments: Vec<Comment>,
+}
+
+// ─── Project Tag ──────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct ProjectTag {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+    pub color: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProjectTag {
+    pub name: String,
+    pub color: Option<String>,
+}
+
 // ─── API Key ──────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]

@@ -167,6 +167,25 @@ export interface CreateTLDRRequest {
   pr_url?: string;
 }
 
+export interface ProjectTag {
+  id: string;
+  project_id: string;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+export interface CreateCommentRequest {
+  author_id: string;
+  author_name: string;
+  body: string;
+}
+
+export interface IssueDetail extends Issue {
+  tldrs: TLDR[];
+  comments: Comment[];
+}
+
 export interface PublicSubmission {
   title: string;
   description?: string;

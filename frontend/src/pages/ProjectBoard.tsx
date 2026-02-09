@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
+import { ListView } from '@/components/list/ListView';
 import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { useApi } from '@/hooks/useApi';
 import { useIssuesStore } from '@/stores/issues';
-import { Plus, X } from 'lucide-react';
-import type { IssueStatus, IssueType, IssuePriority, ProjectStatus, Project } from '@/lib/types';
+import { Plus, X, Kanban, List, Rows3, Rows4, StretchHorizontal } from 'lucide-react';
+import { useUIStore, type BoardDensity } from '@/stores/ui';
+import { cn } from '@/lib/utils';
+import type { IssueStatus, IssueType, IssuePriority, ProjectStatus, Project, ProjectTag } from '@/lib/types';
 
 // Default statuses (used when project statuses aren't loaded yet)
 const DEFAULT_STATUSES: ProjectStatus[] = [
@@ -18,6 +21,8 @@ const DEFAULT_STATUSES: ProjectStatus[] = [
   { key: 'cancelled', label: 'Cancelled', color: '#ef4444', hidden: true },
 ];
 
+type ViewMode = 'kanban' | 'list';
+
 export function ProjectBoard() {
   const { slug } = useParams<{ slug: string }>();
   const apiClient = useApi();
@@ -28,6 +33,16 @@ export function ProjectBoard() {
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
   const [showCreateIssue, setShowCreateIssue] = useState(false);
+
+  // View mode with localStorage persistence
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem(`baaton-view-${slug}`);
+    return (saved === 'list' ? 'list' : 'kanban') as ViewMode;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(`baaton-view-${slug}`, viewMode);
+  }, [viewMode, slug]);
 
   // Fetch project by slug
   const { data: project, isLoading: projectLoading, error: projectError } = useQuery({
@@ -44,6 +59,13 @@ export function ProjectBoard() {
       setIssues(result);
       return result;
     },
+    enabled: !!project?.id,
+  });
+
+  // Fetch project tags
+  const { data: projectTags = [] } = useQuery({
+    queryKey: ['project-tags', project?.id],
+    queryFn: () => apiClient.tags.listByProject(project!.id),
     enabled: !!project?.id,
   });
 
@@ -104,10 +126,39 @@ export function ProjectBoard() {
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-[#fafafa] truncate">{project?.name || slug}</h1>
           <p className="text-xs text-[#a1a1aa] font-mono uppercase tracking-wider">
-            {project?.prefix} · kanban view · {issues.length} issue{issues.length !== 1 ? 's' : ''}
+            {project?.prefix} · {viewMode} view · {issues.length} issue{issues.length !== 1 ? 's' : ''}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {/* Density Toggle */}
+          <DensityToggle />
+
+          {/* View Toggle */}
+          <div className="flex items-center rounded-md border border-[#262626] bg-[#141414] p-0.5">
+            <button
+              onClick={() => setViewMode('kanban')}
+              className={`rounded-[5px] p-1.5 transition-colors ${
+                viewMode === 'kanban'
+                  ? 'bg-[#1f1f1f] text-[#fafafa]'
+                  : 'text-[#666] hover:text-[#a1a1aa]'
+              }`}
+              title="Kanban view"
+            >
+              <Kanban size={16} />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`rounded-[5px] p-1.5 transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-[#1f1f1f] text-[#fafafa]'
+                  : 'text-[#666] hover:text-[#a1a1aa]'
+              }`}
+              title="List view"
+            >
+              <List size={16} />
+            </button>
+          </div>
+
           <button
             onClick={() => setShowCreateIssue(true)}
             className="flex items-center gap-1.5 rounded-lg bg-[#f59e0b] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#d97706] transition-colors min-h-[36px]"
@@ -118,15 +169,25 @@ export function ProjectBoard() {
         </div>
       </div>
 
-      {/* Board */}
+      {/* Board or List */}
       <div className="flex-1 overflow-hidden">
-        <KanbanBoard
-          statuses={statuses}
-          issues={issues}
-          onMoveIssue={handleMoveIssue}
-          onIssueClick={(issue) => openDetail(issue.id)}
-          onCreateIssue={() => setShowCreateIssue(true)}
-        />
+        {viewMode === 'kanban' ? (
+          <KanbanBoard
+            statuses={statuses}
+            issues={issues}
+            onMoveIssue={handleMoveIssue}
+            onIssueClick={(issue) => openDetail(issue.id)}
+            onCreateIssue={() => setShowCreateIssue(true)}
+            projectTags={projectTags}
+          />
+        ) : (
+          <ListView
+            statuses={statuses}
+            issues={issues}
+            onIssueClick={(issue) => openDetail(issue.id)}
+            projectTags={projectTags}
+          />
+        )}
       </div>
 
       {/* Issue Detail Drawer */}
@@ -134,6 +195,7 @@ export function ProjectBoard() {
         <IssueDrawer
           issueId={selectedIssueId}
           statuses={statuses}
+          projectId={project?.id}
           onClose={closeDetail}
         />
       )}
@@ -142,6 +204,7 @@ export function ProjectBoard() {
       {showCreateIssue && project && (
         <CreateIssueModal
           project={project}
+          projectTags={projectTags}
           onClose={() => setShowCreateIssue(false)}
         />
       )}
@@ -149,14 +212,30 @@ export function ProjectBoard() {
   );
 }
 
-function CreateIssueModal({ project, onClose }: { project: Project; onClose: () => void }) {
+function CreateIssueModal({
+  project,
+  projectTags,
+  onClose,
+}: {
+  project: Project;
+  projectTags: ProjectTag[];
+  onClose: () => void;
+}) {
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<IssueType>('feature');
   const [priority, setPriority] = useState<IssuePriority | ''>('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [error, setError] = useState('');
+
+  const toggleTag = (tagName: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName],
+    );
+  };
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -166,6 +245,7 @@ function CreateIssueModal({ project, onClose }: { project: Project; onClose: () 
         description: description || undefined,
         type,
         priority: priority || undefined,
+        tags: selectedTags.length > 0 ? selectedTags : undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issues', project.id] });
@@ -263,6 +343,65 @@ function CreateIssueModal({ project, onClose }: { project: Project; onClose: () 
             </div>
           </div>
 
+          {/* Tags */}
+          {projectTags.length > 0 && (
+            <div>
+              <label className="block text-xs text-[#a1a1aa] mb-1.5">Tags</label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {selectedTags.map((tag) => {
+                  const tagObj = projectTags.find((t) => t.name === tag);
+                  const color = tagObj?.color || '#6b7280';
+                  return (
+                    <span
+                      key={tag}
+                      className="rounded-full px-2 py-0.5 text-[10px] font-medium border cursor-pointer hover:opacity-80"
+                      style={{
+                        backgroundColor: `${color}20`,
+                        borderColor: `${color}40`,
+                        color: color,
+                      }}
+                      onClick={() => toggleTag(tag)}
+                    >
+                      {tag} ×
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowTagDropdown(!showTagDropdown)}
+                  className="w-full text-left rounded-lg border border-[#262626] bg-[#0a0a0a] px-3 py-2 text-xs text-[#666] hover:border-[#333] transition-colors"
+                >
+                  Select tags…
+                </button>
+                {showTagDropdown && (
+                  <div className="absolute left-0 top-full z-10 mt-1 w-full rounded-lg border border-[#262626] bg-[#141414] py-1 shadow-xl max-h-40 overflow-y-auto">
+                    {projectTags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => toggleTag(tag.name)}
+                        className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
+                          selectedTags.includes(tag.name) ? 'text-[#fafafa] bg-[#1f1f1f]' : 'text-[#a1a1aa] hover:bg-[#1f1f1f]'
+                        }`}
+                      >
+                        <span
+                          className="h-2.5 w-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: tag.color }}
+                        />
+                        {tag.name}
+                        {selectedTags.includes(tag.name) && (
+                          <span className="ml-auto text-[#f59e0b]">✓</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
@@ -281,6 +420,39 @@ function CreateIssueModal({ project, onClose }: { project: Project; onClose: () 
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+/* ── Density Toggle ─────────────────────────────── */
+
+const DENSITY_CONFIG: { key: BoardDensity; icon: typeof Rows3; label: string; title: string }[] = [
+  { key: 'compact', icon: Rows4, label: 'Compact', title: 'Compact — more tickets, less detail' },
+  { key: 'default', icon: Rows3, label: 'Default', title: 'Default — balanced view' },
+  { key: 'spacious', icon: StretchHorizontal, label: 'Spacious', title: 'Spacious — full details' },
+];
+
+function DensityToggle() {
+  const density = useUIStore((s) => s.density);
+  const setDensity = useUIStore((s) => s.setDensity);
+
+  return (
+    <div className="flex items-center rounded-md border border-[#262626] bg-[#141414] p-0.5">
+      {DENSITY_CONFIG.map(({ key, icon: Icon, title }) => (
+        <button
+          key={key}
+          onClick={() => setDensity(key)}
+          className={cn(
+            'rounded-[5px] p-1.5 transition-colors',
+            density === key
+              ? 'bg-[#1f1f1f] text-[#fafafa]'
+              : 'text-[#666] hover:text-[#a1a1aa]',
+          )}
+          title={title}
+        >
+          <Icon size={16} />
+        </button>
+      ))}
     </div>
   );
 }

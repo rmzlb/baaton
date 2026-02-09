@@ -3,12 +3,14 @@ import { NavLink } from 'react-router-dom';
 import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import {
   LayoutDashboard, Kanban, Settings, ChevronLeft, ChevronRight, Users, X,
+  Sun, Moon, CheckSquare,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/my-tasks', icon: CheckSquare, label: 'My Tasks' },
   { to: '/projects', icon: Kanban, label: 'Projects' },
   { to: '/org', icon: Users, label: 'Team' },
   { to: '/settings', icon: Settings, label: 'Settings' },
@@ -19,6 +21,8 @@ export function Sidebar() {
   const toggle = useUIStore((s) => s.toggleSidebar);
   const mobileOpen = useUIStore((s) => s.sidebarMobileOpen);
   const closeMobile = useUIStore((s) => s.closeMobileSidebar);
+  const theme = useUIStore((s) => s.theme);
+  const toggleTheme = useUIStore((s) => s.toggleTheme);
 
   // Close mobile sidebar on route change (via escape or backdrop)
   useEffect(() => {
@@ -55,7 +59,7 @@ export function Sidebar() {
       <aside
         className={cn(
           // Desktop: fixed left
-          'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[#262626] bg-[#0a0a0a] transition-all duration-200',
+          'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border bg-bg transition-all duration-200',
           // Desktop width
           collapsed ? 'w-16' : 'w-60',
           // Mobile: hidden by default, overlay when open
@@ -64,9 +68,9 @@ export function Sidebar() {
         )}
       >
         {/* Org Switcher / Header */}
-        <div className="flex h-12 items-center border-b border-[#262626] px-3 justify-between">
+        <div className="flex h-12 items-center border-b border-border px-3 justify-between">
           {collapsed && !mobileOpen ? (
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#f59e0b] text-black font-bold text-sm mx-auto">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-black font-bold text-sm mx-auto">
               B
             </div>
           ) : (
@@ -75,7 +79,7 @@ export function Sidebar() {
                 elements: {
                   rootBox: 'w-full',
                   organizationSwitcherTrigger:
-                    'w-full justify-start px-1 py-1 rounded-lg hover:bg-[#1f1f1f] text-white border-none',
+                    'w-full justify-start px-1 py-1 rounded-lg hover:bg-surface-hover border-none',
                 },
               }}
               afterCreateOrganizationUrl="/dashboard"
@@ -86,7 +90,7 @@ export function Sidebar() {
           {mobileOpen && (
             <button
               onClick={closeMobile}
-              className="rounded-md p-1.5 text-[#a1a1aa] hover:bg-[#141414] hover:text-[#fafafa] transition-colors md:hidden shrink-0 ml-1"
+              className="rounded-md p-1.5 text-secondary hover:bg-surface hover:text-primary transition-colors md:hidden shrink-0 ml-1"
             >
               <X size={16} />
             </button>
@@ -104,8 +108,8 @@ export function Sidebar() {
                 cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors min-h-[44px]',
                   isActive
-                    ? 'bg-[#1f1f1f] text-[#fafafa]'
-                    : 'text-[#a1a1aa] hover:bg-[#141414] hover:text-[#fafafa]',
+                    ? 'bg-surface-hover text-primary'
+                    : 'text-secondary hover:bg-surface hover:text-primary',
                   collapsed && !mobileOpen && 'justify-center px-0',
                 )
               }
@@ -117,18 +121,37 @@ export function Sidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-[#262626] p-3 flex items-center justify-between">
-          <UserButton
-            appearance={{
-              elements: { avatarBox: 'h-8 w-8' },
-            }}
-          />
+        <div className="border-t border-border p-3 space-y-2">
+          {/* Theme toggle */}
           <button
-            onClick={toggle}
-            className="rounded-md p-1.5 text-[#a1a1aa] hover:bg-[#141414] hover:text-[#fafafa] transition-colors hidden md:block"
+            onClick={toggleTheme}
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors w-full min-h-[40px]',
+              'text-secondary hover:bg-surface-hover hover:text-primary',
+              collapsed && !mobileOpen && 'justify-center px-0',
+            )}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
-            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            {(!collapsed || mobileOpen) && (
+              <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+            )}
           </button>
+
+          {/* User + collapse */}
+          <div className="flex items-center justify-between">
+            <UserButton
+              appearance={{
+                elements: { avatarBox: 'h-8 w-8' },
+              }}
+            />
+            <button
+              onClick={toggle}
+              className="rounded-md p-1.5 text-secondary hover:bg-surface-hover hover:text-primary transition-colors hidden md:block"
+            >
+              {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            </button>
+          </div>
         </div>
       </aside>
     </>
