@@ -6,8 +6,10 @@ import { ListView } from '@/components/list/ListView';
 import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { CreateIssueModal } from '@/components/issues/CreateIssueModal';
 import { ShortcutHelp } from '@/components/shared/ShortcutHelp';
+import { KanbanBoardSkeleton, ListViewSkeleton } from '@/components/shared/Skeleton';
 import { useApi } from '@/hooks/useApi';
 import { useIssuesStore } from '@/stores/issues';
+import { useNotificationStore } from '@/stores/notifications';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useTranslation } from '@/hooks/useTranslation';
 import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal } from 'lucide-react';
@@ -37,6 +39,9 @@ export function ProjectBoard() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
+  const restoreIssues = useIssuesStore((s) => s.restoreIssues);
+  const moveIssueOptimistic = useIssuesStore((s) => s.moveIssueOptimistic);
+  const addNotification = useNotificationStore((s) => s.addNotification);
   const [showCreateIssue, setShowCreateIssue] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [, setSearchParams] = useSearchParams();
@@ -114,25 +119,40 @@ export function ProjectBoard() {
     enabled: !!project?.id,
   });
 
-  // Mutation for updating issue position (drag & drop) — with optimistic update
+  // Mutation for updating issue position (drag & drop) — with optimistic update in both Zustand + react-query
   const positionMutation = useMutation({
     mutationFn: ({ id, status, position }: { id: string; status: string; position: number }) =>
       apiClient.issues.updatePosition(id, status, position),
     onMutate: async ({ id, status, position }) => {
       // Cancel in-flight queries so they don't overwrite our optimistic update
       await queryClient.cancelQueries({ queryKey: ['issues', project?.id] });
-      const previous = queryClient.getQueryData<Issue[]>(['issues', project?.id]);
-      // Optimistically update the cache
+      const previousQueryData = queryClient.getQueryData<Issue[]>(['issues', project?.id]);
+
+      // Optimistically update the react-query cache
       queryClient.setQueryData<Issue[]>(['issues', project?.id], (old) =>
         old?.map((i) => (i.id === id ? { ...i, status: status as IssueStatus, position } : i)),
       );
-      return { previous };
+
+      // Optimistically update Zustand store (returns snapshot for rollback)
+      const previousZustand = moveIssueOptimistic(id, status as IssueStatus, position);
+
+      return { previousQueryData, previousZustand };
     },
     onError: (_err, _vars, context) => {
-      // Roll back on error
-      if (context?.previous) {
-        queryClient.setQueryData(['issues', project?.id], context.previous);
+      // Roll back react-query cache
+      if (context?.previousQueryData) {
+        queryClient.setQueryData(['issues', project?.id], context.previousQueryData);
       }
+      // Roll back Zustand store
+      if (context?.previousZustand) {
+        restoreIssues(context.previousZustand);
+      }
+      // Show error toast
+      addNotification({
+        type: 'warning',
+        title: t('optimistic.moveError'),
+        message: t('optimistic.moveErrorDesc'),
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['issues', project?.id] });
@@ -169,8 +189,22 @@ export function ProjectBoard() {
 
   if (projectLoading || issuesLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-secondary">
-        {t('projectBoard.loadingBoard')}
+      <div className="flex h-full flex-col">
+        {/* Header skeleton */}
+        <div className="flex items-center justify-between border-b border-border px-3 md:px-6 py-3 gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="h-5 w-40 animate-pulse rounded bg-surface-hover" />
+            <div className="h-3 w-56 animate-pulse rounded bg-surface-hover mt-1.5" />
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="h-8 w-20 animate-pulse rounded-md bg-surface-hover" />
+            <div className="h-9 w-28 animate-pulse rounded-lg bg-surface-hover" />
+          </div>
+        </div>
+        {/* Board skeleton based on current view mode */}
+        <div className="flex-1 overflow-hidden">
+          {viewMode === 'kanban' ? <KanbanBoardSkeleton /> : <ListViewSkeleton />}
+        </div>
       </div>
     );
   }

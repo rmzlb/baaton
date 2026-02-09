@@ -2,9 +2,10 @@ import { useState, useMemo } from 'react';
 import {
   Search, ChevronDown, ChevronRight,
   ArrowUp, ArrowDown, Minus, AlertTriangle,
-  Tag, User, X, Layers,
+  Tag, User, X, Layers, Inbox, SearchX,
 } from 'lucide-react';
 import { ListRow } from './ListRow';
+import { EmptyState } from '@/components/shared/EmptyState';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import type { Issue, IssuePriority, ProjectStatus, ProjectTag } from '@/lib/types';
@@ -386,10 +387,20 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: L
           );
         })}
 
-        {sortedIssues.length === 0 && (
-          <div className="flex items-center justify-center py-16 text-sm text-muted">
-            {t('list.noIssues')}
-          </div>
+        {sortedIssues.length === 0 && issues.length === 0 && (
+          <EmptyState
+            icon={Inbox}
+            title={t('empty.noIssues')}
+            description={t('empty.noIssuesDesc')}
+          />
+        )}
+        {sortedIssues.length === 0 && issues.length > 0 && (
+          <EmptyState
+            icon={SearchX}
+            title={t('empty.noFilterResults')}
+            description={t('empty.noFilterResultsDesc')}
+            action={{ label: t('kanban.clearAll'), onClick: clearAllFilters }}
+          />
         )}
       </div>
     </div>

@@ -225,6 +225,20 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
             />
           </div>
 
+          <div>
+            <label className="block text-xs text-secondary mb-1.5 flex items-center gap-1.5">
+              <Github size={12} />
+              {t('settings.githubRepo')}
+            </label>
+            <input
+              type="url"
+              value={githubRepoUrl}
+              onChange={(e) => setGithubRepoUrl(e.target.value)}
+              placeholder={t('settings.githubRepoPlaceholder')}
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none transition-colors"
+            />
+          </div>
+
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"

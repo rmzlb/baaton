@@ -591,6 +591,20 @@ As a [user], I want to [action] so that [benefit].
   'topbar.navigate': 'navigate',
   'topbar.select': 'select',
 
+  // ─── Empty States ────────────────────────────
+  'empty.noIssues': 'No issues yet',
+  'empty.noIssuesDesc': 'Create your first issue to get started!',
+  'empty.noFilterResults': 'No issues match your filters',
+  'empty.noFilterResultsDesc': 'Try adjusting or clearing your filters.',
+  'empty.noProjects': 'No projects yet',
+  'empty.noProjectsDesc': 'Create your first project to get started.',
+
+  // ─── Optimistic Updates ─────────────────────
+  'optimistic.moveError': 'Move failed',
+  'optimistic.moveErrorDesc': 'Could not move the issue. It has been reverted.',
+  'optimistic.updateError': 'Update failed',
+  'optimistic.updateErrorDesc': 'Could not save your change. It has been reverted.',
+
   // ─── Global Create Issue ───────────────────
   'global.newIssue': '+ New Issue',
   'global.selectProject': 'Select a project',

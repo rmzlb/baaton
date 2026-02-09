@@ -9,6 +9,7 @@ import {
   Send, Plus,
 } from 'lucide-react';
 import { useIssuesStore } from '@/stores/issues';
+import { useNotificationStore } from '@/stores/notifications';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn, timeAgo } from '@/lib/utils';
@@ -16,6 +17,7 @@ import { NotionEditor } from '@/components/shared/NotionEditor';
 import { GitHubSection } from '@/components/github/GitHubSection';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
+import { IssueDrawerSkeleton } from '@/components/shared/Skeleton';
 import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment } from '@/lib/types';
 
 /* ── Constants ─────────────────────────────────── */
@@ -68,6 +70,9 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const { memberships } = useOrganization({ memberships: { infinite: true } });
   const orgMembers = memberships?.data ?? [];
   const updateIssue = useIssuesStore((s) => s.updateIssue);
+  const updateIssueOptimistic = useIssuesStore((s) => s.updateIssueOptimistic);
+  const restoreIssues = useIssuesStore((s) => s.restoreIssues);
+  const addNotification = useNotificationStore((s) => s.addNotification);
   const panelRef = useRef<HTMLDivElement>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -109,16 +114,25 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       queryClient.setQueryData<Issue>(['issue', issueId], (old) =>
         old ? { ...old, [field]: value } : old,
       );
-      // Optimistically update the Zustand store too
-      updateIssue(issueId, { [field]: value } as Partial<Issue>);
-      return { previousIssue };
+      // Optimistically update the Zustand store (returns snapshot for rollback)
+      const previousZustand = updateIssueOptimistic(issueId, { [field]: value } as Partial<Issue>);
+      return { previousIssue, previousZustand };
     },
     onError: (_err, _vars, context) => {
-      // Roll back on error
+      // Roll back react-query cache
       if (context?.previousIssue) {
         queryClient.setQueryData(['issue', issueId], context.previousIssue);
-        updateIssue(issueId, context.previousIssue);
       }
+      // Roll back Zustand store
+      if (context?.previousZustand) {
+        restoreIssues(context.previousZustand);
+      }
+      // Show error toast
+      addNotification({
+        type: 'warning',
+        title: t('optimistic.updateError'),
+        message: t('optimistic.updateErrorDesc'),
+      });
     },
     onSuccess: (updated) => {
       updateIssue(issueId, updated);
@@ -441,7 +455,21 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
           ref={panelRef}
           className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right"
         >
-          <LoadingSkeleton />
+          {/* Header skeleton */}
+          <div className="flex items-center justify-between border-b border-border px-4 py-2.5 shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="h-4 w-4 animate-pulse rounded-sm bg-surface-hover" />
+              <div className="h-4 w-20 animate-pulse rounded bg-surface-hover" />
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close issue drawer"
+              className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors shrink-0"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <IssueDrawerSkeleton />
         </div>
       </>
     );

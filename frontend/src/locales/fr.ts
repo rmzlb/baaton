@@ -591,6 +591,20 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'topbar.navigate': 'naviguer',
   'topbar.select': 'sélectionner',
 
+  // ─── Empty States ────────────────────────────
+  'empty.noIssues': 'Aucune issue',
+  'empty.noIssuesDesc': 'Créez votre première issue pour commencer !',
+  'empty.noFilterResults': 'Aucune issue ne correspond à vos filtres',
+  'empty.noFilterResultsDesc': 'Essayez d\'ajuster ou de réinitialiser vos filtres.',
+  'empty.noProjects': 'Aucun projet',
+  'empty.noProjectsDesc': 'Créez votre premier projet pour commencer.',
+
+  // ─── Mises à jour optimistes ────────────────
+  'optimistic.moveError': 'Déplacement échoué',
+  'optimistic.moveErrorDesc': 'Impossible de déplacer l\'issue. Elle a été rétablie.',
+  'optimistic.updateError': 'Mise à jour échouée',
+  'optimistic.updateErrorDesc': 'Impossible d\'enregistrer votre modification. Elle a été rétablie.',
+
   // ─── Global Create Issue ───────────────────
   'global.newIssue': '+ Nouveau Ticket',
   'global.selectProject': 'Choisir un projet',
