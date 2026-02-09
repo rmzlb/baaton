@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install deps first (cache layer)
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN npm install --legacy-peer-deps
 
 # Copy source + build
 COPY . .
