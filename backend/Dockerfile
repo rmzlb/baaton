@@ -43,8 +43,6 @@ COPY --from=builder /app/migrations /app/migrations
 ENV PORT=4000
 EXPOSE 4000
 
-# Health check via /health endpoint
-HEALTHCHECK --interval=30s --timeout=3s --start-period=15s \
-  CMD wget -qO- http://localhost:4000/health || exit 1
+# No HEALTHCHECK in Dockerfile — let Dokploy/Swarm handle it
 
 CMD ["baaton-api"]

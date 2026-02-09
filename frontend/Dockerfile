@@ -26,9 +26,7 @@ RUN rm -rf /etc/nginx/conf.d/default.conf /usr/share/nginx/html/*
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
-  CMD wget -qO- http://localhost:80/ || exit 1
+# No HEALTHCHECK in Dockerfile — let Dokploy/Swarm handle it
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
