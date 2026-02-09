@@ -293,10 +293,23 @@ export function useApi() {
 
     // ─── Invites ───────────────────────────────
     invites: {
+      list: async (): Promise<Array<{
+        id: string;
+        email_address: string;
+        status: string;
+        role: string | null;
+        url: string | null;
+      }>> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get('/invites', token);
+        }),
+
       create: async (body: { email_address: string; role?: string }): Promise<{
         id: string;
         email_address: string;
         status: string;
+        role: string | null;
         url: string | null;
       }> =>
         withErrorHandling(async () => {

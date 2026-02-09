@@ -177,7 +177,10 @@ const fr = {
   'settings.invite.linkReady': 'Lien d\'invitation prêt !',
   'settings.invite.copy': 'Copier',
   'settings.invite.copied': 'Copié !',
-  'settings.invite.linkHint': 'Partagez ce lien directement — contourne les filtres anti-spam.',
+  'settings.invite.linkHint': 'Partagez ces liens directement — contourne les filtres anti-spam.',
+  'settings.invite.pending': 'Invitations en attente',
+  'settings.invite.pendingStatus': 'En attente',
+  'settings.invite.copyLink': 'Copier le lien',
   'settings.used': 'utilisée {{time}}',
 
   // ─── KanbanBoard ────────────────────────────

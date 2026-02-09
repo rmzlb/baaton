@@ -178,7 +178,10 @@ const en = {
   'settings.invite.linkReady': 'Invitation link ready!',
   'settings.invite.copy': 'Copy',
   'settings.invite.copied': 'Copied!',
-  'settings.invite.linkHint': 'Share this link directly — bypasses email spam filters.',
+  'settings.invite.linkHint': 'Share these links directly — bypasses email spam filters.',
+  'settings.invite.pending': 'Pending Invitations',
+  'settings.invite.pendingStatus': 'Pending',
+  'settings.invite.copyLink': 'Copy Link',
 
   // ─── KanbanBoard ────────────────────────────
   'kanban.filterIssues': 'Filter issues…',

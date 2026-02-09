@@ -9,11 +9,12 @@ pub struct InviteRequest {
     pub role: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct InviteResponse {
     pub id: String,
     pub email_address: String,
     pub status: String,
+    pub role: Option<String>,
     pub url: Option<String>,
 }
 
@@ -22,7 +23,69 @@ struct ClerkInviteResponse {
     id: String,
     email_address: String,
     status: String,
+    role: Option<String>,
     url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClerkListResponse {
+    data: Vec<ClerkInviteResponse>,
+}
+
+fn get_clerk_secret() -> Result<String, (StatusCode, String)> {
+    std::env::var("CLERK_SECRET_KEY").map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            r#"{"error":"CLERK_SECRET_KEY not configured"}"#.to_string(),
+        )
+    })
+}
+
+/// GET /api/v1/invites — List pending org invitations with their URLs.
+pub async fn list(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<Vec<InviteResponse>>, (StatusCode, String)> {
+    let org_id = auth.org_id.as_deref().ok_or((
+        StatusCode::BAD_REQUEST,
+        r#"{"error":"No active organization"}"#.to_string(),
+    ))?;
+
+    let clerk_secret = get_clerk_secret()?;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!(
+            "https://api.clerk.com/v1/organizations/{}/invitations?status=pending",
+            org_id
+        ))
+        .header("Authorization", format!("Bearer {}", clerk_secret))
+        .send()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!(r#"{{"error":"{}"}}"#, e)))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err((StatusCode::BAD_GATEWAY, body));
+    }
+
+    let clerk_resp: ClerkListResponse = resp
+        .json()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!(r#"{{"error":"{}"}}"#, e)))?;
+
+    let invites = clerk_resp
+        .data
+        .into_iter()
+        .map(|inv| InviteResponse {
+            id: inv.id,
+            email_address: inv.email_address,
+            status: inv.status,
+            role: inv.role,
+            url: inv.url,
+        })
+        .collect();
+
+    Ok(Json(invites))
 }
 
 /// POST /api/v1/invites — Create an org invitation via Clerk Backend API.
@@ -36,13 +99,7 @@ pub async fn create(
         r#"{"error":"No active organization"}"#.to_string(),
     ))?;
 
-    // Read Clerk secret key from env
-    let clerk_secret = std::env::var("CLERK_SECRET_KEY").map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            r#"{"error":"CLERK_SECRET_KEY not configured"}"#.to_string(),
-        )
-    })?;
+    let clerk_secret = get_clerk_secret()?;
 
     let role = body.role.unwrap_or_else(|| "org:member".to_string());
 
@@ -89,6 +146,7 @@ pub async fn create(
         id: clerk_resp.id,
         email_address: clerk_resp.email_address,
         status: clerk_resp.status,
+        role: clerk_resp.role,
         url: clerk_resp.url,
     }))
 }

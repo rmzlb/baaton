@@ -50,19 +50,26 @@ function InviteSection() {
   const { t } = useTranslation();
   const { organization } = useOrganization();
   const apiClient = useApi();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('org:member');
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState('');
+
+  // Fetch pending invitations
+  const { data: pendingInvites = [] } = useQuery({
+    queryKey: ['invites', organization?.id],
+    queryFn: () => apiClient.invites.list(),
+    enabled: !!organization,
+  });
 
   const inviteMutation = useMutation({
     mutationFn: (data: { email_address: string; role?: string }) =>
       apiClient.invites.create(data),
-    onSuccess: (data) => {
-      setInviteUrl(data.url);
+    onSuccess: () => {
       setEmail('');
       setError('');
+      queryClient.invalidateQueries({ queryKey: ['invites'] });
     },
     onError: (err: Error) => {
       setError(err.message || t('settings.invite.error'));
@@ -72,16 +79,13 @@ function InviteSection() {
   const handleInvite = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
-    setInviteUrl(null);
-    setCopied(false);
     inviteMutation.mutate({ email_address: email.trim(), role });
   };
 
-  const handleCopy = () => {
-    if (!inviteUrl) return;
-    navigator.clipboard.writeText(inviteUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = (url: string, id: string) => {
+    navigator.clipboard.writeText(url);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   if (!organization) return null;
@@ -99,6 +103,7 @@ function InviteSection() {
         {t('settings.invite.description', { org: organization.name })}
       </p>
 
+      {/* Send new invite */}
       <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1 flex gap-2">
           <input
@@ -136,28 +141,49 @@ function InviteSection() {
         </div>
       )}
 
-      {/* Invite URL */}
-      {inviteUrl && (
-        <div className="mt-4 p-3 rounded-lg border border-accent/30 bg-accent/5">
-          <div className="flex items-center gap-2 text-sm text-accent mb-2">
-            <Link2 size={14} />
-            <span className="font-medium">{t('settings.invite.linkReady')}</span>
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={inviteUrl}
-              readOnly
-              className="flex-1 bg-bg border border-border rounded-lg px-3 py-2 text-xs text-secondary font-mono truncate outline-none"
-            />
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="flex items-center gap-1 bg-accent text-black px-3 py-2 rounded-lg text-xs font-semibold hover:bg-accent/90 transition-colors"
-            >
-              {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
-              {copied ? t('settings.invite.copied') : t('settings.invite.copy')}
-            </button>
+      {/* Pending invitations list */}
+      {pendingInvites.length > 0 && (
+        <div className="mt-5">
+          <h3 className="text-xs font-semibold text-secondary uppercase tracking-wider mb-3">
+            {t('settings.invite.pending')} ({pendingInvites.length})
+          </h3>
+          <div className="space-y-2">
+            {pendingInvites.map((inv) => (
+              <div
+                key={inv.id}
+                className="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg"
+              >
+                {/* Email + role */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-primary truncate">{inv.email_address}</p>
+                  <p className="text-xs text-muted">
+                    {inv.role === 'org:admin' ? t('settings.invite.admin') : t('settings.invite.member')}
+                    {' · '}{t('settings.invite.pendingStatus')}
+                  </p>
+                </div>
+
+                {/* Copy link button */}
+                {inv.url && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(inv.url!, inv.id)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium text-secondary hover:text-primary hover:border-accent transition-colors shrink-0"
+                  >
+                    {copiedId === inv.id ? (
+                      <>
+                        <CheckCircle2 size={13} className="text-green-400" />
+                        {t('settings.invite.copied')}
+                      </>
+                    ) : (
+                      <>
+                        <Link2 size={13} />
+                        {t('settings.invite.copyLink')}
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
           <p className="mt-2 text-xs text-muted">
             {t('settings.invite.linkHint')}

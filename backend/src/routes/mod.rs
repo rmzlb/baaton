@@ -27,7 +27,7 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/issues/{id}/tldr", post(tldrs::create))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
-        .route("/invites", post(invites::create))
+        .route("/invites", get(invites::list).post(invites::create))
         // Public (no auth)
         .route("/public/{slug}/submit", post(issues::public_submit))
         .with_state(pool);
