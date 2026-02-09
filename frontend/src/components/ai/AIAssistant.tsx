@@ -505,8 +505,8 @@ export function AIAssistant() {
             </div>
             <p className="text-[9px] text-muted mt-1 text-center">
               {aiMode === 'gemini'
-                ? `Gemini Flash · ${SKILL_TOOLS[0].functionDeclarations.length} skills · ${t('ai.realTimeData')}`
-                : `OpenClaw · ${t('ai.realTimeData')}`
+                ? `Gemini Flash · ${SKILL_TOOLS[0].functionDeclarations.length} skills · ${t('ai.realTimeData')} · 📎 ${t('ai.imagesHint')}`
+                : `🦞 OpenClaw · ${t('ai.realTimeData')}`
               }
             </p>
           </div>

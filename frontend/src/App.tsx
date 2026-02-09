@@ -16,6 +16,7 @@ const AllIssues = lazy(() => import('./pages/AllIssues'));
 const Docs = lazy(() => import('./pages/Docs'));
 const Settings = lazy(() => import('./pages/Settings'));
 const PublicSubmit = lazy(() => import('./pages/PublicSubmit'));
+const Docs = lazy(() => import('./pages/Docs'));
 
 const isAppDomain = window.location.hostname === 'app.baaton.dev';
 
@@ -73,6 +74,7 @@ export function App() {
         {/* Root: landing on baaton.dev, dashboard redirect on app.baaton.dev */}
         <Route path="/" element={<RootRoute />} />
         <Route path="/submit/:slug" element={<PublicSubmit />} />
+        <Route path="/docs" element={<Docs />} />
         <Route path="/docs" element={<Docs />} />
 
         {/* Auth routes */}
