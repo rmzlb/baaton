@@ -454,7 +454,7 @@ async fn handle_issues_event(
 
     let issue = &payload["issue"];
     let github_issue_number = issue["number"].as_i64().unwrap_or(0) as i32;
-    let github_issue_id = issue["id"].as_i64().unwrap_or(0);
+    let _github_issue_id = issue["id"].as_i64().unwrap_or(0);
 
     // Check if we already have a link for this GitHub issue
     let existing: Option<(uuid::Uuid,)> = sqlx::query_as(

@@ -520,6 +520,19 @@ As a [user], I want to [action] so that [benefit].
 
 `,
 
+  // ─── Issue Creator / Due Date / Assignee ───
+  'issueDrawer.createdBy': 'Created by',
+  'issueDrawer.dueDate': 'Due date',
+  'issueDrawer.dueDateNone': '+ Set due date',
+  'issueDrawer.dueDateOverdue': 'Overdue',
+  'issueDrawer.dueDateSoon': 'Due in {{days}} days',
+  'issueDrawer.assigneeNone': '+ Assign someone',
+  'issueDrawer.noMembers': 'No org members found',
+  'createIssue.assigneeLabel': 'Assignee',
+  'createIssue.assigneePlaceholder': 'Assign someone…',
+  'createIssue.assigned': 'assigned',
+  'createIssue.dueDateLabel': 'Due date (optional)',
+
   // ─── Command Palette ───────────────────────
   'topbar.quickActions': 'Quick Actions',
   'topbar.organizations': 'Organizations',

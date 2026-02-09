@@ -520,6 +520,19 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 
 `,
 
+  // ─── Issue Creator / Due Date / Assignee ───
+  'issueDrawer.createdBy': 'Créé par',
+  'issueDrawer.dueDate': 'Date limite',
+  'issueDrawer.dueDateNone': '+ Ajouter une date limite',
+  'issueDrawer.dueDateOverdue': 'En retard',
+  'issueDrawer.dueDateSoon': 'Dans {{days}} jours',
+  'issueDrawer.assigneeNone': '+ Assigner quelqu\'un',
+  'issueDrawer.noMembers': 'Aucun membre trouvé',
+  'createIssue.assigneeLabel': 'Assigné à',
+  'createIssue.assigneePlaceholder': 'Assigner quelqu\'un…',
+  'createIssue.assigned': 'assigné(s)',
+  'createIssue.dueDateLabel': 'Date limite (optionnel)',
+
   // ─── Command Palette ───────────────────────
   'topbar.quickActions': 'Actions rapides',
   'topbar.organizations': 'Organisations',

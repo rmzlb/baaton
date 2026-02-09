@@ -1,3 +1,4 @@
+use base64::{Engine as _, engine::general_purpose};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use octocrab::Octocrab;
 use serde::Serialize;
@@ -54,11 +55,9 @@ impl GitHubClient {
         let private_key_b64 = std::env::var("GITHUB_APP_PRIVATE_KEY")
             .map_err(|_| anyhow::anyhow!("GITHUB_APP_PRIVATE_KEY not set"))?;
 
-        let private_key_pem = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            private_key_b64.trim(),
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to base64-decode GITHUB_APP_PRIVATE_KEY: {}", e))?;
+        let private_key_pem = general_purpose::STANDARD
+            .decode(private_key_b64.trim())
+            .map_err(|e| anyhow::anyhow!("Failed to base64-decode GITHUB_APP_PRIVATE_KEY: {}", e))?;
 
         Self::new(app_id, private_key_pem)
     }

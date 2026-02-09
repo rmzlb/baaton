@@ -2,6 +2,7 @@ import type { DraggableProvided } from '@hello-pangea/dnd';
 import {
   Bug, Sparkles, Zap, HelpCircle,
   ArrowUp, ArrowDown, Minus, AlertTriangle, Bot, MessageSquare,
+  Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/ui';
@@ -294,6 +295,22 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
           <span className="text-[10px] text-muted">+{issue.tags.length - 3}</span>
         )}
         {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
+        {issue.due_date && (() => {
+          const due = new Date(issue.due_date);
+          const now = new Date();
+          const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          const isOverdue = diffDays < 0;
+          const isSoon = diffDays >= 0 && diffDays <= 3;
+          return (
+            <span className={cn(
+              'flex items-center gap-0.5 text-[10px]',
+              isOverdue ? 'text-red-400' : isSoon ? 'text-amber-400' : 'text-muted',
+            )}>
+              <Clock size={10} />
+              {due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            </span>
+          );
+        })()}
         {issue.assignee_ids.length > 0 && (
           <div className="ml-auto flex -space-x-1.5">
             {issue.assignee_ids.slice(0, 2).map((id) => (

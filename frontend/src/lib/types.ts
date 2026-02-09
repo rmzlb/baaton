@@ -76,6 +76,9 @@ export interface Issue {
   category: string[];
   attachments: Attachment[];
   position: number;
+  created_by_id: string | null;
+  created_by_name: string | null;
+  due_date: string | null;
   qualified_at: string | null;
   qualified_by: string | null;
   created_at: string;
@@ -148,6 +151,7 @@ export interface CreateIssueRequest {
   tags?: string[];
   category?: string[];
   assignee_ids?: string[];
+  due_date?: string;
 }
 
 export interface UpdateIssueRequest {
@@ -160,6 +164,8 @@ export interface UpdateIssueRequest {
   assignee_ids?: string[];
   tags?: string[];
   category?: string[];
+  due_date?: string | null;
+  position?: number;
 }
 
 export interface CreateTLDRRequest {

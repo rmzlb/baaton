@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOrganization } from '@clerk/clerk-react';
 import {
   X, Bug, Sparkles, Zap, HelpCircle,
   AlertTriangle, ArrowUp, Minus, ArrowDown,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, User, Calendar, CheckCircle2,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useApi } from '@/hooks/useApi';
@@ -84,7 +85,12 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [useTemplate, setUseTemplate] = useState(true);
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [dueDate, setDueDate] = useState('');
+  const [showAssigneePicker, setShowAssigneePicker] = useState(false);
   const [error, setError] = useState('');
+  const { memberships } = useOrganization({ memberships: { infinite: true } });
+  const orgMembers = memberships?.data ?? [];
 
   // When type is selected, pre-fill template in description
   useEffect(() => {
@@ -154,6 +160,8 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
         priority: priority || undefined,
         tags: selectedTags.length > 0 ? selectedTags : undefined,
         category: selectedCategories.length > 0 ? selectedCategories : undefined,
+        assignee_ids: assigneeIds.length > 0 ? assigneeIds : undefined,
+        due_date: dueDate || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issues', project.id] });
@@ -247,6 +255,13 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
               setShowTagDropdown={setShowTagDropdown}
               selectedCategories={selectedCategories}
               toggleCategory={toggleCategory}
+              assigneeIds={assigneeIds}
+              setAssigneeIds={setAssigneeIds}
+              dueDate={dueDate}
+              setDueDate={setDueDate}
+              orgMembers={orgMembers}
+              showAssigneePicker={showAssigneePicker}
+              setShowAssigneePicker={setShowAssigneePicker}
               t={t}
             />
           )}
@@ -385,6 +400,13 @@ function StepDetails({
   setShowTagDropdown,
   selectedCategories,
   toggleCategory,
+  assigneeIds,
+  setAssigneeIds,
+  dueDate,
+  setDueDate,
+  orgMembers,
+  showAssigneePicker,
+  setShowAssigneePicker,
   t,
 }: {
   title: string;
@@ -398,6 +420,13 @@ function StepDetails({
   setShowTagDropdown: (v: boolean) => void;
   selectedCategories: string[];
   toggleCategory: (cat: string) => void;
+  assigneeIds: string[];
+  setAssigneeIds: (v: string[]) => void;
+  dueDate: string;
+  setDueDate: (v: string) => void;
+  orgMembers: { publicUserData?: { userId?: string; firstName?: string | null; lastName?: string | null } }[];
+  showAssigneePicker: boolean;
+  setShowAssigneePicker: (v: boolean) => void;
   t: (key: string) => string;
 }) {
   return (
@@ -523,6 +552,74 @@ function StepDetails({
           </div>
         </div>
       )}
+
+      {/* Assignees + Due Date — compact row */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* Assignees */}
+        <div>
+          <label className="flex items-center gap-1.5 text-xs text-secondary mb-1.5">
+            <User size={12} />
+            {t('createIssue.assigneeLabel')}
+          </label>
+          <button
+            type="button"
+            onClick={() => setShowAssigneePicker(!showAssigneePicker)}
+            className="w-full text-left rounded-lg border border-border bg-bg px-3 py-2 text-xs text-muted hover:border-border transition-colors"
+          >
+            {assigneeIds.length > 0
+              ? `${assigneeIds.length} ${t('createIssue.assigned')}`
+              : t('createIssue.assigneePlaceholder')
+            }
+          </button>
+          {showAssigneePicker && (
+            <div className="mt-1 rounded-lg border border-border bg-surface p-1.5 max-h-36 overflow-y-auto">
+              {orgMembers.map((m) => {
+                const userId = m.publicUserData?.userId;
+                if (!userId) return null;
+                const isSelected = assigneeIds.includes(userId);
+                const name = `${m.publicUserData?.firstName || ''} ${m.publicUserData?.lastName || ''}`.trim() || userId.slice(0, 12);
+                return (
+                  <button
+                    key={userId}
+                    type="button"
+                    onClick={() => {
+                      setAssigneeIds(
+                        isSelected
+                          ? assigneeIds.filter((a) => a !== userId)
+                          : [...assigneeIds, userId],
+                      );
+                    }}
+                    className={cn(
+                      'flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors',
+                      isSelected ? 'bg-accent/10 text-accent' : 'text-secondary hover:bg-surface-hover',
+                    )}
+                  >
+                    <div className="h-5 w-5 rounded-full bg-surface-hover flex items-center justify-center text-[9px] font-mono font-bold">
+                      {name.slice(0, 2).toUpperCase()}
+                    </div>
+                    <span className="flex-1 text-left truncate">{name}</span>
+                    {isSelected && <CheckCircle2 size={14} className="text-accent" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Due Date */}
+        <div>
+          <label className="flex items-center gap-1.5 text-xs text-secondary mb-1.5">
+            <Calendar size={12} />
+            {t('createIssue.dueDateLabel')}
+          </label>
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-xs text-primary placeholder-muted focus:border-accent focus:outline-none transition-colors"
+          />
+        </div>
+      </div>
     </div>
   );
 }

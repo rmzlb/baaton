@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useUser } from '@clerk/clerk-react';
+import { useUser, useOrganization } from '@clerk/clerk-react';
 import {
   X, ChevronDown, Tag, User, Calendar,
   MessageSquare, Activity, Bot, CheckCircle2, AlertTriangle,
@@ -57,6 +57,8 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const { user } = useUser();
+  const { memberships } = useOrganization({ memberships: { infinite: true } });
+  const orgMembers = memberships?.data ?? [];
   const updateIssue = useIssuesStore((s) => s.updateIssue);
   const panelRef = useRef<HTMLDivElement>(null);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -67,6 +69,8 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
+  const [showAssigneePicker, setShowAssigneePicker] = useState(false);
+  const [editingDueDate, setEditingDueDate] = useState(false);
 
   // Fetch full issue details
   const { data: issue, isLoading } = useQuery({
@@ -465,26 +469,161 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               )}
             </div>
 
-            {/* Assignees */}
-            {issue.assignee_ids.length > 0 && (
+            {/* Creator */}
+            {issue.created_by_id && (
               <div>
                 <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                   <User size={12} />
-                  {t('issueDrawer.assignees')}
+                  {t('issueDrawer.createdBy')}
                 </label>
-                <div className="flex -space-x-2">
-                  {issue.assignee_ids.map((id) => (
-                    <div
-                      key={id}
-                      className="h-8 w-8 rounded-full bg-surface-hover border-2 border-bg flex items-center justify-center text-[10px] font-mono text-secondary"
-                      title={id}
-                    >
-                      {id.slice(0, 2).toUpperCase()}
-                    </div>
-                  ))}
+                <div className="flex items-center gap-2">
+                  <div className="h-7 w-7 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-[10px] font-mono font-bold text-accent">
+                    {(issue.created_by_name || issue.created_by_id || '?').slice(0, 2).toUpperCase()}
+                  </div>
+                  <span className="text-xs text-secondary">{issue.created_by_name || issue.created_by_id?.slice(0, 12)}</span>
                 </div>
               </div>
             )}
+
+            {/* Assignees */}
+            <div>
+              <label className="flex items-center justify-between text-xs text-muted mb-2">
+                <span className="flex items-center gap-1.5">
+                  <User size={12} />
+                  {t('issueDrawer.assignees')}
+                </span>
+                <button
+                  onClick={() => setShowAssigneePicker(!showAssigneePicker)}
+                  className="text-accent hover:text-accent-hover transition-colors"
+                >
+                  <Plus size={14} />
+                </button>
+              </label>
+              {issue.assignee_ids.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {issue.assignee_ids.map((id) => {
+                    const member = orgMembers.find(
+                      (m) => m.publicUserData?.userId === id,
+                    );
+                    const name = member
+                      ? `${member.publicUserData?.firstName || ''} ${member.publicUserData?.lastName || ''}`.trim()
+                      : id.slice(0, 12);
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-surface-hover border border-border px-2.5 py-1 text-xs text-secondary group/assignee"
+                      >
+                        <div className="h-5 w-5 rounded-full bg-accent/20 flex items-center justify-center text-[9px] font-mono font-bold text-accent">
+                          {name.slice(0, 2).toUpperCase()}
+                        </div>
+                        {name}
+                        <button
+                          onClick={() => {
+                            const next = issue.assignee_ids.filter((a) => a !== id);
+                            handleFieldUpdate('assignee_ids', next);
+                          }}
+                          className="ml-0.5 text-muted hover:text-red-400 opacity-0 group-hover/assignee:opacity-100 transition-opacity"
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowAssigneePicker(!showAssigneePicker)}
+                  className="text-xs text-muted hover:text-secondary transition-colors"
+                >
+                  {t('issueDrawer.assigneeNone')}
+                </button>
+              )}
+              {showAssigneePicker && (
+                <div className="mt-2 rounded-lg border border-border bg-surface p-2 max-h-48 overflow-y-auto">
+                  {orgMembers.length > 0 ? orgMembers.map((m) => {
+                    const userId = m.publicUserData?.userId;
+                    if (!userId) return null;
+                    const isAssigned = issue.assignee_ids.includes(userId);
+                    const name = `${m.publicUserData?.firstName || ''} ${m.publicUserData?.lastName || ''}`.trim() || userId.slice(0, 12);
+                    return (
+                      <button
+                        key={userId}
+                        onClick={() => {
+                          const next = isAssigned
+                            ? issue.assignee_ids.filter((a) => a !== userId)
+                            : [...issue.assignee_ids, userId];
+                          handleFieldUpdate('assignee_ids', next);
+                        }}
+                        className={cn(
+                          'flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-xs transition-colors',
+                          isAssigned
+                            ? 'bg-accent/10 text-accent'
+                            : 'text-secondary hover:bg-surface-hover',
+                        )}
+                      >
+                        <div className="h-5 w-5 rounded-full bg-surface-hover flex items-center justify-center text-[9px] font-mono font-bold">
+                          {name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <span className="flex-1 text-left truncate">{name}</span>
+                        {isAssigned && <CheckCircle2 size={14} className="text-accent" />}
+                      </button>
+                    );
+                  }) : (
+                    <p className="text-xs text-muted px-2 py-2">{t('issueDrawer.noMembers')}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Due Date */}
+            <div>
+              <label className="flex items-center justify-between text-xs text-muted mb-2">
+                <span className="flex items-center gap-1.5">
+                  <Calendar size={12} />
+                  {t('issueDrawer.dueDate')}
+                </span>
+              </label>
+              {editingDueDate || issue.due_date ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={issue.due_date ? issue.due_date.slice(0, 10) : ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleFieldUpdate('due_date', val || null);
+                      if (!val) setEditingDueDate(false);
+                    }}
+                    className="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-primary outline-none focus:border-accent transition-colors"
+                  />
+                  {issue.due_date && (
+                    <button
+                      onClick={() => {
+                        handleFieldUpdate('due_date', null);
+                        setEditingDueDate(false);
+                      }}
+                      className="text-muted hover:text-red-400 transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={() => setEditingDueDate(true)}
+                  className="text-xs text-muted hover:text-secondary transition-colors"
+                >
+                  {t('issueDrawer.dueDateNone')}
+                </button>
+              )}
+              {issue.due_date && (() => {
+                const due = new Date(issue.due_date);
+                const now = new Date();
+                const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffDays < 0) return <span className="text-[10px] text-red-400 mt-1 block">{t('issueDrawer.dueDateOverdue')}</span>;
+                if (diffDays <= 3) return <span className="text-[10px] text-amber-400 mt-1 block">{t('issueDrawer.dueDateSoon', { days: diffDays })}</span>;
+                return null;
+              })()}
+            </div>
 
             {/* Description */}
             <div>

@@ -73,6 +73,9 @@ pub struct Issue {
     pub attachments: serde_json::Value,
     pub category: Vec<String>,
     pub position: f64,
+    pub created_by_id: Option<String>,
+    pub created_by_name: Option<String>,
+    pub due_date: Option<NaiveDate>,
     pub qualified_at: Option<DateTime<Utc>>,
     pub qualified_by: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -93,6 +96,7 @@ pub struct CreateIssue {
     pub tags: Option<Vec<String>>,
     pub category: Option<Vec<String>>,
     pub assignee_ids: Option<Vec<String>>,
+    pub due_date: Option<NaiveDate>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,6 +112,7 @@ pub struct UpdateIssue {
     pub tags: Option<Vec<String>>,
     pub category: Option<Vec<String>>,
     pub position: Option<f64>,
+    pub due_date: Option<Option<NaiveDate>>,
 }
 
 // ─── TLDR ─────────────────────────────────────────────

@@ -1,7 +1,8 @@
 import {
   Bug, Sparkles, Zap, HelpCircle,
-  ArrowUp, ArrowDown, Minus, AlertTriangle,
+  ArrowUp, ArrowDown, Minus, AlertTriangle, Clock,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { timeAgo } from '@/lib/utils';
 import type { Issue, IssuePriority, IssueType, ProjectStatus, ProjectTag } from '@/lib/types';
 
@@ -144,6 +145,26 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
           </div>
         ))}
         {issue.assignee_ids.length === 0 && <span className="text-muted">—</span>}
+      </span>
+
+      {/* Due Date */}
+      <span className="text-[10px]">
+        {issue.due_date ? (() => {
+          const due = new Date(issue.due_date);
+          const now = new Date();
+          const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          const isOverdue = diffDays < 0;
+          const isSoon = diffDays >= 0 && diffDays <= 3;
+          return (
+            <span className={cn(
+              'flex items-center gap-0.5',
+              isOverdue ? 'text-red-400' : isSoon ? 'text-amber-400' : 'text-muted',
+            )}>
+              <Clock size={10} />
+              {due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            </span>
+          );
+        })() : <span className="text-muted">—</span>}
       </span>
 
       {/* Updated */}

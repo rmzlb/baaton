@@ -1,8 +1,9 @@
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{extract::{Path, Query, State}, Extension, Json};
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr, UpdateIssue};
 
 #[derive(Debug, Deserialize)]
@@ -53,6 +54,7 @@ pub async fn list_by_project(
 }
 
 pub async fn create(
+    Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Json(body): Json<CreateIssue>,
 ) -> Json<ApiResponse<Issue>> {
@@ -92,9 +94,10 @@ pub async fn create(
         r#"
         INSERT INTO issues (
             project_id, display_id, title, description, type, status, priority,
-            milestone_id, parent_id, tags, category, assignee_ids, position, source
+            milestone_id, parent_id, tags, category, assignee_ids, position, source,
+            created_by_id, created_by_name, due_date
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'web')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'web', $14, $15, $16)
         RETURNING *
         "#,
     )
@@ -111,6 +114,9 @@ pub async fn create(
     .bind(&body.category.unwrap_or_default())
     .bind(&body.assignee_ids.unwrap_or_default())
     .bind(position)
+    .bind(&auth.user_id)
+    .bind(None::<String>)
+    .bind(body.due_date)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -164,6 +170,9 @@ pub async fn update(
     let milestone_provided = body.milestone_id.is_some();
     let milestone_value = body.milestone_id.flatten();
 
+    let due_date_provided = body.due_date.is_some();
+    let due_date_value = body.due_date.flatten();
+
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         UPDATE issues SET
@@ -176,6 +185,7 @@ pub async fn update(
             assignee_ids = COALESCE($9, assignee_ids),
             milestone_id = CASE WHEN $10::boolean THEN $11 ELSE milestone_id END,
             category = COALESCE($12, category),
+            due_date = CASE WHEN $13::boolean THEN $14 ELSE due_date END,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -193,6 +203,8 @@ pub async fn update(
     .bind(milestone_provided)
     .bind(milestone_value)
     .bind(&body.category)
+    .bind(due_date_provided)
+    .bind(due_date_value)
     .fetch_one(&pool)
     .await
     .unwrap();
