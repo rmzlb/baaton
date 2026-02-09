@@ -134,8 +134,8 @@ export function AllIssues() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const deepLinkHandled = useRef(false);
+  const [, setSearchParams] = useSearchParams();
+  const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
 
   // View mode
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -220,16 +220,14 @@ export function AllIssues() {
     positionMutation.mutate({ id: issueId, status: newStatus, position: newPosition });
   };
 
-  // ── Deep link: open from ?issue=HLM-18 on initial load only ──
+  // ── Deep link: open from ?issue=HLM-18 on initial load ONCE ──
   useEffect(() => {
-    if (deepLinkHandled.current) return;
-    const issueParam = searchParams.get('issue');
-    if (issueParam && allIssuesRaw.length > 0) {
-      const found = allIssuesRaw.find((i) => i.display_id.toLowerCase() === issueParam.toLowerCase());
-      if (found) openDetail(found.id);
-      deepLinkHandled.current = true;
-    }
-  }, [searchParams, allIssuesRaw, openDetail]);
+    const param = initialIssueParam.current;
+    if (!param || allIssuesRaw.length === 0) return;
+    const found = allIssuesRaw.find((i) => i.display_id.toLowerCase() === param.toLowerCase());
+    if (found) openDetail(found.id);
+    initialIssueParam.current = null;
+  }, [allIssuesRaw, openDetail]);
 
   useEffect(() => {
     if (isDetailOpen && selectedIssueId) {

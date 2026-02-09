@@ -39,8 +39,9 @@ export function ProjectBoard() {
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
   const [showCreateIssue, setShowCreateIssue] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const deepLinkHandled = useRef(false);
+  const [, setSearchParams] = useSearchParams();
+  // Capture the initial deep-link param ONCE at mount, then forget it
+  const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
 
   // View mode with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -70,20 +71,19 @@ export function ProjectBoard() {
     enabled: !!project?.id,
   });
 
-  // ── Deep link: open drawer from ?issue=HLM-18 on initial load only ──
+  // ── Deep link: open drawer from ?issue=HLM-18 on initial load ONCE ──
   useEffect(() => {
-    if (deepLinkHandled.current) return;
-    const issueParam = searchParams.get('issue');
-    if (issueParam && issuesList.length > 0) {
-      const found = issuesList.find(
-        (i) => i.display_id.toLowerCase() === issueParam.toLowerCase(),
-      );
-      if (found) {
-        openDetail(found.id);
-      }
-      deepLinkHandled.current = true;
+    const param = initialIssueParam.current;
+    if (!param || issuesList.length === 0) return;
+    const found = issuesList.find(
+      (i) => i.display_id.toLowerCase() === param.toLowerCase(),
+    );
+    if (found) {
+      openDetail(found.id);
     }
-  }, [searchParams, issuesList, openDetail]);
+    // Clear so it never fires again
+    initialIssueParam.current = null;
+  }, [issuesList, openDetail]);
 
   // When drawer opens: update URL with display_id
   useEffect(() => {

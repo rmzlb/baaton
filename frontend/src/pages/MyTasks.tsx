@@ -51,8 +51,8 @@ export function MyTasks() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const deepLinkHandled = useRef(false);
+  const [, setSearchParams] = useSearchParams();
+  const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
 
   // Fetch all projects for name mapping
   const { data: projects = [] } = useQuery({
@@ -67,16 +67,14 @@ export function MyTasks() {
     enabled: !!user?.id,
   });
 
-  // ── Deep link: open from ?issue=HLM-18 on initial load only ──
+  // ── Deep link: open from ?issue=HLM-18 on initial load ONCE ──
   useEffect(() => {
-    if (deepLinkHandled.current) return;
-    const issueParam = searchParams.get('issue');
-    if (issueParam && myIssues.length > 0) {
-      const found = myIssues.find((i) => i.display_id.toLowerCase() === issueParam.toLowerCase());
-      if (found) openDetail(found.id);
-      deepLinkHandled.current = true;
-    }
-  }, [searchParams, myIssues, openDetail]);
+    const param = initialIssueParam.current;
+    if (!param || myIssues.length === 0) return;
+    const found = myIssues.find((i) => i.display_id.toLowerCase() === param.toLowerCase());
+    if (found) openDetail(found.id);
+    initialIssueParam.current = null;
+  }, [myIssues, openDetail]);
 
   useEffect(() => {
     if (isDetailOpen && selectedIssueId) {
