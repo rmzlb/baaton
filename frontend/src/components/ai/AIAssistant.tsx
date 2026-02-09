@@ -1,22 +1,46 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Sparkles, X, Send, Trash2, Bot, User, Loader2 } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Sparkles, X, Send, Trash2, Bot, User, Loader2,
+  Wrench, CheckCircle2, XCircle, ChevronDown,
+} from 'lucide-react';
 import { useAIAssistantStore, type AIMessage } from '@/stores/ai-assistant';
 import { useApi } from '@/hooks/useApi';
 import { generateAIResponse } from '@/lib/ai-engine';
 import { cn } from '@/lib/utils';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import type { Issue } from '@/lib/types';
+import type { SkillResult} from '@/lib/ai-skills';
+import { SKILL_TOOLS } from '@/lib/ai-skills';
 
 const SUGGESTIONS = [
-  { label: '📊 Résumé projet', prompt: 'Fais-moi un résumé complet de l\'avancement de chaque projet' },
-  { label: '🔄 Reprioriser', prompt: 'Aide-moi à reprioriser les issues ouvertes. Qu\'est-ce qui devrait être fait en premier ?' },
-  { label: '🚧 Blockers ?', prompt: 'Quels sont les blockers actuels ? Qu\'est-ce qui est urgent et pas encore commencé ?' },
-  { label: '📋 Sprint review', prompt: 'Génère un sprint review : ce qui a été fait, ce qui reste, les métriques' },
-  { label: '🎯 Reste à faire', prompt: 'Fais-moi la liste de tout ce qui reste à faire, trié par priorité' },
-  { label: '📈 Vélocité', prompt: 'Analyse la vélocité : combien de tickets done vs todo vs in progress par projet' },
+  { label: '📊 Résumé', prompt: 'Fais-moi un résumé de l\'avancement de chaque projet' },
+  { label: '🎯 Reste à faire', prompt: 'Qu\'est-ce qui reste à faire sur tous les projets ? Liste par priorité.' },
+  { label: '🚧 Blockers', prompt: 'Quels sont les blockers actuels ?' },
+  { label: '🔄 Reprioriser', prompt: 'Repriorise les issues ouvertes de manière intelligente' },
+  { label: '📋 Sprint', prompt: 'Analyse la vélocité et propose un sprint plan' },
+  { label: '📝 Créer PRD', prompt: 'Aide-moi à écrire un PRD pour une nouvelle fonctionnalité' },
 ];
 
+// ─── Skill Badge ──────────────────────────────
+function SkillBadge({ result }: { result: SkillResult }) {
+  const icon = result.success ? (
+    <CheckCircle2 size={11} className="text-emerald-400" />
+  ) : (
+    <XCircle size={11} className="text-red-400" />
+  );
+
+  return (
+    <div className="flex items-center gap-1.5 rounded-md border border-border/60 bg-surface-hover/50 px-2 py-1 text-[10px]">
+      <Wrench size={10} className="text-accent shrink-0" />
+      <span className="text-muted font-mono">{result.skill}</span>
+      {icon}
+      <span className="text-secondary">{result.summary}</span>
+    </div>
+  );
+}
+
+// ─── Message Bubble ───────────────────────────
 function MessageBubble({ message }: { message: AIMessage }) {
   const isUser = message.role === 'user';
 
@@ -30,27 +54,36 @@ function MessageBubble({ message }: { message: AIMessage }) {
       >
         {isUser ? <User size={12} /> : <Bot size={12} />}
       </div>
-      <div
-        className={cn(
-          'max-w-[85%] rounded-lg px-3 py-2',
-          isUser
-            ? 'bg-accent text-black'
-            : 'bg-surface border border-border',
-        )}
-      >
-        {isUser ? (
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
-        ) : (
-          <div className="text-sm">
-            <MarkdownView content={message.content} />
+      <div className={cn('max-w-[88%] space-y-1.5')}>
+        {/* Skills executed */}
+        {message.skills && message.skills.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {message.skills.map((s, i) => (
+              <SkillBadge key={i} result={s} />
+            ))}
           </div>
         )}
+        {/* Message content */}
+        <div
+          className={cn(
+            'rounded-lg px-3 py-2',
+            isUser ? 'bg-accent text-black' : 'bg-surface border border-border',
+          )}
+        >
+          {isUser ? (
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+          ) : (
+            <div className="text-sm">
+              <MarkdownView content={message.content} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function TypingIndicator() {
+function TypingIndicator({ skillName }: { skillName?: string }) {
   return (
     <div className="flex gap-2">
       <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-hover text-secondary mt-0.5">
@@ -59,28 +92,24 @@ function TypingIndicator() {
       <div className="rounded-lg bg-surface border border-border px-4 py-3">
         <div className="flex items-center gap-1.5">
           <Loader2 size={12} className="animate-spin text-accent" />
-          <span className="text-xs text-muted">Analyse en cours…</span>
+          <span className="text-xs text-muted">
+            {skillName ? `Exécution: ${skillName}…` : 'Analyse en cours…'}
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
+// ─── Main Component ───────────────────────────
 export function AIAssistant() {
   const {
-    open,
-    messages,
-    loading,
-    input,
-    toggle,
-    setOpen,
-    setInput,
-    addMessage,
-    setLoading,
-    clearMessages,
+    open, messages, loading, input,
+    toggle, setOpen, setInput, addMessage, setLoading, clearMessages,
   } = useAIAssistantStore();
 
   const apiClient = useApi();
+  const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -91,7 +120,7 @@ export function AIAssistant() {
     staleTime: 60_000,
   });
 
-  // Fetch issues for each project (cached)
+  // Fetch issues for each project
   const { data: allIssuesByProject = {} } = useQuery({
     queryKey: ['all-issues-for-ai', projects.map((p) => p.id).join(',')],
     queryFn: async () => {
@@ -112,18 +141,14 @@ export function AIAssistant() {
     staleTime: 30_000,
   });
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, loading]);
 
-  // Focus input when opened
   useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 200);
-    }
+    if (open) setTimeout(() => inputRef.current?.focus(), 200);
   }, [open]);
 
   const handleSend = useCallback(
@@ -136,31 +161,37 @@ export function AIAssistant() {
       setLoading(true);
 
       try {
-        // Build conversation history for context
-        const history = messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
+        const history = messages.map((m) => ({ role: m.role, content: m.content }));
 
         const response = await generateAIResponse(
           msg,
           projects,
           allIssuesByProject,
           history,
+          apiClient as unknown as Parameters<typeof generateAIResponse>[4],
         );
 
-        addMessage('assistant', response);
+        addMessage('assistant', response.text, response.skillsExecuted);
+
+        // If skills created/updated issues, invalidate queries to refresh the board
+        if (response.skillsExecuted.some((s) =>
+          s.success && ['create_issue', 'update_issue', 'bulk_update_issues'].includes(s.skill),
+        )) {
+          queryClient.invalidateQueries({ queryKey: ['issues'] });
+          queryClient.invalidateQueries({ queryKey: ['all-issues'] });
+          queryClient.invalidateQueries({ queryKey: ['my-issues'] });
+        }
       } catch (err) {
         console.error('AI error:', err);
         addMessage(
           'assistant',
-          `⚠️ Erreur: ${err instanceof Error ? err.message : 'Impossible de générer une réponse'}. Réessaie dans un instant.`,
+          `⚠️ Erreur: ${err instanceof Error ? err.message : 'Impossible de générer une réponse'}`,
         );
       } finally {
         setLoading(false);
       }
     },
-    [input, loading, messages, projects, allIssuesByProject, setInput, addMessage, setLoading],
+    [input, loading, messages, projects, allIssuesByProject, apiClient, setInput, addMessage, setLoading, queryClient],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -171,6 +202,7 @@ export function AIAssistant() {
   };
 
   const totalIssues = Object.values(allIssuesByProject).reduce((sum, arr) => sum + arr.length, 0);
+  const skillCount = SUGGESTIONS.length;
 
   return (
     <>
@@ -190,8 +222,8 @@ export function AIAssistant() {
       {/* Panel */}
       {open && (
         <div
-          className="fixed bottom-20 right-6 z-40 flex w-[400px] max-h-[560px] flex-col rounded-xl border border-border bg-bg shadow-2xl overflow-hidden animate-slide-in-right"
-          style={{ maxHeight: 'min(560px, calc(100vh - 120px))' }}
+          className="fixed bottom-20 right-6 z-40 flex w-[420px] max-h-[580px] flex-col rounded-xl border border-border bg-bg shadow-2xl overflow-hidden animate-slide-in-right"
+          style={{ maxHeight: 'min(580px, calc(100vh - 120px))' }}
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border px-4 py-3 shrink-0 bg-surface">
@@ -200,9 +232,14 @@ export function AIAssistant() {
                 <Sparkles size={14} />
               </div>
               <div>
-                <h3 className="text-xs font-bold text-primary">Baaton AI</h3>
+                <h3 className="text-xs font-bold text-primary flex items-center gap-1.5">
+                  Baaton AI
+                  <span className="rounded-full bg-emerald-500/20 text-emerald-400 px-1.5 py-0 text-[9px] font-medium">
+                    {skillCount} skills
+                  </span>
+                </h3>
                 <p className="text-[9px] text-muted">
-                  {totalIssues > 0 ? `${totalIssues} issues · ${projects.length} projets` : 'Chargement…'}
+                  {totalIssues > 0 ? `${totalIssues} issues · ${projects.length} projets · Gemini Flash` : 'Chargement…'}
                 </p>
               </div>
             </div>
@@ -228,14 +265,44 @@ export function AIAssistant() {
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
             {messages.length === 0 && !loading ? (
-              <div className="flex flex-col items-center justify-center py-6 text-center">
+              <div className="flex flex-col items-center justify-center py-5 text-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500 mb-3">
                   <Sparkles size={24} />
                 </div>
-                <h4 className="text-sm font-semibold text-primary mb-1">Que veux-tu savoir ?</h4>
-                <p className="text-xs text-muted mb-4 max-w-[260px]">
-                  Je connais tous tes projets et issues en temps réel. Pose-moi n'importe quelle question.
+                <h4 className="text-sm font-semibold text-primary mb-1">Agent AI avec Skills</h4>
+                <p className="text-xs text-muted mb-3 max-w-[280px]">
+                  Je peux lire, créer, modifier et analyser tes issues. Demande-moi n'importe quoi.
                 </p>
+
+                {/* Skills list */}
+                <div className="w-full mb-3 px-2">
+                  <details className="group">
+                    <summary className="flex items-center justify-center gap-1 cursor-pointer text-[10px] text-muted hover:text-secondary transition-colors">
+                      <Wrench size={10} />
+                      Skills disponibles
+                      <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
+                    </summary>
+                    <div className="mt-2 grid grid-cols-2 gap-1 text-[9px]">
+                      {[
+                        ['search_issues', 'Rechercher'],
+                        ['create_issue', 'Créer issue'],
+                        ['update_issue', 'Modifier issue'],
+                        ['bulk_update', 'Bulk update'],
+                        ['add_comment', 'Commenter'],
+                        ['generate_prd', 'Générer PRD'],
+                        ['analyze_sprint', 'Analyser sprint'],
+                        ['get_metrics', 'Métriques'],
+                      ].map(([skill, label]) => (
+                        <div key={skill} className="flex items-center gap-1 rounded border border-border/50 bg-surface/50 px-2 py-1">
+                          <span className="text-accent">⚡</span>
+                          <span className="text-secondary">{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+
+                {/* Suggestions */}
                 <div className="flex flex-wrap gap-1.5 justify-center">
                   {SUGGESTIONS.map((s) => (
                     <button
@@ -284,7 +351,7 @@ export function AIAssistant() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Pose ta question…"
+                placeholder="Crée une issue, repriorise, analyse…"
                 disabled={loading}
                 rows={1}
                 className="flex-1 bg-transparent text-sm text-primary placeholder-muted outline-none resize-none max-h-20"
@@ -298,7 +365,7 @@ export function AIAssistant() {
               </button>
             </div>
             <p className="text-[9px] text-muted mt-1 text-center">
-              Gemini Flash · données en temps réel
+              Gemini Flash · {SKILL_TOOLS[0].functionDeclarations.length} skills · données temps réel
             </p>
           </div>
         </div>
