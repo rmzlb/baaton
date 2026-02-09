@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+target/
+
+# Build output
+frontend/dist/
+backend/target/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rust
+*.pdb
+*.d
+
+# SQLx
+sqlx-data.json

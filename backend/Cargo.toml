@@ -1,0 +1,40 @@
+[package]
+name = "baaton-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Web framework
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["macros", "multipart"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "limit"] }
+tower = "0.5"
+
+# Auth
+clerk-rs = { version = "2", features = ["axum"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP client (for LLM calls)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Utils
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+sha2 = "0.10"
+rand = "0.9"
+dotenvy = "0.15"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
