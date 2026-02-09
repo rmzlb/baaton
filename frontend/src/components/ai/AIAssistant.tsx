@@ -1,97 +1,21 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { Sparkles, X, Send, Trash2, Bot, User } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Sparkles, X, Send, Trash2, Bot, User, Loader2 } from 'lucide-react';
 import { useAIAssistantStore, type AIMessage } from '@/stores/ai-assistant';
+import { useApi } from '@/hooks/useApi';
+import { generateAIResponse } from '@/lib/ai-engine';
 import { cn } from '@/lib/utils';
 import { MarkdownView } from '@/components/shared/MarkdownView';
+import type { Issue } from '@/lib/types';
 
 const SUGGESTIONS = [
-  { label: '📊 Summarize progress', prompt: 'Summarize the current progress of this project' },
-  { label: '🔄 Reprioritize', prompt: 'Help me reprioritize the open issues' },
-  { label: '🚧 What\'s blocking?', prompt: 'What are the current blockers in this project?' },
-  { label: '📋 Sprint review', prompt: 'Generate a sprint review summary' },
+  { label: '📊 Résumé projet', prompt: 'Fais-moi un résumé complet de l\'avancement de chaque projet' },
+  { label: '🔄 Reprioriser', prompt: 'Aide-moi à reprioriser les issues ouvertes. Qu\'est-ce qui devrait être fait en premier ?' },
+  { label: '🚧 Blockers ?', prompt: 'Quels sont les blockers actuels ? Qu\'est-ce qui est urgent et pas encore commencé ?' },
+  { label: '📋 Sprint review', prompt: 'Génère un sprint review : ce qui a été fait, ce qui reste, les métriques' },
+  { label: '🎯 Reste à faire', prompt: 'Fais-moi la liste de tout ce qui reste à faire, trié par priorité' },
+  { label: '📈 Vélocité', prompt: 'Analyse la vélocité : combien de tickets done vs todo vs in progress par projet' },
 ];
-
-function generateMockResponse(message: string): string {
-  const lower = message.toLowerCase();
-
-  if (lower.includes('summarize') || lower.includes('progress')) {
-    return `## 📊 Project Progress Summary
-
-Based on the current board:
-
-- **Done:** Several tickets completed this sprint
-- **In Progress:** Active development on key features
-- **Blocked:** A few items need attention
-
-### Key Highlights
-1. The Kanban board is fully functional with drag & drop
-2. Issue drawer with full CRUD operations
-3. Tag system with project-level customization
-
-> Want me to break down any specific area?`;
-  }
-
-  if (lower.includes('repriori') || lower.includes('priorit')) {
-    return `## 🔄 Suggested Reprioritization
-
-Here's my recommended priority order:
-
-1. **🔴 Urgent** — Fix any blockers first
-2. **🟠 High** — Complete in-progress features
-3. **🟡 Medium** — New feature requests
-4. **⚪ Low** — Nice-to-haves and polish
-
-### Quick Actions
-- Move all "urgent" bugs to the top of Todo
-- Defer low-priority features to next sprint
-- Focus on items with the most dependencies`;
-  }
-
-  if (lower.includes('block') || lower.includes('stuck')) {
-    return `## 🚧 Current Blockers
-
-Looking at the board, here are potential blockers:
-
-1. **Dependencies** — Some tasks may depend on others not yet started
-2. **Missing info** — Issues without descriptions need clarification
-3. **Assignees** — Unassigned tickets risk falling through
-
-### Suggestions
-- Add descriptions to all in-progress issues
-- Assign owners to unassigned urgent items
-- Flag cross-team dependencies`;
-  }
-
-  if (lower.includes('sprint') || lower.includes('review')) {
-    return `## 📋 Sprint Review
-
-### Completed
-- ✅ Core kanban board implementation
-- ✅ Issue CRUD with drawer
-- ✅ Tag management system
-- ✅ Priority & status workflows
-
-### In Progress
-- 🔄 AI assistant integration
-- 🔄 Markdown support
-- 🔄 Category tags
-
-### Metrics
-- **Velocity:** Good pace maintained
-- **Scope creep:** Minimal
-- **Team health:** 🟢 Green`;
-  }
-
-  return `I'm your **Baaton AI assistant**! I can help with:
-
-- 📊 **Summarize** project progress
-- 🔄 **Reprioritize** issues intelligently  
-- 🚧 **Identify blockers** in your workflow
-- 📋 **Sprint reviews** and retrospectives
-- 💡 **Suggestions** for process improvements
-
-What would you like to know?`;
-}
 
 function MessageBubble({ message }: { message: AIMessage }) {
   const isUser = message.role === 'user';
@@ -117,7 +41,9 @@ function MessageBubble({ message }: { message: AIMessage }) {
         {isUser ? (
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
         ) : (
-          <MarkdownView content={message.content} />
+          <div className="text-sm">
+            <MarkdownView content={message.content} />
+          </div>
         )}
       </div>
     </div>
@@ -131,10 +57,9 @@ function TypingIndicator() {
         <Bot size={12} />
       </div>
       <div className="rounded-lg bg-surface border border-border px-4 py-3">
-        <div className="flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-secondary animate-bounce" style={{ animationDelay: '0ms' }} />
-          <span className="h-1.5 w-1.5 rounded-full bg-secondary animate-bounce" style={{ animationDelay: '150ms' }} />
-          <span className="h-1.5 w-1.5 rounded-full bg-secondary animate-bounce" style={{ animationDelay: '300ms' }} />
+        <div className="flex items-center gap-1.5">
+          <Loader2 size={12} className="animate-spin text-accent" />
+          <span className="text-xs text-muted">Analyse en cours…</span>
         </div>
       </div>
     </div>
@@ -155,9 +80,37 @@ export function AIAssistant() {
     clearMessages,
   } = useAIAssistantStore();
 
+  const apiClient = useApi();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Fetch all projects
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => apiClient.projects.list(),
+    staleTime: 60_000,
+  });
+
+  // Fetch issues for each project (cached)
+  const { data: allIssuesByProject = {} } = useQuery({
+    queryKey: ['all-issues-for-ai', projects.map((p) => p.id).join(',')],
+    queryFn: async () => {
+      const result: Record<string, Issue[]> = {};
+      await Promise.all(
+        projects.map(async (project) => {
+          try {
+            const issues = await apiClient.issues.listByProject(project.id, { limit: 500 });
+            result[project.id] = issues;
+          } catch {
+            result[project.id] = [];
+          }
+        }),
+      );
+      return result;
+    },
+    enabled: projects.length > 0,
+    staleTime: 30_000,
+  });
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -182,14 +135,32 @@ export function AIAssistant() {
       addMessage('user', msg);
       setLoading(true);
 
-      // Simulate API call delay
-      await new Promise((r) => setTimeout(r, 800 + Math.random() * 600));
+      try {
+        // Build conversation history for context
+        const history = messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
 
-      const response = generateMockResponse(msg);
-      addMessage('assistant', response);
-      setLoading(false);
+        const response = await generateAIResponse(
+          msg,
+          projects,
+          allIssuesByProject,
+          history,
+        );
+
+        addMessage('assistant', response);
+      } catch (err) {
+        console.error('AI error:', err);
+        addMessage(
+          'assistant',
+          `⚠️ Erreur: ${err instanceof Error ? err.message : 'Impossible de générer une réponse'}. Réessaie dans un instant.`,
+        );
+      } finally {
+        setLoading(false);
+      }
     },
-    [input, loading, setInput, addMessage, setLoading],
+    [input, loading, messages, projects, allIssuesByProject, setInput, addMessage, setLoading],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -198,6 +169,8 @@ export function AIAssistant() {
       handleSend();
     }
   };
+
+  const totalIssues = Object.values(allIssuesByProject).reduce((sum, arr) => sum + arr.length, 0);
 
   return (
     <>
@@ -217,9 +190,8 @@ export function AIAssistant() {
       {/* Panel */}
       {open && (
         <div
-          ref={panelRef}
-          className="fixed bottom-20 right-6 z-40 flex w-[380px] max-h-[520px] flex-col rounded-xl border border-border bg-bg shadow-2xl overflow-hidden animate-slide-in-right"
-          style={{ maxHeight: 'min(520px, calc(100vh - 120px))' }}
+          className="fixed bottom-20 right-6 z-40 flex w-[400px] max-h-[560px] flex-col rounded-xl border border-border bg-bg shadow-2xl overflow-hidden animate-slide-in-right"
+          style={{ maxHeight: 'min(560px, calc(100vh - 120px))' }}
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border px-4 py-3 shrink-0 bg-surface">
@@ -229,7 +201,9 @@ export function AIAssistant() {
               </div>
               <div>
                 <h3 className="text-xs font-bold text-primary">Baaton AI</h3>
-                <p className="text-[9px] text-muted">Project assistant</p>
+                <p className="text-[9px] text-muted">
+                  {totalIssues > 0 ? `${totalIssues} issues · ${projects.length} projets` : 'Chargement…'}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -237,7 +211,7 @@ export function AIAssistant() {
                 <button
                   onClick={clearMessages}
                   className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
-                  title="Clear history"
+                  title="Effacer l'historique"
                 >
                   <Trash2 size={14} />
                 </button>
@@ -254,20 +228,20 @@ export function AIAssistant() {
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
             {messages.length === 0 && !loading ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
+              <div className="flex flex-col items-center justify-center py-6 text-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500 mb-3">
                   <Sparkles size={24} />
                 </div>
-                <h4 className="text-sm font-semibold text-primary mb-1">How can I help?</h4>
-                <p className="text-xs text-muted mb-4 max-w-[240px]">
-                  Ask about your project, get insights, or try a suggestion below.
+                <h4 className="text-sm font-semibold text-primary mb-1">Que veux-tu savoir ?</h4>
+                <p className="text-xs text-muted mb-4 max-w-[260px]">
+                  Je connais tous tes projets et issues en temps réel. Pose-moi n'importe quelle question.
                 </p>
                 <div className="flex flex-wrap gap-1.5 justify-center">
                   {SUGGESTIONS.map((s) => (
                     <button
                       key={s.label}
                       onClick={() => handleSend(s.prompt)}
-                      className="rounded-full border border-border bg-surface px-3 py-1.5 text-[11px] text-secondary hover:border-accent hover:text-accent transition-colors"
+                      className="rounded-full border border-border bg-surface px-2.5 py-1.5 text-[10px] text-secondary hover:border-accent hover:text-accent transition-colors"
                     >
                       {s.label}
                     </button>
@@ -287,13 +261,13 @@ export function AIAssistant() {
 
           {/* Suggestion chips when chatting */}
           {messages.length > 0 && !loading && (
-            <div className="border-t border-border px-3 py-2 shrink-0">
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-                {SUGGESTIONS.slice(0, 3).map((s) => (
+            <div className="border-t border-border px-3 py-1.5 shrink-0">
+              <div className="flex gap-1 overflow-x-auto pb-0.5">
+                {SUGGESTIONS.slice(0, 4).map((s) => (
                   <button
                     key={s.label}
                     onClick={() => handleSend(s.prompt)}
-                    className="shrink-0 rounded-full border border-border bg-surface px-2.5 py-1 text-[10px] text-muted hover:border-accent hover:text-accent transition-colors"
+                    className="shrink-0 rounded-full border border-border bg-surface px-2 py-1 text-[9px] text-muted hover:border-accent hover:text-accent transition-colors"
                   >
                     {s.label}
                   </button>
@@ -304,13 +278,13 @@ export function AIAssistant() {
 
           {/* Input */}
           <div className="border-t border-border px-3 py-2.5 shrink-0">
-            <div className="flex items-end gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+            <div className="flex items-end gap-2 rounded-lg border border-border bg-surface px-3 py-2 focus-within:border-accent transition-colors">
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask anything…"
+                placeholder="Pose ta question…"
                 disabled={loading}
                 rows={1}
                 className="flex-1 bg-transparent text-sm text-primary placeholder-muted outline-none resize-none max-h-20"
@@ -324,7 +298,7 @@ export function AIAssistant() {
               </button>
             </div>
             <p className="text-[9px] text-muted mt-1 text-center">
-              AI responses are mocked — backend coming soon
+              Gemini Flash · données en temps réel
             </p>
           </div>
         </div>

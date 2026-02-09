@@ -9,11 +9,13 @@ RUN npm install --legacy-peer-deps
 # Copy source + build
 COPY . .
 
-# Clerk key must be available at build time for Vite
+# Vite env vars must be available at build time
 ARG VITE_CLERK_PUBLISHABLE_KEY
 ARG VITE_API_URL
+ARG VITE_GEMINI_API_KEY
 ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_GEMINI_API_KEY=$VITE_GEMINI_API_KEY
 
 RUN npm run build
 
