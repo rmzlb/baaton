@@ -532,6 +532,10 @@ As a [user], I want to [action] so that [benefit].
   'createIssue.assigneePlaceholder': 'Assign someone…',
   'createIssue.assigned': 'assigned',
   'createIssue.dueDateLabel': 'Due date (optional)',
+  'issueDrawer.pasteHint': 'to paste',
+  'issueDrawer.uploading': 'Compressing {{count}} image(s)…',
+  'issueDrawer.dropHere': 'Drop here!',
+  'issueDrawer.uploadHint': 'Images auto-compressed • Max 20MB',
 
   // ─── Command Palette ───────────────────────
   'topbar.quickActions': 'Quick Actions',

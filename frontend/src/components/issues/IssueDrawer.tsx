@@ -204,30 +204,126 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     commentMutation.mutate(commentText.trim());
   };
 
-  const handleFileUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const newAttachments = [...(issue?.attachments || [])];
-
-    for (const file of Array.from(files)) {
-      if (file.size > 5 * 1024 * 1024) continue; // 5MB limit
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve) => {
-        reader.onload = () => resolve(reader.result as string);
+  // ── Image compression (resize to max 1600px, JPEG 80% quality) ──
+  const compressImage = useCallback((file: File | Blob, fileName: string): Promise<{ base64: string; size: number; name: string; mime: string }> => {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 1600;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          const ratio = Math.min(MAX / width, MAX / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        // Use JPEG for photos (smaller), PNG for screenshots with transparency
+        const isPng = file.type === 'image/png';
+        const mime = isPng ? 'image/png' : 'image/jpeg';
+        const quality = isPng ? 0.9 : 0.8;
+        const base64 = canvas.toDataURL(mime, quality);
+        // Estimate compressed size from base64 length
+        const sizeBytes = Math.round((base64.length - `data:${mime};base64,`.length) * 0.75);
+        resolve({ base64, size: sizeBytes, name: fileName, mime });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        // Fallback: read as-is
+        const reader = new FileReader();
+        reader.onload = () => resolve({
+          base64: reader.result as string,
+          size: file.size,
+          name: fileName,
+          mime: file.type || 'application/octet-stream',
+        });
         reader.readAsDataURL(file);
-      });
-      newAttachments.push({
-        url: base64,
-        name: file.name,
-        size: file.size,
-        mime_type: file.type,
-      });
+      };
+      img.src = url;
+    });
+  }, []);
+
+  const [uploadingCount, setUploadingCount] = useState(0);
+
+  const handleFileUpload = async (files: FileList | File[] | null) => {
+    if (!files || files.length === 0 || !issue) return;
+    const fileArray = Array.from(files);
+    setUploadingCount(fileArray.length);
+    const newAttachments = [...(issue.attachments || [])];
+
+    for (const file of fileArray) {
+      if (file.size > 20 * 1024 * 1024) continue; // 20MB raw limit (will be compressed)
+      const isImage = file.type.startsWith('image/');
+      if (isImage) {
+        const compressed = await compressImage(file, file.name || `paste-${Date.now()}.jpg`);
+        newAttachments.push({
+          url: compressed.base64,
+          name: compressed.name,
+          size: compressed.size,
+          mime_type: compressed.mime,
+        });
+      } else {
+        // Non-image: read as base64 (max 5MB)
+        if (file.size > 5 * 1024 * 1024) continue;
+        const reader = new FileReader();
+        const base64 = await new Promise<string>((resolve) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+        newAttachments.push({
+          url: base64,
+          name: file.name,
+          size: file.size,
+          mime_type: file.type,
+        });
+      }
     }
 
-    // Update via API — for now this goes through the generic update
-    // The backend stores this in the attachments JSONB column
     await apiClient.issues.update(issueId, { attachments: newAttachments } as any);
     queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+    setUploadingCount(0);
   };
+
+  // ── Paste handler (Cmd+V) ──
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      // Only handle if drawer is open and panel is focused/visible
+      if (!panelRef.current) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const imageFiles: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        handleFileUpload(imageFiles);
+      }
+    };
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [issue, issueId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Drag & Drop handler ──
+  const [isDragging, setIsDragging] = useState(false);
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+  const handleDragLeave = useCallback(() => setIsDragging(false), []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFileUpload(e.dataTransfer.files);
+  }, [issue, issueId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const availableStatuses = statuses ?? STATUS_OPTIONS;
 
@@ -685,29 +781,64 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             </div>
 
             {/* Attachments */}
-            <div>
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               <label className="flex items-center gap-1.5 text-xs text-muted mb-2">
                 <Paperclip size={12} />
                 {t('issueDrawer.attachments')}
+                <span className="text-[9px] text-muted/60 ml-1">⌘V {t('issueDrawer.pasteHint')}</span>
               </label>
+
+              {/* Uploading indicator */}
+              {uploadingCount > 0 && (
+                <div className="flex items-center gap-2 rounded-lg bg-accent/10 border border-accent/20 px-3 py-2 mb-2 text-xs text-accent">
+                  <div className="h-3 w-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                  {t('issueDrawer.uploading', { count: uploadingCount })}
+                </div>
+              )}
+
               {/* Thumbnail grid */}
               {imageAttachments.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mb-2">
                   {imageAttachments.map((att, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setLightboxIndex(idx)}
-                      className="group relative aspect-square rounded-lg border border-border overflow-hidden hover:border-accent transition-colors"
-                    >
-                      <img
-                        src={att.url}
-                        alt={att.name}
-                        className="h-full w-full object-cover"
-                      />
-                      <div className="absolute inset-0 bg-black/30 dark:bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <Image size={16} className="text-white" />
-                      </div>
-                    </button>
+                    <div key={idx} className="group relative aspect-square rounded-lg border border-border overflow-hidden hover:border-accent transition-colors">
+                      <button
+                        onClick={() => setLightboxIndex(idx)}
+                        className="h-full w-full"
+                      >
+                        <img
+                          src={att.url}
+                          alt={att.name}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-black/30 dark:bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Image size={16} className="text-white" />
+                        </div>
+                      </button>
+                      {/* Delete button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // imageAttachments[idx] is the same ref as in issue.attachments
+                          const toRemove = imageAttachments[idx];
+                          const next = (issue.attachments || []).filter((a) => a.url !== toRemove.url);
+                          apiClient.issues.update(issueId, { attachments: next } as any).then(() => {
+                            queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+                          });
+                        }}
+                        className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80"
+                      >
+                        <X size={12} />
+                      </button>
+                      {/* Size badge */}
+                      <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] text-white font-mono opacity-0 group-hover:opacity-100 transition-opacity">
+                        {att.size > 1024 * 1024 ? `${(att.size / (1024 * 1024)).toFixed(1)}MB` : `${Math.round(att.size / 1024)}KB`}
+                      </span>
+                    </div>
                   ))}
                 </div>
               )}
@@ -715,22 +846,42 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               {(issue.attachments || [])
                 .filter((a) => !a.mime_type?.startsWith('image/') && !a.url?.startsWith('data:image/'))
                 .map((att, idx) => (
-                  <div key={idx} className="flex items-center gap-2 rounded-md bg-surface border border-border px-3 py-2 mb-1">
+                  <div key={idx} className="group flex items-center gap-2 rounded-md bg-surface border border-border px-3 py-2 mb-1">
                     <FileText size={12} className="text-secondary" />
-                    <span className="text-xs text-secondary truncate">{att.name}</span>
-                    <span className="text-[10px] text-muted ml-auto">
-                      {(att.size / 1024).toFixed(0)}KB
+                    <span className="text-xs text-secondary truncate flex-1">{att.name}</span>
+                    <span className="text-[10px] text-muted">
+                      {att.size > 1024 * 1024 ? `${(att.size / (1024 * 1024)).toFixed(1)}MB` : `${Math.round(att.size / 1024)}KB`}
                     </span>
+                    <button
+                      onClick={() => {
+                        const all = issue.attachments || [];
+                        const nonImages = all.filter((a) => !a.mime_type?.startsWith('image/') && !a.url?.startsWith('data:image/'));
+                        const toRemove = nonImages[idx];
+                        const next = all.filter((a) => a !== toRemove);
+                        apiClient.issues.update(issueId, { attachments: next } as any).then(() => {
+                          queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+                        });
+                      }}
+                      className="text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X size={12} />
+                    </button>
                   </div>
                 ))}
-              {/* Upload area */}
-              <label className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted cursor-pointer hover:border-accent hover:text-accent transition-colors mt-1">
-                <Upload size={14} />
-                {t('issueDrawer.dropFiles')}
+              {/* Upload area / Drop zone */}
+              <label className={cn(
+                'flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-4 text-xs cursor-pointer transition-all mt-1',
+                isDragging
+                  ? 'border-accent bg-accent/5 text-accent scale-[1.02]'
+                  : 'border-border text-muted hover:border-accent hover:text-accent',
+              )}>
+                <Upload size={16} />
+                <span>{isDragging ? t('issueDrawer.dropHere') : t('issueDrawer.dropFiles')}</span>
+                <span className="text-[9px] text-muted/60">{t('issueDrawer.uploadHint')}</span>
                 <input
                   type="file"
                   multiple
-                  accept="image/*"
+                  accept="image/*,.pdf,.doc,.docx,.txt"
                   className="hidden"
                   onChange={(e) => handleFileUpload(e.target.files)}
                 />
@@ -1036,13 +1187,24 @@ function ImageLightbox({
       <img
         src={images[currentIndex].url}
         alt={images[currentIndex].name}
-        className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
+        className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
 
-      {/* Counter */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs text-white">
-        {currentIndex + 1} / {images.length}
+      {/* Bottom bar: name + counter + download */}
+      <div
+        className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 rounded-xl bg-black/70 backdrop-blur-sm px-4 py-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="text-xs text-white/80 truncate max-w-[200px]">{images[currentIndex].name}</span>
+        <span className="text-xs text-white/60">{currentIndex + 1} / {images.length}</span>
+        <a
+          href={images[currentIndex].url}
+          download={images[currentIndex].name}
+          className="rounded-md bg-white/10 px-2 py-1 text-[10px] text-white hover:bg-white/20 transition-colors"
+        >
+          ↓ Download
+        </a>
       </div>
     </div>
   );

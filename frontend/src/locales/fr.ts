@@ -532,6 +532,10 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'createIssue.assigneePlaceholder': 'Assigner quelqu\'un…',
   'createIssue.assigned': 'assigné(s)',
   'createIssue.dueDateLabel': 'Date limite (optionnel)',
+  'issueDrawer.pasteHint': 'pour coller',
+  'issueDrawer.uploading': 'Compression de {{count}} image(s)…',
+  'issueDrawer.dropHere': 'Déposer ici !',
+  'issueDrawer.uploadHint': 'Images compressées auto • Max 20MB',
 
   // ─── Command Palette ───────────────────────
   'topbar.quickActions': 'Actions rapides',
