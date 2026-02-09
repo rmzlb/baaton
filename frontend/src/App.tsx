@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
-import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp } from '@clerk/clerk-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Landing } from '@/pages/Landing';
 import { Dashboard } from '@/pages/Dashboard';
@@ -15,12 +15,20 @@ export function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/submit/:slug" element={<PublicSubmit />} />
 
-      {/* Auth redirect */}
+      {/* Auth routes */}
       <Route
         path="/sign-in/*"
         element={
-          <div className="flex min-h-screen items-center justify-center bg-background">
-            <RedirectToSignIn />
+          <div className="flex min-h-screen items-center justify-center bg-neutral-950">
+            <SignIn routing="path" path="/sign-in" />
+          </div>
+        }
+      />
+      <Route
+        path="/sign-up/*"
+        element={
+          <div className="flex min-h-screen items-center justify-center bg-neutral-950">
+            <SignUp routing="path" path="/sign-up" />
           </div>
         }
       />
