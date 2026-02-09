@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import {
   LayoutDashboard, Kanban, Settings, ChevronLeft, ChevronRight, Users, X,
-  Sun, Moon, CheckSquare,
+  Sun, Moon, CheckSquare, Layers,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/my-tasks', icon: CheckSquare, label: 'My Tasks' },
+  { to: '/all-issues', icon: Layers, label: 'All Issues' },
   { to: '/projects', icon: Kanban, label: 'Projects' },
   { to: '/org', icon: Users, label: 'Team' },
   { to: '/settings', icon: Settings, label: 'Settings' },

@@ -7,6 +7,7 @@ import { ProjectBoard } from '@/pages/ProjectBoard';
 import { ProjectList } from '@/pages/ProjectList';
 import { Settings } from '@/pages/Settings';
 import { MyTasks } from '@/pages/MyTasks';
+import { AllIssues } from '@/pages/AllIssues';
 import { PublicSubmit } from '@/pages/PublicSubmit';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
@@ -74,6 +75,7 @@ export function App() {
         <Route element={<ProtectedLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/my-tasks" element={<MyTasks />} />
+          <Route path="/all-issues" element={<AllIssues />} />
           <Route path="/projects" element={<ProjectList />} />
           <Route path="/projects/:slug" element={<ProjectBoard />} />
           <Route path="/settings" element={<Settings />} />
