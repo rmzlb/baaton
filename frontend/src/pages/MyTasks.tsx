@@ -123,20 +123,20 @@ export function MyTasks() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 md:px-6 py-3">
+      <div className="flex items-center justify-between border-b border-border px-3 md:px-6 py-3">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-primary flex items-center gap-2">
-            <CheckSquare size={20} className="text-accent" />
+          <h1 className="text-base md:text-lg font-semibold text-primary flex items-center gap-2">
+            <CheckSquare size={18} className="text-accent shrink-0 md:w-5 md:h-5" />
             {t('myTasks.title')}
           </h1>
-          <p className="text-xs text-secondary font-mono uppercase tracking-wider">
+          <p className="text-[10px] md:text-xs text-secondary font-mono uppercase tracking-wider">
             {t('myTasks.assignedToYou', { count: myIssues.length })}
           </p>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+      <div className="flex-1 overflow-y-auto p-3 md:p-6">
         {Object.keys(groupedByProject).length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <CheckSquare size={40} className="text-border mb-3" />
@@ -171,7 +171,7 @@ export function MyTasks() {
                       <div
                         key={issue.id}
                         onClick={() => openDetail(issue.id)}
-                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface-hover transition-colors min-h-[44px] ${
+                        className={`flex items-center gap-2 md:gap-3 px-3 md:px-4 py-3 cursor-pointer hover:bg-surface-hover transition-colors min-h-[44px] ${
                           idx < issues.length - 1 ? 'border-b border-border/50' : ''
                         }`}
                       >

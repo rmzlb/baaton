@@ -532,6 +532,7 @@ As a [user], I want to [action] so that [benefit].
   'createIssue.assigneePlaceholder': 'Assign someone…',
   'createIssue.assigned': 'assigned',
   'createIssue.dueDateLabel': 'Due date (optional)',
+  'issueDrawer.category': 'Category',
   'issueDrawer.pasteHint': 'to paste',
   'issueDrawer.uploading': 'Compressing {{count}} image(s)…',
   'issueDrawer.dropHere': 'Drop here!',

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight, Sun, Moon, LayoutDashboard, Bot, User, Check,
   MoreHorizontal, Loader, Inbox, Cpu, Gavel, Wand2, Copy,
+  Menu, X,
 } from 'lucide-react';
 
 function useTheme() {
@@ -21,6 +22,7 @@ function useTheme() {
 
 export function Landing() {
   const { dark, toggle } = useTheme();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <div className={`min-h-screen ${dark ? 'bg-[#080808]' : 'bg-[#F3EFE7]'} transition-colors duration-500`}>
@@ -28,9 +30,9 @@ export function Landing() {
 
       {/* ── Navbar ──────────────────────────────── */}
       <nav className="fixed top-0 w-full z-40 border-b border-black/5 dark:border-white/10 bg-[#F3EFE7]/90 dark:bg-[#080808]/90 backdrop-blur-md transition-colors duration-500">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex gap-4 items-center cursor-pointer group">
-            <Link to="/" className="font-display text-4xl leading-none text-black dark:text-white uppercase tracking-wide group-hover:scale-105 transition-transform duration-300 relative">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
+          <div className="flex gap-3 sm:gap-4 items-center cursor-pointer group">
+            <Link to="/" className="font-display text-2xl sm:text-4xl leading-none text-black dark:text-white uppercase tracking-wide group-hover:scale-105 transition-transform duration-300 relative">
               Baaton
               <div className="absolute -right-2 -top-1 w-2 h-2 bg-amber-500 rounded-full" />
             </Link>
@@ -41,22 +43,44 @@ export function Landing() {
             <a href="#how-it-works" className="hover:text-black dark:hover:text-white transition-colors">Methodology</a>
             <a href="#pricing" className="hover:text-black dark:hover:text-white transition-colors">Pricing</a>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <button onClick={toggle} className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-neutral-900 dark:text-white transition-colors" aria-label="Toggle theme">
               {dark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
             <div className="h-4 w-[1px] bg-black/10 dark:bg-white/10 hidden sm:block" />
             <Link to="/sign-in" className="text-sm font-semibold text-neutral-900 dark:text-white hover:opacity-70 transition-opacity hidden sm:block">Log in</Link>
-            <Link to="/sign-up" className="px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-all flex items-center gap-2 shadow-xl shadow-black/10 dark:shadow-white/5 transform hover:-translate-y-0.5">
+            <Link to="/sign-up" className="hidden sm:flex px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-all items-center gap-2 shadow-xl shadow-black/10 dark:shadow-white/5 transform hover:-translate-y-0.5">
               <span>Conduct</span>
               <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
             </Link>
+            {/* Mobile hamburger */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-neutral-900 dark:text-white transition-colors"
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         </div>
+        {/* Mobile menu dropdown */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-black/5 dark:border-white/10 bg-[#F3EFE7] dark:bg-[#080808] px-4 py-4 space-y-3">
+            <a href="#features" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">Manifesto</a>
+            <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">Methodology</a>
+            <a href="#pricing" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">Pricing</a>
+            <div className="border-t border-black/5 dark:border-white/10 pt-3 flex flex-col gap-2">
+              <Link to="/sign-in" onClick={() => setMobileMenuOpen(false)} className="text-sm font-semibold text-neutral-900 dark:text-white py-2">Log in</Link>
+              <Link to="/sign-up" onClick={() => setMobileMenuOpen(false)} className="px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-lg text-center">
+                Get Started
+              </Link>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* ── Hero ────────────────────────────────── */}
-      <main className="sm:pt-48 sm:pb-32 overflow-hidden pt-36 pb-20 relative">
+      <main className="sm:pt-48 sm:pb-32 overflow-hidden pt-28 pb-16 relative">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-glow-light dark:bg-glow-dark opacity-100 pointer-events-none transition-opacity duration-700" />
         <div className="absolute inset-0 bg-grid-pattern-light dark:bg-grid-pattern bg-[size:4rem_4rem] opacity-[0.04] dark:opacity-[0.03] pointer-events-none" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#F3EFE7] dark:to-[#080808] pointer-events-none" />
@@ -69,7 +93,7 @@ export function Landing() {
           </div>
 
           {/* Headline */}
-          <h1 className="font-display text-[15vw] sm:text-[11vw] md:text-[9rem] leading-[0.8] text-black dark:text-white mb-8 opacity-0 animate-reveal-up-delay uppercase tracking-tight">
+          <h1 className="font-display text-[13vw] sm:text-[11vw] md:text-[9rem] leading-[0.8] text-black dark:text-white mb-6 sm:mb-8 opacity-0 animate-reveal-up-delay uppercase tracking-tight">
             <span className="block">You Lead.</span>
             <span className="block text-neutral-400 dark:text-neutral-500">AI Builds.</span>
           </h1>
@@ -93,7 +117,7 @@ export function Landing() {
         </div>
 
         {/* ── Kanban Mockup ──────────────────────── */}
-        <div className="mt-32 max-w-6xl mx-auto px-4 perspective-container relative z-10 opacity-0 animate-fade-in-delay">
+        <div className="mt-16 sm:mt-32 max-w-6xl mx-auto px-4 perspective-container relative z-10 opacity-0 animate-fade-in-delay">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] h-[90%] bg-amber-500/10 blur-[80px] rounded-full pointer-events-none" />
           <div className="tilted-board bg-[#FAFAFA] dark:bg-[#0C0C0C] border border-black/5 dark:border-amber-500/10 rounded-xl shadow-2xl dark:shadow-[0_0_80px_-20px_rgba(245,158,11,0.15)] overflow-hidden ring-1 ring-black/5 dark:ring-amber-500/10">
             {/* Toolbar */}
@@ -120,7 +144,7 @@ export function Landing() {
             </div>
 
             {/* Kanban Columns */}
-            <div className="grid grid-cols-1 md:grid-cols-3 divide-x divide-neutral-200 dark:divide-white/8 h-[550px] bg-[#F8F8F8] dark:bg-[#0C0C0C]">
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-neutral-200 dark:divide-white/8 md:h-[550px] bg-[#F8F8F8] dark:bg-[#0C0C0C]">
               {/* Backlog */}
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-center justify-between mb-2">
@@ -191,10 +215,10 @@ export function Landing() {
       </main>
 
       {/* ── Features ───────────────────────────── */}
-      <section id="how-it-works" className="py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#080808] transition-colors relative z-20">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="mb-20 md:text-center max-w-3xl mx-auto">
-            <h2 className="font-display text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">From Chaos<br />to Concerto.</h2>
+      <section id="how-it-works" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#080808] transition-colors relative z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="mb-12 sm:mb-20 md:text-center max-w-3xl mx-auto">
+            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">From Chaos<br />to Concerto.</h2>
             <p className="text-xl text-neutral-600 dark:text-neutral-400 font-medium">AI agents are powerful but messy. Baaton provides the structured environment they need to perform effectively.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -206,11 +230,11 @@ export function Landing() {
       </section>
 
       {/* ── Workflow ────────────────────────────── */}
-      <section className="py-32 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-16">
+      <section className="py-16 sm:py-32 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-10 md:gap-16">
             <div className="md:w-1/2">
-              <h2 className="font-display text-5xl md:text-7xl text-black dark:text-white mb-10 uppercase tracking-tight">Structured<br />for speed.</h2>
+              <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-8 md:mb-10 uppercase tracking-tight">Structured<br />for speed.</h2>
               <ul className="space-y-10 relative">
                 <div className="absolute top-4 bottom-4 left-4 w-[2px] bg-black/5 dark:bg-white/10 -z-10" />
                 <Step n="1" title="Input" desc="Bugs and features arrive via webhooks or linear sync." />
@@ -243,10 +267,10 @@ export function Landing() {
       </section>
 
       {/* ── CTA ─────────────────────────────────── */}
-      <section className="py-32 border-t border-black/5 dark:border-white/5 relative overflow-hidden bg-white dark:bg-[#050505] transition-colors z-20">
+      <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 relative overflow-hidden bg-white dark:bg-[#050505] transition-colors z-20">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/5 blur-[120px] rounded-full pointer-events-none" />
-        <div className="max-w-5xl mx-auto px-6 text-center relative z-10">
-          <h2 className="font-display text-[12vw] sm:text-8xl font-black text-black dark:text-white tracking-tight mb-8 leading-[0.8] uppercase">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center relative z-10">
+          <h2 className="font-display text-[10vw] sm:text-8xl font-black text-black dark:text-white tracking-tight mb-8 leading-[0.8] uppercase">
             Ship Faster.<br />Direct Better.
           </h2>
           <p className="text-xl text-neutral-600 dark:text-neutral-400 mb-12 max-w-2xl mx-auto font-medium">

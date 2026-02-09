@@ -181,7 +181,7 @@ function InviteSection() {
             {pendingInvites.map((inv) => (
               <div
                 key={inv.id}
-                className="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg"
+                className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-lg border border-border bg-bg"
               >
                 {/* Email + role */}
                 <div className="flex-1 min-w-0">
@@ -327,8 +327,8 @@ function ApiKeysSection() {
               <p className="text-sm font-medium text-amber-200">
                 {t('settings.copyWarning')}
               </p>
-              <div className="mt-2 flex items-center gap-2">
-                <code className="flex-1 rounded-md bg-bg px-3 py-2 text-xs font-mono text-primary border border-border truncate">
+              <div className="mt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <code className="flex-1 rounded-md bg-bg px-3 py-2 text-xs font-mono text-primary border border-border truncate min-w-0">
                   {newKeySecret}
                 </code>
                 <button
@@ -351,7 +351,7 @@ function ApiKeysSection() {
 
       {/* Create Form */}
       {showCreate ? (
-        <form onSubmit={handleCreate} className="mb-6 flex items-end gap-3">
+        <form onSubmit={handleCreate} className="mb-6 flex flex-col sm:flex-row sm:items-end gap-3">
           <div className="flex-1">
             <label className="block text-xs text-secondary mb-1.5">{t('settings.keyName')}</label>
             <input
@@ -417,9 +417,9 @@ function ApiKeysSection() {
       )}
 
       {/* Usage info */}
-      <div className="mt-6 rounded-lg border border-border bg-bg p-4">
+      <div className="mt-6 rounded-lg border border-border bg-bg p-4 overflow-x-auto">
         <h3 className="text-xs font-semibold text-primary mb-2">{t('settings.usage')}</h3>
-        <div className="space-y-2 text-xs text-secondary font-mono">
+        <div className="space-y-2 text-xs text-secondary font-mono whitespace-nowrap">
           <p>{t('settings.usageComment')}</p>
           <p className="text-primary">curl -H &quot;Authorization: Bearer baa_your_key_here&quot; \</p>
           <p className="text-primary pl-4">https://api.baaton.dev/api/v1/projects</p>

@@ -257,16 +257,16 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
   return (
     <div className="flex h-full flex-col">
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 md:px-6 py-2">
+      <div className="flex flex-wrap items-center gap-1.5 md:gap-2 border-b border-border px-3 md:px-6 py-2 overflow-x-auto">
         {/* Search */}
-        <div className="relative">
+        <div className="relative shrink-0">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('kanban.filterIssues')}
-            className="h-8 w-40 sm:w-48 rounded-md border border-border bg-surface pl-8 pr-3 text-xs text-primary placeholder-muted outline-none focus:border-accent transition-colors"
+            className="h-8 w-32 sm:w-48 rounded-md border border-border bg-surface pl-8 pr-3 text-xs text-primary placeholder-muted outline-none focus:border-accent transition-colors"
           />
         </div>
 
@@ -457,7 +457,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
 
       {/* Board */}
       <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="flex flex-1 gap-4 overflow-x-auto p-4 md:p-6">
+        <div className="flex flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth">
           {visibleStatuses.map((status) => (
             <Droppable key={status.key} droppableId={status.key}>
               {(provided, snapshot) => (

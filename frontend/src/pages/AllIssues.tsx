@@ -258,18 +258,18 @@ export function AllIssues() {
   return (
     <div className="flex h-full flex-col">
       {/* Header — same layout as ProjectBoard */}
-      <div className="flex items-center justify-between border-b border-border px-4 md:px-6 py-3">
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-primary truncate flex items-center gap-2">
-            <Layers size={20} className="text-accent shrink-0" />
+      <div className="flex items-center justify-between border-b border-border px-3 md:px-6 py-3 gap-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-base md:text-lg font-semibold text-primary truncate flex items-center gap-2">
+            <Layers size={18} className="text-accent shrink-0 md:w-5 md:h-5" />
             {t('allIssues.title')}
           </h1>
-          <p className="text-xs text-secondary font-mono uppercase tracking-wider">
+          <p className="text-[10px] md:text-xs text-secondary font-mono uppercase tracking-wider truncate">
             {t('allIssues.issueCount', { count: filteredIssues.length })} · {t('allIssues.projectCount', { count: projects.length })} · {viewMode} view
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           {/* New Issue */}
           <GlobalCreateIssueButton variant="compact" />
 
@@ -277,14 +277,14 @@ export function AllIssues() {
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={cn(
-              'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors',
+              'flex items-center gap-1 md:gap-1.5 rounded-md border px-2 md:px-2.5 py-1.5 text-xs transition-colors',
               hasFilters
                 ? 'border-accent text-accent bg-accent/5'
                 : 'border-border text-secondary hover:border-secondary',
             )}
           >
             <Filter size={12} />
-            {t('allIssues.filter')}
+            <span className="hidden sm:inline">{t('allIssues.filter')}</span>
             {hasFilters && (
               <span className="rounded-full bg-accent text-black px-1.5 text-[10px] font-bold">
                 {projectFilter.length}
@@ -292,8 +292,10 @@ export function AllIssues() {
             )}
           </button>
 
-          {/* Density Toggle */}
-          <DensityToggle />
+          {/* Density Toggle — hide on mobile */}
+          <div className="hidden sm:block">
+            <DensityToggle />
+          </div>
 
           {/* View Toggle */}
           <div className="flex items-center rounded-md border border-border bg-surface p-0.5">
@@ -327,7 +329,7 @@ export function AllIssues() {
 
       {/* Filter bar (collapsible) */}
       {showFilters && (
-        <div className="flex items-center gap-2 border-b border-border px-4 md:px-6 py-2 bg-surface/50">
+        <div className="flex items-center gap-2 border-b border-border px-3 md:px-6 py-2 bg-surface/50 overflow-x-auto">
           <MultiSelect
             label={t('allIssues.project')}
             options={projects.map((p) => ({ value: p.id, label: `${p.prefix} — ${p.name}` }))}

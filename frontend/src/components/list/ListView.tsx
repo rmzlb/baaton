@@ -198,15 +198,15 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: L
   return (
     <div className="flex h-full flex-col">
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 md:px-6 py-2">
-        <div className="relative">
+      <div className="flex flex-wrap items-center gap-1.5 md:gap-2 border-b border-border px-3 md:px-6 py-2 overflow-x-auto">
+        <div className="relative shrink-0">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('kanban.filterIssues')}
-            className="h-8 w-40 sm:w-48 rounded-md border border-border bg-surface pl-8 pr-3 text-xs text-primary placeholder-muted outline-none focus:border-accent transition-colors"
+            className="h-8 w-32 sm:w-48 rounded-md border border-border bg-surface pl-8 pr-3 text-xs text-primary placeholder-muted outline-none focus:border-accent transition-colors"
           />
         </div>
 
@@ -308,8 +308,8 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: L
 
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
-        {/* Table Header */}
-        <div className="sticky top-0 z-10 grid grid-cols-[80px_1fr_120px_100px_90px_90px_120px_80px_100px] gap-2 border-b border-border bg-bg px-4 md:px-6 py-2 text-[10px] uppercase tracking-wider text-muted font-medium">
+        {/* Table Header — hidden on mobile (cards don't need headers) */}
+        <div className="sticky top-0 z-10 hidden md:grid grid-cols-[80px_1fr_120px_100px_90px_90px_120px_80px_100px] gap-2 border-b border-border bg-bg px-4 md:px-6 py-2 text-[10px] uppercase tracking-wider text-muted font-medium">
           <button onClick={() => toggleSort('display_id')} className="text-left hover:text-secondary transition-colors flex items-center">
             {t('list.id')} <SortIcon field="display_id" />
           </button>
@@ -333,6 +333,24 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: L
           </button>
         </div>
 
+        {/* Mobile sort controls */}
+        <div className="flex md:hidden items-center gap-2 border-b border-border px-3 py-2 overflow-x-auto">
+          <span className="text-[10px] text-muted uppercase tracking-wider shrink-0">Sort:</span>
+          {(['display_id', 'title', 'status', 'priority', 'updated_at'] as SortField[]).map((field) => (
+            <button
+              key={field}
+              onClick={() => toggleSort(field)}
+              className={cn(
+                'shrink-0 rounded-md px-2 py-1 text-[10px] uppercase tracking-wider transition-colors',
+                sortField === field ? 'bg-surface-hover text-primary font-medium' : 'text-muted hover:text-secondary',
+              )}
+            >
+              {field === 'display_id' ? t('list.id') : field === 'updated_at' ? t('list.updated') : t(`list.${field}`)}
+              <SortIcon field={field} />
+            </button>
+          ))}
+        </div>
+
         {/* Grouped rows */}
         {groupedByStatus.map(({ status, issues: groupIssues }) => {
           const isCollapsed = collapsedGroups.has(status.key);
@@ -341,7 +359,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: L
               {/* Group header */}
               <button
                 onClick={() => toggleGroup(status.key)}
-                className="sticky top-[33px] z-[5] flex w-full items-center gap-2 border-b border-border/50 bg-surface px-4 md:px-6 py-2 text-xs font-medium text-secondary hover:bg-surface transition-colors"
+                className="sticky top-0 md:top-[33px] z-[5] flex w-full items-center gap-2 border-b border-border/50 bg-surface px-3 md:px-6 py-2 text-xs font-medium text-secondary hover:bg-surface transition-colors"
               >
                 {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                 <span

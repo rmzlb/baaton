@@ -17,9 +17,9 @@ interface KanbanColumnProps {
 }
 
 const COLUMN_WIDTHS = {
-  compact: 'w-60 min-w-[240px]',
-  default: 'w-72 min-w-[280px]',
-  spacious: 'w-80 min-w-[320px]',
+  compact: 'w-[75vw] sm:w-60 min-w-[240px]',
+  default: 'w-[80vw] sm:w-72 min-w-[280px]',
+  spacious: 'w-[85vw] sm:w-80 min-w-[320px]',
 } as const;
 
 const CARD_GAPS = {
@@ -41,7 +41,7 @@ export function KanbanColumn({
   const density = useUIStore((s) => s.density);
 
   return (
-    <div className={cn('flex h-full flex-col', COLUMN_WIDTHS[density])}>
+    <div className={cn('flex h-full flex-col shrink-0 snap-center', COLUMN_WIDTHS[density])}>
       {/* Column Header */}
       <div className={cn(
         'flex items-center justify-between px-2',

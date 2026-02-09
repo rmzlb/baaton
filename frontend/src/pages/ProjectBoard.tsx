@@ -162,16 +162,18 @@ export function ProjectBoard() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 md:px-6 py-3">
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-primary truncate">{project?.name || slug}</h1>
-          <p className="text-xs text-secondary font-mono uppercase tracking-wider">
+      <div className="flex items-center justify-between border-b border-border px-3 md:px-6 py-3 gap-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-base md:text-lg font-semibold text-primary truncate">{project?.name || slug}</h1>
+          <p className="text-[10px] md:text-xs text-secondary font-mono uppercase tracking-wider truncate">
             {project?.prefix} · {t('projectBoard.view', { mode: viewMode })} · {t('projectBoard.issueCount', { count: issuesList.length })}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Density Toggle */}
-          <DensityToggle />
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+          {/* Density Toggle — hide on mobile */}
+          <div className="hidden sm:block">
+            <DensityToggle />
+          </div>
 
           {/* View Toggle */}
           <div data-tour="view-toggle" className="flex items-center rounded-md border border-border bg-surface p-0.5">
@@ -202,7 +204,7 @@ export function ProjectBoard() {
           <button
             data-tour="create-issue"
             onClick={() => setShowCreateIssue(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-black hover:bg-accent-hover transition-colors min-h-[36px]"
+            className="flex items-center gap-1.5 rounded-lg bg-accent px-2.5 md:px-3 py-1.5 text-xs font-medium text-black hover:bg-accent-hover transition-colors min-h-[36px]"
           >
             <Plus size={14} strokeWidth={2.5} />
             <span className="hidden sm:inline">{t('projectBoard.newIssue')}</span>
