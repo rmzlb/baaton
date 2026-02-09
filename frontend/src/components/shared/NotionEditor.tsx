@@ -26,12 +26,12 @@ import {
   TiptapUnderline,
   HighlightExtension,
   HorizontalRule,
-  // CodeBlockLowlight removed — needs lowlight instance, too heavy
   Color,
   TextStyle,
   GlobalDragHandle,
   CustomKeymap,
 } from 'novel';
+import { generateJSON } from '@tiptap/core';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import {
@@ -213,17 +213,27 @@ export function NotionEditor({
   const resolvedPlaceholder = placeholder || t('editor.placeholder');
   const editorRef = useRef<EditorInstance | null>(null);
 
-  // Parse initial content — convert markdown string to Tiptap JSON
-  const parsedContent: JSONContent | undefined = typeof initialContent === 'string' && initialContent.trim()
-    ? markdownToTiptap(initialContent)
-    : (initialContent as JSONContent | undefined);
+  // Parse initial content — supports HTML, Markdown, and JSONContent
+  const extensions = getExtensions(resolvedPlaceholder);
+  let parsedContent: JSONContent | undefined;
+  if (typeof initialContent === 'string' && initialContent.trim()) {
+    if (initialContent.trim().startsWith('<')) {
+      // HTML string → convert to Tiptap JSON
+      parsedContent = generateJSON(initialContent, extensions) as JSONContent;
+    } else {
+      // Markdown string → convert to Tiptap JSON
+      parsedContent = markdownToTiptap(initialContent);
+    }
+  } else {
+    parsedContent = initialContent as JSONContent | undefined;
+  }
 
   const handleUpdate = useCallback(
     ({ editor }: { editor: EditorInstance }) => {
       editorRef.current = editor;
-      // Output plain text for storage compatibility
-      const text = editor.getText();
-      onChange?.(text);
+      // Output HTML for storage — preserves all formatting
+      const html = editor.getHTML();
+      onChange?.(html);
     },
     [onChange],
   );
@@ -233,7 +243,7 @@ export function NotionEditor({
       <EditorRoot>
         <EditorContent
           initialContent={parsedContent}
-          extensions={getExtensions(resolvedPlaceholder)}
+          extensions={extensions}
           editable={editable}
           onUpdate={handleUpdate}
           editorProps={{
