@@ -10,9 +10,9 @@ mod tldrs;
 mod tags;
 
 pub fn api_router(pool: PgPool) -> Router {
-    // Protected routes — require valid Clerk JWT with org_id filtering
-    let protected = Router::new()
-        // Projects (org-scoped)
+    // All API routes — auth middleware applied on top
+    let routes = Router::new()
+        // Projects (org-scoped via auth middleware)
         .route("/projects", get(projects::list).post(projects::create))
         .route("/projects/{id}", get(projects::get_one).patch(projects::update).delete(projects::remove))
         .route("/projects/{id}/issues", get(issues::list_by_project))
@@ -26,14 +26,11 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/issues/{id}/tldr", post(tldrs::create))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
-        .layer(axum_mw::from_fn(auth_middleware));
+        // Public (no auth)
+        .route("/public/{slug}/submit", post(issues::public_submit))
+        .with_state(pool);
 
-    // Public routes — no auth needed
-    let public = Router::new()
-        .route("/public/{slug}/submit", post(issues::public_submit));
-
-    Router::new()
-        .merge(protected)
-        .merge(public)
-        .with_state(pool)
+    // Apply auth middleware — it runs on all routes but public ones
+    // skip auth for public routes (handled in the middleware itself based on path)
+    routes.layer(axum_mw::from_fn(auth_middleware))
 }

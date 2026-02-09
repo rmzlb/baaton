@@ -32,11 +32,13 @@ pub async fn create(
 ) -> Json<ApiResponse<Project>> {
     let effective_org = auth.org_id.clone().unwrap_or_else(|| auth.user_id.clone());
 
-    // Ensure the org exists in the organizations table
-    let _ = sqlx::query("SELECT ensure_org_exists($1)")
-        .bind(&effective_org)
-        .execute(&pool)
-        .await;
+    // Ensure the org exists in the organizations table (upsert)
+    let _ = sqlx::query(
+        "INSERT INTO organizations (id, name, slug) VALUES ($1, $1, $1) ON CONFLICT (id) DO NOTHING"
+    )
+    .bind(&effective_org)
+    .execute(&pool)
+    .await;
 
     let project = sqlx::query_as::<_, Project>(
         r#"

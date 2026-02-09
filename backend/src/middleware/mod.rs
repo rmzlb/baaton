@@ -52,8 +52,15 @@ fn decode_jwt_payload(token: &str) -> Result<ClerkClaims, String> {
 }
 
 /// Auth middleware — extracts Clerk JWT claims and adds AuthUser to request extensions.
-/// Returns 401 if no valid Bearer token is present.
+/// Skips auth for public routes (paths starting with /api/v1/public/).
+/// Returns 401 if no valid Bearer token is present on protected routes.
 pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
+    // Skip auth for public routes and health checks
+    let path = req.uri().path().to_string();
+    if path.contains("/public/") || path == "/health" {
+        return next.run(req).await;
+    }
+
     let auth_header = req
         .headers()
         .get("authorization")
