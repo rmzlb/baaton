@@ -30,7 +30,7 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCreateIssue }: KanbanBoardProps) {
   const moveIssue = useIssuesStore((s) => s.moveIssue);
-  const [filterTab, setFilterTab] = useState<FilterTab>('active');
+  const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [sortMode, setSortMode] = useState<SortMode>('manual');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSort, setShowSort] = useState(false);
