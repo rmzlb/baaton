@@ -1201,7 +1201,17 @@ function AttachmentSection({
                   alt={att.name}
                   className="h-full w-full object-cover"
                   loading="lazy"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    target.style.display = 'none';
+                    const placeholder = target.parentElement?.querySelector('.img-placeholder');
+                    if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
+                  }}
                 />
+                <div className="img-placeholder hidden h-full w-full items-center justify-center bg-surface flex-col gap-1">
+                  <Image size={16} className="text-muted" />
+                  <span className="text-[9px] text-muted text-center px-1 truncate max-w-full">{att.name || 'Image'}</span>
+                </div>
                 <div className="absolute inset-0 bg-black/30 dark:bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                   <Image size={14} className="text-white" />
                 </div>
@@ -1528,6 +1538,11 @@ function ImageLightbox({
         alt={images[currentIndex].name}
         className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
         onClick={(e) => e.stopPropagation()}
+        onError={(e) => {
+          e.currentTarget.src = '';
+          e.currentTarget.alt = 'Image expired or unavailable';
+          e.currentTarget.className = 'max-h-[40vh] max-w-[60vw] flex items-center justify-center bg-surface rounded-lg p-8 text-muted text-sm';
+        }}
       />
 
       <div
