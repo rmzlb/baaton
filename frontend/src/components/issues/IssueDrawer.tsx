@@ -15,6 +15,7 @@ import { cn, timeAgo } from '@/lib/utils';
 import { NotionEditor } from '@/components/shared/NotionEditor';
 import { GitHubSection } from '@/components/github/GitHubSection';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
+import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
 import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment } from '@/lib/types';
 
 /* ── Constants ─────────────────────────────────── */
@@ -80,6 +81,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const [editingDueDate, setEditingDueDate] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [annotatingIndex, setAnnotatingIndex] = useState<number | null>(null);
 
   // ── Queries ──
   const { data: issue, isLoading } = useQuery({
@@ -377,6 +379,23 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     handleFileUpload(e.dataTransfer.files);
   }, [handleFileUpload]);
 
+  const handleAnnotationSave = useCallback(async (annotatedBase64: string) => {
+    if (!issue || annotatingIndex === null) return;
+    const all = [...(issue.attachments || [])];
+    const images = all.filter(
+      (a) => a.mime_type?.startsWith('image/') || a.url?.startsWith('data:image/'),
+    );
+    const target = images[annotatingIndex];
+    if (target) {
+      const idx = all.indexOf(target);
+      all[idx] = { ...target, url: annotatedBase64, mime_type: 'image/jpeg' };
+      await apiClient.issues.update(issueId, { attachments: all } as any);
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+    }
+    setAnnotatingIndex(null);
+    setLightboxIndex(null);
+  }, [issue, annotatingIndex, issueId, apiClient, queryClient]);
+
   const handleDeleteAttachment = useCallback((attachmentUrl: string) => {
     if (!issue) return;
     const next = (issue.attachments || []).filter((a) => a.url !== attachmentUrl);
@@ -452,10 +471,16 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             <TypeIcon size={14} className={typeColor} />
             <span className="text-sm font-mono font-semibold text-accent">{issue.display_id}</span>
             <span className="text-[10px] text-muted shrink-0">· {timeAgo(issue.created_at)}</span>
-            {issue.created_by_id && (
-              <span className="text-[10px] text-muted truncate hidden sm:inline">
-                by {issue.created_by_name || issue.created_by_id?.slice(0, 10)}
-              </span>
+            {(issue.created_by_name || issue.created_by_id) && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] text-muted">by</span>
+                <div className="h-5 w-5 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-[8px] font-mono font-bold text-accent">
+                  {(issue.created_by_name || issue.created_by_id || '?').slice(0, 2).toUpperCase()}
+                </div>
+                <span className="text-[11px] text-secondary font-medium truncate max-w-[120px]">
+                  {issue.created_by_name || issue.created_by_id?.slice(0, 12)}
+                </span>
+              </div>
             )}
           </div>
           <button
@@ -626,12 +651,23 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       </div>
 
       {/* Image Lightbox */}
-      {lightboxIndex !== null && imageAttachments.length > 0 && (
+      {lightboxIndex !== null && imageAttachments.length > 0 && annotatingIndex === null && (
         <ImageLightbox
           images={imageAttachments.map((a) => ({ url: a.url, name: a.name }))}
           currentIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
           onNavigate={setLightboxIndex}
+          onAnnotate={(idx) => setAnnotatingIndex(idx)}
+        />
+      )}
+
+      {/* Image Annotator */}
+      {annotatingIndex !== null && imageAttachments[annotatingIndex] && (
+        <ImageAnnotator
+          imageUrl={imageAttachments[annotatingIndex].url}
+          imageName={imageAttachments[annotatingIndex].name}
+          onSave={handleAnnotationSave}
+          onClose={() => setAnnotatingIndex(null)}
         />
       )}
     </>
@@ -1476,11 +1512,13 @@ function ImageLightbox({
   currentIndex,
   onClose,
   onNavigate,
+  onAnnotate,
 }: {
   images: { url: string; name: string }[];
   currentIndex: number;
   onClose: () => void;
   onNavigate: (index: number) => void;
+  onAnnotate?: (index: number) => void;
 }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1551,6 +1589,14 @@ function ImageLightbox({
       >
         <span className="text-xs text-white/80 truncate max-w-[200px]">{images[currentIndex].name}</span>
         <span className="text-xs text-white/60">{currentIndex + 1} / {images.length}</span>
+        {onAnnotate && (
+          <button
+            onClick={() => onAnnotate(currentIndex)}
+            className="rounded-md bg-accent/90 px-2.5 py-1 text-[10px] font-medium text-black hover:bg-accent transition-colors"
+          >
+            ✏️ Annotate
+          </button>
+        )}
         <a
           href={images[currentIndex].url}
           download={images[currentIndex].name}
