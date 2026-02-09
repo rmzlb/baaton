@@ -39,7 +39,7 @@ export function ProjectBoard() {
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
   const [showCreateIssue, setShowCreateIssue] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   // View mode with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -83,27 +83,25 @@ export function ProjectBoard() {
     }
   }, [searchParams, issuesList, isDetailOpen, openDetail]);
 
-  // When drawer opens: update URL with display_id
+  // When drawer opens: update URL with display_id (no React re-render)
   useEffect(() => {
     if (isDetailOpen && selectedIssueId) {
       const issue = issuesList.find((i) => i.id === selectedIssueId);
       if (issue) {
-        setSearchParams((prev) => {
-          prev.set('issue', issue.display_id);
-          return prev;
-        }, { replace: true });
+        const url = new URL(window.location.href);
+        url.searchParams.set('issue', issue.display_id);
+        window.history.replaceState(null, '', url.toString());
       }
     }
-  }, [isDetailOpen, selectedIssueId, issuesList, setSearchParams]);
+  }, [isDetailOpen, selectedIssueId, issuesList]);
 
-  // Wrap closeDetail to also clear URL param
+  // Wrap closeDetail to also clear URL param (no React re-render)
   const handleCloseDetail = useCallback(() => {
     closeDetail();
-    setSearchParams((prev) => {
-      prev.delete('issue');
-      return prev;
-    }, { replace: true });
-  }, [closeDetail, setSearchParams]);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('issue');
+    window.history.replaceState(null, '', url.toString());
+  }, [closeDetail]);
 
   // Fetch project tags
   const { data: projectTags = [] } = useQuery({

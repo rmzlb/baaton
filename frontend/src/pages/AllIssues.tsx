@@ -134,7 +134,7 @@ export function AllIssues() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   // View mode
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -232,15 +232,19 @@ export function AllIssues() {
     if (isDetailOpen && selectedIssueId) {
       const issue = allIssuesRaw.find((i) => i.id === selectedIssueId);
       if (issue) {
-        setSearchParams((prev) => { prev.set('issue', issue.display_id); return prev; }, { replace: true });
+        const url = new URL(window.location.href);
+        url.searchParams.set('issue', issue.display_id);
+        window.history.replaceState(null, '', url.toString());
       }
     }
-  }, [isDetailOpen, selectedIssueId, allIssuesRaw, setSearchParams]);
+  }, [isDetailOpen, selectedIssueId, allIssuesRaw]);
 
   const handleCloseDetail = useCallback(() => {
     closeDetail();
-    setSearchParams((prev) => { prev.delete('issue'); return prev; }, { replace: true });
-  }, [closeDetail, setSearchParams]);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('issue');
+    window.history.replaceState(null, '', url.toString());
+  }, [closeDetail]);
 
   // Find selected issue for drawer
   const selectedIssue = allIssuesRaw.find((i) => i.id === selectedIssueId);

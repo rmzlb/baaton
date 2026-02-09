@@ -417,10 +417,10 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   if (isLoading || !issue) {
     return (
       <>
-        <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" onClick={onClose} />
+        <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={onClose} />
         <div
           ref={panelRef}
-          className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:max-w-2xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right"
+          className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:max-w-3xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right"
         >
           <LoadingSkeleton />
         </div>
@@ -436,7 +436,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   return (
     <>
       {/* Backdrop — hidden on mobile since drawer is full-screen */}
-      <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" />
+      <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={onClose} />
 
       {/* Panel — full-screen on mobile, side panel on tablet+ */}
       <div
@@ -444,26 +444,18 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         role="dialog"
         aria-modal="true"
         aria-labelledby="issue-drawer-title"
-        className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:max-w-2xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right overflow-hidden"
+        className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:max-w-3xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right overflow-hidden"
       >
         {/* ── Header ── */}
         <div className="flex items-center justify-between border-b border-border px-4 py-2.5 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <TypeIcon size={14} className={typeColor} />
-            <span className="text-[11px] font-mono text-secondary">{issue.display_id}</span>
+            <span className="text-sm font-mono font-semibold text-accent">{issue.display_id}</span>
+            <span className="text-[10px] text-muted shrink-0">· {timeAgo(issue.created_at)}</span>
             {issue.created_by_id && (
-              <>
-                <span className="text-muted text-[10px]">·</span>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <div className="h-5 w-5 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-[8px] font-mono font-bold text-accent shrink-0">
-                    {(issue.created_by_name || issue.created_by_id || '?').slice(0, 2).toUpperCase()}
-                  </div>
-                  <span className="text-[11px] text-secondary truncate">
-                    {issue.created_by_name || issue.created_by_id?.slice(0, 12)}
-                  </span>
-                </div>
-                <span className="text-[10px] text-muted shrink-0">· {timeAgo(issue.created_at)}</span>
-              </>
+              <span className="text-[10px] text-muted truncate hidden sm:inline">
+                by {issue.created_by_name || issue.created_by_id?.slice(0, 10)}
+              </span>
             )}
           </div>
           <button
@@ -570,7 +562,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             </div>
 
             {/* RIGHT COLUMN: Metadata Sidebar */}
-            <div className="w-full md:w-56 shrink-0 p-4 space-y-4">
+            <div className="w-full md:w-64 shrink-0 p-4 space-y-4">
               <MetadataSidebar
                 issue={issue}
                 availableStatuses={availableStatuses}
@@ -746,7 +738,7 @@ function DescriptionView({ description, editing, draft, onStartEdit, onDraftChan
         >
           {hasHtml ? (
             <div
-              className="prose prose-sm dark:prose-invert prose-headings:text-primary prose-p:text-secondary prose-li:text-secondary prose-a:text-accent max-w-none text-xs"
+              className="prose prose-xs dark:prose-invert prose-headings:text-primary prose-p:text-secondary prose-li:text-secondary prose-a:text-accent max-w-none text-[11px] leading-relaxed"
               dangerouslySetInnerHTML={{ __html: description }}
             />
           ) : (

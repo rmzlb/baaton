@@ -51,7 +51,7 @@ export function MyTasks() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   // Fetch all projects for name mapping
   const { data: projects = [] } = useQuery({
@@ -79,15 +79,19 @@ export function MyTasks() {
     if (isDetailOpen && selectedIssueId) {
       const issue = myIssues.find((i) => i.id === selectedIssueId);
       if (issue) {
-        setSearchParams((prev) => { prev.set('issue', issue.display_id); return prev; }, { replace: true });
+        const url = new URL(window.location.href);
+        url.searchParams.set('issue', issue.display_id);
+        window.history.replaceState(null, '', url.toString());
       }
     }
-  }, [isDetailOpen, selectedIssueId, myIssues, setSearchParams]);
+  }, [isDetailOpen, selectedIssueId, myIssues]);
 
   const handleCloseDetail = useCallback(() => {
     closeDetail();
-    setSearchParams((prev) => { prev.delete('issue'); return prev; }, { replace: true });
-  }, [closeDetail, setSearchParams]);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('issue');
+    window.history.replaceState(null, '', url.toString());
+  }, [closeDetail]);
 
   // Group by project
   const groupedByProject = myIssues.reduce(
