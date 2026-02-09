@@ -371,7 +371,7 @@ const en = {
   'common.loading': 'Loading…',
 
   // ─── Editor ─────────────────────────────────
-  'editor.placeholder': 'Write in Markdown…',
+  'editor.placeholder': 'Type / for commands…',
   'editor.preview': 'Preview',
   'editor.edit': 'Edit',
   'editor.nothingToPreview': 'Nothing to preview',

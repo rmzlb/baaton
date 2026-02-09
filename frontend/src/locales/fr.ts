@@ -371,7 +371,7 @@ const fr = {
   'common.loading': 'Chargement…',
 
   // ─── Éditeur ────────────────────────────────
-  'editor.placeholder': 'Écrire en Markdown…',
+  'editor.placeholder': 'Tapez / pour les commandes…',
   'editor.preview': 'Aperçu',
   'editor.edit': 'Éditer',
   'editor.nothingToPreview': 'Rien à afficher',
