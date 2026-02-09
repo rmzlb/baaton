@@ -167,6 +167,18 @@ const en = {
   'settings.languageDesc': 'Choose the interface language',
   'settings.created': 'created {{time}}',
   'settings.used': 'used {{time}}',
+  'settings.invite.title': 'Invite Members',
+  'settings.invite.description': 'Invite people to join {{org}}. They will receive an email with a link.',
+  'settings.invite.emailPlaceholder': 'colleague@company.com',
+  'settings.invite.member': 'Member',
+  'settings.invite.admin': 'Admin',
+  'settings.invite.send': 'Send Invite',
+  'settings.invite.sending': 'Sending…',
+  'settings.invite.error': 'Failed to send invitation',
+  'settings.invite.linkReady': 'Invitation link ready!',
+  'settings.invite.copy': 'Copy',
+  'settings.invite.copied': 'Copied!',
+  'settings.invite.linkHint': 'Share this link directly — bypasses email spam filters.',
 
   // ─── KanbanBoard ────────────────────────────
   'kanban.filterIssues': 'Filter issues…',

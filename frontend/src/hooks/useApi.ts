@@ -291,6 +291,20 @@ export function useApi() {
         }),
     },
 
+    // ─── Invites ───────────────────────────────
+    invites: {
+      create: async (body: { email_address: string; role?: string }): Promise<{
+        id: string;
+        email_address: string;
+        status: string;
+        url: string | null;
+      }> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post('/invites', body, token);
+        }),
+    },
+
     // ─── Public (no auth) ──────────────────────
     public: {
       submit: async (

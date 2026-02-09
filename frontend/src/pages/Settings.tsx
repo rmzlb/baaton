@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { OrganizationProfile } from '@clerk/clerk-react';
+import { OrganizationProfile, useOrganization } from '@clerk/clerk-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Plus, Trash2, Copy, Eye, EyeOff, CheckCircle2, AlertTriangle, Globe } from 'lucide-react';
+import { KeyRound, Plus, Trash2, Copy, Eye, EyeOff, CheckCircle2, AlertTriangle, Globe, UserPlus, Link2, Mail } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
@@ -18,6 +18,9 @@ export function Settings() {
           {t('settings.description')}
         </p>
       </div>
+
+      {/* Invite Section */}
+      <InviteSection />
 
       {/* Language Section */}
       <LanguageSection />
@@ -39,6 +42,128 @@ export function Settings() {
           }}
         />
       </div>
+    </div>
+  );
+}
+
+function InviteSection() {
+  const { t } = useTranslation();
+  const { organization } = useOrganization();
+  const apiClient = useApi();
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('org:member');
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
+
+  const inviteMutation = useMutation({
+    mutationFn: (data: { email_address: string; role?: string }) =>
+      apiClient.invites.create(data),
+    onSuccess: (data) => {
+      setInviteUrl(data.url);
+      setEmail('');
+      setError('');
+    },
+    onError: (err: Error) => {
+      setError(err.message || t('settings.invite.error'));
+    },
+  });
+
+  const handleInvite = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setInviteUrl(null);
+    setCopied(false);
+    inviteMutation.mutate({ email_address: email.trim(), role });
+  };
+
+  const handleCopy = () => {
+    if (!inviteUrl) return;
+    navigator.clipboard.writeText(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!organization) return null;
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <UserPlus size={16} className="text-accent" />
+        <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">
+          {t('settings.invite.title')}
+        </h2>
+      </div>
+
+      <p className="text-sm text-secondary mb-4">
+        {t('settings.invite.description', { org: organization.name })}
+      </p>
+
+      <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-2">
+        <div className="flex-1 flex gap-2">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder={t('settings.invite.emailPlaceholder')}
+            className="flex-1 bg-bg border border-border rounded-lg px-3 py-2 text-sm text-primary placeholder-muted outline-none focus:border-accent transition-colors"
+            required
+          />
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            className="bg-bg border border-border rounded-lg px-3 py-2 text-sm text-primary outline-none focus:border-accent"
+          >
+            <option value="org:member">{t('settings.invite.member')}</option>
+            <option value="org:admin">{t('settings.invite.admin')}</option>
+          </select>
+        </div>
+        <button
+          type="submit"
+          disabled={inviteMutation.isPending || !email.trim()}
+          className="flex items-center justify-center gap-2 bg-accent text-black px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50"
+        >
+          <Mail size={14} />
+          {inviteMutation.isPending ? t('settings.invite.sending') : t('settings.invite.send')}
+        </button>
+      </form>
+
+      {/* Error */}
+      {error && (
+        <div className="mt-3 flex items-center gap-2 text-sm text-red-400">
+          <AlertTriangle size={14} />
+          {error}
+        </div>
+      )}
+
+      {/* Invite URL */}
+      {inviteUrl && (
+        <div className="mt-4 p-3 rounded-lg border border-accent/30 bg-accent/5">
+          <div className="flex items-center gap-2 text-sm text-accent mb-2">
+            <Link2 size={14} />
+            <span className="font-medium">{t('settings.invite.linkReady')}</span>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={inviteUrl}
+              readOnly
+              className="flex-1 bg-bg border border-border rounded-lg px-3 py-2 text-xs text-secondary font-mono truncate outline-none"
+            />
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="flex items-center gap-1 bg-accent text-black px-3 py-2 rounded-lg text-xs font-semibold hover:bg-accent/90 transition-colors"
+            >
+              {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+              {copied ? t('settings.invite.copied') : t('settings.invite.copy')}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            {t('settings.invite.linkHint')}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

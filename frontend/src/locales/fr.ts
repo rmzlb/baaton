@@ -166,6 +166,18 @@ const fr = {
   'settings.language': 'Langue',
   'settings.languageDesc': 'Choisir la langue de l\'interface',
   'settings.created': 'créée {{time}}',
+  'settings.invite.title': 'Inviter des membres',
+  'settings.invite.description': 'Invitez des personnes à rejoindre {{org}}. Elles recevront un email avec un lien.',
+  'settings.invite.emailPlaceholder': 'collegue@entreprise.com',
+  'settings.invite.member': 'Membre',
+  'settings.invite.admin': 'Admin',
+  'settings.invite.send': 'Envoyer',
+  'settings.invite.sending': 'Envoi…',
+  'settings.invite.error': 'Échec de l\'envoi de l\'invitation',
+  'settings.invite.linkReady': 'Lien d\'invitation prêt !',
+  'settings.invite.copy': 'Copier',
+  'settings.invite.copied': 'Copié !',
+  'settings.invite.linkHint': 'Partagez ce lien directement — contourne les filtres anti-spam.',
   'settings.used': 'utilisée {{time}}',
 
   // ─── KanbanBoard ────────────────────────────
