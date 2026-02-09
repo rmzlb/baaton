@@ -622,6 +622,19 @@ As a [user], I want to [action] so that [benefit].
   'global.projectCount': 'projects',
   'global.cancel': 'Cancel',
 
+// ── Landing Page ──
+'landing.badge': 'Now in public beta',
+'landing.heroLine1': 'You orchestrate.',
+'landing.heroLine2': 'AI executes.',
+'landing.heroSub': 'The project board built for the AI age. Assign issues to agents, review their work, ship faster — all from one command center.',
+'landing.cta': 'Start for free',
+'landing.github': 'View on GitHub',
+'landing.socialProof': 'Used by builders shipping with AI',
+'landing.nav.features': 'Features',
+'landing.nav.pricing': 'Pricing',
+'landing.nav.docs': 'Docs',
+'landing.nav.login': 'Log in',
+
 } as const;
 
 export default en;

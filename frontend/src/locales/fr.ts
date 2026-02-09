@@ -622,6 +622,19 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'global.projectCount': 'projets',
   'global.cancel': 'Annuler',
 
+// ── Landing Page ──
+'landing.badge': 'Bêta publique',
+'landing.heroLine1': 'Tu orchestres.',
+'landing.heroLine2': 'L\'IA exécute.',
+'landing.heroSub': 'Le board de gestion de projets conçu pour l\'ère de l\'IA. Assigne des issues à tes agents, review leur travail, ship plus vite — depuis un seul centre de commande.',
+'landing.cta': 'Commencer gratuitement',
+'landing.github': 'Voir sur GitHub',
+'landing.socialProof': 'Utilisé par ceux qui build avec l\'IA',
+'landing.nav.features': 'Fonctionnalités',
+'landing.nav.pricing': 'Tarifs',
+'landing.nav.docs': 'Docs',
+'landing.nav.login': 'Connexion',
+
 } as const;
 
 export default fr;

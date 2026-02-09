@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" class="dark scroll-smooth">
+<html lang="en" class="scroll-smooth">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="theme-color" content="#fafafa" />
     <meta name="description" content="Multi-tenant orchestration board for AI coding agents. You orchestrate. AI executes." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -18,7 +18,7 @@
   <body class="bg-bg text-primary antialiased selection:bg-accent selection:text-black overflow-x-hidden">
     <script>
       // Sync theme before first paint to avoid flash
-      (function(){var t=localStorage.getItem('baaton-theme');if(t==='light')document.documentElement.classList.remove('dark');})();
+      (function(){var t=localStorage.getItem('baaton-theme');if(t==='dark')document.documentElement.classList.add('dark');})();
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

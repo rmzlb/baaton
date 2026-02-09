@@ -13,6 +13,7 @@ const ProjectBoard = lazy(() => import('./pages/ProjectBoard'));
 const ProjectList = lazy(() => import('./pages/ProjectList'));
 const MyTasks = lazy(() => import('./pages/MyTasks'));
 const AllIssues = lazy(() => import('./pages/AllIssues'));
+const Docs = lazy(() => import('./pages/Docs'));
 const Settings = lazy(() => import('./pages/Settings'));
 const PublicSubmit = lazy(() => import('./pages/PublicSubmit'));
 
@@ -72,6 +73,7 @@ export function App() {
         {/* Root: landing on baaton.dev, dashboard redirect on app.baaton.dev */}
         <Route path="/" element={<RootRoute />} />
         <Route path="/submit/:slug" element={<PublicSubmit />} />
+        <Route path="/docs" element={<Docs />} />
 
         {/* Auth routes */}
         <Route

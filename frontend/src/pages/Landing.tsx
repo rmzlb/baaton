@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, ArrowRight } from 'lucide-react';
 import { PixelTanuki } from '@/components/shared/PixelTanuki';
 import { Hero } from '@/components/landing/Hero';
+import { useTranslation } from '@/hooks/useTranslation';
 
 // Lazy-load below-fold sections for performance
 const Features = lazy(() =>
@@ -16,14 +17,15 @@ const Footer = lazy(() =>
   import('@/components/landing/Footer').then((m) => ({ default: m.Footer })),
 );
 
-const navLinks = [
-  { label: 'Features', href: '#features' },
-  { label: 'Pricing', href: '#pricing' },
-  { label: 'Docs', href: '#' },
-];
-
 export function Landing() {
+  const { t } = useTranslation();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const navLinks = [
+    { label: t('landing.nav.features'), href: '#features' },
+    { label: t('landing.nav.pricing'), href: '#pricing' },
+    { label: t('landing.nav.docs'), href: '/docs' },
+  ];
 
   return (
     <div className="min-h-screen bg-bg text-primary selection:bg-amber-500/20 selection:text-primary">
@@ -32,7 +34,7 @@ export function Landing() {
 
       {/* ── Navbar ────────────────────────────── */}
       <nav
-        className="fixed top-0 w-full z-40 border-b border-border/50 bg-bg/80 backdrop-blur-xl"
+        className="fixed top-0 w-full z-40 border-b border-border/50 bg-bg/80 dark:bg-bg/80 backdrop-blur-xl"
         role="navigation"
         aria-label="Main navigation"
       >
@@ -62,13 +64,13 @@ export function Landing() {
               to="/sign-in"
               className="text-sm text-secondary hover:text-primary transition-colors"
             >
-              Log in
+              {t('landing.nav.login')}
             </Link>
             <Link
               to="/sign-up"
               className="h-8 px-4 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-black text-sm font-semibold flex items-center gap-1.5 hover:brightness-110 transition-all"
             >
-              Start for free
+              {t('landing.cta')}
               <ArrowRight className="w-3.5 h-3.5" strokeWidth={2.5} />
             </Link>
           </div>
@@ -111,14 +113,14 @@ export function Landing() {
                     onClick={() => setMobileOpen(false)}
                     className="text-sm text-secondary hover:text-primary py-1.5 transition-colors"
                   >
-                    Log in
+                    {t('landing.nav.login')}
                   </Link>
                   <Link
                     to="/sign-up"
                     onClick={() => setMobileOpen(false)}
                     className="h-10 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-black text-sm font-semibold flex items-center justify-center"
                   >
-                    Start for free
+                    {t('landing.cta')}
                   </Link>
                 </div>
               </div>
