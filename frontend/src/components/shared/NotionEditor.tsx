@@ -1,260 +1,222 @@
 /**
- * Lightweight Markdown Editor — GitHub-style.
- * Textarea + toolbar + live preview toggle.
- * Zero heavy deps — uses react-markdown (already installed).
- * ~5KB vs 500KB+ for BlockNote.
+ * Notion-style WYSIWYG editor powered by Novel (Tiptap).
+ * Lightweight (~40KB), slash commands, bubble menu, dark/light mode.
+ * https://novel.sh
  */
-import { useRef, useCallback, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import {
-  Bold, Italic, Code, Heading2, List, ListOrdered,
-  Link, Image, Eye, EyeOff, Quote, CheckSquare,
-} from 'lucide-react';
-import { MarkdownView } from './MarkdownView';
+  EditorRoot,
+  EditorContent,
+  EditorCommand,
+  EditorCommandItem,
+  EditorCommandEmpty,
+  EditorCommandList,
+  EditorBubble,
+  type JSONContent,
+  type EditorInstance,
+  useEditor as useNovelEditor,
+  createSuggestionItems,
+  handleCommandNavigation,
+  Placeholder,
+  StarterKit,
+  TaskList,
+  TaskItem,
+  TiptapLink,
+  UpdatedImage,
+  TiptapUnderline,
+  HighlightExtension,
+  HorizontalRule,
+  CodeBlockLowlight,
+  Color,
+  TextStyle,
+  GlobalDragHandle,
+  CustomKeymap,
+} from 'novel';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
+import {
+  Heading1, Heading2, Heading3, List, ListOrdered, CheckSquare,
+  Code, Quote, Minus, Bold, Italic, Underline, Strikethrough,
+  Code2, Highlighter,
+} from 'lucide-react';
 
+// ─── Slash command items ────────────────────────
+const suggestionItems = createSuggestionItems([
+  { title: 'Heading 1', description: 'Large heading', searchTerms: ['h1', 'title'], icon: <Heading1 size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setNode('heading', { level: 1 }).run(); } },
+  { title: 'Heading 2', description: 'Medium heading', searchTerms: ['h2', 'subtitle'], icon: <Heading2 size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setNode('heading', { level: 2 }).run(); } },
+  { title: 'Heading 3', description: 'Small heading', searchTerms: ['h3'], icon: <Heading3 size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setNode('heading', { level: 3 }).run(); } },
+  { title: 'Bullet List', description: 'Unordered list', searchTerms: ['ul', 'unordered'], icon: <List size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleBulletList().run(); } },
+  { title: 'Numbered List', description: 'Ordered list', searchTerms: ['ol', 'ordered'], icon: <ListOrdered size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleOrderedList().run(); } },
+  { title: 'Task List', description: 'Checklist', searchTerms: ['todo', 'checkbox'], icon: <CheckSquare size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleTaskList().run(); } },
+  { title: 'Code Block', description: 'Code snippet', searchTerms: ['code', 'pre'], icon: <Code size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleCodeBlock().run(); } },
+  { title: 'Blockquote', description: 'Quote block', searchTerms: ['quote', 'cite'], icon: <Quote size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).toggleBlockquote().run(); } },
+  { title: 'Divider', description: 'Horizontal rule', searchTerms: ['hr', 'separator', 'line'], icon: <Minus size={18} />, command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).setHorizontalRule().run(); } },
+]);
+
+// ─── Extensions config ──────────────────────────
+function getExtensions(placeholder: string) {
+  return [
+    StarterKit.configure({
+      heading: { levels: [1, 2, 3] },
+      codeBlock: false, // replaced by lowlight
+      dropcursor: { color: '#f59e0b', width: 2 },
+    }),
+    Placeholder.configure({ placeholder }),
+    TaskList,
+    TaskItem.configure({ nested: true }),
+    TiptapLink.configure({ openOnClick: false, autolink: true }),
+    UpdatedImage,
+    TiptapUnderline,
+    HighlightExtension.configure({ multicolor: true }),
+    HorizontalRule,
+    CodeBlockLowlight.configure({ defaultLanguage: 'typescript' }),
+    Color,
+    TextStyle,
+    GlobalDragHandle,
+    CustomKeymap,
+  ];
+}
+
+// ─── Bubble toolbar (uses useEditor hook) ───────
+function BubbleToolbar() {
+  const { editor } = useNovelEditor();
+  if (!editor) return null;
+
+  const buttons = [
+    { key: 'bold', icon: <Bold size={14} />, active: editor.isActive('bold'), action: () => editor.chain().focus().toggleBold().run() },
+    { key: 'italic', icon: <Italic size={14} />, active: editor.isActive('italic'), action: () => editor.chain().focus().toggleItalic().run() },
+    { key: 'underline', icon: <Underline size={14} />, active: editor.isActive('underline'), action: () => editor.chain().focus().toggleUnderline().run() },
+    { key: 'strike', icon: <Strikethrough size={14} />, active: editor.isActive('strike'), action: () => editor.chain().focus().toggleStrike().run() },
+    { key: 'code', icon: <Code2 size={14} />, active: editor.isActive('code'), action: () => editor.chain().focus().toggleCode().run() },
+    { key: 'highlight', icon: <Highlighter size={14} />, active: editor.isActive('highlight'), action: () => editor.chain().focus().toggleHighlight().run() },
+  ];
+
+  return (
+    <>
+      {buttons.map((btn) => (
+        <button
+          key={btn.key}
+          type="button"
+          onClick={btn.action}
+          className={cn(
+            'rounded p-1.5 transition-colors',
+            btn.active ? 'bg-accent/20 text-accent' : 'text-secondary hover:text-primary hover:bg-surface-hover',
+          )}
+        >
+          {btn.icon}
+        </button>
+      ))}
+    </>
+  );
+}
+
+// ─── Props ──────────────────────────────────────
 interface NotionEditorProps {
-  initialContent?: string;
-  onChange?: (md: string) => void;
+  initialContent?: JSONContent | string;
+  /** Called on every change. Receives plain text (for storage as markdown/string). */
+  onChange?: (text: string) => void;
   placeholder?: string;
   editable?: boolean;
   className?: string;
-  minRows?: number;
   theme?: 'light' | 'dark';
 }
 
-// ─── Toolbar action ───────────────────────────
-type Action = { icon: typeof Bold; label: string; prefix: string; suffix?: string; block?: boolean };
-
-const ACTIONS: Action[] = [
-  { icon: Bold, label: 'Bold', prefix: '**', suffix: '**' },
-  { icon: Italic, label: 'Italic', prefix: '*', suffix: '*' },
-  { icon: Code, label: 'Code', prefix: '`', suffix: '`' },
-  { icon: Heading2, label: 'Heading', prefix: '## ', block: true },
-  { icon: Quote, label: 'Quote', prefix: '> ', block: true },
-  { icon: List, label: 'List', prefix: '- ', block: true },
-  { icon: ListOrdered, label: 'Ordered', prefix: '1. ', block: true },
-  { icon: CheckSquare, label: 'Task', prefix: '- [ ] ', block: true },
-  { icon: Link, label: 'Link', prefix: '[', suffix: '](url)' },
-];
-
 export function NotionEditor({
-  initialContent = '',
+  initialContent,
   onChange,
   placeholder,
   editable = true,
   className,
-  minRows = 8,
 }: NotionEditorProps) {
   const { t } = useTranslation();
-  const [value, setValue] = useState(initialContent);
-  const [preview, setPreview] = useState(false);
-  const ref = useRef<HTMLTextAreaElement>(null);
   const resolvedPlaceholder = placeholder || t('editor.placeholder');
+  const editorRef = useRef<EditorInstance | null>(null);
 
-  // Read-only mode — just render markdown
-  if (!editable) {
-    return (
-      <div className={cn('prose-sm', className)}>
-        <MarkdownView content={initialContent || value} />
-      </div>
-    );
-  }
+  // Parse initial content
+  const parsedContent: JSONContent | undefined = typeof initialContent === 'string' && initialContent.trim()
+    ? { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: initialContent }] }] }
+    : (initialContent as JSONContent | undefined);
 
-  const handleChange = useCallback(
-    (text: string) => {
-      setValue(text);
+  const handleUpdate = useCallback(
+    ({ editor }: { editor: EditorInstance }) => {
+      editorRef.current = editor;
+      // Output plain text for storage compatibility
+      const text = editor.getText();
       onChange?.(text);
     },
     [onChange],
   );
 
-  // Insert markdown syntax at cursor
-  const insert = useCallback(
-    (action: Action) => {
-      const ta = ref.current;
-      if (!ta) return;
-      const start = ta.selectionStart;
-      const end = ta.selectionEnd;
-      const selected = value.slice(start, end);
-      const before = value.slice(0, start);
-      const after = value.slice(end);
-
-      let newText: string;
-      let cursorPos: number;
-
-      if (action.block) {
-        // Block-level: insert at line start
-        const lineStart = before.lastIndexOf('\n') + 1;
-        const beforeLine = value.slice(0, lineStart);
-        const rest = value.slice(lineStart);
-        newText = beforeLine + action.prefix + rest;
-        cursorPos = lineStart + action.prefix.length + (end - lineStart);
-      } else {
-        // Inline: wrap selection
-        const suffix = action.suffix || '';
-        newText = before + action.prefix + (selected || action.label.toLowerCase()) + suffix + after;
-        cursorPos = start + action.prefix.length + (selected ? selected.length : action.label.toLowerCase().length);
-      }
-
-      handleChange(newText);
-      // Restore cursor after React re-render
-      requestAnimationFrame(() => {
-        ta.focus();
-        ta.setSelectionRange(cursorPos, cursorPos);
-      });
-    },
-    [value, handleChange],
-  );
-
-  // Handle image paste from clipboard
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          e.preventDefault();
-          const file = item.getAsFile();
-          if (!file) return;
-
-          const reader = new FileReader();
-          reader.onload = () => {
-            const dataUrl = reader.result as string;
-            const ta = ref.current;
-            if (!ta) return;
-            const pos = ta.selectionStart;
-            const before = value.slice(0, pos);
-            const after = value.slice(pos);
-            const imgMd = `![image](${dataUrl})\n`;
-            handleChange(before + imgMd + after);
-          };
-          reader.readAsDataURL(file);
-          return;
-        }
-      }
-    },
-    [value, handleChange],
-  );
-
-  // Image upload via file picker
-  const handleImageUpload = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        const ta = ref.current;
-        if (!ta) return;
-        const pos = ta.selectionStart;
-        const before = value.slice(0, pos);
-        const after = value.slice(pos);
-        handleChange(before + `![${file.name}](${dataUrl})\n` + after);
-      };
-      reader.readAsDataURL(file);
-    };
-    input.click();
-  }, [value, handleChange]);
-
-  // Keyboard shortcuts
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === 'b') { e.preventDefault(); insert(ACTIONS[0]); }
-      if (mod && e.key === 'i') { e.preventDefault(); insert(ACTIONS[1]); }
-      if (mod && e.key === 'e') { e.preventDefault(); insert(ACTIONS[2]); }
-      if (mod && e.key === 'k') { e.preventDefault(); insert(ACTIONS[8]); }
-    },
-    [insert],
-  );
-
   return (
-    <div className={cn('rounded-lg border border-border bg-surface overflow-hidden', className)}>
-      {/* Toolbar */}
-      <div className="flex items-center gap-0.5 border-b border-border px-2 py-1 bg-surface-hover/30">
-        {ACTIONS.map((action) => (
-          <button
-            key={action.label}
-            type="button"
-            onClick={() => insert(action)}
-            className="rounded p-1.5 text-muted hover:text-primary hover:bg-surface-hover transition-colors"
-            title={action.label}
-          >
-            <action.icon size={14} />
-          </button>
-        ))}
-
-        {/* Image upload */}
-        <button
-          type="button"
-          onClick={handleImageUpload}
-          className="rounded p-1.5 text-muted hover:text-primary hover:bg-surface-hover transition-colors"
-          title="Upload image"
+    <div className={cn('novel-editor rounded-lg border border-border bg-surface overflow-hidden', className)}>
+      <EditorRoot>
+        <EditorContent
+          initialContent={parsedContent}
+          extensions={getExtensions(resolvedPlaceholder)}
+          editable={editable}
+          onUpdate={handleUpdate}
+          editorProps={{
+            handleDOMEvents: {
+              keydown: (_view, event) => handleCommandNavigation(event),
+            },
+            attributes: {
+              class: cn(
+                'prose prose-sm dark:prose-invert prose-headings:font-bold',
+                'prose-p:my-1 prose-headings:my-2',
+                'focus:outline-none min-h-[120px] px-4 py-3',
+                'max-w-none',
+                !editable && 'cursor-default',
+              ),
+            },
+          }}
         >
-          <Image size={14} />
-        </button>
+          {/* Slash commands menu */}
+          <EditorCommand className="z-50 rounded-lg border border-border bg-surface shadow-xl overflow-hidden">
+            <EditorCommandEmpty className="px-3 py-2 text-sm text-muted">
+              {t('editor.nothingToPreview')}
+            </EditorCommandEmpty>
+            <EditorCommandList>
+              {suggestionItems.map((item) => (
+                <EditorCommandItem
+                  key={item.title}
+                  value={item.title}
+                  onCommand={(val) => item.command?.(val)}
+                  className="flex items-center gap-3 px-3 py-2 text-sm text-primary hover:bg-surface-hover cursor-pointer aria-selected:bg-surface-hover"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg text-secondary">
+                    {item.icon}
+                  </span>
+                  <div>
+                    <p className="font-medium">{item.title}</p>
+                    <p className="text-xs text-muted">{item.description}</p>
+                  </div>
+                </EditorCommandItem>
+              ))}
+            </EditorCommandList>
+          </EditorCommand>
 
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Preview toggle */}
-        <button
-          type="button"
-          onClick={() => setPreview(!preview)}
-          className={cn(
-            'flex items-center gap-1 rounded px-2 py-1 text-[10px] transition-colors',
-            preview ? 'text-accent bg-accent/10' : 'text-muted hover:text-primary',
+          {/* Bubble menu (appears on text selection) */}
+          {editable && (
+            <EditorBubble className="flex items-center gap-0.5 rounded-lg border border-border bg-surface px-1.5 py-1 shadow-xl">
+              <BubbleToolbar />
+            </EditorBubble>
           )}
-        >
-          {preview ? <EyeOff size={12} /> : <Eye size={12} />}
-          {preview ? t('editor.edit') : t('editor.preview')}
-        </button>
-      </div>
-
-      {/* Editor / Preview */}
-      {preview ? (
-        <div className="p-4 min-h-[160px] text-sm">
-          {value ? (
-            <MarkdownView content={value} />
-          ) : (
-            <p className="text-muted italic text-sm">{t('editor.nothingToPreview')}</p>
-          )}
-        </div>
-      ) : (
-        <textarea
-          ref={ref}
-          value={value}
-          onChange={(e) => handleChange(e.target.value)}
-          onPaste={handlePaste}
-          onKeyDown={handleKeyDown}
-          placeholder={resolvedPlaceholder}
-          rows={minRows}
-          className="w-full bg-transparent text-sm text-primary p-4 outline-none resize-y min-h-[160px] placeholder-muted"
-        />
-      )}
+        </EditorContent>
+      </EditorRoot>
     </div>
   );
 }
 
 /**
- * Read-only viewer — just renders markdown with the MarkdownView component.
+ * Read-only viewer — renders JSON content with Novel.
  */
 export function NotionViewer({
   content,
   className,
 }: {
-  content: string;
+  content: JSONContent | string;
   className?: string;
   theme?: 'light' | 'dark';
 }) {
-  return (
-    <div className={cn('prose-sm', className)}>
-      <MarkdownView content={content} />
-    </div>
-  );
+  return <NotionEditor initialContent={content} editable={false} className={className} />;
 }
