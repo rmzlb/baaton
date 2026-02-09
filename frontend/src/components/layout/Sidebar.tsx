@@ -8,6 +8,7 @@ import {
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
+import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
 
 export function Sidebar() {
   const { t, i18n } = useTranslation();
@@ -143,21 +144,18 @@ export function Sidebar() {
         {/* Footer */}
         <div className="border-t border-border p-3 space-y-2">
           {/* Language toggle */}
-          <button
-            onClick={toggleLanguage}
-            className={cn(
-              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors w-full min-h-[40px]',
-              'text-secondary hover:bg-surface-hover hover:text-primary',
-              collapsed && !mobileOpen && 'justify-center px-0',
-            )}
-            title={t('sidebar.language')}
-            aria-label={t('sidebar.language') || 'Switch language'}
-          >
-            <Globe size={18} aria-hidden="true" />
-            {(!collapsed || mobileOpen) && (
-              <span className="text-xs font-mono uppercase">{i18n.language === 'fr' ? 'FR' : 'EN'}</span>
-            )}
-          </button>
+          {(!collapsed || mobileOpen) ? (
+            <LanguageSwitcher variant="full" className="px-3 py-1.5" />
+          ) : (
+            <button
+              onClick={toggleLanguage}
+              className="flex items-center justify-center rounded-lg px-0 py-2 text-sm text-secondary hover:bg-surface-hover hover:text-primary w-full min-h-[40px]"
+              title={t('sidebar.language')}
+              aria-label={t('sidebar.language') || 'Switch language'}
+            >
+              <Globe size={18} aria-hidden="true" />
+            </button>
+          )}
 
           {/* Theme toggle */}
           <button

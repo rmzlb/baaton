@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, ArrowRight } from 'lucide-react';
 import { PixelTanuki } from '@/components/shared/PixelTanuki';
+import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
 import { Hero } from '@/components/landing/Hero';
 import { useTranslation } from '@/hooks/useTranslation';
 
@@ -60,6 +61,7 @@ export function Landing() {
 
           {/* Desktop CTAs */}
           <div className="hidden md:flex items-center gap-3">
+            <LanguageSwitcher variant="compact" />
             <Link
               to="/sign-in"
               className="text-sm text-secondary hover:text-primary transition-colors"
@@ -108,6 +110,7 @@ export function Landing() {
                   </a>
                 ))}
                 <div className="pt-3 border-t border-border/50 flex flex-col gap-2">
+                  <LanguageSwitcher variant="full" className="py-1.5" />
                   <Link
                     to="/sign-in"
                     onClick={() => setMobileOpen(false)}
