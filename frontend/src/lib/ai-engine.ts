@@ -1,19 +1,16 @@
 /**
  * Baaton AI Engine — Gemini function calling with skills.
- * The AI reads real project data and can execute actions via skills.
+ * Uses @google/generative-ai SDK for proper browser CORS support.
  */
 
+import { GoogleGenerativeAI, type Content, type Part } from '@google/generative-ai';
 import type { Issue, Project } from './types';
 import { SKILL_TOOLS } from './ai-skills';
 import { executeSkill } from './ai-executor';
 import type { SkillResult } from './ai-skills';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
-const GEMINI_MODEL = 'gemini-2.0-flash';
-// Use backend proxy to keep API key server-side. Fallback to direct Gemini if no backend.
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
-const USE_PROXY = !!API_URL;
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_MODEL = 'gemini-2.0-flash';
 
 // ─── Context Builder ──────────────────────────
 
@@ -99,7 +96,7 @@ Tu as accès aux données en temps réel ET tu peux **exécuter des actions** vi
 ${context}`;
 }
 
-// ─── Gemini API Call with Function Calling ────
+// ─── Gemini SDK Setup ─────────────────────────
 
 interface GeminiContent {
   role: string;
@@ -117,83 +114,58 @@ interface GeminiFunctionCall {
   args: Record<string, unknown>;
 }
 
+// Convert our SKILL_TOOLS format to SDK format
+function getToolDeclarations() {
+  const tools = SKILL_TOOLS;
+  if (!tools || !Array.isArray(tools)) return undefined;
+  return tools;
+}
+
 async function callGemini(
   contents: GeminiContent[],
   systemPrompt: string,
-  authToken?: string,
+  _authToken?: string,
 ): Promise<{
   text?: string;
   functionCalls?: GeminiFunctionCall[];
 }> {
-  const body = {
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents,
-    tools: SKILL_TOOLS,
+  if (!GEMINI_API_KEY) {
+    throw new Error('AI non configuré. Clé API manquante.');
+  }
+
+  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+  const model = genAI.getGenerativeModel({
+    model: GEMINI_MODEL,
+    systemInstruction: systemPrompt,
+    tools: getToolDeclarations() as any,
     generationConfig: {
       temperature: 0.4,
       maxOutputTokens: 2000,
       topP: 0.9,
     },
-  };
-
-  let res: Response;
-
-  // Try backend proxy first (keeps API key server-side)
-  if (USE_PROXY && authToken) {
-    try {
-      // Convert Gemini format to simple messages for the proxy
-      const messages = contents.map((c) => ({
-        role: c.role === 'model' ? 'assistant' : 'user',
-        content: c.parts.map((p) => p.text || JSON.stringify(p.functionCall || p.functionResponse || '')).join('\n'),
-      }));
-
-      res = await fetch(`${API_URL}/api/v1/ai/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ messages, model: GEMINI_MODEL }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        return { text: data.content || data.data?.content };
-      }
-      // If proxy fails, fall through to direct call
-      console.warn('AI proxy failed, falling back to direct Gemini call');
-    } catch {
-      console.warn('AI proxy unavailable, falling back to direct Gemini call');
-    }
-  }
-
-  // Direct Gemini call (fallback)
-  if (!GEMINI_API_KEY) {
-    throw new Error('AI non configuré. Contactez l\'administrateur.');
-  }
-
-  res = await fetch(GEMINI_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
   });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error('Gemini API error:', errText);
-    throw new Error(`Gemini API ${res.status}: ${errText.slice(0, 200)}`);
-  }
+  // Convert our contents to SDK Content format
+  const sdkContents: Content[] = contents.map((c) => ({
+    role: c.role,
+    parts: c.parts.map((p): Part => {
+      if (p.text) return { text: p.text };
+      if (p.functionCall) return { functionCall: { name: p.functionCall.name, args: p.functionCall.args } } as Part;
+      if (p.functionResponse) return { functionResponse: { name: p.functionResponse.name, response: p.functionResponse.response } } as Part;
+      return { text: '' };
+    }),
+  }));
 
-  const data = await res.json();
-  const candidate = data?.candidates?.[0];
+  const result = await model.generateContent({ contents: sdkContents });
+  const response = result.response;
+  const candidate = response.candidates?.[0];
   if (!candidate) throw new Error('No response from Gemini');
 
-  const parts: GeminiPart[] = candidate.content?.parts || [];
-
+  const parts = candidate.content?.parts || [];
   const textParts = parts.filter((p) => p.text).map((p) => p.text!);
   const functionCalls = parts
-    .filter((p) => p.functionCall)
-    .map((p) => p.functionCall!);
+    .filter((p) => (p as any).functionCall)
+    .map((p) => (p as any).functionCall as GeminiFunctionCall);
 
   return {
     text: textParts.length > 0 ? textParts.join('\n') : undefined,
@@ -229,7 +201,6 @@ export async function generateAIResponse(
   allIssuesByProject: Record<string, Issue[]>,
   conversationHistory: { role: string; content: string }[],
   apiClient: ApiClientType,
-  authToken?: string,
 ): Promise<AIResponse> {
   const context = buildProjectContext(projects, allIssuesByProject);
   const systemPrompt = buildSystemPrompt(context);
@@ -254,7 +225,7 @@ export async function generateAIResponse(
 
   // Agentic loop — keep calling Gemini until we get a text response (max 5 rounds)
   for (let round = 0; round < 5; round++) {
-    const response = await callGemini(contents, systemPrompt, authToken);
+    const response = await callGemini(contents, systemPrompt);
 
     // If we got function calls, execute them and feed results back
     if (response.functionCalls && response.functionCalls.length > 0) {

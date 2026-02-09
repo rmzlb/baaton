@@ -1,6 +1,5 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@clerk/clerk-react';
 import {
   Sparkles, X, Send, Trash2, Bot, User, Loader2,
   Wrench, CheckCircle2, XCircle, ChevronDown,
@@ -117,7 +116,6 @@ export function AIAssistant() {
   } = useAIAssistantStore();
 
   const apiClient = useApi();
-  const { getToken } = useAuth();
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -172,14 +170,12 @@ export function AIAssistant() {
       try {
         const history = messages.map((m) => ({ role: m.role, content: m.content }));
 
-        const token = await getToken().catch(() => undefined);
         const response = await generateAIResponse(
           msg,
           projects,
           allIssuesByProject,
           history,
           apiClient as unknown as Parameters<typeof generateAIResponse>[4],
-          token ?? undefined,
         );
 
         addMessage('assistant', response.text, response.skillsExecuted);
