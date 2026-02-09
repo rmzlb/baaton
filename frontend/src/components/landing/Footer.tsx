@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { type ChangeEvent, type FormEvent, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useInView } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
@@ -73,7 +73,7 @@ export function Footer() {
             <motion.form
               variants={fadeUp}
               custom={2}
-              onSubmit={(e) => {
+              onSubmit={(e: FormEvent) => {
                 e.preventDefault();
                 // Navigate to sign-up with email pre-filled
                 window.location.href = `/sign-up?email=${encodeURIComponent(email)}`;
@@ -83,7 +83,7 @@ export function Footer() {
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                 placeholder="you@company.com"
                 required
                 className="flex-1 w-full h-12 px-4 rounded-lg bg-surface border border-border text-primary placeholder:text-muted text-sm focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 transition-colors"

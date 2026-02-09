@@ -247,7 +247,14 @@ const en = {
 
   // ─── OpenClaw Integration ────────────────────
   'settings.openclaw': 'OpenClaw',
-  'settings.openclawDesc': 'Connect your OpenClaw instance to orchestrate AI agents from Baaton.',
+  'settings.openclawDesc': 'Connect your personal OpenClaw instance to chat with your AI agent from Baaton.',
+  'settings.openclawHow': 'How to connect',
+  'settings.openclawStep1': 'Install OpenClaw on your machine (docs.openclaw.ai)',
+  'settings.openclawStep2': 'Copy your Gateway URL and API token from OpenClaw settings',
+  'settings.openclawStep3': 'Paste them here and click Test Connection',
+  'settings.openclawStep4': 'Switch to 🦞 OpenClaw mode in the AI chat to start talking!',
+  'settings.save': 'Save',
+  'settings.disconnect': 'Disconnect',
   'settings.openclawUrl': 'API URL',
   'settings.openclawToken': 'API Token',
   'settings.openclawName': 'Connection Name',

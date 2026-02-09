@@ -38,7 +38,8 @@ export interface Project {
 
 export interface OpenClawConnection {
   id: string;
-  org_id: string;
+  user_id: string;
+  org_id?: string;
   name: string;
   api_url: string;
   status: 'pending' | 'connected' | 'error';

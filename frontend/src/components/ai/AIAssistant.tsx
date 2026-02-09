@@ -123,12 +123,14 @@ export function AIAssistant() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Fetch OpenClaw connection status
-  const { data: openclawConnection } = useQuery({
-    queryKey: ['openclaw-connection'],
-    queryFn: () => apiClient.openclaw.get(),
-    retry: false,
-  });
+  // Get OpenClaw config from localStorage (per-user, no backend needed)
+  const [openclawConfig, setOpenclawConfig] = useState<{ name: string; apiUrl: string; apiToken: string; status: string } | null>(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('baaton-openclaw-connection');
+      if (raw) setOpenclawConfig(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, [open]); // Re-check when panel opens
 
   // Fetch all projects
   const { data: projects = [] } = useQuery({
@@ -168,20 +170,20 @@ export function AIAssistant() {
     if (open) setTimeout(() => inputRef.current?.focus(), 200);
   }, [open]);
 
-  const openclawConnected = openclawConnection?.status === 'connected';
+  const openclawConnected = openclawConfig?.status === 'connected';
 
   const handleSendOpenClaw = useCallback(
     async (msg: string) => {
-      if (!openclawConnected) {
+      if (!openclawConfig || !openclawConnected) {
         addMessage('assistant', `⚠️ ${t('ai.openclawNotConnected')}`);
         setLoading(false);
         return;
       }
 
       try {
-        // Build org context
+        // Build org context to inject
         const contextParts: string[] = [];
-        contextParts.push(`Projects (${projects.length}):`);
+        contextParts.push(`[Baaton Board Context — ${projects.length} projects]`);
         for (const p of projects) {
           const issues = allIssuesByProject[p.id] ?? [];
           const byStatus: Record<string, number> = {};
@@ -191,12 +193,26 @@ export function AIAssistant() {
           const statusSummary = Object.entries(byStatus)
             .map(([s, c]) => `${s}: ${c}`)
             .join(', ');
-          contextParts.push(`- ${p.name} (${p.prefix}): ${issues.length} issues${statusSummary ? ` [${statusSummary}]` : ''}`);
+          contextParts.push(`- ${p.name} (${p.prefix}): ${issues.length} issues [${statusSummary}]`);
         }
-
         const context = contextParts.join('\n');
-        const response = await apiClient.openclaw.chat(msg, context);
-        addMessage('assistant', response.response);
+        const fullMessage = `${msg}\n\n---\n${context}`;
+
+        // Call OpenClaw gateway directly
+        const baseUrl = openclawConfig.apiUrl.replace(/\/$/, '');
+        const res = await fetch(`${baseUrl}/api/sessions/send`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openclawConfig.apiToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ message: fullMessage }),
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        addMessage('assistant', data.response || data.content || data.text || JSON.stringify(data));
       } catch (err) {
         console.error('OpenClaw error:', err);
         addMessage(
@@ -205,7 +221,7 @@ export function AIAssistant() {
         );
       }
     },
-    [openclawConnected, projects, allIssuesByProject, apiClient, addMessage, t],
+    [openclawConfig, openclawConnected, projects, allIssuesByProject, addMessage, t],
   );
 
   const handleSend = useCallback(

@@ -1,242 +1,251 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  Loader2, CheckCircle2, XCircle, Trash2, Wifi, WifiOff, Save,
+  Loader2, CheckCircle2, XCircle, Trash2, Wifi, WifiOff, Save, ExternalLink,
 } from 'lucide-react';
-import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
+import { cn } from '@/lib/utils';
+
+// Per-user localStorage key (no backend needed for MVP)
+const STORAGE_KEY = 'baaton-openclaw-connection';
+
+interface OpenClawConfig {
+  name: string;
+  apiUrl: string;
+  apiToken: string;
+  status: 'pending' | 'connected' | 'error';
+  lastPingAt?: string;
+}
+
+function loadConfig(): OpenClawConfig | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveConfig(config: OpenClawConfig) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+}
+
+function deleteConfig() {
+  localStorage.removeItem(STORAGE_KEY);
+}
 
 export function OpenClawSettings() {
   const { t } = useTranslation();
-  const apiClient = useApi();
-  const queryClient = useQueryClient();
 
-  const [name, setName] = useState('');
+  const [name, setName] = useState('My OpenClaw');
   const [apiUrl, setApiUrl] = useState('');
   const [apiToken, setApiToken] = useState('');
+  const [status, setStatus] = useState<'pending' | 'connected' | 'error'>('pending');
+  const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
-  const [initialized, setInitialized] = useState(false);
+  const [saved, setSaved] = useState(false);
 
-  const { data: connection, isLoading, error: fetchError } = useQuery({
-    queryKey: ['openclaw-connection'],
-    queryFn: () => apiClient.openclaw.get(),
-    retry: false,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    meta: { onSuccess: undefined } as any,
-  });
-
-  // Populate form when connection loads
-  if (connection && !initialized) {
-    setName(connection.name);
-    setApiUrl(connection.api_url);
-    setInitialized(true);
-  }
-
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      apiClient.openclaw.save({ name: name || 'My OpenClaw', api_url: apiUrl, api_token: apiToken }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['openclaw-connection'] });
-      setApiToken('');
-      setTestResult(null);
-    },
-  });
-
-  const testMutation = useMutation({
-    mutationFn: () => apiClient.openclaw.test({ api_url: apiUrl, api_token: apiToken }),
-    onSuccess: (data) => setTestResult(data),
-    onError: () => setTestResult({ ok: false, error: 'Network error' }),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: () => apiClient.openclaw.delete(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['openclaw-connection'] });
-      setName('');
-      setApiUrl('');
-      setApiToken('');
-      setInitialized(false);
-      setTestResult(null);
-    },
-  });
-
-  const handleTest = () => {
-    if (!apiUrl || !apiToken) return;
-    setTestResult(null);
-    testMutation.mutate();
-  };
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!apiUrl || !apiToken) return;
-    saveMutation.mutate();
-  };
-
-  const handleDelete = () => {
-    if (confirm(t('settings.openclawDeleteConfirm'))) {
-      deleteMutation.mutate();
+  // Load from localStorage on mount
+  useEffect(() => {
+    const config = loadConfig();
+    if (config) {
+      setName(config.name);
+      setApiUrl(config.apiUrl);
+      setApiToken(config.apiToken);
+      setStatus(config.status);
     }
+  }, []);
+
+  // Test connection to OpenClaw
+  const testConnection = useCallback(async () => {
+    if (!apiUrl || !apiToken) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`${apiUrl.replace(/\/$/, '')}/api/status`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        setTestResult({ ok: true });
+        setStatus('connected');
+      } else {
+        setTestResult({ ok: false, error: `HTTP ${res.status}` });
+        setStatus('error');
+      }
+    } catch (err) {
+      setTestResult({ ok: false, error: err instanceof Error ? err.message : 'Connection failed' });
+      setStatus('error');
+    } finally {
+      setTesting(false);
+    }
+  }, [apiUrl, apiToken]);
+
+  // Save to localStorage
+  const handleSave = () => {
+    saveConfig({ name, apiUrl, apiToken, status, lastPingAt: new Date().toISOString() });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   };
 
-  const isConnected = connection && connection.status === 'connected';
-  const hasError = connection && connection.status === 'error';
-  const hasConnection = !!connection && !fetchError;
+  // Delete connection
+  const handleDelete = () => {
+    deleteConfig();
+    setName('My OpenClaw');
+    setApiUrl('');
+    setApiToken('');
+    setStatus('pending');
+    setTestResult(null);
+  };
+
+  const isConfigured = !!apiUrl && !!apiToken;
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20 text-accent text-lg">
-          🦞
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-primary flex items-center gap-2">
+            🦞 OpenClaw
+            {status === 'connected' && (
+              <span className="inline-flex items-center gap-1 text-xs font-normal text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">
+                <Wifi className="w-3 h-3" /> {t('settings.connected')}
+              </span>
+            )}
+            {status === 'error' && (
+              <span className="inline-flex items-center gap-1 text-xs font-normal text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
+                <WifiOff className="w-3 h-3" /> {t('settings.disconnected')}
+              </span>
+            )}
+          </h3>
+          <p className="text-sm text-secondary mt-1">
+            {t('settings.openclawDesc')}
+          </p>
         </div>
-        <div className="flex-1">
-          <h3 className="font-semibold text-primary">{t('settings.openclaw')}</h3>
-          <p className="text-xs text-secondary">{t('settings.openclawDesc')}</p>
-        </div>
-        {/* Status badge */}
-        <div className="ml-auto">
-          {isLoading ? (
-            <Loader2 size={16} className="animate-spin text-muted" />
-          ) : isConnected ? (
-            <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/20 text-emerald-400 px-2.5 py-1 text-xs font-medium">
-              <Wifi size={12} />
-              {t('settings.connected')}
-            </span>
-          ) : hasError ? (
-            <span className="flex items-center gap-1.5 rounded-full bg-red-500/20 text-red-400 px-2.5 py-1 text-xs font-medium">
-              <WifiOff size={12} />
-              {t('settings.connectionError')}
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 rounded-full bg-surface-hover text-muted px-2.5 py-1 text-xs font-medium">
-              <WifiOff size={12} />
-              {t('settings.disconnected')}
-            </span>
-          )}
-        </div>
+        <a
+          href="https://docs.openclaw.ai"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-secondary hover:text-primary flex items-center gap-1"
+        >
+          Docs <ExternalLink className="w-3 h-3" />
+        </a>
       </div>
 
       {/* Form */}
-      <form onSubmit={handleSave} className="space-y-3 border-t border-border pt-4">
+      <div className="space-y-4">
         {/* Name */}
         <div>
-          <label className="block text-xs text-secondary mb-1">{t('settings.openclawName')}</label>
+          <label className="block text-sm font-medium text-secondary mb-1">
+            {t('settings.openclawName')}
+          </label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={t('settings.openclawNamePlaceholder')}
-            className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-primary placeholder-muted outline-none focus:border-accent transition-colors"
+            placeholder="My OpenClaw"
+            className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-primary text-sm
+                       focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
         {/* API URL */}
         <div>
-          <label className="block text-xs text-secondary mb-1">{t('settings.openclawUrl')}</label>
+          <label className="block text-sm font-medium text-secondary mb-1">
+            {t('settings.openclawUrl')}
+          </label>
           <input
             type="url"
             value={apiUrl}
             onChange={(e) => setApiUrl(e.target.value)}
-            placeholder={t('settings.openclawUrlPlaceholder')}
-            className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-primary placeholder-muted outline-none focus:border-accent transition-colors"
-            required
+            placeholder="https://your-gateway.openclaw.ai"
+            className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-primary text-sm
+                       placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
         {/* API Token */}
         <div>
-          <label className="block text-xs text-secondary mb-1">
+          <label className="block text-sm font-medium text-secondary mb-1">
             {t('settings.openclawToken')}
-            {hasConnection && (
-              <span className="text-muted ml-1">(leave blank to keep current)</span>
-            )}
           </label>
           <input
             type="password"
             value={apiToken}
             onChange={(e) => setApiToken(e.target.value)}
-            placeholder={t('settings.openclawTokenPlaceholder')}
-            className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-primary placeholder-muted outline-none focus:border-accent transition-colors"
-            required={!hasConnection}
+            placeholder="gw_xxxxxxxxxxxxx"
+            className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-primary text-sm
+                       placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
-        {/* Test result */}
+        {/* Test Result */}
         {testResult && (
-          <div
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
-              testResult.ok
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                : 'border-red-500/30 bg-red-500/10 text-red-400'
-            }`}
-          >
-            {testResult.ok ? (
-              <>
-                <CheckCircle2 size={14} />
-                {t('settings.connectionSuccess')}
-              </>
-            ) : (
-              <>
-                <XCircle size={14} />
-                {t('settings.connectionFailed')}
-                {testResult.error && `: ${testResult.error}`}
-              </>
-            )}
+          <div className={cn(
+            'flex items-center gap-2 text-sm px-3 py-2 rounded-lg',
+            testResult.ok ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+          )}>
+            {testResult.ok ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+            {testResult.ok ? 'Connected successfully!' : `Error: ${testResult.error}`}
           </div>
         )}
 
-        {/* Buttons */}
-        <div className="flex items-center gap-2 pt-1">
+        {/* Actions */}
+        <div className="flex items-center gap-3 pt-2">
           <button
-            type="button"
-            onClick={handleTest}
-            disabled={!apiUrl || !apiToken || testMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs text-secondary hover:border-accent hover:text-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={testConnection}
+            disabled={!isConfigured || testing}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                       bg-surface border border-border text-primary hover:bg-surface-hover
+                       disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {testMutation.isPending ? (
-              <>
-                <Loader2 size={12} className="animate-spin" />
-                {t('settings.testingConnection')}
-              </>
-            ) : (
-              <>
-                <Wifi size={12} />
-                {t('settings.testConnection')}
-              </>
-            )}
+            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+            {t('settings.testConnection')}
           </button>
 
           <button
-            type="submit"
-            disabled={!apiUrl || (!apiToken && !hasConnection) || saveMutation.isPending}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-black text-xs font-semibold hover:bg-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {saveMutation.isPending ? (
-              <>
-                <Loader2 size={12} className="animate-spin" />
-                {t('settings.openclawSaving')}
-              </>
-            ) : (
-              <>
-                <Save size={12} />
-                {t('settings.openclawSave')}
-              </>
+            onClick={handleSave}
+            disabled={!isConfigured}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
+              saved
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                : 'bg-accent text-black hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed'
             )}
+          >
+            {saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            {saved ? 'Saved!' : t('settings.save')}
           </button>
 
-          {hasConnection && (
+          {isConfigured && (
             <button
-              type="button"
               onClick={handleDelete}
-              disabled={deleteMutation.isPending}
-              className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                         text-red-400 hover:bg-red-500/10 transition-colors"
             >
-              <Trash2 size={12} />
-              {t('settings.openclawDelete')}
+              <Trash2 className="w-4 h-4" />
+              {t('settings.disconnect')}
             </button>
           )}
         </div>
-      </form>
+      </div>
+
+      {/* Info box */}
+      <div className="bg-surface border border-border rounded-lg p-4 text-xs text-secondary space-y-2">
+        <p className="font-medium text-primary text-sm">💡 {t('settings.openclawHow')}</p>
+        <ol className="list-decimal list-inside space-y-1">
+          <li>{t('settings.openclawStep1')}</li>
+          <li>{t('settings.openclawStep2')}</li>
+          <li>{t('settings.openclawStep3')}</li>
+          <li>{t('settings.openclawStep4')}</li>
+        </ol>
+      </div>
     </div>
   );
+}
+
+/** Helper: get the current user's OpenClaw config */
+export function getOpenClawConfig(): OpenClawConfig | null {
+  return loadConfig();
 }
