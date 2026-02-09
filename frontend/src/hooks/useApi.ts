@@ -19,6 +19,7 @@ import type {
   CreateRepoMappingRequest,
   UpdateRepoMappingRequest,
   ActivityEntry,
+  OpenClawConnection,
 } from '@/lib/types';
 
 /**
@@ -390,6 +391,39 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.get<ActivityEntry[]>('/activity', token);
+        }),
+    },
+
+    // ─── OpenClaw ───────────────────────────
+    openclaw: {
+      get: async (): Promise<OpenClawConnection> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<OpenClawConnection>('/openclaw', token);
+        }),
+
+      save: async (body: { name: string; api_url: string; api_token: string }): Promise<OpenClawConnection> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<OpenClawConnection>('/openclaw', body, token);
+        }),
+
+      test: async (body: { api_url: string; api_token: string }): Promise<{ ok: boolean; error?: string }> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<{ ok: boolean; error?: string }>('/openclaw/test', body, token);
+        }),
+
+      delete: async (): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete('/openclaw', token);
+        }),
+
+      chat: async (message: string, context?: string): Promise<{ response: string }> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<{ response: string }>('/openclaw/chat', { message, context }, token);
         }),
     },
 

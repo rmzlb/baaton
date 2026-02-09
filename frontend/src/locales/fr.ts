@@ -245,6 +245,29 @@ const fr = {
   'issueDrawer.none': 'Aucune',
   'issueDrawer.removeTag': 'Cliquez pour retirer',
 
+  // ─── OpenClaw Integration ────────────────────
+  'settings.openclaw': 'OpenClaw',
+  'settings.openclawDesc': 'Connectez votre instance OpenClaw pour orchestrer les agents IA depuis Baaton.',
+  'settings.openclawUrl': 'URL de l\'API',
+  'settings.openclawToken': 'Token API',
+  'settings.openclawName': 'Nom de la connexion',
+  'settings.testConnection': 'Tester la connexion',
+  'settings.testingConnection': 'Test en cours…',
+  'settings.connected': 'Connecté',
+  'settings.disconnected': 'Déconnecté',
+  'settings.connectionError': 'Erreur de connexion',
+  'settings.connectionSuccess': 'Connexion réussie !',
+  'settings.connectionFailed': 'Échec de la connexion',
+  'settings.openclawUrlPlaceholder': 'https://openclaw.example.com',
+  'settings.openclawTokenPlaceholder': 'Votre token gateway',
+  'settings.openclawNamePlaceholder': 'Mon OpenClaw',
+  'settings.openclawSave': 'Enregistrer la connexion',
+  'settings.openclawSaving': 'Enregistrement…',
+  'settings.openclawDelete': 'Supprimer la connexion',
+  'settings.openclawDeleteConfirm': 'Supprimer la connexion OpenClaw ? Cela déconnectera l\'intégration.',
+  'settings.githubRepo': 'URL du dépôt GitHub',
+  'settings.githubRepoPlaceholder': 'https://github.com/org/repo',
+
   // ─── AIAssistant ────────────────────────────
   'ai.title': 'Baaton AI',
   'ai.skills': '{{count}} skills',
@@ -279,6 +302,11 @@ const fr = {
   'ai.suggestionRecapPrompt': 'Fais-moi un récap de la semaine : quoi de fait, en cours, bloqué ?',
   'ai.suggestionCreate': '➕ Créer Issue',
   'ai.suggestionCreatePrompt': 'Crée une nouvelle issue. De quoi as-tu besoin ?',
+  'ai.modeGemini': '🤖 Gemini',
+  'ai.modeOpenclaw': '🦞 OpenClaw',
+  'ai.openclawNotConnected': 'OpenClaw non connecté. Configurez-le dans Paramètres → Intégrations.',
+  'ai.openclawSending': 'Envoi à OpenClaw…',
+  'ai.openclawContext': 'Contexte envoyé à OpenClaw',
 
   // ─── ErrorBoundary ──────────────────────────
   'error.title': 'Une erreur est survenue',

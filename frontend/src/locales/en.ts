@@ -245,6 +245,29 @@ const en = {
   'issueDrawer.none': 'None',
   'issueDrawer.removeTag': 'Click to remove',
 
+  // ─── OpenClaw Integration ────────────────────
+  'settings.openclaw': 'OpenClaw',
+  'settings.openclawDesc': 'Connect your OpenClaw instance to orchestrate AI agents from Baaton.',
+  'settings.openclawUrl': 'API URL',
+  'settings.openclawToken': 'API Token',
+  'settings.openclawName': 'Connection Name',
+  'settings.testConnection': 'Test Connection',
+  'settings.testingConnection': 'Testing…',
+  'settings.connected': 'Connected',
+  'settings.disconnected': 'Disconnected',
+  'settings.connectionError': 'Connection Error',
+  'settings.connectionSuccess': 'Connection successful!',
+  'settings.connectionFailed': 'Connection failed',
+  'settings.openclawUrlPlaceholder': 'https://openclaw.example.com',
+  'settings.openclawTokenPlaceholder': 'Your gateway token',
+  'settings.openclawNamePlaceholder': 'My OpenClaw',
+  'settings.openclawSave': 'Save Connection',
+  'settings.openclawSaving': 'Saving…',
+  'settings.openclawDelete': 'Remove Connection',
+  'settings.openclawDeleteConfirm': 'Remove OpenClaw connection? This will disconnect the integration.',
+  'settings.githubRepo': 'GitHub Repository URL',
+  'settings.githubRepoPlaceholder': 'https://github.com/org/repo',
+
   // ─── AIAssistant ────────────────────────────
   'ai.title': 'Baaton AI',
   'ai.skills': '{{count}} skills',
@@ -279,6 +302,11 @@ const en = {
   'ai.suggestionRecapPrompt': 'Give me a weekly recap: what was done, what is in progress, what is blocked?',
   'ai.suggestionCreate': '➕ Create Issue',
   'ai.suggestionCreatePrompt': 'Create a new issue for me. What do you need to know?',
+  'ai.modeGemini': '🤖 Gemini',
+  'ai.modeOpenclaw': '🦞 OpenClaw',
+  'ai.openclawNotConnected': 'OpenClaw not connected. Configure it in Settings → Integrations.',
+  'ai.openclawSending': 'Sending to OpenClaw…',
+  'ai.openclawContext': 'Context sent to OpenClaw',
 
   // ─── ErrorBoundary ──────────────────────────
   'error.title': 'Something went wrong',

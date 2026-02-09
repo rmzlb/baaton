@@ -32,6 +32,17 @@ export interface Project {
   description: string | null;
   prefix: string;
   statuses: ProjectStatus[];
+  github_repo_url?: string;
+  created_at: string;
+}
+
+export interface OpenClawConnection {
+  id: string;
+  org_id: string;
+  name: string;
+  api_url: string;
+  status: 'pending' | 'connected' | 'error';
+  last_ping_at?: string;
   created_at: string;
 }
 

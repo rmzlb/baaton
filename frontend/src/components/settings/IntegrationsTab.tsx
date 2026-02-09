@@ -7,6 +7,7 @@ import { GitHubConnectionStatus } from '@/components/github/GitHubConnectionStat
 import { GitHubInstallButton } from '@/components/github/GitHubInstallButton';
 import { GitHubRepoMappingCard } from '@/components/github/GitHubRepoMappingCard';
 import { GitHubRepoSelector } from '@/components/github/GitHubRepoSelector';
+import { OpenClawSettings } from '@/components/integrations/OpenClawSettings';
 import type { GitHubRepository } from '@/lib/types';
 
 export function IntegrationsTab() {
@@ -70,6 +71,9 @@ export function IntegrationsTab() {
   return (
     <div className="space-y-6">
       <SectionHeader />
+
+      {/* OpenClaw Card */}
+      <OpenClawSettings />
 
       {/* GitHub Card */}
       <div className="rounded-xl border border-border bg-surface p-6">
