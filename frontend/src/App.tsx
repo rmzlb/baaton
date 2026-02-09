@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp, OrganizationProfile, useUser } from '@clerk/clerk-react';
+import { useOrgGuard } from '@/hooks/useOrgGuard';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Landing } from '@/pages/Landing';
 import { Dashboard } from '@/pages/Dashboard';
@@ -23,6 +24,17 @@ function RootRoute() {
 }
 
 function ProtectedLayout() {
+  const { isReady } = useOrgGuard();
+
+  // Wait until org is resolved before rendering (ensures JWT has org_id)
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-bg">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-accent" />
+      </div>
+    );
+  }
+
   return (
     <SignedIn>
       <ErrorBoundary>
