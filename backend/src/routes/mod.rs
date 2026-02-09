@@ -9,7 +9,6 @@ mod comments;
 mod tldrs;
 mod tags;
 mod invites;
-mod ai;
 pub mod github;
 
 pub fn api_router(pool: PgPool) -> Router {
@@ -45,8 +44,6 @@ pub fn api_router(pool: PgPool) -> Router {
         // Public (no auth)
         .route("/invite/{code}", get(invites::redirect_invite))
         .route("/public/{slug}/submit", post(issues::public_submit))
-        // AI proxy (Gemini — keeps API key server-side)
-        .route("/ai/chat", post(ai::chat))
         // Webhook endpoint (public — uses HMAC verification, NOT Clerk auth)
         .route("/webhooks/github", post(github::webhooks::handle))
         .with_state(pool);

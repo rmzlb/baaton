@@ -1,5 +1,3 @@
-pub mod security;
-
 use axum::{
     extract::Request,
     http::StatusCode,
