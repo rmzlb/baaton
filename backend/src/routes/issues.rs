@@ -55,12 +55,12 @@ pub async fn create(
 ) -> Json<ApiResponse<Issue>> {
     // Generate display_id
     let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM issues WHERE project_id = $1"
+        "SELECT COALESCE(COUNT(*), 0) FROM issues WHERE project_id = $1"
     )
     .bind(body.project_id)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .unwrap_or((0i64,));
 
     let project = sqlx::query_as::<_, (String,)>(
         "SELECT prefix FROM projects WHERE id = $1"
@@ -73,24 +73,25 @@ pub async fn create(
     let display_id = format!("{}-{}", project.0, count.0 + 1);
 
     // Get max position for the status
-    let max_pos: Option<(f64,)> = sqlx::query_as(
+    let max_pos: Option<(Option<f64>,)> = sqlx::query_as(
         "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status = $2"
     )
     .bind(body.project_id)
-    .bind(body.issue_type.as_deref().unwrap_or("todo"))
+    .bind(body.status.as_deref().unwrap_or("backlog"))
     .fetch_optional(&pool)
     .await
-    .unwrap();
+    .unwrap_or(None);
 
-    let position = max_pos.map(|p| p.0 + 1000.0).unwrap_or(1000.0);
+    let position = max_pos.and_then(|p| p.0).map(|p| p + 1000.0).unwrap_or(1000.0);
 
+    let status = body.status.as_deref().unwrap_or("backlog");
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         INSERT INTO issues (
-            project_id, display_id, title, description, type, priority,
+            project_id, display_id, title, description, type, status, priority,
             milestone_id, parent_id, tags, assignee_ids, position, source
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'web')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'web')
         RETURNING *
         "#,
     )
@@ -99,6 +100,7 @@ pub async fn create(
     .bind(&body.title)
     .bind(&body.description)
     .bind(body.issue_type.as_deref().unwrap_or("feature"))
+    .bind(status)
     .bind(&body.priority)
     .bind(body.milestone_id)
     .bind(body.parent_id)
@@ -220,12 +222,12 @@ pub async fn public_submit(
     .unwrap();
 
     let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM issues WHERE project_id = $1"
+        "SELECT COALESCE(COUNT(*), 0) FROM issues WHERE project_id = $1"
     )
     .bind(project.0)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .unwrap_or((0i64,));
 
     let display_id = format!("{}-{}", project.1, count.0 + 1);
 

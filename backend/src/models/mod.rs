@@ -83,6 +83,7 @@ pub struct CreateIssue {
     pub description: Option<String>,
     #[serde(rename = "type")]
     pub issue_type: Option<String>,
+    pub status: Option<String>,
     pub priority: Option<String>,
     pub milestone_id: Option<Uuid>,
     pub parent_id: Option<Uuid>,
