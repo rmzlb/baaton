@@ -520,6 +520,15 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 
 `,
 
+  // ─── Command Palette ───────────────────────
+  'topbar.quickActions': 'Actions rapides',
+  'topbar.organizations': 'Organisations',
+  'topbar.activeOrg': 'Active',
+  'topbar.switchOrg': 'Basculer',
+  'topbar.searchHint': 'Chercher issues, projets, orgs...',
+  'topbar.navigate': 'naviguer',
+  'topbar.select': 'sélectionner',
+
   // ─── Global Create Issue ───────────────────
   'global.newIssue': '+ Nouveau Ticket',
   'global.selectProject': 'Choisir un projet',

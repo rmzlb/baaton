@@ -520,6 +520,15 @@ As a [user], I want to [action] so that [benefit].
 
 `,
 
+  // ─── Command Palette ───────────────────────
+  'topbar.quickActions': 'Quick Actions',
+  'topbar.organizations': 'Organizations',
+  'topbar.activeOrg': 'Active',
+  'topbar.switchOrg': 'Switch',
+  'topbar.searchHint': 'Search issues, projects, orgs...',
+  'topbar.navigate': 'navigate',
+  'topbar.select': 'select',
+
   // ─── Global Create Issue ───────────────────
   'global.newIssue': '+ New Issue',
   'global.selectProject': 'Select a project',

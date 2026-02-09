@@ -1,10 +1,12 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useOrganizationList, useOrganization } from '@clerk/clerk-react';
 import { Command } from 'cmdk';
 import {
   Search, ChevronRight, Menu,
   LayoutDashboard, Kanban, Settings, FileText, Hash,
+  Building2, CheckCircle, ArrowRight, Plus, ListTodo,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useApi } from '@/hooks/useApi';
@@ -129,6 +131,13 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   const [search, setSearch] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Clerk orgs
+  const { organization } = useOrganization();
+  const { userMemberships, setActive } = useOrganizationList({
+    userMemberships: { infinite: true },
+  });
+  const orgs = userMemberships?.data ?? [];
+
   // Fetch projects for search
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -158,6 +167,17 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     [navigate, onClose],
   );
 
+  const switchOrg = useCallback(
+    async (orgId: string) => {
+      if (setActive) {
+        await setActive({ organization: orgId });
+        onClose();
+        navigate('/dashboard');
+      }
+    },
+    [setActive, onClose, navigate],
+  );
+
   // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -167,14 +187,15 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  // Filter issues client-side
+  // Filter
   const q = search.toLowerCase();
+
   const filteredIssues = q
     ? allIssues.filter(
         (i) =>
           i.title.toLowerCase().includes(q) ||
           i.display_id.toLowerCase().includes(q) ||
-          i.tags.some((t) => t.toLowerCase().includes(q)),
+          i.tags.some((tag) => tag.toLowerCase().includes(q)),
       ).slice(0, 8)
     : [];
 
@@ -187,8 +208,21 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
       ).slice(0, 5)
     : projects.slice(0, 5);
 
+  const filteredOrgs = q
+    ? orgs.filter(
+        (m) => m.organization.name.toLowerCase().includes(q) ||
+               m.organization.slug?.toLowerCase().includes(q),
+      )
+    : orgs;
+
+  // Project map for issue results
+  const projectMap = projects.reduce((acc, p) => {
+    acc[p.id] = p;
+    return acc;
+  }, {} as Record<string, Project>);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] sm:pt-[20vh]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] sm:pt-[18vh]">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm"
@@ -196,40 +230,76 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
       />
 
       {/* Dialog */}
-      <div className="relative w-full max-w-lg mx-4 rounded-xl border border-border bg-surface shadow-2xl shadow-black/20 dark:shadow-black/50 overflow-hidden">
+      <div className="relative w-full max-w-xl mx-4 rounded-xl border border-border bg-surface shadow-2xl shadow-black/20 dark:shadow-black/50 overflow-hidden">
         <Command label="Global search" shouldFilter={false}>
-          <div className="flex items-center border-b border-border px-3">
-            <Search size={16} className="text-secondary shrink-0" />
+          <div className="flex items-center border-b border-border px-4">
+            <Search size={18} className="text-accent shrink-0" />
             <Command.Input
               ref={inputRef}
               value={search}
               onValueChange={setSearch}
               placeholder={t('topbar.searchPlaceholder')}
               autoFocus
-              className="h-12 w-full bg-transparent px-3 text-sm text-primary placeholder-muted outline-none"
+              className="h-13 w-full bg-transparent px-3 text-sm text-primary placeholder-muted outline-none"
             />
             <kbd className="hidden sm:inline-flex shrink-0 items-center rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-mono text-muted">
               ESC
             </kbd>
           </div>
 
-          <Command.List className="max-h-80 overflow-y-auto p-2">
-            <Command.Empty className="px-4 py-8 text-center text-sm text-muted">
+          <Command.List className="max-h-[420px] overflow-y-auto p-2">
+            <Command.Empty className="px-4 py-10 text-center text-sm text-muted">
               {t('topbar.noResults')}
             </Command.Empty>
 
-            {/* Pages */}
+            {/* Quick Actions */}
             {!q && (
-              <Command.Group heading={<GroupHeading>{t('topbar.pages')}</GroupHeading>}>
+              <Command.Group heading={<GroupHeading>{t('topbar.quickActions')}</GroupHeading>}>
+                <PaletteItem icon={<Plus size={16} className="text-accent" />} onSelect={() => runAction('/dashboard')}>
+                  {t('global.newIssue')}
+                </PaletteItem>
                 <PaletteItem icon={<LayoutDashboard size={16} />} onSelect={() => runAction('/dashboard')}>
                   {t('sidebar.dashboard')}
                 </PaletteItem>
-                <PaletteItem icon={<Kanban size={16} />} onSelect={() => runAction('/projects')}>
-                  {t('sidebar.projects')}
+                <PaletteItem icon={<ListTodo size={16} />} onSelect={() => runAction('/my-tasks')}>
+                  {t('sidebar.myTasks')}
+                </PaletteItem>
+                <PaletteItem icon={<Kanban size={16} />} onSelect={() => runAction('/all-issues')}>
+                  {t('sidebar.allIssues')}
                 </PaletteItem>
                 <PaletteItem icon={<Settings size={16} />} onSelect={() => runAction('/settings')}>
                   {t('sidebar.settings')}
                 </PaletteItem>
+              </Command.Group>
+            )}
+
+            {/* Organizations */}
+            {filteredOrgs.length > 1 && (
+              <Command.Group heading={<GroupHeading>{t('topbar.organizations')}</GroupHeading>}>
+                {filteredOrgs.map((m) => {
+                  const isActive = m.organization.id === organization?.id;
+                  return (
+                    <PaletteItem
+                      key={m.organization.id}
+                      icon={
+                        isActive
+                          ? <CheckCircle size={16} className="text-accent" />
+                          : <Building2 size={16} />
+                      }
+                      onSelect={() => {
+                        if (!isActive) switchOrg(m.organization.id);
+                        else onClose();
+                      }}
+                      subtitle={
+                        isActive
+                          ? <span className="text-[10px] text-accent font-medium">{t('topbar.activeOrg')}</span>
+                          : <span className="flex items-center gap-1 text-[10px] text-muted"><ArrowRight size={10} /> {t('topbar.switchOrg')}</span>
+                      }
+                    >
+                      {m.organization.name}
+                    </PaletteItem>
+                  );
+                })}
               </Command.Group>
             )}
 
@@ -256,7 +326,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                     key={issue.id}
                     icon={<FileText size={14} className="text-secondary" />}
                     onSelect={() => {
-                      const project = projects.find((p) => p.id === issue.project_id);
+                      const project = projectMap[issue.project_id];
                       if (project) {
                         runAction(`/projects/${project.slug}`);
                       }
@@ -264,9 +334,12 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                     subtitle={
                       <span className="flex items-center gap-1.5">
                         <span className="font-mono text-[10px] text-secondary">{issue.display_id}</span>
-                        {issue.tags.slice(0, 2).map((t) => (
-                          <span key={t} className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[9px] text-secondary">
-                            <Hash size={8} className="inline mr-0.5" />{t}
+                        {projectMap[issue.project_id] && (
+                          <span className="text-[10px] text-muted">· {projectMap[issue.project_id].name}</span>
+                        )}
+                        {issue.tags.slice(0, 2).map((tg) => (
+                          <span key={tg} className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[9px] text-secondary">
+                            <Hash size={8} className="inline mr-0.5" />{tg}
                           </span>
                         ))}
                       </span>
@@ -278,6 +351,17 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
               </Command.Group>
             )}
           </Command.List>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between border-t border-border px-4 py-2 text-[10px] text-muted">
+            <span>{t('topbar.searchHint')}</span>
+            <span className="flex items-center gap-2">
+              <kbd className="rounded bg-surface-hover px-1 py-0.5 font-mono">↑↓</kbd>
+              {t('topbar.navigate')}
+              <kbd className="rounded bg-surface-hover px-1 py-0.5 font-mono">↵</kbd>
+              {t('topbar.select')}
+            </span>
+          </div>
         </Command>
       </div>
     </div>
