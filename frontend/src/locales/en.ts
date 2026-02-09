@@ -520,6 +520,16 @@ As a [user], I want to [action] so that [benefit].
 
 `,
 
+  // ─── Global Create Issue ───────────────────
+  'global.newIssue': '+ New Issue',
+  'global.selectProject': 'Select a project',
+  'global.selectProjectDesc': 'Choose which project this issue belongs to.',
+  'global.searchProject': 'Search projects...',
+  'global.loading': 'Loading...',
+  'global.noProjects': 'No projects found',
+  'global.projectCount': 'projects',
+  'global.cancel': 'Cancel',
+
 } as const;
 
 export default en;

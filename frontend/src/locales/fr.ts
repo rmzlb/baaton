@@ -520,6 +520,16 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 
 `,
 
+  // ─── Global Create Issue ───────────────────
+  'global.newIssue': '+ Nouveau Ticket',
+  'global.selectProject': 'Choisir un projet',
+  'global.selectProjectDesc': 'Dans quel projet créer ce ticket ?',
+  'global.searchProject': 'Rechercher un projet...',
+  'global.loading': 'Chargement...',
+  'global.noProjects': 'Aucun projet trouvé',
+  'global.projectCount': 'projets',
+  'global.cancel': 'Annuler',
+
 } as const;
 
 export default fr;

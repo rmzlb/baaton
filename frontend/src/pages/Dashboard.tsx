@@ -5,6 +5,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
 import { Kanban, Bug, Sparkles, Zap, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import type { Issue, Project } from '@/lib/types';
 
 export function Dashboard() {
@@ -87,6 +88,11 @@ export function Dashboard() {
             </p>
           </div>
         ))}
+      </div>
+
+      {/* New Issue CTA */}
+      <div className="mt-6">
+        <GlobalCreateIssueButton variant="big" />
       </div>
 
       {/* Projects + Recent Activity */}

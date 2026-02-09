@@ -11,6 +11,7 @@ import {
   Layers, Kanban, List, Rows3, Rows4, StretchHorizontal,
   Filter, ChevronDown, X,
 } from 'lucide-react';
+import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { cn } from '@/lib/utils';
 import type { Issue, IssueStatus, ProjectStatus, ProjectTag } from '@/lib/types';
 
@@ -244,6 +245,9 @@ export function AllIssues() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {/* New Issue */}
+          <GlobalCreateIssueButton variant="compact" />
+
           {/* Project filter */}
           <button
             onClick={() => setShowFilters(!showFilters)}
