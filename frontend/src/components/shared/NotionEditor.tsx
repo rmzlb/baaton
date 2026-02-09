@@ -26,7 +26,7 @@ import {
   TiptapUnderline,
   HighlightExtension,
   HorizontalRule,
-  CodeBlockLowlight,
+  // CodeBlockLowlight removed — needs lowlight instance, too heavy
   Color,
   TextStyle,
   GlobalDragHandle,
@@ -58,7 +58,6 @@ function getExtensions(placeholder: string) {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
-      codeBlock: false, // replaced by lowlight
       dropcursor: { color: '#f59e0b', width: 2 },
     }),
     Placeholder.configure({ placeholder }),
@@ -69,7 +68,6 @@ function getExtensions(placeholder: string) {
     TiptapUnderline,
     HighlightExtension.configure({ multicolor: true }),
     HorizontalRule,
-    CodeBlockLowlight.configure({ defaultLanguage: 'typescript' }),
     Color,
     TextStyle,
     GlobalDragHandle,
