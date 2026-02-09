@@ -1,8 +1,34 @@
-use axum::{extract::Extension, http::StatusCode, Json};
+use axum::{extract::{Extension, Path}, http::StatusCode, Json, response::Redirect};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::LazyLock;
+use tokio::sync::RwLock;
 
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
+
+/// In-memory short code → Clerk URL mapping.
+/// Short codes are derived from the invite ID (first 8 chars).
+static SHORT_LINKS: LazyLock<RwLock<HashMap<String, String>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// Generate a short code from a Clerk invite ID like "orginv_39Qp33M0vO0Z..."
+fn make_short_code(invite_id: &str) -> String {
+    // Take last 8 chars of the invite ID (unique enough)
+    let id = invite_id.strip_prefix("orginv_").unwrap_or(invite_id);
+    id.chars().take(8).collect()
+}
+
+/// GET /api/v1/invite/:code — Public redirect to Clerk invite URL
+pub async fn redirect_invite(
+    Path(code): Path<String>,
+) -> Result<Redirect, StatusCode> {
+    let links = SHORT_LINKS.read().await;
+    match links.get(&code) {
+        Some(url) => Ok(Redirect::temporary(url)),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct InviteRequest {
@@ -17,6 +43,8 @@ pub struct InviteResponse {
     pub status: String,
     pub role: Option<String>,
     pub url: Option<String>,
+    /// Short invite link: https://api.baaton.dev/api/v1/invite/{code}
+    pub short_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,17 +102,27 @@ pub async fn list(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!(r#"{{"error":"{}"}}"#, e)))?;
 
-    let invites = clerk_resp
-        .data
-        .into_iter()
-        .map(|inv| InviteResponse {
-            id: inv.id,
-            email_address: inv.email_address,
-            status: inv.status,
-            role: inv.role,
-            url: inv.url,
-        })
-        .collect();
+    let mut invites = Vec::new();
+    {
+        let mut links = SHORT_LINKS.write().await;
+        for inv in clerk_resp.data {
+            let short_url = if let Some(ref url) = inv.url {
+                let code = make_short_code(&inv.id);
+                links.insert(code.clone(), url.clone());
+                Some(format!("https://api.baaton.dev/api/v1/invite/{}", code))
+            } else {
+                None
+            };
+            invites.push(InviteResponse {
+                id: inv.id,
+                email_address: inv.email_address,
+                status: inv.status,
+                role: inv.role,
+                url: inv.url,
+                short_url,
+            });
+        }
+    }
 
     Ok(Json(ApiResponse::new(invites)))
 }
@@ -143,11 +181,20 @@ pub async fn create(
         )
     })?;
 
+    let short_url = if let Some(ref url) = clerk_resp.url {
+        let code = make_short_code(&clerk_resp.id);
+        SHORT_LINKS.write().await.insert(code.clone(), url.clone());
+        Some(format!("https://api.baaton.dev/api/v1/invite/{}", code))
+    } else {
+        None
+    };
+
     Ok(Json(ApiResponse::new(InviteResponse {
         id: clerk_resp.id,
         email_address: clerk_resp.email_address,
         status: clerk_resp.status,
         role: clerk_resp.role,
         url: clerk_resp.url,
+        short_url,
     })))
 }

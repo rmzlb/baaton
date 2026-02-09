@@ -9,6 +9,7 @@ mod comments;
 mod tldrs;
 mod tags;
 mod invites;
+pub mod github;
 
 pub fn api_router(pool: PgPool) -> Router {
     // All API routes — auth middleware applied on top
@@ -25,11 +26,26 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/issues/{id}/position", patch(issues::update_position))
         .route("/issues/{id}/comments", get(comments::list_by_issue).post(comments::create))
         .route("/issues/{id}/tldr", post(tldrs::create))
+        // ── GitHub Integration ──
+        // OAuth / Installation flow
+        .route("/github/install", get(github::oauth::install_redirect))
+        .route("/github/callback", get(github::oauth::callback))
+        .route("/github/installation", get(github::oauth::get_installation))
+        .route("/github/disconnect", post(github::oauth::disconnect))
+        // Repository management & mappings
+        .route("/github/repos", get(github::repos::list_available))
+        .route("/github/mappings", get(github::repos::list_mappings).post(github::repos::create_mapping))
+        .route("/github/mappings/{id}", patch(github::repos::update_mapping).delete(github::repos::delete_mapping))
+        // Issue-level GitHub data
+        .route("/issues/{id}/github", get(github::repos::get_issue_github_data))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
         .route("/invites", get(invites::list).post(invites::create))
         // Public (no auth)
+        .route("/invite/{code}", get(invites::redirect_invite))
         .route("/public/{slug}/submit", post(issues::public_submit))
+        // Webhook endpoint (public — uses HMAC verification, NOT Clerk auth)
+        .route("/webhooks/github", post(github::webhooks::handle))
         .with_state(pool);
 
     // Apply auth middleware — it runs on all routes but public ones

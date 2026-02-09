@@ -13,6 +13,7 @@ import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn, timeAgo } from '@/lib/utils';
 import { NotionEditor } from '@/components/shared/NotionEditor';
+import { GitHubSection } from '@/components/github/GitHubSection';
 import type { IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus } from '@/lib/types';
 
 const TAG_COLORS = [
@@ -651,6 +652,9 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                 </div>
               </div>
             </div>
+
+            {/* GitHub Integration */}
+            <GitHubSection issueId={issueId} />
 
             {/* Metadata */}
             <div className="border-t border-border pt-4">

@@ -5,6 +5,7 @@ import { KeyRound, Plus, Trash2, Copy, Eye, EyeOff, CheckCircle2, AlertTriangle,
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
+import { IntegrationsTab } from '@/components/settings/IntegrationsTab';
 import type { ApiKey } from '@/lib/types';
 
 export function Settings() {
@@ -24,6 +25,9 @@ export function Settings() {
 
       {/* Language Section */}
       <LanguageSection />
+
+      {/* Integrations Section */}
+      <IntegrationsTab />
 
       {/* API Keys Section */}
       <ApiKeysSection />
@@ -163,10 +167,10 @@ function InviteSection() {
                 </div>
 
                 {/* Copy link button */}
-                {inv.url && (
+                {(inv.short_url || inv.url) && (
                   <button
                     type="button"
-                    onClick={() => handleCopy(inv.url!, inv.id)}
+                    onClick={() => handleCopy(inv.short_url || inv.url!, inv.id)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium text-secondary hover:text-primary hover:border-accent transition-colors shrink-0"
                   >
                     {copiedId === inv.id ? (

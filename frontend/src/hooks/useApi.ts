@@ -12,6 +12,12 @@ import type {
   CreateCommentRequest,
   Comment,
   ProjectTag,
+  GitHubInstallation,
+  GitHubRepository,
+  GitHubRepoMapping,
+  IssueGitHubData,
+  CreateRepoMappingRequest,
+  UpdateRepoMappingRequest,
 } from '@/lib/types';
 
 /**
@@ -299,6 +305,7 @@ export function useApi() {
         status: string;
         role: string | null;
         url: string | null;
+        short_url: string | null;
       }>> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
@@ -311,10 +318,62 @@ export function useApi() {
         status: string;
         role: string | null;
         url: string | null;
+        short_url: string | null;
       }> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.post('/invites', body, token);
+        }),
+    },
+
+    // ─── GitHub ────────────────────────────────
+    github: {
+      getInstallation: async (): Promise<GitHubInstallation | null> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<GitHubInstallation | null>('/github/installation', token);
+        }),
+
+      listRepos: async (): Promise<GitHubRepository[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<GitHubRepository[]>('/github/repos', token);
+        }),
+
+      listMappings: async (): Promise<GitHubRepoMapping[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<GitHubRepoMapping[]>('/github/mappings', token);
+        }),
+
+      createMapping: async (body: CreateRepoMappingRequest): Promise<GitHubRepoMapping> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<GitHubRepoMapping>('/github/mappings', body, token);
+        }),
+
+      updateMapping: async (id: string, body: UpdateRepoMappingRequest): Promise<GitHubRepoMapping> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<GitHubRepoMapping>(`/github/mappings/${id}`, body, token);
+        }),
+
+      deleteMapping: async (id: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/github/mappings/${id}`, token);
+        }),
+
+      getIssueData: async (issueId: string): Promise<IssueGitHubData> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<IssueGitHubData>(`/issues/${issueId}/github`, token);
+        }),
+
+      disconnect: async (): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post('/github/disconnect', {}, token);
         }),
     },
 

@@ -90,9 +90,13 @@ fn decode_jwt_payload(token: &str) -> Result<ClerkClaims, String> {
 /// Skips auth for public routes and health checks.
 /// Returns 401 if no valid Bearer token is present on protected routes.
 pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
-    // Skip auth for public routes and health checks
+    // Skip auth for public routes, health checks, and webhook endpoints
     let path = req.uri().path().to_string();
-    if path.contains("/public/") || path == "/health" {
+    if path.contains("/public/")
+        || path == "/health"
+        || path.contains("/webhooks/")
+        || path.starts_with("/api/v1/invite/")
+    {
         return next.run(req).await;
     }
 

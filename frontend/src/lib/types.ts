@@ -3,7 +3,7 @@
 export type IssueType = 'bug' | 'feature' | 'improvement' | 'question';
 export type IssueStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
 export type IssuePriority = 'urgent' | 'high' | 'medium' | 'low';
-export type IssueSource = 'web' | 'api' | 'form' | 'email';
+export type IssueSource = 'web' | 'api' | 'form' | 'email' | 'github';
 export type TestsStatus = 'passed' | 'failed' | 'skipped' | 'none';
 export type MilestoneStatus = 'active' | 'completed' | 'cancelled';
 export type SprintStatus = 'planning' | 'active' | 'completed';
@@ -196,4 +196,135 @@ export interface PublicSubmission {
   reporter_name?: string;
   reporter_email?: string;
   attachments?: File[];
+}
+
+// ─── GitHub Integration ───────────────────────────────
+
+export type GitHubPrState = 'open' | 'closed' | 'merged' | 'draft';
+export type GitHubReviewStatus = 'pending' | 'approved' | 'changes_requested' | 'commented';
+export type GitHubSyncDirection = 'github_to_baaton' | 'baaton_to_github' | 'bidirectional';
+export type GitHubInstallationStatus = 'active' | 'suspended' | 'removed';
+
+export interface GitHubInstallation {
+  id: string;
+  org_id: string;
+  installation_id: number;
+  github_account_id: number;
+  github_account_login: string;
+  github_account_type: string;
+  permissions: Record<string, string>;
+  status: GitHubInstallationStatus;
+  installed_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitHubRepository {
+  id: string;
+  installation_id: number;
+  github_repo_id: number;
+  owner: string;
+  name: string;
+  full_name: string;
+  default_branch: string;
+  is_private: boolean;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitHubRepoMapping {
+  id: string;
+  project_id: string;
+  github_repo_id: number;
+  sync_direction: GitHubSyncDirection;
+  sync_issues: boolean;
+  sync_prs: boolean;
+  sync_comments: boolean;
+  auto_create_issues: boolean;
+  status_mapping: Record<string, string | null>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  // Joined data (optional, enriched by backend)
+  repo?: GitHubRepository;
+  project?: Project;
+}
+
+export interface GitHubPrLink {
+  id: string;
+  issue_id: string;
+  github_repo_id: number;
+  pr_number: number;
+  pr_id: number;
+  pr_title: string;
+  pr_url: string;
+  pr_state: GitHubPrState;
+  head_branch: string;
+  base_branch: string;
+  author_login: string;
+  author_id: number | null;
+  additions: number | null;
+  deletions: number | null;
+  changed_files: number | null;
+  review_status: GitHubReviewStatus | null;
+  merged_at: string | null;
+  merged_by: string | null;
+  link_method: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitHubCommitLink {
+  id: string;
+  issue_id: string;
+  github_repo_id: number;
+  sha: string;
+  message: string;
+  author_login: string | null;
+  author_email: string | null;
+  committed_at: string;
+  url: string;
+  created_at: string;
+}
+
+export interface GitHubIssueLink {
+  id: string;
+  issue_id: string;
+  github_repo_id: number;
+  github_issue_number: number;
+  github_issue_id: number;
+  sync_status: string;
+  last_synced_at: string | null;
+  last_github_updated_at: string | null;
+  last_baaton_updated_at: string | null;
+  created_at: string;
+}
+
+export interface IssueGitHubData {
+  github_issue: GitHubIssueLink | null;
+  pull_requests: GitHubPrLink[];
+  commits: GitHubCommitLink[];
+  branch_name: string;
+}
+
+export interface CreateRepoMappingRequest {
+  project_id: string;
+  github_repo_id: number;
+  sync_direction?: GitHubSyncDirection;
+  sync_issues?: boolean;
+  sync_prs?: boolean;
+  sync_comments?: boolean;
+  auto_create_issues?: boolean;
+  status_mapping?: Record<string, string | null>;
+}
+
+export interface UpdateRepoMappingRequest {
+  sync_direction?: GitHubSyncDirection;
+  sync_issues?: boolean;
+  sync_prs?: boolean;
+  sync_comments?: boolean;
+  auto_create_issues?: boolean;
+  status_mapping?: Record<string, string | null>;
+  is_active?: boolean;
 }

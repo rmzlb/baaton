@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 mod routes;
 mod models;
 mod middleware;
+mod github;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -44,7 +45,15 @@ async fn main() -> anyhow::Result<()> {
     sqlx::raw_sql(migration_004).execute(&pool).await?;
     let migration_005 = include_str!("../migrations/005_org_upsert.sql");
     sqlx::raw_sql(migration_005).execute(&pool).await?;
+    let migration_006 = include_str!("../migrations/006_github_integration.sql");
+    sqlx::raw_sql(migration_006).execute(&pool).await?;
     tracing::info!("Migrations applied");
+
+    // Start GitHub sync job runner (background task)
+    let job_pool = pool.clone();
+    tokio::spawn(async move {
+        github::jobs::start_job_runner(job_pool).await;
+    });
 
     // CORS
     let cors = CorsLayer::new()

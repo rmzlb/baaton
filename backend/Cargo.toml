@@ -37,6 +37,15 @@ sha2 = "0.10"
 rand = "0.9"
 dotenvy = "0.15"
 
+# GitHub integration
+octocrab = "0.49"
+jsonwebtoken = "9"
+hmac = "0.12"
+hex = "0.4"
+regex = "1"
+lazy_static = "1"
+aes-gcm = "0.10"
+
 [profile.release]
 strip = true
 lto = true

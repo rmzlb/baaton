@@ -5,7 +5,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/ui';
-import type { Issue, IssuePriority, IssueType, ProjectTag } from '@/lib/types';
+import { GitHubPrBadge } from '@/components/github/GitHubPrBadge';
+import type { Issue, IssuePriority, IssueType, ProjectTag, GitHubPrLink } from '@/lib/types';
 
 interface KanbanCardProps {
   issue: Issue;
@@ -13,6 +14,7 @@ interface KanbanCardProps {
   isDragging: boolean;
   onClick: () => void;
   projectTags?: ProjectTag[];
+  githubPrs?: GitHubPrLink[];
 }
 
 const typeIcons: Record<IssueType, typeof Bug> = {
@@ -52,7 +54,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   DB: '#f97316',
 };
 
-export function KanbanCard({ issue, provided, isDragging, onClick, projectTags = [] }: KanbanCardProps) {
+export function KanbanCard({ issue, provided, isDragging, onClick, projectTags = [], githubPrs = [] }: KanbanCardProps) {
   const density = useUIStore((s) => s.density);
   const TypeIcon = typeIcons[issue.type] ?? Sparkles;
   const PriorityConfig = issue.priority ? (priorityConfig[issue.priority] ?? null) : null;
@@ -114,6 +116,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
           <TypeIcon size={12} className={typeColors[issue.type]} />
           <span className="text-[10px] font-mono text-muted shrink-0">{issue.display_id}</span>
           <span className="text-xs text-primary font-medium truncate flex-1">{issue.title}</span>
+          {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
           {issue.assignee_ids.length > 0 && (
             <div className="h-4 w-4 rounded-full bg-surface-hover flex items-center justify-center text-[7px] font-mono text-secondary shrink-0">
               {issue.assignee_ids[0].slice(0, 2).toUpperCase()}
@@ -213,6 +216,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
             )}
           </div>
           <div className="flex items-center gap-2">
+            {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
             {issue.comments && issue.comments.length > 0 && (
               <span className="flex items-center gap-0.5 text-[10px] text-muted">
                 <MessageSquare size={10} />
@@ -289,6 +293,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
         {issue.tags.length > 3 && (
           <span className="text-[10px] text-muted">+{issue.tags.length - 3}</span>
         )}
+        {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
         {issue.assignee_ids.length > 0 && (
           <div className="ml-auto flex -space-x-1.5">
             {issue.assignee_ids.slice(0, 2).map((id) => (
