@@ -23,9 +23,12 @@ async fn main() -> anyhow::Result<()> {
     // Database
     let database_url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set");
+    // Disable prepared statement cache to work with PgBouncer/connection poolers
+    let connect_opts = database_url.parse::<sqlx::postgres::PgConnectOptions>()?
+        .statement_cache_capacity(0);
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(10)
-        .connect(&database_url)
+        .connect_with(connect_opts)
         .await?;
 
     tracing::info!("Connected to database");
