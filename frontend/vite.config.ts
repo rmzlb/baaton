@@ -18,22 +18,13 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          clerk: ['@clerk/clerk-react'],
-          editor: [
-            'lexical',
-            '@lexical/react',
-            '@lexical/rich-text',
-            '@lexical/list',
-            '@lexical/link',
-            '@lexical/code',
-            '@lexical/markdown',
-            'novel',
-          ],
-          query: ['@tanstack/react-query'],
-          dnd: ['@hello-pangea/dnd'],
-          motion: ['framer-motion'],
+        manualChunks(id: string) {
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) return 'vendor';
+          if (id.includes('node_modules/@clerk/')) return 'clerk';
+          if (id.includes('node_modules/lexical') || id.includes('node_modules/@lexical') || id.includes('node_modules/novel')) return 'editor';
+          if (id.includes('node_modules/@tanstack/')) return 'query';
+          if (id.includes('node_modules/@hello-pangea/')) return 'dnd';
+          if (id.includes('node_modules/framer-motion')) return 'motion';
         },
       },
     },
