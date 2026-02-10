@@ -18,7 +18,7 @@ import { GitHubSection } from '@/components/github/GitHubSection';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
 import { IssueDrawerSkeleton } from '@/components/shared/Skeleton';
-import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment } from '@/lib/types';
+import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment, Milestone } from '@/lib/types';
 
 /* ── Constants ─────────────────────────────────── */
 
@@ -99,6 +99,12 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const { data: projectTags = [] } = useQuery({
     queryKey: ['project-tags', resolvedProjectId],
     queryFn: () => apiClient.tags.listByProject(resolvedProjectId!),
+    enabled: !!resolvedProjectId,
+  });
+
+  const { data: projectMilestones = [] } = useQuery({
+    queryKey: ['milestones', resolvedProjectId],
+    queryFn: () => apiClient.milestones.listByProject(resolvedProjectId!),
     enabled: !!resolvedProjectId,
   });
 
@@ -623,6 +629,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                 currentPriority={currentPriority}
                 orgMembers={orgMembers}
                 projectTags={projectTags}
+                projectMilestones={projectMilestones}
                 showTagPicker={showTagPicker}
                 setShowTagPicker={setShowTagPicker}
                 newTagName={newTagName}
@@ -833,6 +840,7 @@ interface MetadataSidebarProps {
   currentPriority: (typeof PRIORITY_OPTIONS)[number] | undefined;
   orgMembers: any[];
   projectTags: ProjectTag[];
+  projectMilestones: Milestone[];
   showTagPicker: boolean;
   setShowTagPicker: (v: boolean) => void;
   newTagName: string;
@@ -854,6 +862,7 @@ function MetadataSidebar({
   currentPriority,
   orgMembers,
   projectTags,
+  projectMilestones,
   showTagPicker,
   setShowTagPicker,
   newTagName,
@@ -867,6 +876,7 @@ function MetadataSidebar({
   onCreateAndAddTag,
   t,
 }: MetadataSidebarProps) {
+  const [showMilestonePicker, setShowMilestonePicker] = useState(false);
   const TypeIcon = TYPE_CONFIG[issue.type]?.icon || FileText;
   const typeColor = TYPE_CONFIG[issue.type]?.color || 'text-secondary';
 
@@ -937,6 +947,64 @@ function MetadataSidebar({
       {/* Source */}
       <SidebarField label={t('issueDrawer.source')}>
         <span className="text-xs text-secondary capitalize px-1.5 py-0.5">{issue.source}</span>
+      </SidebarField>
+
+      {/* Milestone */}
+      <SidebarField label={t('milestones.assignMilestone')}>
+        <div className="relative w-full">
+          <button
+            onClick={() => setShowMilestonePicker(!showMilestonePicker)}
+            className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-surface-hover transition-colors w-full"
+          >
+            {issue.milestone_id ? (
+              <span className="text-xs text-primary truncate">
+                {projectMilestones.find((m) => m.id === issue.milestone_id)?.name || issue.milestone_id}
+              </span>
+            ) : (
+              <span className="text-xs text-muted">{t('milestones.noneMilestone')}</span>
+            )}
+            <ChevronDown size={10} className="text-muted ml-auto shrink-0" />
+          </button>
+          {showMilestonePicker && (
+            <div className="absolute top-full left-0 z-10 mt-1 w-48 rounded-lg border border-border bg-surface py-0.5 shadow-xl max-h-40 overflow-y-auto">
+              {/* None option */}
+              <button
+                onClick={() => {
+                  onFieldUpdate('milestone_id', null);
+                  setShowMilestonePicker(false);
+                }}
+                className={cn(
+                  'flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs hover:bg-surface-hover transition-colors',
+                  !issue.milestone_id ? 'text-primary' : 'text-secondary',
+                )}
+              >
+                {t('milestones.noneMilestone')}
+              </button>
+              {projectMilestones.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    onFieldUpdate('milestone_id', m.id);
+                    setShowMilestonePicker(false);
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs hover:bg-surface-hover transition-colors',
+                    issue.milestone_id === m.id ? 'text-primary' : 'text-secondary',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'h-1.5 w-1.5 rounded-full shrink-0',
+                      m.status === 'active' ? 'bg-blue-500' : m.status === 'completed' ? 'bg-emerald-500' : 'bg-gray-400',
+                    )}
+                  />
+                  <span className="truncate">{m.name}</span>
+                  {issue.milestone_id === m.id && <CheckCircle2 size={12} className="text-accent ml-auto shrink-0" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </SidebarField>
 
       {/* Divider */}

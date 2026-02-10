@@ -20,6 +20,8 @@ import type {
   UpdateRepoMappingRequest,
   ActivityEntry,
   OpenClawConnection,
+  Milestone,
+  Sprint,
 } from '@/lib/types';
 
 /**
@@ -424,6 +426,77 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.post<{ response: string }>('/openclaw/chat', { message, context }, token);
+        }),
+    },
+
+    // ─── Milestones ───────────────────────────────
+    milestones: {
+      listByProject: async (projectId: string): Promise<Milestone[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<Milestone[]>(`/projects/${projectId}/milestones`, token);
+        }),
+
+      get: async (milestoneId: string): Promise<Milestone> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<Milestone>(`/milestones/${milestoneId}`, token);
+        }),
+
+      create: async (projectId: string, body: {
+        name: string;
+        description?: string;
+        target_date?: string;
+        status?: string;
+      }): Promise<Milestone> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<Milestone>(`/projects/${projectId}/milestones`, body, token);
+        }),
+
+      update: async (id: string, body: Partial<Pick<Milestone, 'name' | 'description' | 'target_date' | 'status'>>): Promise<Milestone> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<Milestone>(`/milestones/${id}`, body, token);
+        }),
+
+      delete: async (id: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/milestones/${id}`, token);
+        }),
+    },
+
+    // ─── Sprints ────────────────────────────────
+    sprints: {
+      listByProject: async (projectId: string): Promise<Sprint[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<Sprint[]>(`/projects/${projectId}/sprints`, token);
+        }),
+
+      create: async (projectId: string, body: {
+        name: string;
+        goal?: string;
+        start_date?: string;
+        end_date?: string;
+        status?: string;
+      }): Promise<Sprint> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<Sprint>(`/projects/${projectId}/sprints`, body, token);
+        }),
+
+      update: async (id: string, body: Partial<Pick<Sprint, 'name' | 'goal' | 'start_date' | 'end_date' | 'status'>>): Promise<Sprint> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<Sprint>(`/sprints/${id}`, body, token);
+        }),
+
+      delete: async (id: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/sprints/${id}`, token);
         }),
     },
 

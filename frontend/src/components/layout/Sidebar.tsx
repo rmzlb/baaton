@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation, useParams } from 'react-router-dom';
 import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import {
   LayoutDashboard, Kanban, Settings, ChevronLeft, ChevronRight, Users, X,
-  Sun, Moon, CheckSquare, Layers, Globe,
+  Sun, Moon, CheckSquare, Layers, Globe, Target,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -19,11 +19,22 @@ export function Sidebar() {
   const theme = useUIStore((s) => s.theme);
   const toggleTheme = useUIStore((s) => s.toggleTheme);
 
+  // Detect if we're on a project page to show project-specific nav items
+  const location = useLocation();
+  const projectSlugMatch = location.pathname.match(/^\/projects\/([^/]+)/);
+  const currentProjectSlug = projectSlugMatch ? projectSlugMatch[1] : null;
+
   const navItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: t('sidebar.dashboard'), tourId: undefined },
     { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks'), tourId: 'my-tasks' as const },
     { to: '/all-issues', icon: Layers, label: t('sidebar.allIssues'), tourId: undefined },
     { to: '/projects', icon: Kanban, label: t('sidebar.projects'), tourId: 'projects-list' as const },
+    ...(currentProjectSlug ? [{
+      to: `/projects/${currentProjectSlug}/milestones`,
+      icon: Target,
+      label: t('sidebar.milestones'),
+      tourId: undefined,
+    }] : []),
     { to: '/org', icon: Users, label: t('sidebar.team'), tourId: undefined },
     { to: '/settings', icon: Settings, label: t('sidebar.settings'), tourId: 'settings' as const },
   ];

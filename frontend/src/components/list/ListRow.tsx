@@ -1,30 +1,23 @@
 import {
   Bug, Sparkles, Zap, HelpCircle,
-  ArrowUp, ArrowDown, Minus, AlertTriangle, Clock,
+  ArrowUp, ArrowDown, Minus, Flame, Clock, CheckCircle2, User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { timeAgo } from '@/lib/utils';
 import type { Issue, IssuePriority, IssueType, ProjectStatus, ProjectTag } from '@/lib/types';
 
-const typeIcons: Record<IssueType, typeof Bug> = {
-  bug: Bug,
-  feature: Sparkles,
-  improvement: Zap,
-  question: HelpCircle,
-};
-
-const typeColors: Record<IssueType, string> = {
-  bug: 'text-red-400',
-  feature: 'text-emerald-400',
-  improvement: 'text-blue-400',
-  question: 'text-purple-400',
+const typeConfig: Record<IssueType, { icon: typeof Bug; color: string; bg: string; label: string }> = {
+  bug:         { icon: Bug,        color: 'text-red-600 dark:text-red-400',     bg: 'bg-red-50 dark:bg-red-500/10',     label: 'Bug' },
+  feature:     { icon: Sparkles,   color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-500/10', label: 'Feature' },
+  improvement: { icon: Zap,        color: 'text-blue-600 dark:text-blue-400',   bg: 'bg-blue-50 dark:bg-blue-500/10',   label: 'Improvement' },
+  question:    { icon: HelpCircle, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10', label: 'Question' },
 };
 
 const priorityConfig: Record<IssuePriority, { icon: typeof ArrowUp; color: string; label: string }> = {
-  urgent: { icon: AlertTriangle, color: '#ef4444', label: 'Urgent' },
-  high: { icon: ArrowUp, color: '#f97316', label: 'High' },
-  medium: { icon: Minus, color: '#eab308', label: 'Medium' },
-  low: { icon: ArrowDown, color: '#6b7280', label: 'Low' },
+  urgent: { icon: Flame,     color: 'text-red-500',    label: 'Urgent' },
+  high:   { icon: ArrowUp,   color: 'text-orange-500', label: 'High' },
+  medium: { icon: Minus,     color: 'text-yellow-500', label: 'Medium' },
+  low:    { icon: ArrowDown, color: 'text-gray-400',   label: 'Low' },
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -42,10 +35,12 @@ interface ListRowProps {
 }
 
 export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowProps) {
-  const TypeIcon = typeIcons[issue.type] ?? Sparkles;
+  const tc = typeConfig[issue.type] ?? typeConfig.feature;
+  const TypeIcon = tc.icon;
   const status = statuses.find((s) => s.key === issue.status);
   const priority = issue.priority ? priorityConfig[issue.priority] : null;
   const PriorityIcon = priority?.icon;
+  const isDone = issue.status === 'done' || issue.status === 'cancelled';
 
   const getTagColor = (tagName: string): string => {
     const found = projectTags.find((t) => t.name === tagName);
@@ -59,13 +54,16 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
       {/* Desktop: table row */}
       <div
         onClick={onClick}
-        className="hidden md:grid grid-cols-[80px_1fr_120px_100px_90px_90px_120px_80px_100px] gap-2 border-b border-border/50 px-4 md:px-6 py-2.5 text-xs cursor-pointer hover:bg-surface transition-colors items-center min-h-[44px]"
+        className={cn(
+          'hidden md:grid grid-cols-[80px_1fr_120px_100px_90px_90px_120px_80px_100px] gap-2 border-b border-gray-100 dark:border-border/50 px-4 md:px-6 py-2.5 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-surface transition-colors items-center min-h-[44px]',
+          isDone && 'opacity-60 hover:opacity-90',
+        )}
       >
         {/* ID */}
-        <span className="font-mono text-secondary text-[11px] truncate">{issue.display_id}</span>
+        <span className="font-mono text-gray-400 dark:text-secondary text-[11px] truncate">{issue.display_id}</span>
 
         {/* Title */}
-        <span className="text-primary font-medium truncate">{issue.title}</span>
+        <span className={cn('font-medium truncate', isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary')}>{issue.title}</span>
 
         {/* Status */}
         <span className="flex items-center gap-1.5">
@@ -78,16 +76,18 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
 
         {/* Priority */}
         <span className="flex items-center gap-1.5">
-          {PriorityIcon && (
-            <PriorityIcon size={12} style={{ color: priority?.color }} />
-          )}
-          <span className="text-secondary">{priority?.label || '—'}</span>
+          {isDone ? (
+            <CheckCircle2 size={12} className="text-emerald-500" />
+          ) : PriorityIcon ? (
+            <PriorityIcon size={12} className={priority?.color} />
+          ) : null}
+          <span className="text-gray-500 dark:text-secondary">{isDone ? 'Done' : priority?.label || '—'}</span>
         </span>
 
         {/* Type */}
-        <span className="flex items-center gap-1.5">
-          <TypeIcon size={12} className={typeColors[issue.type]} />
-          <span className="text-secondary capitalize truncate">{issue.type}</span>
+        <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium w-fit', tc.bg, tc.color)}>
+          <TypeIcon size={11} />
+          {tc.label}
         </span>
 
         {/* Category */}
@@ -139,14 +139,14 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
         {/* Assignees */}
         <span className="flex -space-x-1">
           {issue.assignee_ids.slice(0, 2).map((id) => (
-            <div
+            <img
               key={id}
-              className="h-5 w-5 rounded-full bg-surface-hover border border-bg flex items-center justify-center text-[7px] font-mono text-secondary"
-            >
-              {id.slice(0, 2).toUpperCase()}
-            </div>
+              src={`https://api.dicebear.com/9.x/initials/svg?seed=${id}&backgroundColor=f0f0f0&textColor=666666`}
+              className="w-5 h-5 rounded-full ring-1 ring-white dark:ring-surface"
+              alt="Assignee"
+            />
           ))}
-          {issue.assignee_ids.length === 0 && <span className="text-muted">—</span>}
+          {issue.assignee_ids.length === 0 && <span className="text-gray-400 dark:text-muted">—</span>}
         </span>
 
         {/* Due Date */}

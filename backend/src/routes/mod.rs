@@ -1,4 +1,4 @@
-use axum::{Router, routing::{get, post, patch, delete}, middleware as axum_mw};
+use axum::{Router, routing::{get, post, put, patch, delete}, middleware as axum_mw};
 use sqlx::PgPool;
 
 use crate::middleware::auth_middleware;
@@ -9,6 +9,8 @@ mod comments;
 mod tldrs;
 mod tags;
 mod invites;
+mod milestones;
+mod sprints;
 pub mod github;
 
 pub fn api_router(pool: PgPool) -> Router {
@@ -19,6 +21,10 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/projects/{id}", get(projects::get_one).patch(projects::update).delete(projects::remove))
         .route("/projects/{id}/issues", get(issues::list_by_project))
         .route("/projects/{id}/tags", get(tags::list_by_project).post(tags::create))
+        // Milestones (project-scoped)
+        .route("/projects/{id}/milestones", get(milestones::list_by_project).post(milestones::create))
+        // Sprints (project-scoped)
+        .route("/projects/{id}/sprints", get(sprints::list_by_project).post(sprints::create))
         // Issues
         .route("/issues", post(issues::create))
         .route("/issues/mine", get(issues::list_mine))
@@ -40,6 +46,10 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/issues/{id}/github", get(github::repos::get_issue_github_data))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
+        // Milestones (by ID)
+        .route("/milestones/{id}", get(milestones::get_one).put(milestones::update).delete(milestones::remove))
+        // Sprints (by ID)
+        .route("/sprints/{id}", put(sprints::update).delete(sprints::remove))
         .route("/invites", get(invites::list).post(invites::create))
         // Public (no auth)
         .route("/invite/{code}", get(invites::redirect_invite))

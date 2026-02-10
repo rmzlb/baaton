@@ -191,6 +191,75 @@ export const SKILL_TOOLS = [
           },
         },
       },
+      {
+        name: 'plan_milestones',
+        description:
+          'Analyze all open tickets in a project and propose a milestone plan with groupings, timing estimates, and priority ordering. Auto-detects dependencies between issues (by title/description similarity and explicit references). Returns velocity data (issues/week) for realistic timeline estimates. The AI will group related tickets into logical milestones, identify the critical path (longest dependency chain), and suggest a sequenced delivery plan.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            project_id: { type: 'STRING', description: 'Project ID to plan milestones for' },
+            target_date: {
+              type: 'STRING',
+              description:
+                'Optional: target completion date (YYYY-MM-DD). If provided, the plan will be optimized to meet this deadline.',
+            },
+            team_size: {
+              type: 'NUMBER',
+              description:
+                'Optional: number of developers/agents working (default 1). Affects timing estimates.',
+            },
+          },
+          required: ['project_id'],
+        },
+      },
+      {
+        name: 'create_milestones_batch',
+        description:
+          'Create multiple milestones and assign issues to them. Use after plan_milestones when the user confirms the proposed plan.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            project_id: { type: 'STRING', description: 'Project ID' },
+            milestones: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  name: { type: 'STRING' },
+                  description: { type: 'STRING' },
+                  target_date: { type: 'STRING', description: 'YYYY-MM-DD' },
+                  order: { type: 'NUMBER' },
+                  issue_ids: {
+                    type: 'ARRAY',
+                    items: { type: 'STRING' },
+                    description: 'Issue IDs to assign to this milestone',
+                  },
+                },
+                required: ['name', 'issue_ids'],
+              },
+            },
+          },
+          required: ['project_id', 'milestones'],
+        },
+      },
+      {
+        name: 'adjust_timeline',
+        description:
+          'Adjust the milestone timeline based on a new deadline or constraint. Fetches milestones, open issues, detected dependencies, and velocity data. Uses this to propose rescheduling that respects the dependency chain and team capacity. Example: "I want to finish milestone X by March 15" — recalculates the entire plan.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            project_id: { type: 'STRING', description: 'Project ID' },
+            constraint: {
+              type: 'STRING',
+              description:
+                'The constraint or deadline change. E.g., "finish by 2026-03-15" or "move milestone Alpha to next week"',
+            },
+          },
+          required: ['project_id', 'constraint'],
+        },
+      },
     ],
   },
 ];

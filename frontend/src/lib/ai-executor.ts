@@ -2,7 +2,7 @@
  * Baaton AI Skill Executor — executes function calls from Gemini via the Baaton API.
  */
 
-import type { Issue, Project } from './types';
+import type { Issue, Project, Milestone } from './types';
 import type { SkillResult } from './ai-skills';
 
 type ApiClient = {
@@ -17,6 +17,12 @@ type ApiClient = {
   };
   projects: {
     list: () => Promise<Project[]>;
+  };
+  milestones: {
+    listByProject: (projectId: string) => Promise<Milestone[]>;
+    create: (projectId: string, body: { name: string; description?: string; target_date?: string; status?: string }) => Promise<Milestone>;
+    update: (id: string, body: Partial<Pick<Milestone, 'name' | 'description' | 'target_date' | 'status'>>) => Promise<Milestone>;
+    delete: (id: string) => Promise<void>;
   };
 };
 
@@ -378,6 +384,414 @@ async function executeSuggestPriorities(
   }
 }
 
+// ─── Milestone Planning ───────────────────────
+
+/**
+ * Extract meaningful tokens from text for similarity comparison.
+ * Strips common stop words and returns lowercased tokens.
+ */
+function extractTokens(text: string): Set<string> {
+  const stopWords = new Set([
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+    'should', 'may', 'might', 'can', 'shall', 'to', 'of', 'in', 'for',
+    'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'and',
+    'but', 'or', 'nor', 'not', 'so', 'yet', 'both', 'either', 'neither',
+    'it', 'its', 'this', 'that', 'these', 'those', 'i', 'we', 'you',
+    'le', 'la', 'les', 'un', 'une', 'des', 'du', 'de', 'et', 'ou',
+    'en', 'dans', 'pour', 'sur', 'avec', 'par', 'est', 'sont', 'être',
+  ]);
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9àâäéèêëïîôùûüÿç_-]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length > 2 && !stopWords.has(t)),
+  );
+}
+
+/**
+ * Jaccard similarity between two token sets (0..1).
+ */
+function tokenSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 0;
+  let intersection = 0;
+  for (const t of a) {
+    if (b.has(t)) intersection++;
+  }
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+interface DetectedDependency {
+  from_id: string;
+  from_display_id: string;
+  to_id: string;
+  to_display_id: string;
+  reason: string;
+  confidence: number;
+}
+
+/**
+ * Detect potential dependencies between issues by analyzing:
+ * 1. Title/description text similarity (shared domain tokens)
+ * 2. Explicit references (one issue mentions another's display_id)
+ * 3. Category overlap with priority ordering (higher-priority likely blocks lower)
+ * 4. Type-based inference (e.g. "bug" in area X likely depends on "feature" in area X)
+ */
+function detectDependencies(issues: Issue[]): DetectedDependency[] {
+  const deps: DetectedDependency[] = [];
+  const priorityRank: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
+
+  // Pre-compute tokens for each issue
+  const issueTokens = issues.map((i) =>
+    extractTokens(`${i.title} ${i.description || ''}`),
+  );
+
+  for (let i = 0; i < issues.length; i++) {
+    const issueA = issues[i];
+    const textA = `${issueA.title} ${issueA.description || ''}`.toLowerCase();
+
+    for (let j = i + 1; j < issues.length; j++) {
+      const issueB = issues[j];
+      const textB = `${issueB.title} ${issueB.description || ''}`.toLowerCase();
+
+      // 1. Explicit reference: one issue mentions the other's display_id
+      if (textA.includes(issueB.display_id.toLowerCase())) {
+        deps.push({
+          from_id: issueA.id, from_display_id: issueA.display_id,
+          to_id: issueB.id, to_display_id: issueB.display_id,
+          reason: `${issueA.display_id} explicitly references ${issueB.display_id}`,
+          confidence: 0.95,
+        });
+        continue;
+      }
+      if (textB.includes(issueA.display_id.toLowerCase())) {
+        deps.push({
+          from_id: issueB.id, from_display_id: issueB.display_id,
+          to_id: issueA.id, to_display_id: issueA.display_id,
+          reason: `${issueB.display_id} explicitly references ${issueA.display_id}`,
+          confidence: 0.95,
+        });
+        continue;
+      }
+
+      // 2. Text similarity — high overlap suggests related work
+      const sim = tokenSimilarity(issueTokens[i], issueTokens[j]);
+      if (sim < 0.25) continue; // Not similar enough
+
+      // 3. Same category + similar text → likely dependency chain
+      const sharedCats = (issueA.category || []).filter((c) =>
+        (issueB.category || []).includes(c),
+      );
+
+      if (sharedCats.length > 0 && sim >= 0.25) {
+        const rankA = priorityRank[issueA.priority || 'medium'] || 2;
+        const rankB = priorityRank[issueB.priority || 'medium'] || 2;
+
+        // Higher priority / foundational type (feature/improvement) likely comes first
+        const typeOrder: Record<string, number> = { feature: 1, improvement: 2, bug: 3, question: 4 };
+        const typeA = typeOrder[issueA.type || 'feature'] || 2;
+        const typeB = typeOrder[issueB.type || 'feature'] || 2;
+
+        let from: Issue, to: Issue;
+        if (rankA > rankB || (rankA === rankB && typeA <= typeB)) {
+          from = issueA; to = issueB;
+        } else {
+          from = issueB; to = issueA;
+        }
+
+        deps.push({
+          from_id: from.id, from_display_id: from.display_id,
+          to_id: to.id, to_display_id: to.display_id,
+          reason: `Related work in {${sharedCats.join(',')}} (similarity: ${Math.round(sim * 100)}%)`,
+          confidence: Math.min(0.9, sim + 0.2),
+        });
+      } else if (sim >= 0.4) {
+        // High text similarity even without shared category
+        const rankA = priorityRank[issueA.priority || 'medium'] || 2;
+        const rankB = priorityRank[issueB.priority || 'medium'] || 2;
+        const [from, to] = rankA >= rankB ? [issueA, issueB] : [issueB, issueA];
+
+        deps.push({
+          from_id: from.id, from_display_id: from.display_id,
+          to_id: to.id, to_display_id: to.display_id,
+          reason: `High text similarity (${Math.round(sim * 100)}%) — likely related`,
+          confidence: Math.min(0.8, sim),
+        });
+      }
+    }
+  }
+
+  // Sort by confidence descending, keep top results to avoid noise
+  return deps
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, Math.max(20, Math.floor(issues.length * 1.5)));
+}
+
+/**
+ * Compute velocity stats from historical issue data.
+ * Returns issues completed per week (rolling averages).
+ */
+function computeVelocity(allIssues: Issue[]): {
+  issues_per_week_4w: number;
+  issues_per_week_8w: number;
+  avg_days_to_close: number | null;
+  recent_completed: number;
+  data_points: number;
+} {
+  const now = Date.now();
+  const fourWeeksAgo = now - 28 * 24 * 60 * 60 * 1000;
+  const eightWeeksAgo = now - 56 * 24 * 60 * 60 * 1000;
+
+  const doneIssues = allIssues.filter((i) => i.status === 'done');
+
+  const done4w = doneIssues.filter((i) => new Date(i.updated_at).getTime() > fourWeeksAgo);
+  const done8w = doneIssues.filter((i) => new Date(i.updated_at).getTime() > eightWeeksAgo);
+
+  // Average days from created_at → updated_at (proxy for time-to-close)
+  const closeTimes = doneIssues
+    .map((i) => (new Date(i.updated_at).getTime() - new Date(i.created_at).getTime()) / (24 * 60 * 60 * 1000))
+    .filter((d) => d > 0 && d < 365); // sanity filter
+
+  const avgDaysToClose = closeTimes.length > 0
+    ? Math.round((closeTimes.reduce((a, b) => a + b, 0) / closeTimes.length) * 10) / 10
+    : null;
+
+  return {
+    issues_per_week_4w: done4w.length > 0 ? Math.round((done4w.length / 4) * 10) / 10 : 0,
+    issues_per_week_8w: done8w.length > 0 ? Math.round((done8w.length / 8) * 10) / 10 : 0,
+    avg_days_to_close: avgDaysToClose,
+    recent_completed: done4w.length,
+    data_points: doneIssues.length,
+  };
+}
+
+async function executePlanMilestones(
+  args: Record<string, unknown>,
+  allIssues: Record<string, Issue[]>,
+  projects: Project[],
+): Promise<SkillResult> {
+  try {
+    const projectId = args.project_id as string;
+    if (!projectId) return { skill: 'plan_milestones', success: false, error: 'Missing project_id', summary: 'No project specified' };
+
+    const project = projects.find((p) => p.id === projectId || p.prefix === projectId || p.name === projectId);
+    const targetProjectId = project?.id || projectId;
+    const issues = allIssues[targetProjectId] || [];
+
+    // Filter out done and cancelled issues
+    const openIssues = issues.filter((i) => i.status !== 'done' && i.status !== 'cancelled');
+
+    if (openIssues.length === 0) {
+      return {
+        skill: 'plan_milestones',
+        success: true,
+        data: { project: project?.name || projectId, open_issues: [], dependencies: [], velocity: null, message: 'No open issues to plan milestones for.' },
+        summary: `No open issues in ${project?.name || projectId}`,
+      };
+    }
+
+    const targetDate = args.target_date as string | undefined;
+    const teamSize = (args.team_size as number) || 1;
+
+    // Detect potential dependencies between open issues
+    const dependencies = detectDependencies(openIssues);
+
+    // Compute velocity from all project issues (including done)
+    const velocity = computeVelocity(issues);
+
+    // Estimate weeks to complete based on velocity and team size
+    const effectiveVelocity = velocity.issues_per_week_4w > 0
+      ? velocity.issues_per_week_4w * teamSize
+      : velocity.issues_per_week_8w > 0
+        ? velocity.issues_per_week_8w * teamSize
+        : null;
+
+    const estimatedWeeks = effectiveVelocity
+      ? Math.round((openIssues.length / effectiveVelocity) * 10) / 10
+      : null;
+
+    return {
+      skill: 'plan_milestones',
+      success: true,
+      data: {
+        project: project?.name || projectId,
+        project_id: targetProjectId,
+        target_date: targetDate || null,
+        team_size: teamSize,
+        open_issues: openIssues.map((i) => ({
+          id: i.id,
+          display_id: i.display_id,
+          title: i.title,
+          description: i.description || '',
+          status: i.status,
+          priority: i.priority,
+          type: i.type,
+          tags: i.tags,
+          category: i.category,
+          milestone_id: i.milestone_id,
+          created_at: i.created_at,
+          updated_at: i.updated_at,
+        })),
+        total_open: openIssues.length,
+        dependencies: dependencies.map((d) => ({
+          from: d.from_display_id,
+          to: d.to_display_id,
+          reason: d.reason,
+          confidence: d.confidence,
+        })),
+        velocity: {
+          ...velocity,
+          effective_velocity: effectiveVelocity,
+          estimated_weeks_to_complete: estimatedWeeks,
+          team_size: teamSize,
+        },
+      },
+      summary: `Fetched ${openIssues.length} open issues, detected ${dependencies.length} potential dependencies, velocity: ${effectiveVelocity ?? 'unknown'} issues/week`,
+    };
+  } catch (err) {
+    return { skill: 'plan_milestones', success: false, error: String(err), summary: 'Failed to fetch issues for planning' };
+  }
+}
+
+async function executeCreateMilestonesBatch(
+  args: Record<string, unknown>,
+  api: ApiClient,
+  projects: Project[],
+): Promise<SkillResult> {
+  try {
+    const projectId = args.project_id as string;
+    if (!projectId) return { skill: 'create_milestones_batch', success: false, error: 'Missing project_id', summary: 'No project specified' };
+
+    const project = projects.find((p) => p.id === projectId || p.prefix === projectId || p.name === projectId);
+    const targetProjectId = project?.id || projectId;
+
+    const milestones = args.milestones as Array<{
+      name: string;
+      description?: string;
+      target_date?: string;
+      order?: number;
+      issue_ids: string[];
+    }>;
+
+    if (!milestones?.length) {
+      return { skill: 'create_milestones_batch', success: false, error: 'No milestones provided', summary: 'Empty milestones list' };
+    }
+
+    const results: string[] = [];
+    let milestonesCreated = 0;
+    let issuesAssigned = 0;
+
+    for (const ms of milestones) {
+      try {
+        // Create the milestone
+        const created = await api.milestones.create(targetProjectId, {
+          name: ms.name,
+          description: ms.description,
+          target_date: ms.target_date,
+        });
+        milestonesCreated++;
+
+        // Assign issues to this milestone
+        let assignedCount = 0;
+        for (const issueId of ms.issue_ids) {
+          try {
+            await api.issues.update(issueId, { milestone_id: created.id } as Record<string, unknown>);
+            assignedCount++;
+            issuesAssigned++;
+          } catch {
+            results.push(`  ❌ Failed to assign issue ${issueId} to ${ms.name}`);
+          }
+        }
+
+        results.push(`✅ **${ms.name}** — ${assignedCount} issue${assignedCount !== 1 ? 's' : ''} assigned${ms.target_date ? ` (target: ${ms.target_date})` : ''}`);
+      } catch (err) {
+        results.push(`❌ Failed to create milestone "${ms.name}": ${String(err)}`);
+      }
+    }
+
+    return {
+      skill: 'create_milestones_batch',
+      success: true,
+      data: {
+        milestones_created: milestonesCreated,
+        issues_assigned: issuesAssigned,
+        details: results,
+      },
+      summary: `Created ${milestonesCreated} milestone${milestonesCreated !== 1 ? 's' : ''}, assigned ${issuesAssigned} issue${issuesAssigned !== 1 ? 's' : ''}`,
+    };
+  } catch (err) {
+    return { skill: 'create_milestones_batch', success: false, error: String(err), summary: 'Batch milestone creation failed' };
+  }
+}
+
+async function executeAdjustTimeline(
+  args: Record<string, unknown>,
+  api: ApiClient,
+  allIssues: Record<string, Issue[]>,
+  projects: Project[],
+): Promise<SkillResult> {
+  try {
+    const projectId = args.project_id as string;
+    const constraint = args.constraint as string;
+    if (!projectId) return { skill: 'adjust_timeline', success: false, error: 'Missing project_id', summary: 'No project specified' };
+    if (!constraint) return { skill: 'adjust_timeline', success: false, error: 'Missing constraint', summary: 'No constraint specified' };
+
+    const project = projects.find((p) => p.id === projectId || p.prefix === projectId || p.name === projectId);
+    const targetProjectId = project?.id || projectId;
+
+    // Fetch existing milestones
+    const milestones = await api.milestones.listByProject(targetProjectId);
+
+    // Fetch open issues
+    const issues = allIssues[targetProjectId] || [];
+    const openIssues = issues.filter((i) => i.status !== 'done' && i.status !== 'cancelled');
+
+    // Detect dependencies and compute velocity for informed replanning
+    const dependencies = detectDependencies(openIssues);
+    const velocity = computeVelocity(issues);
+
+    return {
+      skill: 'adjust_timeline',
+      success: true,
+      data: {
+        project: project?.name || projectId,
+        project_id: targetProjectId,
+        constraint,
+        milestones: milestones.map((m) => ({
+          id: m.id,
+          name: m.name,
+          description: m.description,
+          target_date: m.target_date,
+          status: m.status,
+        })),
+        open_issues: openIssues.map((i) => ({
+          id: i.id,
+          display_id: i.display_id,
+          title: i.title,
+          status: i.status,
+          priority: i.priority,
+          type: i.type,
+          milestone_id: i.milestone_id,
+        })),
+        dependencies: dependencies.map((d) => ({
+          from: d.from_display_id,
+          to: d.to_display_id,
+          reason: d.reason,
+          confidence: d.confidence,
+        })),
+        velocity,
+        total_milestones: milestones.length,
+        total_open_issues: openIssues.length,
+      },
+      summary: `Fetched ${milestones.length} milestones, ${openIssues.length} open issues, and ${dependencies.length} dependencies for timeline adjustment`,
+    };
+  } catch (err) {
+    return { skill: 'adjust_timeline', success: false, error: String(err), summary: 'Failed to fetch data for timeline adjustment' };
+  }
+}
+
 // ─── Main Executor ────────────────────────────
 
 export async function executeSkill(
@@ -413,6 +827,12 @@ export async function executeSkill(
         data: { brief: args.brief, project_id: args.project_id },
         summary: 'PRD context ready — generating document',
       };
+    case 'plan_milestones':
+      return executePlanMilestones(args, allIssues, projects);
+    case 'create_milestones_batch':
+      return executeCreateMilestonesBatch(args, api, projects);
+    case 'adjust_timeline':
+      return executeAdjustTimeline(args, api, allIssues, projects);
     default:
       return { skill: skillName, success: false, error: `Unknown skill: ${skillName}`, summary: `Unknown skill: ${skillName}` };
   }

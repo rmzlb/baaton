@@ -4,7 +4,7 @@
  */
 
 import { GoogleGenerativeAI, type Content, type Part } from '@google/generative-ai';
-import type { Issue, Project } from './types';
+import type { Issue, Project, Milestone } from './types';
 import { SKILL_TOOLS } from './ai-skills';
 import { executeSkill } from './ai-executor';
 import type { SkillResult } from './ai-skills';
@@ -81,7 +81,7 @@ Tu as un accès complet aux données en temps réel et peux exécuter des action
 
 # BLOCK 2 — SKILLS & CAPACITÉS
 
-## Tes 8 Skills (fonctions exécutables) :
+## Tes 11 Skills (fonctions exécutables) :
 
 ### 📋 Lecture & Analyse
 - **search_issues** — Chercher/filtrer des issues (texte, status, priorité, catégorie, projet)
@@ -97,6 +97,11 @@ Tu as un accès complet aux données en temps réel et peux exécuter des action
 ### 📄 Génération
 - **generate_prd** — Générer un PRD structuré (objectifs, user stories, critères d'acceptance, specs techniques)
 
+### 🎯 Milestone Planning
+- **plan_milestones** — Analyser les tickets ouverts, détecter les dépendances entre issues (par similarité de titre/description), calculer la vélocité (issues/semaine), et proposer un plan de milestones avec chemin critique. Ne crée rien automatiquement — propose d'abord, l'utilisateur confirme.
+- **create_milestones_batch** — Créer plusieurs milestones et assigner les issues d'un coup. Utiliser APRÈS plan_milestones quand l'utilisateur confirme le plan proposé.
+- **adjust_timeline** — Ajuster la timeline des milestones selon une nouvelle contrainte/deadline. Récupère les milestones, issues, dépendances et vélocité pour proposer un replanning réaliste.
+
 ## Règles d'Exécution
 1. **TOUJOURS utiliser tes skills** pour accéder aux données — jamais d'hallucination
 2. **Actions directes** : créer, modifier, commenter → exécute immédiatement sans demander confirmation
@@ -105,6 +110,21 @@ Tu as un accès complet aux données en temps réel et peux exécuter des action
 5. **Cite les display_id** (ex: HLM-42) quand tu mentionnes des issues
 6. **Pour update/bulk** → utilise l'UUID (pas le display_id)
 7. **Résolution de projet** : quand l'utilisateur dit un nom ("helmai", "sqare"), matche avec le prefix du projet
+
+## Comportement pour le Milestone Planning
+
+Quand l'utilisateur demande de planifier des milestones :
+1. **Utilise plan_milestones** pour récupérer tous les tickets ouverts
+2. **Propose un plan structuré** avec des groupements logiques, des estimations de durée, et un ordre de priorité
+3. **NE CRÉE PAS les milestones automatiquement** — présente le plan et demande confirmation
+4. **Quand l'utilisateur confirme**, utilise **create_milestones_batch** pour tout créer d'un coup
+5. **Pour ajuster un plan existant**, utilise **adjust_timeline** avec la contrainte spécifiée
+
+Format de proposition :
+- 🎯 **Milestone 1 : Nom** (cible: date) — X issues
+  - Liste des issues avec display_id
+- 🎯 **Milestone 2 : Nom** (cible: date) — Y issues
+  - etc.
 
 ## Comportement pour la Création d'Issue
 
@@ -262,6 +282,12 @@ type ApiClientType = {
   };
   projects: {
     list: () => Promise<Project[]>;
+  };
+  milestones: {
+    listByProject: (projectId: string) => Promise<Milestone[]>;
+    create: (projectId: string, body: { name: string; description?: string; target_date?: string; status?: string }) => Promise<Milestone>;
+    update: (id: string, body: Partial<Pick<Milestone, 'name' | 'description' | 'target_date' | 'status'>>) => Promise<Milestone>;
+    delete: (id: string) => Promise<void>;
   };
 };
 
