@@ -1,7 +1,7 @@
 import type { DraggableProvided } from '@hello-pangea/dnd';
 import {
   Bug, Sparkles, Zap, HelpCircle,
-  ArrowUp, ArrowDown, Minus, AlertTriangle, Bot, MessageSquare,
+  ArrowUp, ArrowDown, Minus, Flame, Bot, MessageSquare,
   Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -33,9 +33,9 @@ const typeColors: Record<IssueType, string> = {
 };
 
 const priorityConfig: Record<IssuePriority, { icon: typeof ArrowUp; color: string; label: string }> = {
-  urgent: { icon: AlertTriangle, color: 'text-red-500', label: 'Urgent' },
-  high: { icon: ArrowUp, color: 'text-orange-400', label: 'High' },
-  medium: { icon: Minus, color: 'text-yellow-400', label: 'Medium' },
+  urgent: { icon: Flame, color: 'text-red-500', label: 'Urgent' },
+  high: { icon: ArrowUp, color: 'text-orange-500', label: 'High' },
+  medium: { icon: Minus, color: 'text-yellow-500', label: 'Medium' },
   low: { icon: ArrowDown, color: 'text-gray-400', label: 'Low' },
 };
 

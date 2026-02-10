@@ -23,8 +23,8 @@ const COLUMN_WIDTHS = {
 } as const;
 
 const CARD_GAPS = {
-  compact: 'space-y-1',
-  default: 'space-y-2',
+  compact: 'space-y-1.5',
+  default: 'space-y-3',
   spacious: 'space-y-3',
 } as const;
 
@@ -44,8 +44,8 @@ export function KanbanColumn({
     <div role="group" aria-label={`${status.label} — ${issues.length} issues`} className={cn('flex h-full flex-col shrink-0 snap-center', COLUMN_WIDTHS[density])}>
       {/* Column Header */}
       <div className={cn(
-        'flex items-center justify-between px-2',
-        density === 'compact' ? 'pb-2' : 'pb-3',
+        'flex items-center justify-between px-1',
+        density === 'compact' ? 'mb-2' : 'mb-3',
       )}>
         <div className="flex items-center gap-2">
           <div
@@ -83,7 +83,7 @@ export function KanbanColumn({
         ref={provided.innerRef}
         {...provided.droppableProps}
         className={cn(
-          'flex-1 overflow-y-auto rounded-lg p-1 transition-colors',
+          'flex-1 overflow-y-auto rounded-lg p-1 pb-10 transition-colors',
           CARD_GAPS[density],
           isDraggingOver ? 'bg-surface' : '',
         )}
