@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useUIStore } from '@/stores/ui';
+import { useAIAssistantStore } from '@/stores/ai-assistant';
 import { cn } from '@/lib/utils';
 import { GanttTimeline } from '@/components/milestones/GanttTimeline';
 import { MilestoneDetail } from '@/components/milestones/MilestoneDetail';
@@ -174,11 +174,9 @@ export function Milestones() {
           {/* AI Plan button */}
           <button
             onClick={() => {
-              // Open AI assistant with milestone planning prompt
-              useUIStore.getState().setAiOpen(true);
-              useUIStore.getState().setAiPrefilledMessage(
-                `Plan milestones for this project. Analyze all open tickets, group them into logical milestones, estimate timing, and suggest priorities.`
-              );
+              const store = useAIAssistantStore.getState();
+              store.setInput('Plan milestones for this project. Analyze all open tickets, group them into logical milestones, estimate timing, and suggest priorities.');
+              store.setOpen(true);
             }}
             className="flex items-center gap-1.5 rounded-lg border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 px-3.5 py-2 text-sm font-medium text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
           >
@@ -236,10 +234,9 @@ export function Milestones() {
           {/* AI Plan button */}
           <button
             onClick={() => {
-              useUIStore.getState().setAiOpen(true);
-              useUIStore.getState().setAiPrefilledMessage(
-                `Plan milestones for this project. Analyze all open tickets, group them into logical milestones, estimate timing, and suggest priorities.`
-              );
+              const store = useAIAssistantStore.getState();
+              store.setInput('Plan milestones for this project. Analyze all open tickets, group them into logical milestones, estimate timing, and suggest priorities.');
+              store.setOpen(true);
             }}
             className="flex items-center gap-1.5 mt-3 rounded-lg border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 px-4 py-2 text-sm font-medium text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
           >
