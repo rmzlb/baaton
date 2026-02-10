@@ -435,6 +435,7 @@ export function AllIssues() {
             onIssueClick={(issue) => openDetail(issue.id)}
             projectTags={allTags}
             projects={projects}
+            hideFilterBar
           />
         )}
       </div>

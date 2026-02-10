@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Search, ChevronDown, ChevronRight,
   ArrowUp, ArrowDown, Minus, AlertTriangle,
@@ -50,9 +50,10 @@ interface ListViewProps {
   onIssueClick: (issue: Issue) => void;
   projectTags?: ProjectTag[];
   projects?: Project[];
+  hideFilterBar?: boolean;
 }
 
-export function ListView({ statuses, issues, onIssueClick, projectTags = [], projects = [] }: ListViewProps) {
+export function ListView({ statuses, issues, onIssueClick, projectTags = [], projects = [], hideFilterBar = false }: ListViewProps) {
   const { t } = useTranslation();
   const {
     contextMenu, setContextMenu, deleteTarget, setDeleteTarget,
@@ -240,7 +241,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
   return (
     <div className="flex h-full flex-col">
       {/* Filter Bar */}
-      <div className="relative flex flex-wrap items-center gap-1.5 md:gap-2 border-b border-border px-3 md:px-6 py-2 overflow-visible z-30">
+      {!hideFilterBar && <div className="relative flex flex-wrap items-center gap-1.5 md:gap-2 border-b border-border px-3 md:px-6 py-2 overflow-visible z-30">
         <div className="relative shrink-0">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
@@ -363,7 +364,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
             {t('list.groupByProject') || 'Group by project'}
           </button>
         )}
-      </div>
+      </div>}
 
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
