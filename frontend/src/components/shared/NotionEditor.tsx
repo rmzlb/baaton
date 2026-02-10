@@ -360,21 +360,29 @@ export function NotionEditor({
   );
 
   // Parse initial content — memoize to avoid re-parsing
+  // For HTML with images (data: URIs), we defer to editor.commands.setContent
+  // because generateJSON doesn't handle large base64 src attributes well
+  const isHtmlContent = typeof initialContent === 'string' && initialContent.trim().startsWith('<');
   const parsedContent = useMemo((): JSONContent | undefined => {
     if (typeof initialContent === 'string' && initialContent.trim()) {
-      if (initialContent.trim().startsWith('<')) {
-        return generateJSON(initialContent, extensions) as JSONContent;
+      if (isHtmlContent) {
+        // Will be set via editor.commands.setContent in onCreate
+        return undefined;
       }
       return markdownToTiptap(initialContent);
     }
     return initialContent as JSONContent | undefined;
-  }, [initialContent, extensions]);
+  }, [initialContent, extensions, isHtmlContent]);
 
   const handleCreate = useCallback(
     ({ editor }: { editor: EditorInstance }) => {
       editorRef.current = editor;
+      // For HTML content, use editor's built-in parser (handles data: URIs correctly)
+      if (isHtmlContent && typeof initialContent === 'string') {
+        editor.commands.setContent(initialContent);
+      }
     },
-    [],
+    [isHtmlContent, initialContent],
   );
 
   const handleUpdate = useCallback(
