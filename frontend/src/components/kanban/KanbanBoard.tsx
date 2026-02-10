@@ -342,7 +342,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
   return (
     <div className="flex h-full flex-col">
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-1.5 md:gap-2 border-b border-border px-3 md:px-6 py-2 overflow-x-auto">
+      <div className="relative flex flex-wrap items-center gap-1.5 md:gap-2 border-b border-border px-3 md:px-6 py-2 overflow-visible z-30">
         {/* Search */}
         <div className="relative shrink-0">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
@@ -661,7 +661,7 @@ function FilterDropdown({
         <ChevronDown size={10} aria-hidden="true" />
       </button>
       {open && (
-        <div role="listbox" aria-label={label} className="absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl max-h-64 overflow-y-auto">
+        <div role="listbox" aria-label={label} className="absolute left-0 top-full z-50 mt-1 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl max-h-64 overflow-y-auto">
           {children}
         </div>
       )}

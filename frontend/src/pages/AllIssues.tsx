@@ -10,7 +10,8 @@ import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   Layers, Kanban, List, Rows3, Rows4, StretchHorizontal,
-  Filter, ChevronDown, X,
+  Filter, ChevronDown, X, Search, SlidersHorizontal, FolderOpen,
+  ArrowUp, ArrowDown, Minus, AlertTriangle,
 } from 'lucide-react';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { cn } from '@/lib/utils';
@@ -148,7 +149,10 @@ export function AllIssues() {
 
   // Filters
   const [projectFilter, setProjectFilter] = useState<string[]>([]);
-  const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortMode, setSortMode] = useState<'manual' | 'priority' | 'created' | 'updated'>('manual');
 
   // Fetch all projects
   const { data: projects = [] } = useQuery({
@@ -201,11 +205,67 @@ export function AllIssues() {
     staleTime: 60_000,
   });
 
-  // Apply project filter
+  // Apply all filters
   const filteredIssues = useMemo(() => {
-    if (projectFilter.length === 0) return allIssuesRaw;
-    return allIssuesRaw.filter((i) => projectFilter.includes(i.project_id));
-  }, [allIssuesRaw, projectFilter]);
+    let result = allIssuesRaw;
+
+    if (projectFilter.length > 0) {
+      result = result.filter((i) => projectFilter.includes(i.project_id));
+    }
+    if (statusFilter.length > 0) {
+      result = result.filter((i) => statusFilter.includes(i.status));
+    }
+    if (priorityFilter.length > 0) {
+      result = result.filter((i) => i.priority && priorityFilter.includes(i.priority));
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (i) =>
+          i.title.toLowerCase().includes(q) ||
+          i.display_id.toLowerCase().includes(q) ||
+          i.tags.some((t) => t.toLowerCase().includes(q)),
+      );
+    }
+
+    // Sort
+    const sorted = [...result];
+    switch (sortMode) {
+      case 'priority': {
+        const order: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+        return sorted.sort((a, b) => (order[a.priority || 'low'] ?? 4) - (order[b.priority || 'low'] ?? 4));
+      }
+      case 'created':
+        return sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      case 'updated':
+        return sorted.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+      default:
+        return sorted;
+    }
+  }, [allIssuesRaw, projectFilter, statusFilter, priorityFilter, searchQuery, sortMode]);
+
+  const hasFilters = projectFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || searchQuery.length > 0;
+
+  const clearAllFilters = () => {
+    setProjectFilter([]);
+    setStatusFilter([]);
+    setPriorityFilter([]);
+    setSearchQuery('');
+  };
+
+  const PRIORITY_OPTIONS = [
+    { value: 'urgent', label: 'Urgent', color: '#ef4444' },
+    { value: 'high', label: 'High', color: '#f97316' },
+    { value: 'medium', label: 'Medium', color: '#eab308' },
+    { value: 'low', label: 'Low', color: '#6b7280' },
+  ];
+
+  const SORT_OPTIONS = [
+    { key: 'manual' as const, label: t('kanban.manual') || 'Manual' },
+    { key: 'priority' as const, label: t('kanban.priority') || 'Priority' },
+    { key: 'created' as const, label: t('kanban.created') || 'Created' },
+    { key: 'updated' as const, label: t('kanban.updated') || 'Updated' },
+  ];
 
   // Drag & drop handler — update via API
   const positionMutation = useMutation({
@@ -246,8 +306,6 @@ export function AllIssues() {
   // Find selected issue for drawer
   const selectedIssue = allIssuesRaw.find((i) => i.id === selectedIssueId);
 
-  const hasFilters = projectFilter.length > 0;
-
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-secondary">
@@ -258,7 +316,7 @@ export function AllIssues() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header — same layout as ProjectBoard */}
+      {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-3 md:px-6 py-3 gap-2">
         <div className="min-w-0 flex-1">
           <h1 className="text-base md:text-lg font-semibold text-primary truncate flex items-center gap-2">
@@ -271,42 +329,16 @@ export function AllIssues() {
         </div>
 
         <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
-          {/* New Issue */}
           <GlobalCreateIssueButton variant="compact" />
-
-          {/* Project filter */}
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={cn(
-              'flex items-center gap-1 md:gap-1.5 rounded-md border px-2 md:px-2.5 py-1.5 text-xs transition-colors',
-              hasFilters
-                ? 'border-accent text-accent bg-accent/5'
-                : 'border-border text-secondary hover:border-secondary',
-            )}
-          >
-            <Filter size={12} />
-            <span className="hidden sm:inline">{t('allIssues.filter')}</span>
-            {hasFilters && (
-              <span className="rounded-full bg-accent text-black px-1.5 text-[10px] font-bold">
-                {projectFilter.length}
-              </span>
-            )}
-          </button>
-
-          {/* Density Toggle — hide on mobile */}
           <div className="hidden sm:block">
             <DensityToggle />
           </div>
-
-          {/* View Toggle */}
           <div className="flex items-center rounded-md border border-border bg-surface p-0.5">
             <button
               onClick={() => setViewMode('kanban')}
               className={cn(
                 'rounded-[5px] p-1.5 transition-colors',
-                viewMode === 'kanban'
-                  ? 'bg-surface-hover text-primary'
-                  : 'text-muted hover:text-secondary',
+                viewMode === 'kanban' ? 'bg-surface-hover text-primary' : 'text-muted hover:text-secondary',
               )}
               title={t('projectBoard.kanbanView')}
             >
@@ -316,9 +348,7 @@ export function AllIssues() {
               onClick={() => setViewMode('list')}
               className={cn(
                 'rounded-[5px] p-1.5 transition-colors',
-                viewMode === 'list'
-                  ? 'bg-surface-hover text-primary'
-                  : 'text-muted hover:text-secondary',
+                viewMode === 'list' ? 'bg-surface-hover text-primary' : 'text-muted hover:text-secondary',
               )}
               title={t('projectBoard.listView')}
             >
@@ -328,25 +358,64 @@ export function AllIssues() {
         </div>
       </div>
 
-      {/* Filter bar (collapsible) */}
-      {showFilters && (
-        <div className="flex items-center gap-2 border-b border-border px-3 md:px-6 py-2 bg-surface/50 overflow-x-auto">
-          <MultiSelect
-            label={t('allIssues.project')}
-            options={projects.map((p) => ({ value: p.id, label: `${p.prefix} — ${p.name}` }))}
-            selected={projectFilter}
-            onChange={setProjectFilter}
+      {/* Filter & Sort Toolbar */}
+      <div className="relative flex flex-wrap items-center gap-1.5 md:gap-2 border-b border-border px-3 md:px-6 py-2 overflow-visible z-30">
+        {/* Search */}
+        <div className="relative shrink-0">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('kanban.filterIssues') || 'Filter issues...'}
+            className="h-8 w-32 sm:w-48 rounded-md border border-border bg-surface pl-8 pr-3 text-xs text-primary placeholder-muted outline-none focus:border-accent transition-colors"
           />
-          {hasFilters && (
-            <button
-              onClick={() => setProjectFilter([])}
-              className="flex items-center gap-1 text-xs text-muted hover:text-primary transition-colors"
-            >
-              <X size={12} /> {t('allIssues.clear')}
-            </button>
-          )}
         </div>
-      )}
+
+        {/* Project filter */}
+        <MultiSelect
+          label={t('allIssues.project') || 'Project'}
+          options={projects.map((p) => ({ value: p.id, label: `${p.prefix} — ${p.name}` }))}
+          selected={projectFilter}
+          onChange={setProjectFilter}
+        />
+
+        {/* Status filter */}
+        <MultiSelect
+          label={t('allIssues.status') || 'Status'}
+          options={STATUSES.map((s) => ({ value: s.key, label: s.label, color: s.color }))}
+          selected={statusFilter}
+          onChange={setStatusFilter}
+        />
+
+        {/* Priority filter */}
+        <MultiSelect
+          label={t('kanban.priority') || 'Priority'}
+          options={PRIORITY_OPTIONS}
+          selected={priorityFilter}
+          onChange={setPriorityFilter}
+        />
+
+        {/* Clear all */}
+        {hasFilters && (
+          <button
+            onClick={clearAllFilters}
+            className="flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-accent hover:bg-accent/10 transition-colors"
+          >
+            <X size={12} />
+            {t('kanban.clearAll') || 'Clear'}
+          </button>
+        )}
+
+        {/* Sort — pushed right */}
+        <div className="relative ml-auto">
+          <SortDropdown
+            options={SORT_OPTIONS}
+            value={sortMode}
+            onChange={setSortMode}
+          />
+        </div>
+      </div>
 
       {/* Board or List — same components as ProjectBoard */}
       <div className="flex-1 overflow-hidden">
@@ -377,6 +446,60 @@ export function AllIssues() {
           projectId={selectedIssue?.project_id}
           onClose={handleCloseDetail}
         />
+      )}
+    </div>
+  );
+}
+
+// ─── Sort Dropdown ────────────────────────────
+function SortDropdown({
+  options,
+  value,
+  onChange,
+}: {
+  options: { key: string; label: string }[];
+  value: string;
+  onChange: (v: any) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary hover:text-primary transition-colors min-h-[32px]"
+      >
+        <SlidersHorizontal size={12} />
+        <span className="hidden sm:inline">{options.find((o) => o.key === value)?.label}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg border border-border bg-surface py-1 shadow-xl">
+            {options.map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => { onChange(opt.key); setOpen(false); }}
+                className={cn(
+                  'flex w-full items-center px-3 py-2 text-xs transition-colors',
+                  value === opt.key ? 'text-primary bg-surface-hover' : 'text-secondary hover:bg-surface-hover',
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
