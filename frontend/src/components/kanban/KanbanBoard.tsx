@@ -12,10 +12,10 @@ import { KanbanColumn } from './KanbanColumn';
 import { IssueContextMenu, DeleteConfirmModal, useIssueContextMenu } from '@/components/shared/IssueContextMenu';
 import { BulkActionBar, useBulkKeyboardShortcuts } from '@/components/shared/BulkActionBar';
 import { useSelection } from '@/hooks/useSelection';
+import { useIssueMutations } from '@/hooks/useIssueMutations';
 import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useApi } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/shared/EmptyState';
 import type { Issue, IssueStatus, IssuePriority, ProjectStatus, ProjectTag } from '@/lib/types';
@@ -58,16 +58,13 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
   const moveIssueOptimistic = useIssuesStore((s) => s.moveIssueOptimistic);
   const restoreIssues = useIssuesStore((s) => s.restoreIssues);
   const addNotification = useNotificationStore((s) => s.addNotification);
-  const apiClient = useApi();
   const {
     contextMenu, setContextMenu, deleteTarget, setDeleteTarget,
     handleContextMenu, handleStatusChange, handlePriorityChange,
     handleDeleteConfirm, handleCopyId, handleOpen,
   } = useIssueContextMenu(statuses, onIssueClick);
   const { selectedIds, toggle: toggleSelect, selectAll, deselectAll } = useSelection();
-  const updateIssueOpt = useIssuesStore((s) => s.updateIssueOptimistic);
-  const removeIssueStore = useIssuesStore((s) => s.removeIssue);
-  const addNotif = useNotificationStore((s) => s.addNotification);
+  const mutations = useIssueMutations();
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [sortMode, setSortMode] = useState<SortMode>('manual');
   const [searchQuery, setSearchQuery] = useState('');
@@ -199,30 +196,21 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
 
   const allIssueIds = useMemo(() => issues.map((i) => i.id), [issues]);
 
-  const bulkMarkDone = useCallback(async () => {
-    const ids = Array.from(selectedIds);
-    ids.forEach((id) => updateIssueOpt(id, { status: 'done' as IssueStatus }));
+  const bulkMarkDone = useCallback(() => {
+    mutations.bulkUpdateStatus(Array.from(selectedIds), 'done' as IssueStatus);
     deselectAll();
-    await Promise.allSettled(ids.map((id) => apiClient.issues.update(id, { status: 'done' as IssueStatus })));
-    addNotif({ type: 'success', title: `${ids.length} → Done` });
-  }, [selectedIds, updateIssueOpt, deselectAll, apiClient, addNotif]);
+  }, [selectedIds, mutations, deselectAll]);
 
-  const bulkMarkCancelled = useCallback(async () => {
-    const ids = Array.from(selectedIds);
-    ids.forEach((id) => updateIssueOpt(id, { status: 'cancelled' as IssueStatus }));
+  const bulkMarkCancelled = useCallback(() => {
+    mutations.bulkUpdateStatus(Array.from(selectedIds), 'cancelled' as IssueStatus);
     deselectAll();
-    await Promise.allSettled(ids.map((id) => apiClient.issues.update(id, { status: 'cancelled' as IssueStatus })));
-    addNotif({ type: 'success', title: `${ids.length} → Cancelled` });
-  }, [selectedIds, updateIssueOpt, deselectAll, apiClient, addNotif]);
+  }, [selectedIds, mutations, deselectAll]);
 
-  const bulkDeleteKb = useCallback(async () => {
+  const bulkDeleteKb = useCallback(() => {
     if (!confirm(`Delete ${selectedIds.size} issue(s)?`)) return;
-    const ids = Array.from(selectedIds);
-    ids.forEach((id) => removeIssueStore(id));
+    mutations.bulkDelete(Array.from(selectedIds));
     deselectAll();
-    await Promise.allSettled(ids.map((id) => apiClient.issues.delete(id)));
-    addNotif({ type: 'success', title: `${ids.length} deleted` });
-  }, [selectedIds, removeIssueStore, deselectAll, apiClient, addNotif]);
+  }, [selectedIds, mutations, deselectAll]);
 
   useBulkKeyboardShortcuts(selectedIds, statuses, bulkMarkDone, bulkMarkCancelled, bulkDeleteKb, deselectAll);
 

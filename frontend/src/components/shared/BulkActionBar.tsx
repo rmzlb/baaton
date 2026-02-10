@@ -3,12 +3,9 @@ import {
   CheckCircle2, XCircle, Trash2, X,
   ArrowRight, Flame, ArrowUp, ArrowDown, Minus,
 } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useApi } from '@/hooks/useApi';
-import { useIssuesStore } from '@/stores/issues';
-import { useNotificationStore } from '@/stores/notifications';
+import { useIssueMutations } from '@/hooks/useIssueMutations';
 import type { Issue, IssueStatus, IssuePriority, ProjectStatus } from '@/lib/types';
 
 interface BulkActionBarProps {
@@ -31,81 +28,25 @@ export function BulkActionBar({
   totalCount,
 }: BulkActionBarProps) {
   const { t } = useTranslation();
-  const apiClient = useApi();
-  const queryClient = useQueryClient();
-  const updateIssueOptimistic = useIssuesStore((s) => s.updateIssueOptimistic);
-  const removeIssue = useIssuesStore((s) => s.removeIssue);
-  const addNotification = useNotificationStore((s) => s.addNotification);
-
-  // Optimistically update TanStack Query cache
-  const updateQueryCache = useCallback((issueId: string, patch: Partial<Issue>) => {
-    for (const key of ['all-issues', 'issues']) {
-      queryClient.setQueriesData({ queryKey: [key] }, (old: Issue[] | undefined) => {
-        if (!old) return old;
-        return old.map((i) => i.id === issueId ? { ...i, ...patch, updated_at: new Date().toISOString() } : i);
-      });
-    }
-  }, [queryClient]);
-
-  const removeFromQueryCache = useCallback((issueId: string) => {
-    for (const key of ['all-issues', 'issues']) {
-      queryClient.setQueriesData({ queryKey: [key] }, (old: Issue[] | undefined) => {
-        if (!old) return old;
-        return old.filter((i) => i.id !== issueId);
-      });
-    }
-  }, [queryClient]);
+  const mutations = useIssueMutations();
 
   const count = selectedIds.size;
   if (count === 0) return null;
 
-  const bulkUpdateStatus = async (status: IssueStatus) => {
-    const ids = Array.from(selectedIds);
-    // Optimistic: store + query cache
-    ids.forEach((id) => { updateIssueOptimistic(id, { status }); updateQueryCache(id, { status }); });
+  const bulkUpdateStatus = (status: IssueStatus) => {
+    mutations.bulkUpdateStatus(Array.from(selectedIds), status);
     onClear();
-    // API calls in parallel
-    const results = await Promise.allSettled(
-      ids.map((id) => apiClient.issues.update(id, { status })),
-    );
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    if (failed > 0) {
-      addNotification({ type: 'warning', title: `${failed}/${ids.length} failed to update` });
-    } else {
-      const label = statuses.find((s) => s.key === status)?.label || status;
-      addNotification({ type: 'success', title: `${ids.length} issues → ${label}` });
-    }
   };
 
-  const bulkUpdatePriority = async (priority: IssuePriority | null) => {
-    const ids = Array.from(selectedIds);
-    ids.forEach((id) => { updateIssueOptimistic(id, { priority: priority as any }); updateQueryCache(id, { priority: priority as any }); });
+  const bulkUpdatePriority = (priority: IssuePriority | null) => {
+    mutations.bulkUpdatePriority(Array.from(selectedIds), priority);
     onClear();
-    const results = await Promise.allSettled(
-      ids.map((id) => apiClient.issues.update(id, { priority })),
-    );
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    if (failed > 0) {
-      addNotification({ type: 'warning', title: `${failed}/${ids.length} failed` });
-    } else {
-      addNotification({ type: 'success', title: `${ids.length} issues priority updated` });
-    }
   };
 
-  const bulkDelete = async () => {
+  const bulkDelete = () => {
     if (!confirm(`Delete ${count} issue${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
-    const ids = Array.from(selectedIds);
-    ids.forEach((id) => { removeIssue(id); removeFromQueryCache(id); });
+    mutations.bulkDelete(Array.from(selectedIds));
     onClear();
-    const results = await Promise.allSettled(
-      ids.map((id) => apiClient.issues.delete(id)),
-    );
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    if (failed > 0) {
-      addNotification({ type: 'warning', title: `${failed}/${ids.length} failed to delete` });
-    } else {
-      addNotification({ type: 'success', title: `${ids.length} issues deleted` });
-    }
   };
 
   return (

@@ -3,12 +3,9 @@ import {
   Trash2, Copy, ExternalLink,
   ArrowUp, ArrowDown, Minus, Flame,
 } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useClerkMembers } from '@/hooks/useClerkMembers';
-import { useApi } from '@/hooks/useApi';
-import { useIssuesStore } from '@/stores/issues';
+import { useIssueMutations } from '@/hooks/useIssueMutations';
 import { useNotificationStore } from '@/stores/notifications';
 import type { Issue, IssueStatus, IssuePriority, ProjectStatus } from '@/lib/types';
 
@@ -33,37 +30,8 @@ const PRIORITY_OPTIONS: { key: IssuePriority | ''; label: string; icon: typeof A
 
 /* ── Hook: context menu state + actions (shared between kanban & list) ── */
 export function useIssueContextMenu(statuses: ProjectStatus[], onIssueClick?: (issue: Issue) => void) {
-  const { t } = useTranslation();
-  const apiClient = useApi();
-  const queryClient = useQueryClient();
-  const updateIssueOptimistic = useIssuesStore((s) => s.updateIssueOptimistic);
-  const removeIssue = useIssuesStore((s) => s.removeIssue);
+  const { updateStatus, updatePriority, deleteIssue } = useIssueMutations();
   const addNotification = useNotificationStore((s) => s.addNotification);
-
-  // Optimistically update TanStack Query cache (for All Issues page)
-  const updateQueryCache = useCallback((issueId: string, patch: Partial<Issue>) => {
-    // Update all-issues cache
-    queryClient.setQueriesData({ queryKey: ['all-issues'] }, (old: Issue[] | undefined) => {
-      if (!old) return old;
-      return old.map((i) => i.id === issueId ? { ...i, ...patch, updated_at: new Date().toISOString() } : i);
-    });
-    // Update project-specific issues cache
-    queryClient.setQueriesData({ queryKey: ['issues'] }, (old: Issue[] | undefined) => {
-      if (!old) return old;
-      return old.map((i) => i.id === issueId ? { ...i, ...patch, updated_at: new Date().toISOString() } : i);
-    });
-  }, [queryClient]);
-
-  const removeFromQueryCache = useCallback((issueId: string) => {
-    queryClient.setQueriesData({ queryKey: ['all-issues'] }, (old: Issue[] | undefined) => {
-      if (!old) return old;
-      return old.filter((i) => i.id !== issueId);
-    });
-    queryClient.setQueriesData({ queryKey: ['issues'] }, (old: Issue[] | undefined) => {
-      if (!old) return old;
-      return old.filter((i) => i.id !== issueId);
-    });
-  }, [queryClient]);
 
   const [contextMenu, setContextMenu] = useState<{ issue: Issue; x: number; y: number } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Issue | null>(null);
@@ -74,58 +42,19 @@ export function useIssueContextMenu(statuses: ProjectStatus[], onIssueClick?: (i
     setContextMenu({ issue, x: e.clientX, y: e.clientY });
   }, []);
 
-  const handleApiError = useCallback((err: any, fallbackMsg: string) => {
-    const status = err?.status || err?.statusCode;
-    if (status === 401 || status === 403) {
-      addNotification({ type: 'warning', title: 'Session expired', message: 'Please sign out and sign back in.' });
-    } else {
-      addNotification({ type: 'warning', title: fallbackMsg, message: err?.message || '' });
-    }
-  }, [addNotification]);
+  const handleStatusChange = useCallback((issueId: string, status: IssueStatus) => {
+    updateStatus(issueId, status);
+  }, [updateStatus]);
 
-  const handleStatusChange = useCallback(async (issueId: string, status: IssueStatus) => {
-    // Optimistic: both Zustand store AND query cache
-    updateIssueOptimistic(issueId, { status });
-    updateQueryCache(issueId, { status });
-    try {
-      await apiClient.issues.update(issueId, { status });
-      addNotification({ type: 'success', title: t('contextMenu.statusChanged') || 'Status updated' });
-    } catch (err) {
-      handleApiError(err, t('optimistic.updateError') || 'Failed to update');
-      // Refetch to rollback
-      queryClient.invalidateQueries({ queryKey: ['all-issues'] });
-      queryClient.invalidateQueries({ queryKey: ['issues'] });
-    }
-  }, [apiClient, updateIssueOptimistic, updateQueryCache, queryClient, addNotification, handleApiError, t]);
+  const handlePriorityChange = useCallback((issueId: string, priority: IssuePriority | null) => {
+    updatePriority(issueId, priority);
+  }, [updatePriority]);
 
-  const handlePriorityChange = useCallback(async (issueId: string, priority: IssuePriority | null) => {
-    updateIssueOptimistic(issueId, { priority: priority as any });
-    updateQueryCache(issueId, { priority: priority as any });
-    try {
-      await apiClient.issues.update(issueId, { priority });
-      addNotification({ type: 'success', title: t('contextMenu.priorityChanged') || 'Priority updated' });
-    } catch (err) {
-      handleApiError(err, t('optimistic.updateError') || 'Failed to update');
-      queryClient.invalidateQueries({ queryKey: ['all-issues'] });
-      queryClient.invalidateQueries({ queryKey: ['issues'] });
-    }
-  }, [apiClient, updateIssueOptimistic, updateQueryCache, queryClient, addNotification, handleApiError, t]);
-
-  const handleDeleteConfirm = useCallback(async () => {
+  const handleDeleteConfirm = useCallback(() => {
     if (!deleteTarget) return;
-    const { id, display_id } = deleteTarget;
+    deleteIssue(deleteTarget.id, deleteTarget.display_id);
     setDeleteTarget(null);
-    removeIssue(id);
-    removeFromQueryCache(id);
-    try {
-      await apiClient.issues.delete(id);
-      addNotification({ type: 'success', title: `${display_id} deleted` });
-    } catch (err) {
-      handleApiError(err, t('contextMenu.deleteError') || 'Failed to delete');
-      queryClient.invalidateQueries({ queryKey: ['all-issues'] });
-      queryClient.invalidateQueries({ queryKey: ['issues'] });
-    }
-  }, [deleteTarget, apiClient, removeIssue, removeFromQueryCache, queryClient, addNotification, handleApiError, t]);
+  }, [deleteTarget, deleteIssue]);
 
   const handleCopyId = useCallback((displayId: string) => {
     navigator.clipboard.writeText(displayId);
