@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUser, useOrganization } from '@clerk/clerk-react';
-import DOMPurify from 'dompurify';
+// DOMPurify removed — using NotionEditor for all rendering
 import {
   X, ChevronDown, Tag, User, Calendar,
   MessageSquare, Activity, Bot, CheckCircle2, AlertTriangle,
@@ -181,42 +181,20 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     },
   });
 
-  // ── Unsaved changes guard (must be before useEffects that reference guardedClose) ──
-  const hasUnsavedDescription = editingDescription && descriptionDraft !== (issue?.description || '');
-
-  const guardedClose = useCallback(() => {
-    if (hasUnsavedDescription) {
-      setShowUnsavedModal(true);
-    } else {
-      onClose();
-    }
-  }, [hasUnsavedDescription, onClose]);
-
-  const handleDiscardAndClose = useCallback(() => {
-    setEditingDescription(false);
-    setDescriptionDraft('');
-    setShowUnsavedModal(false);
-    onClose();
-  }, [onClose]);
-
-  const handleSaveAndClose = useCallback(() => {
-    if (descriptionDraft !== (issue?.description || '')) {
-      updateMutation.mutate({ field: 'description', value: descriptionDraft });
-    }
-    setEditingDescription(false);
-    setShowUnsavedModal(false);
-    onClose();
-  }, [descriptionDraft, issue?.description, updateMutation, onClose]);
+  // ── Unsaved description tracking ──
+  const descriptionIsDirty = useRef(false);
+  useEffect(() => {
+    descriptionIsDirty.current = editingDescription && descriptionDraft !== (issue?.description || '');
+  }, [editingDescription, descriptionDraft, issue?.description]);
 
   // Browser beforeunload warning
   useEffect(() => {
-    if (!hasUnsavedDescription) return;
     const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
+      if (descriptionIsDirty.current) e.preventDefault();
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [hasUnsavedDescription]);
+  }, []);
 
   // ── Focus trap: focus first focusable element when drawer opens ──
   useEffect(() => {
@@ -235,7 +213,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         if (lightboxIndex !== null) {
           setLightboxIndex(null);
         } else {
-          guardedClose();
+          descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose();
         }
       }
       // Focus trap: keep Tab within the drawer
@@ -261,12 +239,12 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [guardedClose, lightboxIndex]);
+  }, [onClose, lightboxIndex]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        guardedClose();
+        descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose();
       }
     };
     const timer = setTimeout(() => {
@@ -276,7 +254,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       clearTimeout(timer);
       document.removeEventListener('mousedown', handler);
     };
-  }, [guardedClose]);
+  }, [onClose]);
 
   // ── Handlers ──
   const handleTitleSave = useCallback(() => {
@@ -308,7 +286,24 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     };
   }, [descriptionDraft, editingDescription, issue?.description, updateMutation]);
 
-  // (guardedClose moved above useEffects to avoid TDZ in minified bundle)
+  // Unsaved check helpers (simple functions, not useCallback, to avoid TDZ with Vite minifier)
+  const hasUnsavedDescription = editingDescription && descriptionDraft !== (issue?.description || '');
+
+  function handleDiscardAndClose() {
+    setEditingDescription(false);
+    setDescriptionDraft('');
+    setShowUnsavedModal(false);
+    onClose();
+  }
+
+  function handleSaveAndClose() {
+    if (descriptionDraft !== (issue?.description || '')) {
+      updateMutation.mutate({ field: 'description', value: descriptionDraft });
+    }
+    setEditingDescription(false);
+    setShowUnsavedModal(false);
+    onClose();
+  }
 
   const handleFieldUpdate = useCallback(
     (field: string, value: unknown) => {
@@ -549,7 +544,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   if (isLoading || !issue) {
     return (
       <>
-        <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={guardedClose} />
+        <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={() => descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose()} />
         <div
           ref={panelRef}
           className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right"
@@ -561,7 +556,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               <div className="h-4 w-20 animate-pulse rounded bg-surface-hover" />
             </div>
             <button
-              onClick={guardedClose}
+              onClick={() => descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose()}
               aria-label="Close issue drawer"
               className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors shrink-0"
             >
@@ -582,7 +577,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   return (
     <>
       {/* Backdrop — hidden on mobile since drawer is full-screen */}
-      <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={guardedClose} />
+      <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={() => descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose()} />
 
       {/* Panel — full-screen on mobile, side panel on tablet+ */}
       <div
@@ -611,7 +606,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             )}
           </div>
           <button
-            onClick={guardedClose}
+            onClick={() => descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose()}
             aria-label="Close issue drawer"
             className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors shrink-0"
           >
@@ -1960,13 +1955,13 @@ function ImageLightbox({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
-      onClick={guardedClose}
+      onClick={() => descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose()}
       role="dialog"
       aria-modal="true"
       aria-label={`Image viewer: ${images[currentIndex]?.name || 'Image'}`}
     >
       <button
-        onClick={guardedClose}
+        onClick={() => descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose()}
         aria-label="Close image viewer"
         className="absolute top-4 right-4 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
       >
