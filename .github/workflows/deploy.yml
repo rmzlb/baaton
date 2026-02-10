@@ -1,0 +1,22 @@
+name: Deploy to Dokploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy Frontend
+        run: |
+          curl -s -X POST "http://13.38.180.239:3000/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"applicationId":"FghZLWdqlC7AtZTwh3jpr"}'
+
+      - name: Deploy Backend
+        run: |
+          curl -s -X POST "http://13.38.180.239:3000/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"applicationId":"5EXdMViqWNbOaN_pASmSM"}'
