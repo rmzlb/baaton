@@ -614,6 +614,10 @@ As a [user], I want to [action] so that [benefit].
   'unsavedModal.discard': 'Discard',
   'unsavedModal.save': 'Save & close',
 
+  'issueDrawer.autoSaving': 'Saving…',
+  'issueDrawer.autoSaved': 'Saved',
+  'issueDrawer.autoSaveHint': 'Auto-saves after 3s',
+
   // ─── Upload ─────────────────────────────────
   'upload.started': 'Uploading…',
   'upload.startedDesc': 'Compressing {{count}} file(s)…',

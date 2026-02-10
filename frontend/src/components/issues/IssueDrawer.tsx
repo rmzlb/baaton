@@ -256,8 +256,33 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     setEditingDescription(false);
   }, [descriptionDraft, issue?.description, updateMutation]);
 
+  // ── Auto-save description after 3s of inactivity (Notion-style) ──
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!editingDescription || !descriptionDraft || descriptionDraft === (issue?.description || '')) {
+      return;
+    }
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      updateMutation.mutate({ field: 'description', value: descriptionDraft });
+    }, 3000);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [descriptionDraft, editingDescription, issue?.description, updateMutation]);
+
   // ── Unsaved changes guard ──
   const hasUnsavedDescription = editingDescription && descriptionDraft !== (issue?.description || '');
+
+  // Browser beforeunload warning
+  useEffect(() => {
+    if (!hasUnsavedDescription) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedDescription]);
 
   const guardedClose = useCallback(() => {
     if (hasUnsavedDescription) {
@@ -632,6 +657,8 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                 description={issue.description}
                 editing={editingDescription}
                 draft={descriptionDraft}
+                hasUnsavedChanges={hasUnsavedDescription}
+                isSaving={updateMutation.isPending}
                 onStartEdit={() => {
                   setDescriptionDraft(issue.description || '');
                   setEditingDescription(true);
@@ -859,6 +886,8 @@ interface DescriptionViewProps {
   description: string | null;
   editing: boolean;
   draft: string;
+  hasUnsavedChanges: boolean;
+  isSaving: boolean;
   onStartEdit: () => void;
   onDraftChange: (v: string) => void;
   onSave: () => void;
@@ -866,13 +895,25 @@ interface DescriptionViewProps {
   t: (key: string, vars?: Record<string, string | number>) => string;
 }
 
-function DescriptionView({ description, editing, draft, onStartEdit, onDraftChange, onSave, onCancel, t }: DescriptionViewProps) {
+function DescriptionView({ description, editing, draft, hasUnsavedChanges, isSaving, onStartEdit, onDraftChange, onSave, onCancel, t }: DescriptionViewProps) {
   if (editing) {
     return (
       <div>
         <label className="flex items-center gap-1.5 text-[10px] text-muted mb-1.5 uppercase tracking-wider font-medium">
           <FileText size={10} />
           {t('issueDrawer.description')}
+          {isSaving && (
+            <span className="ml-auto flex items-center gap-1 text-[9px] text-accent font-normal normal-case tracking-normal">
+              <div className="h-2 w-2 rounded-full border border-accent border-t-transparent animate-spin" />
+              {t('issueDrawer.autoSaving')}
+            </span>
+          )}
+          {!isSaving && !hasUnsavedChanges && editing && (
+            <span className="ml-auto flex items-center gap-1 text-[9px] text-emerald-500 font-normal normal-case tracking-normal">
+              <CheckCircle2 size={9} />
+              {t('issueDrawer.autoSaved')}
+            </span>
+          )}
         </label>
         <div className="rounded-lg bg-surface border border-border overflow-hidden">
           <div className="min-h-[160px]">
@@ -883,12 +924,15 @@ function DescriptionView({ description, editing, draft, onStartEdit, onDraftChan
             />
           </div>
           <div className="flex items-center justify-between border-t border-border px-3 py-1.5">
-            <button
-              onClick={onCancel}
-              className="text-[11px] text-muted hover:text-primary transition-colors"
-            >
-              {t('common.cancel')}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onCancel}
+                className="text-[11px] text-muted hover:text-primary transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+              <span className="text-[9px] text-muted/40">{t('issueDrawer.autoSaveHint')}</span>
+            </div>
             <button
               onClick={onSave}
               className="rounded-md bg-accent px-2.5 py-1 text-[11px] font-medium text-black hover:bg-accent-hover transition-colors"

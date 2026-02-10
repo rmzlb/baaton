@@ -614,6 +614,10 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'unsavedModal.discard': 'Abandonner',
   'unsavedModal.save': 'Sauvegarder',
 
+  'issueDrawer.autoSaving': 'Sauvegarde…',
+  'issueDrawer.autoSaved': 'Sauvegardé',
+  'issueDrawer.autoSaveHint': 'Sauvegarde auto après 3s',
+
   // ─── Upload ─────────────────────────────────
   'upload.started': 'Téléchargement…',
   'upload.startedDesc': 'Compression de {{count}} fichier(s)…',
