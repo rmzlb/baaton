@@ -19,10 +19,28 @@ pub struct ListParams {
 }
 
 pub async fn list_by_project(
+    Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
     Query(params): Query<ListParams>,
-) -> Json<ApiResponse<Vec<Issue>>> {
+) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    // Verify project belongs to org
+    let project_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
+    )
+    .bind(project_id)
+    .bind(org_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !project_exists {
+        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
+    }
+
     let limit = params.limit.unwrap_or(100);
     let offset = params.offset.unwrap_or(0);
 
@@ -51,7 +69,7 @@ pub async fn list_by_project(
     .await
     .unwrap_or_default();
 
-    Json(ApiResponse::new(issues))
+    Ok(Json(ApiResponse::new(issues)))
 }
 
 pub async fn create(
@@ -59,7 +77,19 @@ pub async fn create(
     State(pool): State<PgPool>,
     Json(body): Json<CreateIssue>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    // Generate display_id
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    // Verify project belongs to user's org
+    let project = sqlx::query_as::<_, (String,)>(
+        "SELECT prefix FROM projects WHERE id = $1 AND org_id = $2"
+    )
+    .bind(body.project_id)
+    .bind(org_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
+
     let count: (i64,) = sqlx::query_as(
         "SELECT COALESCE(COUNT(*), 0) FROM issues WHERE project_id = $1"
     )
@@ -68,17 +98,8 @@ pub async fn create(
     .await
     .unwrap_or((0i64,));
 
-    let project = sqlx::query_as::<_, (String,)>(
-        "SELECT prefix FROM projects WHERE id = $1"
-    )
-    .bind(body.project_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| (StatusCode::NOT_FOUND, Json(json!({"error": format!("Project not found: {}", e)}))))?;
-
     let display_id = format!("{}-{}", project.0, count.0 + 1);
 
-    // Get max position for the status
     let max_pos: Option<(Option<f64>,)> = sqlx::query_as(
         "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status = $2"
     )
@@ -126,16 +147,30 @@ pub async fn create(
 }
 
 pub async fn get_one(
+    Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<IssueDetail>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
     let issue = sqlx::query_as::<_, Issue>(
-        "SELECT * FROM issues WHERE id = $1",
+        r#"
+        SELECT i.id, i.project_id, i.milestone_id, i.parent_id, i.display_id, i.title,
+               i.description, i.type, i.status, i.priority, i.source, i.reporter_name,
+               i.reporter_email, i.assignee_ids, i.tags, i.attachments, i.category,
+               i.position, i.created_by_id, i.created_by_name, i.due_date,
+               i.qualified_at, i.qualified_by, i.created_at, i.updated_at
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        WHERE i.id = $1 AND p.org_id = $2
+        "#,
     )
     .bind(id)
+    .bind(org_id)
     .fetch_one(&pool)
     .await
-    .map_err(|e| (StatusCode::NOT_FOUND, Json(json!({"error": format!("Issue not found: {}", e)}))))?;
+    .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
 
     let tldrs = sqlx::query_as::<_, Tldr>(
         "SELECT * FROM tldrs WHERE issue_id = $1 ORDER BY created_at DESC",
@@ -161,16 +196,32 @@ pub async fn get_one(
 }
 
 pub async fn update(
+    Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateIssue>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    // Option<Option<T>> pattern: outer None = not provided, Some(None) = set to null, Some(Some(v)) = set value
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    // Verify issue belongs to org
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
+    )
+    .bind(id)
+    .bind(org_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !exists {
+        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
+    }
+
     let priority_provided = body.priority.is_some();
     let priority_value = body.priority.flatten();
     let milestone_provided = body.milestone_id.is_some();
     let milestone_value = body.milestone_id.flatten();
-
     let due_date_provided = body.due_date.is_some();
     let due_date_value = body.due_date.flatten();
 
@@ -216,10 +267,28 @@ pub async fn update(
 }
 
 pub async fn update_position(
+    Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    // Verify issue belongs to org
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
+    )
+    .bind(id)
+    .bind(org_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !exists {
+        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
+    }
+
     let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("todo");
     let position = body.get("position").and_then(|v| v.as_f64()).unwrap_or(1000.0);
 
@@ -246,43 +315,65 @@ pub struct MineParams {
 }
 
 pub async fn list_mine(
+    Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Query(params): Query<MineParams>,
-) -> Json<ApiResponse<Vec<Issue>>> {
+) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
     let issues = sqlx::query_as::<_, Issue>(
         r#"
-        SELECT * FROM issues
-        WHERE $1 = ANY(assignee_ids)
+        SELECT i.id, i.project_id, i.milestone_id, i.parent_id, i.display_id, i.title,
+               i.description, i.type, i.status, i.priority, i.source, i.reporter_name,
+               i.reporter_email, i.assignee_ids, i.tags, i.attachments, i.category,
+               i.position, i.created_by_id, i.created_by_name, i.due_date,
+               i.qualified_at, i.qualified_by, i.created_at, i.updated_at
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        WHERE $1 = ANY(i.assignee_ids) AND p.org_id = $2
         ORDER BY
-            CASE priority
+            CASE i.priority
                 WHEN 'urgent' THEN 0
                 WHEN 'high' THEN 1
                 WHEN 'medium' THEN 2
                 WHEN 'low' THEN 3
                 ELSE 4
             END,
-            updated_at DESC
+            i.updated_at DESC
         "#,
     )
     .bind(&params.assignee_id)
+    .bind(org_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
 
-    Json(ApiResponse::new(issues))
+    Ok(Json(ApiResponse::new(issues)))
 }
 
 pub async fn remove(
+    Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    sqlx::query("DELETE FROM issues WHERE id = $1")
-        .bind(id)
-        .execute(&pool)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    Ok(Json(ApiResponse::new(())))
+    let result = sqlx::query(
+        "DELETE FROM issues WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = $2)"
+    )
+    .bind(id)
+    .bind(org_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    if result.rows_affected() > 0 {
+        Ok(Json(ApiResponse::new(())))
+    } else {
+        Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))
+    }
 }
 
 // ─── Public Submission ────────────────────────────────
@@ -301,7 +392,6 @@ pub async fn public_submit(
     Path(slug): Path<String>,
     Json(body): Json<PublicSubmission>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    // Input validation
     if body.title.trim().is_empty() || body.title.len() > 500 {
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Title is required and must be under 500 characters"}))));
     }
@@ -311,7 +401,6 @@ pub async fn public_submit(
         }
     }
 
-    // Find project by slug
     let project = sqlx::query_as::<_, (Uuid, String)>(
         "SELECT id, prefix FROM projects WHERE slug = $1"
     )

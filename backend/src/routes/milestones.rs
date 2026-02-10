@@ -87,7 +87,7 @@ pub async fn list_by_project(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Vec<MilestoneWithCounts>>>, axum::http::StatusCode> {
-    let _org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+    let org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
 
     let milestones = sqlx::query_as::<_, MilestoneWithCounts>(
         r#"
@@ -99,13 +99,15 @@ pub async fn list_by_project(
                COUNT(CASE WHEN i.type = 'feature' THEN 1 END) as feature_count,
                COUNT(CASE WHEN i.type = 'improvement' THEN 1 END) as improvement_count
         FROM milestones m
+        JOIN projects p ON p.id = m.project_id
         LEFT JOIN issues i ON i.milestone_id = m.id
-        WHERE m.project_id = $1
+        WHERE m.project_id = $1 AND p.org_id = $2
         GROUP BY m.id
         ORDER BY m."order", m.target_date NULLS LAST, m.created_at
         "#,
     )
     .bind(project_id)
+    .bind(org_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
@@ -177,7 +179,7 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateMilestone>,
 ) -> Result<Json<ApiResponse<MilestoneWithCounts>>, (StatusCode, Json<serde_json::Value>)> {
-    let _org_id = auth.org_id.as_deref()
+    let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     let target_date_provided = body.target_date.is_some();
@@ -194,8 +196,11 @@ pub async fn update(
             status = COALESCE($6, status),
             "order" = COALESCE($7, "order"),
             estimated_days = CASE WHEN $8::boolean THEN $9 ELSE estimated_days END
-        WHERE id = $1
-        RETURNING id, project_id, name, description, target_date, status, "order", estimated_days, org_id, created_at
+        FROM projects p
+        WHERE milestones.id = $1 AND milestones.project_id = p.id AND p.org_id = $10
+        RETURNING milestones.id, milestones.project_id, milestones.name, milestones.description,
+                  milestones.target_date, milestones.status, milestones."order", milestones.estimated_days,
+                  milestones.org_id, milestones.created_at
         "#,
     )
     .bind(id)
@@ -207,6 +212,7 @@ pub async fn update(
     .bind(body.order)
     .bind(estimated_days_provided)
     .bind(estimated_days_value)
+    .bind(org_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -270,11 +276,14 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let _org_id = auth.org_id.as_deref()
+    let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    let result = sqlx::query("DELETE FROM milestones WHERE id = $1")
+    let result = sqlx::query(
+        "DELETE FROM milestones WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = $2)"
+    )
         .bind(id)
+        .bind(org_id)
         .execute(&pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -292,16 +301,19 @@ pub async fn get_one(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<MilestoneDetail>>, (StatusCode, Json<serde_json::Value>)> {
-    let _org_id = auth.org_id.as_deref()
+    let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     let row = sqlx::query_as::<_, MilestoneRow>(
         r#"
-        SELECT id, project_id, name, description, target_date, status, "order", estimated_days, org_id, created_at
-        FROM milestones WHERE id = $1
+        SELECT m.id, m.project_id, m.name, m.description, m.target_date, m.status, m."order", m.estimated_days, m.org_id, m.created_at
+        FROM milestones m
+        JOIN projects p ON p.id = m.project_id
+        WHERE m.id = $1 AND p.org_id = $2
         "#,
     )
     .bind(id)
+    .bind(org_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;

@@ -1,7 +1,9 @@
 use axum::{Router, routing::{get, post, put, patch, delete}, middleware as axum_mw};
 use sqlx::PgPool;
+use tower::limit::RateLimitLayer;
+use std::time::Duration;
 
-use crate::middleware::auth_middleware;
+use crate::middleware::{auth_middleware, JwksState};
 
 mod projects;
 mod issues;
@@ -15,17 +17,21 @@ mod ai;
 pub mod activity;
 pub mod github;
 
-pub fn api_router(pool: PgPool) -> Router {
-    // All routes — auth middleware applied globally (skips public paths in middleware)
+pub fn api_router(pool: PgPool, jwks: JwksState) -> Router {
+    // Public routes with rate limiting (10 req/sec burst, effectively ~10/min sustained)
+    let public_routes = Router::new()
+        .route("/public/{slug}/submit", post(issues::public_submit))
+        .layer(RateLimitLayer::new(10, Duration::from_secs(60)));
+
     let routes = Router::new()
-        // Projects (org-scoped via auth middleware)
+        // Projects
         .route("/projects", get(projects::list).post(projects::create))
         .route("/projects/{id}", get(projects::get_one).patch(projects::update).delete(projects::remove))
         .route("/projects/{id}/issues", get(issues::list_by_project))
         .route("/projects/{id}/tags", get(tags::list_by_project).post(tags::create))
-        // Milestones (project-scoped)
+        // Milestones
         .route("/projects/{id}/milestones", get(milestones::list_by_project).post(milestones::create))
-        // Sprints (project-scoped)
+        // Sprints
         .route("/projects/{id}/sprints", get(sprints::list_by_project).post(sprints::create))
         // Issues
         .route("/issues", post(issues::create))
@@ -37,7 +43,7 @@ pub fn api_router(pool: PgPool) -> Router {
         // Activity
         .route("/issues/{id}/activity", get(activity::list_by_issue))
         .route("/activity", get(activity::list_recent))
-        // ── GitHub Integration ──
+        // GitHub
         .route("/github/install", get(github::oauth::install_redirect))
         .route("/github/callback", get(github::oauth::callback))
         .route("/github/installation", get(github::oauth::get_installation))
@@ -51,18 +57,22 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/ai/key", get(ai::get_key))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
-        // Milestones (by ID)
+        // Milestones by ID
         .route("/milestones/{id}", get(milestones::get_one).put(milestones::update).delete(milestones::remove))
-        // Sprints (by ID)
+        // Sprints by ID
         .route("/sprints/{id}", put(sprints::update).delete(sprints::remove))
         .route("/invites", get(invites::list).post(invites::create))
-        // Public routes (auth skipped in middleware based on path)
+        // Public routes (auth skipped in middleware)
         .route("/invite/{code}", get(invites::redirect_invite))
-        .route("/public/{slug}/submit", post(issues::public_submit))
-        // Webhook endpoint (public — uses HMAC verification, NOT Clerk auth)
-        .route("/webhooks/github", post(github::webhooks::handle));
+        // Webhook
+        .route("/webhooks/github", post(github::webhooks::handle))
+        // Merge public routes
+        .merge(public_routes);
 
-    // Apply auth middleware — it runs on all routes but public ones
-    routes.layer(axum_mw::from_fn(auth_middleware))
+    // Apply auth middleware and inject JWKS state
+    // Layer order: last added runs first (outer). Auth needs JWKS, so JWKS must be outer.
+    routes
+        .layer(axum_mw::from_fn(auth_middleware))
+        .layer(axum::Extension(jwks))
         .with_state(pool)
 }

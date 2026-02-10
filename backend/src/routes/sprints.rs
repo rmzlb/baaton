@@ -49,17 +49,19 @@ pub async fn list_by_project(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Vec<Sprint>>>, axum::http::StatusCode> {
-    let _org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+    let org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
 
     let sprints = sqlx::query_as::<_, Sprint>(
         r#"
-        SELECT id, project_id, name, goal, start_date, end_date, status, org_id, created_at
-        FROM sprints
-        WHERE project_id = $1
-        ORDER BY start_date NULLS LAST, created_at
+        SELECT s.id, s.project_id, s.name, s.goal, s.start_date, s.end_date, s.status, s.org_id, s.created_at
+        FROM sprints s
+        JOIN projects p ON p.id = s.project_id
+        WHERE s.project_id = $1 AND p.org_id = $2
+        ORDER BY s.start_date NULLS LAST, s.created_at
         "#,
     )
     .bind(project_id)
+    .bind(org_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
@@ -111,7 +113,7 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateSprint>,
 ) -> Result<Json<ApiResponse<Sprint>>, (StatusCode, Json<serde_json::Value>)> {
-    let _org_id = auth.org_id.as_deref()
+    let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     let start_date_provided = body.start_date.is_some();
@@ -122,13 +124,14 @@ pub async fn update(
     let sprint = sqlx::query_as::<_, Sprint>(
         r#"
         UPDATE sprints SET
-            name = COALESCE($2, name),
-            goal = COALESCE($3, goal),
-            start_date = CASE WHEN $4::boolean THEN $5 ELSE start_date END,
-            end_date = CASE WHEN $6::boolean THEN $7 ELSE end_date END,
-            status = COALESCE($8, status)
-        WHERE id = $1
-        RETURNING id, project_id, name, goal, start_date, end_date, status, org_id, created_at
+            name = COALESCE($2, sprints.name),
+            goal = COALESCE($3, sprints.goal),
+            start_date = CASE WHEN $4::boolean THEN $5 ELSE sprints.start_date END,
+            end_date = CASE WHEN $6::boolean THEN $7 ELSE sprints.end_date END,
+            status = COALESCE($8, sprints.status)
+        FROM projects p
+        WHERE sprints.id = $1 AND sprints.project_id = p.id AND p.org_id = $9
+        RETURNING sprints.id, sprints.project_id, sprints.name, sprints.goal, sprints.start_date, sprints.end_date, sprints.status, sprints.org_id, sprints.created_at
         "#,
     )
     .bind(id)
@@ -139,6 +142,7 @@ pub async fn update(
     .bind(end_date_provided)
     .bind(end_date_value)
     .bind(&body.status)
+    .bind(org_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -155,11 +159,14 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let _org_id = auth.org_id.as_deref()
+    let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    let result = sqlx::query("DELETE FROM sprints WHERE id = $1")
+    let result = sqlx::query(
+        "DELETE FROM sprints WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = $2)"
+    )
         .bind(id)
+        .bind(org_id)
         .execute(&pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;

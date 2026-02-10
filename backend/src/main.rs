@@ -3,11 +3,15 @@ use tower_http::cors::{CorsLayer, Any};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 mod routes;
 mod models;
 mod middleware;
 mod github;
+
+use middleware::{JwksState, fetch_jwks, jwks_refresh_task};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -24,7 +28,6 @@ async fn main() -> anyhow::Result<()> {
     // Database
     let database_url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set");
-    // Disable prepared statement cache to work with PgBouncer/connection poolers
     let connect_opts = database_url.parse::<sqlx::postgres::PgConnectOptions>()?
         .statement_cache_capacity(0);
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -34,30 +37,65 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Connected to database");
 
-    // Run migrations at runtime (reads .sql files from disk or embedded)
-    let migration_001 = include_str!("../migrations/001_init.sql");
-    sqlx::raw_sql(migration_001).execute(&pool).await?;
-    let migration_002 = include_str!("../migrations/002_sprints.sql");
-    sqlx::raw_sql(migration_002).execute(&pool).await?;
-    let migration_003 = include_str!("../migrations/003_project_tags.sql");
-    sqlx::raw_sql(migration_003).execute(&pool).await?;
-    let migration_004 = include_str!("../migrations/004_issue_category.sql");
-    sqlx::raw_sql(migration_004).execute(&pool).await?;
-    let migration_005 = include_str!("../migrations/005_org_upsert.sql");
-    sqlx::raw_sql(migration_005).execute(&pool).await?;
-    let migration_006 = include_str!("../migrations/006_github_integration.sql");
-    sqlx::raw_sql(migration_006).execute(&pool).await?;
-    let migration_007 = include_str!("../migrations/007_issue_creator_duedate.sql");
-    sqlx::raw_sql(migration_007).execute(&pool).await?;
-    let migration_008 = include_str!("../migrations/008_activity_log.sql");
-    sqlx::raw_sql(migration_008).execute(&pool).await?;
-    let migration_009 = include_str!("../migrations/009_openclaw_integration.sql");
-    sqlx::raw_sql(migration_009).execute(&pool).await?;
-    let migration_010 = include_str!("../migrations/010_milestone_enhancements.sql");
-    sqlx::raw_sql(migration_010).execute(&pool).await?;
+    // ── Migration tracking ─────────────────────────────
+    sqlx::raw_sql("CREATE TABLE IF NOT EXISTS _migrations (version INT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT now())")
+        .execute(&pool)
+        .await?;
+
+    let migrations: &[(i32, &str)] = &[
+        (1, include_str!("../migrations/001_init.sql")),
+        (2, include_str!("../migrations/002_sprints.sql")),
+        (3, include_str!("../migrations/003_project_tags.sql")),
+        (4, include_str!("../migrations/004_issue_category.sql")),
+        (5, include_str!("../migrations/005_org_upsert.sql")),
+        (6, include_str!("../migrations/006_github_integration.sql")),
+        (7, include_str!("../migrations/007_issue_creator_duedate.sql")),
+        (8, include_str!("../migrations/008_activity_log.sql")),
+        (9, include_str!("../migrations/009_openclaw_integration.sql")),
+        (10, include_str!("../migrations/010_milestone_enhancements.sql")),
+    ];
+
+    for &(version, sql) in migrations {
+        let applied: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _migrations WHERE version = $1)")
+            .bind(version)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(false);
+        if !applied {
+            sqlx::raw_sql(sql).execute(&pool).await?;
+            sqlx::query("INSERT INTO _migrations (version) VALUES ($1)")
+                .bind(version)
+                .execute(&pool)
+                .await?;
+            tracing::info!("Applied migration {}", version);
+        }
+    }
     tracing::info!("Migrations applied");
 
-    // Start GitHub sync job runner (background task)
+    // ── JWKS setup ─────────────────────────────────────
+    let clerk_issuer = std::env::var("CLERK_ISSUER")
+        .unwrap_or_else(|_| "https://clerk.baaton.dev".to_string());
+
+    let jwks = match fetch_jwks(&clerk_issuer).await {
+        Ok(j) => {
+            tracing::info!("Fetched {} JWKS keys from Clerk", j.keys.len());
+            j
+        }
+        Err(e) => {
+            tracing::warn!("Failed to fetch initial JWKS (will retry on first request): {}", e);
+            middleware::JwkSet { keys: vec![] }
+        }
+    };
+    let jwks_state: JwksState = Arc::new(RwLock::new(jwks));
+
+    // Background JWKS refresh
+    let jwks_bg = jwks_state.clone();
+    let issuer_bg = clerk_issuer.clone();
+    tokio::spawn(async move {
+        jwks_refresh_task(jwks_bg, issuer_bg).await;
+    });
+
+    // Start GitHub sync job runner
     let job_pool = pool.clone();
     tokio::spawn(async move {
         github::jobs::start_job_runner(job_pool).await;
@@ -72,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
     // Router
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
-        .nest("/api/v1", routes::api_router(pool.clone()))
+        .nest("/api/v1", routes::api_router(pool.clone(), jwks_state.clone()))
         .layer(axum_mw::from_fn(middleware::security::security_headers))
         .layer(cors)
         .layer(TraceLayer::new_for_http());
