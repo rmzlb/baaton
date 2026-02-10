@@ -808,7 +808,7 @@ As a [user], I want to [action] so that [benefit].
   'milestones.title': 'Milestones',
   'milestones.new': 'New Milestone',
   'milestones.empty': 'No milestones yet',
-  'milestones.emptyDesc': 'Create your first milestone to track project progress.',
+  'milestones.emptyDesc': 'No milestones yet. Ask AI to plan your roadmap 🤖',
   'milestones.progress': 'Progress',
   'milestones.targetDate': 'Target Date',
   'milestones.startDate': 'Start Date',
@@ -842,6 +842,11 @@ As a [user], I want to [action] so that [benefit].
   'milestones.total': 'Total',
   'milestones.done': 'Done',
   'milestones.open': 'Open',
+  'milestones.burndown': 'Burndown',
+  'milestones.idealLine': 'Ideal',
+  'milestones.actualLine': 'Actual',
+  'milestones.emptyAi': 'Ask AI to plan your roadmap 🤖',
+  'milestones.aiPlan': 'AI Plan',
 
 // ── Landing Page ──
 'landing.badge': 'Orchestration Board Live',

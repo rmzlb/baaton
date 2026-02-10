@@ -8,6 +8,10 @@ interface ShortcutHelpProps {
 
 /** Pretty-print a key combo */
 function formatKey(keys: string): string[] {
+  // Handle sequence keys like "g>m" (sequence separator)
+  if (keys.includes('>')) {
+    return keys.split('>').map((k) => k.toUpperCase());
+  }
   return keys.split('+').map((k) => {
     if (k === 'shift') return '⇧';
     if (k === '/') return '?';

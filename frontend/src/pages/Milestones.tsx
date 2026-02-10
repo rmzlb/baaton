@@ -1,13 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Target, Calendar, Bug, Sparkles, Zap, ChevronDown, ChevronRight,
-  BarChart3, Trash2, Edit3, X,
+  Trash2, X, Bot,
 } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { cn, timeAgo } from '@/lib/utils';
+import { useUIStore } from '@/stores/ui';
+import { cn } from '@/lib/utils';
 import { GanttTimeline } from '@/components/milestones/GanttTimeline';
 import { MilestoneDetail } from '@/components/milestones/MilestoneDetail';
 import type { Milestone, MilestoneStatus, Issue } from '@/lib/types';
@@ -31,14 +32,39 @@ const STATUS_STYLES: Record<MilestoneStatus, { bg: string; text: string; dot: st
   },
 };
 
-type ViewMode = 'list' | 'gantt';
+/* ── Compute effective status ──────────────────── */
+function computeEffectiveStatus(
+  milestone: Milestone,
+  issues: Issue[],
+): MilestoneStatus {
+  // If explicitly cancelled, keep it
+  if (milestone.status === 'cancelled') return 'cancelled';
+
+  const total = issues.length;
+  const done = issues.filter((i) => i.status === 'done').length;
+
+  // Auto-complete: all issues done
+  if (total > 0 && done === total) return 'completed';
+
+  // At-risk: target_date passed with remaining issues
+  if (
+    milestone.target_date &&
+    new Date(milestone.target_date) < new Date() &&
+    done < total
+  ) {
+    // We still report 'active' but the card will show the overdue badge
+    return 'active';
+  }
+
+  return milestone.status;
+}
 
 export function Milestones() {
   const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
   const apiClient = useApi();
   const queryClient = useQueryClient();
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [showCards, setShowCards] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
@@ -75,6 +101,28 @@ export function Milestones() {
     return map;
   }, [allIssues]);
 
+  // Status auto-computation: auto-complete milestones when all issues done
+  const updateMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: MilestoneStatus }) =>
+      apiClient.milestones.update(id, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['milestones', project?.id] });
+    },
+  });
+
+  useEffect(() => {
+    for (const milestone of milestones) {
+      const issues = issuesByMilestone[milestone.id] || [];
+      const effective = computeEffectiveStatus(milestone, issues);
+      // Auto-complete: all done but milestone still active
+      if (effective === 'completed' && milestone.status === 'active') {
+        updateMutation.mutate({ id: milestone.id, status: 'completed' });
+      }
+    }
+    // Only run when milestones/issues data changes, not on mutation ref changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [milestones, issuesByMilestone]);
+
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.milestones.delete(id),
@@ -108,32 +156,35 @@ export function Milestones() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* View toggle */}
-          <div className="flex items-center rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-0.5">
+          {/* Show/hide cards toggle */}
+          {milestones.length > 0 && (
             <button
-              onClick={() => setViewMode('list')}
+              onClick={() => setShowCards(!showCards)}
               className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                viewMode === 'list'
-                  ? 'bg-gray-100 dark:bg-surface-hover text-gray-900 dark:text-primary'
-                  : 'text-gray-500 dark:text-muted hover:text-gray-900 dark:hover:text-primary',
+                'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                showCards
+                  ? 'border-gray-300 dark:border-border bg-gray-100 dark:bg-surface-hover text-gray-900 dark:text-primary'
+                  : 'border-gray-200 dark:border-border bg-white dark:bg-surface text-gray-500 dark:text-muted hover:text-gray-900 dark:hover:text-primary',
               )}
             >
               {t('milestones.list')}
             </button>
-            <button
-              onClick={() => setViewMode('gantt')}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                viewMode === 'gantt'
-                  ? 'bg-gray-100 dark:bg-surface-hover text-gray-900 dark:text-primary'
-                  : 'text-gray-500 dark:text-muted hover:text-gray-900 dark:hover:text-primary',
-              )}
-            >
-              <BarChart3 size={14} className="inline mr-1" />
-              {t('milestones.gantt')}
-            </button>
-          </div>
+          )}
+
+          {/* AI Plan button */}
+          <button
+            onClick={() => {
+              // Open AI assistant with milestone planning prompt
+              useUIStore.getState().setAiOpen(true);
+              useUIStore.getState().setAiPrefilledMessage(
+                `Plan milestones for this project. Analyze all open tickets, group them into logical milestones, estimate timing, and suggest priorities.`
+              );
+            }}
+            className="flex items-center gap-1.5 rounded-lg border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 px-3.5 py-2 text-sm font-medium text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
+          >
+            <Bot size={16} />
+            {t('milestones.aiPlan')}
+          </button>
 
           {/* New milestone button */}
           <button
@@ -173,174 +224,184 @@ export function Milestones() {
           <p className="text-sm text-gray-500 dark:text-muted mb-4 max-w-sm">
             {t('milestones.emptyDesc')}
           </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover transition-colors"
+            >
+              <Plus size={16} />
+              {t('milestones.new')}
+            </button>
+          </div>
+          {/* AI Plan button */}
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover transition-colors"
+            onClick={() => {
+              useUIStore.getState().setAiOpen(true);
+              useUIStore.getState().setAiPrefilledMessage(
+                `Plan milestones for this project. Analyze all open tickets, group them into logical milestones, estimate timing, and suggest priorities.`
+              );
+            }}
+            className="flex items-center gap-1.5 mt-3 rounded-lg border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 px-4 py-2 text-sm font-medium text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
           >
-            <Plus size={16} />
-            {t('milestones.new')}
+            <Bot size={14} />
+            {t('milestones.aiPlan')}
           </button>
         </div>
       )}
 
-      {/* Gantt view */}
-      {!isLoading && milestones.length > 0 && viewMode === 'gantt' && (
-        <GanttTimeline milestones={milestones} issuesByMilestone={issuesByMilestone} />
-      )}
+      {/* Content: Timeline (primary) always on top, cards below */}
+      {!isLoading && milestones.length > 0 && (
+        <div className="space-y-6">
+          {/* Gantt Timeline — PRIMARY view, always visible */}
+          <GanttTimeline milestones={milestones} issuesByMilestone={issuesByMilestone} />
 
-      {/* List view */}
-      {!isLoading && milestones.length > 0 && viewMode === 'list' && (
-        <div className="space-y-3">
-          {milestones.map((milestone) => {
-            const issues = issuesByMilestone[milestone.id] || [];
-            const done = issues.filter((i) => i.status === 'done').length;
-            const total = issues.length;
-            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-            const bugs = issues.filter((i) => i.type === 'bug').length;
-            const features = issues.filter((i) => i.type === 'feature').length;
-            const improvements = issues.filter((i) => i.type === 'improvement').length;
-            const isExpanded = expandedId === milestone.id;
-            const statusStyle = STATUS_STYLES[milestone.status];
+          {/* Milestone Cards — below timeline, toggleable */}
+          {showCards && (
+            <div className="space-y-3">
+              {milestones.map((milestone) => {
+                const issues = issuesByMilestone[milestone.id] || [];
+                const done = issues.filter((i) => i.status === 'done').length;
+                const total = issues.length;
+                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                const bugs = issues.filter((i) => i.type === 'bug').length;
+                const features = issues.filter((i) => i.type === 'feature').length;
+                const improvements = issues.filter((i) => i.type === 'improvement').length;
+                const isExpanded = expandedId === milestone.id;
 
-            // Determine if at-risk (has target_date and > 75% time elapsed but < 50% done)
-            const isOverdue = milestone.target_date && new Date(milestone.target_date) < new Date() && milestone.status === 'active';
+                const effectiveStatus = computeEffectiveStatus(milestone, issues);
+                const statusStyle = STATUS_STYLES[effectiveStatus];
+                const isOverdue = milestone.target_date && new Date(milestone.target_date) < new Date() && effectiveStatus === 'active';
 
-            return (
-              <div key={milestone.id} className="group">
-                {/* Card */}
-                <div
-                  className={cn(
-                    'rounded-xl border bg-white dark:bg-surface transition-all cursor-pointer',
-                    isExpanded
-                      ? 'border-accent/30 shadow-md'
-                      : 'border-gray-200 dark:border-border shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
-                  )}
-                >
-                  {/* Card header */}
-                  <div
-                    className="flex items-center gap-3 p-4 sm:p-5"
-                    onClick={() => setExpandedId(isExpanded ? null : milestone.id)}
-                  >
-                    {/* Expand chevron */}
-                    <div className="text-gray-400 dark:text-muted shrink-0">
-                      {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    </div>
-
-                    {/* Name + description */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-primary truncate">
-                          {milestone.name}
-                        </h3>
-                        {/* Status badge */}
-                        <span
-                          className={cn(
-                            'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
-                            statusStyle.bg,
-                            statusStyle.text,
-                          )}
-                        >
-                          <span className={cn('h-1.5 w-1.5 rounded-full', statusStyle.dot)} />
-                          {t(`milestones.status.${milestone.status}`)}
-                        </span>
-                        {isOverdue && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 dark:bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">
-                            {t('milestones.overdue')}
-                          </span>
-                        )}
-                      </div>
-                      {milestone.description && (
-                        <p className="text-xs text-gray-500 dark:text-muted mt-0.5 line-clamp-1">
-                          {milestone.description}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Issue type breakdown */}
-                    <div className="hidden sm:flex items-center gap-3 text-[11px] shrink-0">
-                      {bugs > 0 && (
-                        <span className="flex items-center gap-1 text-red-500">
-                          <Bug size={12} />
-                          {bugs}
-                        </span>
-                      )}
-                      {features > 0 && (
-                        <span className="flex items-center gap-1 text-emerald-500">
-                          <Sparkles size={12} />
-                          {features}
-                        </span>
-                      )}
-                      {improvements > 0 && (
-                        <span className="flex items-center gap-1 text-blue-500">
-                          <Zap size={12} />
-                          {improvements}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Target date */}
-                    {milestone.target_date && (
-                      <div className="hidden sm:flex items-center gap-1 text-xs text-gray-500 dark:text-muted shrink-0">
-                        <Calendar size={12} />
-                        {new Date(milestone.target_date).toLocaleDateString()}
-                      </div>
-                    )}
-
-                    {/* Progress */}
-                    <div className="flex items-center gap-2 shrink-0 min-w-[120px]">
-                      <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-surface-hover overflow-hidden">
-                        <div
-                          className={cn(
-                            'h-full rounded-full transition-all duration-300',
-                            isOverdue
-                              ? 'bg-red-500'
-                              : pct === 100
-                                ? 'bg-emerald-500'
-                                : 'bg-blue-500',
-                          )}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className="text-[11px] font-medium text-gray-600 dark:text-secondary tabular-nums min-w-[32px] text-right">
-                        {pct}%
-                      </span>
-                    </div>
-
-                    {/* Issue count */}
-                    <span className="text-[11px] text-gray-400 dark:text-muted shrink-0 tabular-nums">
-                      {done}/{total} {t('milestones.issues')}
-                    </span>
-
-                    {/* Actions */}
+                return (
+                  <div key={milestone.id} className="group">
                     <div
-                      className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                      onClick={(e) => e.stopPropagation()}
+                      className={cn(
+                        'rounded-xl border bg-white dark:bg-surface transition-all cursor-pointer',
+                        isExpanded
+                          ? 'border-accent/30 shadow-md'
+                          : 'border-gray-200 dark:border-border shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
+                      )}
                     >
-                      <button
-                        onClick={() => handleDelete(milestone)}
-                        className="rounded-md p-1.5 text-gray-400 dark:text-muted hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                        title={t('milestones.delete')}
+                      {/* Card header */}
+                      <div
+                        className="flex items-center gap-3 p-4 sm:p-5"
+                        onClick={() => setExpandedId(isExpanded ? null : milestone.id)}
                       >
-                        <Trash2 size={14} />
-                      </button>
+                        <div className="text-gray-400 dark:text-muted shrink-0">
+                          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-semibold text-gray-900 dark:text-primary truncate">
+                              {milestone.name}
+                            </h3>
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                                statusStyle.bg,
+                                statusStyle.text,
+                              )}
+                            >
+                              <span className={cn('h-1.5 w-1.5 rounded-full', statusStyle.dot)} />
+                              {t(`milestones.status.${effectiveStatus}`)}
+                            </span>
+                            {isOverdue && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 dark:bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">
+                                {t('milestones.overdue')}
+                              </span>
+                            )}
+                          </div>
+                          {milestone.description && (
+                            <p className="text-xs text-gray-500 dark:text-muted mt-0.5 line-clamp-1">
+                              {milestone.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Issue type breakdown */}
+                        <div className="hidden sm:flex items-center gap-3 text-[11px] shrink-0">
+                          {bugs > 0 && (
+                            <span className="flex items-center gap-1 text-red-500">
+                              <Bug size={12} /> {bugs}
+                            </span>
+                          )}
+                          {features > 0 && (
+                            <span className="flex items-center gap-1 text-emerald-500">
+                              <Sparkles size={12} /> {features}
+                            </span>
+                          )}
+                          {improvements > 0 && (
+                            <span className="flex items-center gap-1 text-blue-500">
+                              <Zap size={12} /> {improvements}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Target date */}
+                        {milestone.target_date && (
+                          <div className="hidden sm:flex items-center gap-1 text-xs text-gray-500 dark:text-muted shrink-0">
+                            <Calendar size={12} />
+                            {new Date(milestone.target_date).toLocaleDateString()}
+                          </div>
+                        )}
+
+                        {/* Progress */}
+                        <div className="flex items-center gap-2 shrink-0 min-w-[120px]">
+                          <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-surface-hover overflow-hidden">
+                            <div
+                              className={cn(
+                                'h-full rounded-full transition-all duration-500',
+                                isOverdue
+                                  ? 'bg-red-500'
+                                  : pct === 100
+                                    ? 'bg-emerald-500'
+                                    : 'bg-blue-500',
+                              )}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="text-[11px] font-medium text-gray-600 dark:text-secondary tabular-nums min-w-[32px] text-right">
+                            {pct}%
+                          </span>
+                        </div>
+
+                        <span className="text-[11px] text-gray-400 dark:text-muted shrink-0 tabular-nums">
+                          {done}/{total} {t('milestones.issues')}
+                        </span>
+
+                        {/* Actions */}
+                        <div
+                          className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={() => handleDelete(milestone)}
+                            className="rounded-md p-1.5 text-gray-400 dark:text-muted hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                            title={t('milestones.delete')}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expanded detail */}
+                      {isExpanded && (
+                        <div className="border-t border-gray-100 dark:border-border">
+                          <MilestoneDetail
+                            milestone={milestone}
+                            issues={issues}
+                            projectId={project?.id}
+                            onClose={() => setExpandedId(null)}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  {/* Expanded detail */}
-                  {isExpanded && (
-                    <div className="border-t border-gray-100 dark:border-border">
-                      <MilestoneDetail
-                        milestone={milestone}
-                        issues={issues}
-                        projectId={project?.id}
-                        onClose={() => setExpandedId(null)}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -396,7 +457,6 @@ function CreateMilestoneModal({ projectId, onClose }: { projectId: string; onClo
         </div>
 
         <div className="space-y-4">
-          {/* Name */}
           <div>
             <label className="block text-xs font-medium text-gray-700 dark:text-secondary mb-1">
               {t('milestones.name')} *
@@ -411,7 +471,6 @@ function CreateMilestoneModal({ projectId, onClose }: { projectId: string; onClo
             />
           </div>
 
-          {/* Description */}
           <div>
             <label className="block text-xs font-medium text-gray-700 dark:text-secondary mb-1">
               {t('milestones.description')}
@@ -425,7 +484,6 @@ function CreateMilestoneModal({ projectId, onClose }: { projectId: string; onClo
             />
           </div>
 
-          {/* Target date */}
           <div>
             <label className="block text-xs font-medium text-gray-700 dark:text-secondary mb-1">
               {t('milestones.targetDate')}
@@ -439,7 +497,6 @@ function CreateMilestoneModal({ projectId, onClose }: { projectId: string; onClo
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex items-center justify-end gap-2 mt-6">
           <button
             onClick={onClose}

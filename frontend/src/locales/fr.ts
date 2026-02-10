@@ -808,7 +808,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'milestones.title': 'Jalons',
   'milestones.new': 'Nouveau jalon',
   'milestones.empty': 'Aucun jalon',
-  'milestones.emptyDesc': 'Créez votre premier jalon pour suivre la progression du projet.',
+  'milestones.emptyDesc': 'Aucun jalon pour le moment. Demandez à l\'IA de planifier votre roadmap 🤖',
   'milestones.progress': 'Progression',
   'milestones.targetDate': 'Date cible',
   'milestones.startDate': 'Date de début',
@@ -842,6 +842,11 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'milestones.total': 'Total',
   'milestones.done': 'Terminé',
   'milestones.open': 'Ouvert',
+  'milestones.burndown': 'Burndown',
+  'milestones.idealLine': 'Idéal',
+  'milestones.actualLine': 'Réel',
+  'milestones.emptyAi': 'Demandez à l\'IA de planifier votre roadmap 🤖',
+  'milestones.aiPlan': 'IA Planifier',
 
 // ── Landing Page ──
 'landing.badge': 'Board d\'Orchestration Live',

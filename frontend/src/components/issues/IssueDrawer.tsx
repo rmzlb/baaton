@@ -950,62 +950,14 @@ function MetadataSidebar({
       </SidebarField>
 
       {/* Milestone */}
-      <SidebarField label={t('milestones.assignMilestone')}>
-        <div className="relative w-full">
-          <button
-            onClick={() => setShowMilestonePicker(!showMilestonePicker)}
-            className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-surface-hover transition-colors w-full"
-          >
-            {issue.milestone_id ? (
-              <span className="text-xs text-primary truncate">
-                {projectMilestones.find((m) => m.id === issue.milestone_id)?.name || issue.milestone_id}
-              </span>
-            ) : (
-              <span className="text-xs text-muted">{t('milestones.noneMilestone')}</span>
-            )}
-            <ChevronDown size={10} className="text-muted ml-auto shrink-0" />
-          </button>
-          {showMilestonePicker && (
-            <div className="absolute top-full left-0 z-10 mt-1 w-48 rounded-lg border border-border bg-surface py-0.5 shadow-xl max-h-40 overflow-y-auto">
-              {/* None option */}
-              <button
-                onClick={() => {
-                  onFieldUpdate('milestone_id', null);
-                  setShowMilestonePicker(false);
-                }}
-                className={cn(
-                  'flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs hover:bg-surface-hover transition-colors',
-                  !issue.milestone_id ? 'text-primary' : 'text-secondary',
-                )}
-              >
-                {t('milestones.noneMilestone')}
-              </button>
-              {projectMilestones.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => {
-                    onFieldUpdate('milestone_id', m.id);
-                    setShowMilestonePicker(false);
-                  }}
-                  className={cn(
-                    'flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs hover:bg-surface-hover transition-colors',
-                    issue.milestone_id === m.id ? 'text-primary' : 'text-secondary',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'h-1.5 w-1.5 rounded-full shrink-0',
-                      m.status === 'active' ? 'bg-blue-500' : m.status === 'completed' ? 'bg-emerald-500' : 'bg-gray-400',
-                    )}
-                  />
-                  <span className="truncate">{m.name}</span>
-                  {issue.milestone_id === m.id && <CheckCircle2 size={12} className="text-accent ml-auto shrink-0" />}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </SidebarField>
+      <MilestonePicker
+        issue={issue}
+        milestones={projectMilestones}
+        showPicker={showMilestonePicker}
+        setShowPicker={setShowMilestonePicker}
+        onFieldUpdate={onFieldUpdate}
+        t={t}
+      />
 
       {/* Divider */}
       <div className="border-t border-border" />
@@ -1597,6 +1549,140 @@ function CommentCard({ comment }: { comment: Comment }) {
       <p className="text-xs text-primary/90 leading-relaxed whitespace-pre-wrap">
         {comment.body}
       </p>
+    </div>
+  );
+}
+
+/* ── Milestone Picker (with mini progress bars) ── */
+
+function MilestonePicker({
+  issue,
+  milestones,
+  showPicker,
+  setShowPicker,
+  onFieldUpdate,
+  t,
+}: {
+  issue: Issue;
+  milestones: Milestone[];
+  showPicker: boolean;
+  setShowPicker: (v: boolean) => void;
+  onFieldUpdate: (field: string, value: unknown) => void;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+}) {
+  // Get all issues from the Zustand store to compute per-milestone progress
+  const allIssues = useIssuesStore((s) => s.issues);
+  const issuesList = useMemo(() => Object.values(allIssues), [allIssues]);
+
+  const milestoneStats = useMemo(() => {
+    const stats: Record<string, { done: number; total: number }> = {};
+    for (const m of milestones) {
+      const mIssues = issuesList.filter((i) => i.milestone_id === m.id);
+      const done = mIssues.filter((i) => i.status === 'done').length;
+      stats[m.id] = { done, total: mIssues.length };
+    }
+    return stats;
+  }, [milestones, issuesList]);
+
+  const currentMilestone = milestones.find((m) => m.id === issue.milestone_id);
+  const currentStats = currentMilestone ? milestoneStats[currentMilestone.id] : null;
+
+  return (
+    <div>
+      <span className="text-[10px] text-muted uppercase tracking-wider font-medium block mb-1">
+        {t('milestones.assignMilestone')}
+      </span>
+      <div className="relative w-full">
+        <button
+          onClick={() => setShowPicker(!showPicker)}
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-surface-hover transition-colors w-full min-h-[24px]"
+        >
+          {currentMilestone ? (
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <span
+                className={cn(
+                  'h-1.5 w-1.5 rounded-full shrink-0',
+                  currentMilestone.status === 'active' ? 'bg-blue-500' : currentMilestone.status === 'completed' ? 'bg-emerald-500' : 'bg-gray-400',
+                )}
+              />
+              <span className="text-xs text-primary truncate flex-1">{currentMilestone.name}</span>
+              {currentStats && currentStats.total > 0 && (
+                <span className="text-[9px] text-muted tabular-nums shrink-0">
+                  {currentStats.done}/{currentStats.total}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-xs text-muted">{t('milestones.noneMilestone')}</span>
+          )}
+          <ChevronDown size={10} className="text-muted ml-auto shrink-0" />
+        </button>
+        {showPicker && (
+          <div className="absolute top-full left-0 z-10 mt-1 w-52 rounded-lg border border-border bg-surface py-0.5 shadow-xl max-h-48 overflow-y-auto">
+            {/* None option */}
+            <button
+              onClick={() => {
+                onFieldUpdate('milestone_id', null);
+                setShowPicker(false);
+              }}
+              className={cn(
+                'flex w-full items-center gap-1.5 px-2.5 py-1.5 text-xs hover:bg-surface-hover transition-colors',
+                !issue.milestone_id ? 'text-primary' : 'text-secondary',
+              )}
+            >
+              {t('milestones.noneMilestone')}
+            </button>
+            {milestones.map((m) => {
+              const stats = milestoneStats[m.id] || { done: 0, total: 0 };
+              const pct = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
+              const isSelected = issue.milestone_id === m.id;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    onFieldUpdate('milestone_id', m.id);
+                    setShowPicker(false);
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-1.5 px-2.5 py-2 text-xs hover:bg-surface-hover transition-colors',
+                    isSelected ? 'text-primary bg-surface-hover/50' : 'text-secondary',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'h-1.5 w-1.5 rounded-full shrink-0',
+                      m.status === 'active' ? 'bg-blue-500' : m.status === 'completed' ? 'bg-emerald-500' : 'bg-gray-400',
+                    )}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="truncate">{m.name}</span>
+                      {isSelected && <CheckCircle2 size={11} className="text-accent shrink-0 ml-1" />}
+                    </div>
+                    {/* Mini progress bar */}
+                    {stats.total > 0 && (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className="flex-1 h-1 rounded-full bg-surface-hover overflow-hidden">
+                          <div
+                            className={cn(
+                              'h-full rounded-full transition-all',
+                              pct === 100 ? 'bg-emerald-500' : 'bg-blue-500',
+                            )}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="text-[9px] text-muted tabular-nums shrink-0">
+                          {stats.done}/{stats.total}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

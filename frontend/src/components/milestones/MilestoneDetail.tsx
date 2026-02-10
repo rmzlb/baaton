@@ -1,12 +1,13 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Edit3, Save, X, Calendar, Bug, Sparkles, Zap, HelpCircle,
+  Edit3, Save, Calendar, Bug, Sparkles, Zap, HelpCircle,
   CheckCircle2, Circle, Clock, AlertTriangle,
 } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { cn, timeAgo } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { BurndownChart } from '@/components/milestones/BurndownChart';
 import type { Milestone, MilestoneStatus, Issue, IssueStatus, IssueType } from '@/lib/types';
 
 /* ── Constants ──────────────────────────────────── */
@@ -34,7 +35,7 @@ interface MilestoneDetailProps {
   onClose: () => void;
 }
 
-export function MilestoneDetail({ milestone, issues, projectId, onClose }: MilestoneDetailProps) {
+export function MilestoneDetail({ milestone, issues, projectId: _projectId, onClose: _onClose }: MilestoneDetailProps) {
   const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
@@ -216,6 +217,17 @@ export function MilestoneDetail({ milestone, issues, projectId, onClose }: Miles
           />
         </div>
       </div>
+
+      {/* Burndown Chart */}
+      {issues.length > 0 && (
+        <div className="mb-5">
+          <BurndownChart
+            issues={issues}
+            startDate={milestone.created_at}
+            targetDate={milestone.target_date}
+          />
+        </div>
+      )}
 
       {/* Issue groups */}
       {issues.length === 0 ? (

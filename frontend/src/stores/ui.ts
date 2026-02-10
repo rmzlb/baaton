@@ -24,6 +24,8 @@ interface UIState {
   theme: 'dark' | 'light';
   density: BoardDensity;
   commandBarOpen: boolean;
+  aiOpen: boolean;
+  aiPrefilledMessage: string | null;
 
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -35,6 +37,8 @@ interface UIState {
   cycleDensity: () => void;
   openCommandBar: () => void;
   closeCommandBar: () => void;
+  setAiOpen: (open: boolean) => void;
+  setAiPrefilledMessage: (msg: string | null) => void;
 }
 
 const DENSITY_CYCLE: BoardDensity[] = ['compact', 'default', 'spacious'];
@@ -73,4 +77,8 @@ export const useUIStore = create<UIState>((set) => ({
     }),
   openCommandBar: () => set({ commandBarOpen: true }),
   closeCommandBar: () => set({ commandBarOpen: false }),
+  aiOpen: false,
+  aiPrefilledMessage: null,
+  setAiOpen: (open) => set({ aiOpen: open }),
+  setAiPrefilledMessage: (msg) => set({ aiPrefilledMessage: msg }),
 }));

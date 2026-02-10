@@ -1,4 +1,5 @@
 import { useHotkeys } from 'react-hotkeys-hook';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useIssuesStore } from '@/stores/issues';
 
 /**
@@ -9,6 +10,8 @@ export const SHORTCUT_DEFS = [
   { keys: 'k', label: 'Previous issue' },
   { keys: 'e', label: 'Open selected issue' },
   { keys: 'n', label: 'New issue' },
+  { keys: 'shift+m', label: 'Assign milestone' },
+  { keys: 'g>m', label: 'Go to milestones' },
   { keys: 'Escape', label: 'Close drawer / modal' },
   { keys: 'shift+/', label: 'Show keyboard shortcuts' },
 ] as const;
@@ -20,6 +23,8 @@ interface UseKeyboardShortcutsOptions {
   onNewIssue: () => void;
   /** Callback to toggle the shortcut help overlay */
   onToggleHelp: () => void;
+  /** Callback to open the milestone picker for the selected issue */
+  onAssignMilestone?: () => void;
 }
 
 /**
@@ -30,12 +35,15 @@ export function useKeyboardShortcuts({
   issueIds,
   onNewIssue,
   onToggleHelp,
+  onAssignMilestone,
 }: UseKeyboardShortcutsOptions) {
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const openDetail = useIssuesStore((s) => s.openDetail);
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const selectIssue = useIssuesStore((s) => s.selectIssue);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // J — next issue
   useHotkeys(
@@ -97,6 +105,32 @@ export function useKeyboardShortcuts({
     },
     { preventDefault: true },
     [onNewIssue],
+  );
+
+  // Shift+M — assign milestone to selected issue
+  useHotkeys(
+    'shift+m',
+    () => {
+      if (onAssignMilestone) {
+        onAssignMilestone();
+      }
+    },
+    { enabled: !!onAssignMilestone, preventDefault: true },
+    [onAssignMilestone],
+  );
+
+  // G then M — go to milestones page
+  useHotkeys(
+    'g>m',
+    () => {
+      // Extract current project slug from URL
+      const match = location.pathname.match(/^\/projects\/([^/]+)/);
+      if (match) {
+        navigate(`/projects/${match[1]}/milestones`);
+      }
+    },
+    { preventDefault: true },
+    [location.pathname, navigate],
   );
 
   // Escape — close drawer/modal

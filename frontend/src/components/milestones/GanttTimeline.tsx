@@ -53,7 +53,7 @@ export function GanttTimeline({ milestones, issuesByMilestone }: GanttTimelinePr
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   // Calculate date range
-  const { rangeStart, rangeEnd, totalDays, columns, columnType } = useMemo(() => {
+  const { rangeStart, totalDays, columns } = useMemo(() => {
     const now = new Date();
     let earliest = now;
     let latest = addDays(now, 30);
@@ -72,11 +72,8 @@ export function GanttTimeline({ milestones, issuesByMilestone }: GanttTimelinePr
 
     // Determine column granularity
     let cols: { date: Date; label: string }[] = [];
-    let colType: 'day' | 'week' | 'month' = 'week';
-
     if (total <= 60) {
       // Show weeks
-      colType = 'week';
       let current = new Date(start);
       // Align to Monday
       current.setDate(current.getDate() - current.getDay() + 1);
@@ -86,7 +83,6 @@ export function GanttTimeline({ milestones, issuesByMilestone }: GanttTimelinePr
       }
     } else {
       // Show months
-      colType = 'month';
       let current = new Date(start.getFullYear(), start.getMonth(), 1);
       while (current < end) {
         cols.push({ date: new Date(current), label: formatMonth(current) });
@@ -98,10 +94,8 @@ export function GanttTimeline({ milestones, issuesByMilestone }: GanttTimelinePr
 
     return {
       rangeStart: start,
-      rangeEnd: end,
       totalDays: total,
       columns: cols,
-      columnType: colType,
     };
   }, [milestones]);
 

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { NavLink, useLocation, useParams } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import {
   LayoutDashboard, Kanban, Settings, ChevronLeft, ChevronRight, Users, X,
