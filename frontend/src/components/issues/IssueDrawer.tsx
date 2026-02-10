@@ -358,15 +358,20 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       if (!panelRef.current) return;
+      // If Novel/ProseMirror already handled this paste, skip
+      if (e.defaultPrevented) return;
       // Don't intercept pastes in the Notion editor or other contenteditable areas
-      const active = document.activeElement;
-      if (active) {
-        const isEditable = active.getAttribute('contenteditable') === 'true'
-          || active.tagName === 'TEXTAREA'
-          || active.tagName === 'INPUT'
-          || active.closest('[data-notion-editor]')
-          || active.closest('.ProseMirror')
-          || active.closest('.tiptap');
+      // Check both activeElement AND event target (covers edge cases)
+      const elements = [document.activeElement, e.target as Element].filter(Boolean);
+      for (const el of elements) {
+        if (!el) continue;
+        const isEditable = el.getAttribute?.('contenteditable') === 'true'
+          || (el as HTMLElement).tagName === 'TEXTAREA'
+          || (el as HTMLElement).tagName === 'INPUT'
+          || el.closest?.('[data-notion-editor]')
+          || el.closest?.('.novel-editor')
+          || el.closest?.('.ProseMirror')
+          || el.closest?.('.tiptap');
         if (isEditable) return;
       }
 

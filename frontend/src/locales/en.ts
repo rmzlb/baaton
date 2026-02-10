@@ -605,7 +605,23 @@ As a [user], I want to [action] so that [benefit].
   'issueDrawer.pasteHint': 'to paste',
   'issueDrawer.uploading': 'Compressing {{count}} image(s)…',
   'issueDrawer.dropHere': 'Drop here!',
-  'issueDrawer.uploadHint': 'Images auto-compressed • Max 20MB',
+  'issueDrawer.uploadHint': 'Images auto-compressed to WebP • Max 20MB',
+
+  // ─── Upload ─────────────────────────────────
+  'upload.started': 'Uploading…',
+  'upload.startedDesc': 'Compressing {{count}} file(s)…',
+  'upload.success': 'Upload complete',
+  'upload.successDesc': '{{count}} file(s) uploaded successfully',
+  'upload.error': 'Upload failed',
+  'upload.errorDesc': 'Could not save attachments. Please try again.',
+  'upload.retry': 'Retry',
+  'upload.compressing': 'Compressing…',
+  'upload.saving': 'Saving…',
+  'upload.dropZone': 'Drop files here',
+  'upload.limitReached': 'Attachment limit',
+  'upload.limitReachedDesc': 'Maximum {{max}} attachments per issue',
+  'upload.fileTooLarge': 'File too large',
+  'upload.unsupportedType': 'Unsupported file type',
 
   // ─── Command Palette ───────────────────────
   'topbar.quickActions': 'Quick Actions',

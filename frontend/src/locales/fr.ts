@@ -605,7 +605,23 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'issueDrawer.pasteHint': 'pour coller',
   'issueDrawer.uploading': 'Compression de {{count}} image(s)…',
   'issueDrawer.dropHere': 'Déposer ici !',
-  'issueDrawer.uploadHint': 'Images compressées auto • Max 20MB',
+  'issueDrawer.uploadHint': 'Images compressées en WebP • Max 20 Mo',
+
+  // ─── Upload ─────────────────────────────────
+  'upload.started': 'Téléchargement…',
+  'upload.startedDesc': 'Compression de {{count}} fichier(s)…',
+  'upload.success': 'Téléchargement terminé',
+  'upload.successDesc': '{{count}} fichier(s) ajouté(s) avec succès',
+  'upload.error': 'Échec du téléchargement',
+  'upload.errorDesc': 'Impossible de sauvegarder les pièces jointes. Veuillez réessayer.',
+  'upload.retry': 'Réessayer',
+  'upload.compressing': 'Compression…',
+  'upload.saving': 'Sauvegarde…',
+  'upload.dropZone': 'Déposez vos fichiers ici',
+  'upload.limitReached': 'Limite de pièces jointes',
+  'upload.limitReachedDesc': 'Maximum {{max}} pièces jointes par issue',
+  'upload.fileTooLarge': 'Fichier trop volumineux',
+  'upload.unsupportedType': 'Type de fichier non supporté',
 
   // ─── Command Palette ───────────────────────
   'topbar.quickActions': 'Actions rapides',
