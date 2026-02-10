@@ -913,6 +913,19 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.nav.docs': 'Docs',
 'landing.nav.login': 'Connexion',
 
+// Context Menu
+'contextMenu.open': 'Ouvrir',
+'contextMenu.copyId': 'Copier l\'ID',
+'contextMenu.moveTo': 'Déplacer vers',
+'contextMenu.priority': 'Priorité',
+'contextMenu.delete': 'Supprimer',
+'contextMenu.deleteTitle': 'Supprimer cette issue ?',
+'contextMenu.deleteWarning': 'Cette action est irréversible. Tous les commentaires, TLDRs et l\'historique seront supprimés définitivement.',
+'contextMenu.confirmDelete': 'Supprimer',
+'contextMenu.deleteError': 'Erreur lors de la suppression',
+'contextMenu.statusChanged': 'Statut mis à jour',
+'contextMenu.priorityChanged': 'Priorité mise à jour',
+
 } as const;
 
 export default fr;

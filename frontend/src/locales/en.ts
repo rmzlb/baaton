@@ -913,6 +913,19 @@ As a [user], I want to [action] so that [benefit].
 'landing.nav.docs': 'Docs',
 'landing.nav.login': 'Log in',
 
+// Context Menu
+'contextMenu.open': 'Open issue',
+'contextMenu.copyId': 'Copy ID',
+'contextMenu.moveTo': 'Move to',
+'contextMenu.priority': 'Priority',
+'contextMenu.delete': 'Delete issue',
+'contextMenu.deleteTitle': 'Delete this issue?',
+'contextMenu.deleteWarning': 'This action cannot be undone. All comments, TLDRs, and activity will be permanently deleted.',
+'contextMenu.confirmDelete': 'Delete',
+'contextMenu.deleteError': 'Failed to delete issue',
+'contextMenu.statusChanged': 'Status updated',
+'contextMenu.priorityChanged': 'Priority updated',
+
 } as const;
 
 export default en;
