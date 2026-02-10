@@ -9,12 +9,18 @@ import { useAIAssistantStore, type AIMessage } from '@/stores/ai-assistant';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { generateAIResponse, RateLimitError } from '@/lib/ai-engine';
+import {
+  getOpenClawConfig,
+  sendToOpenClaw,
+  OpenClawError,
+  type OpenClawConfig,
+} from '@/lib/openclaw-engine';
 import { cn } from '@/lib/utils';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import type { Issue } from '@/lib/types';
 import type { SkillResult } from '@/lib/ai-skills';
 import { SKILL_TOOLS } from '@/lib/ai-skills';
-import { type AIStateContext, resetState } from '@/lib/ai-state';
+import { type AIStateContext, createInitialState } from '@/lib/ai-state';
 
 type AIMode = 'gemini' | 'openclaw';
 
@@ -244,25 +250,22 @@ export function AIAssistant() {
   const [aiMode, setAiMode] = useState<AIMode>('gemini');
   const [lastError, setLastError] = useState<string | null>(null);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
-  const [aiStateContext, setAiStateContext] = useState<AIStateContext>(resetState);
+  const [aiStateContext, setAiStateContext] = useState<AIStateContext>(createInitialState);
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Get OpenClaw config from localStorage (per-user, no backend needed)
-  const [openclawConfig, setOpenclawConfig] = useState<{ name: string; apiUrl: string; apiToken: string; status: string } | null>(null);
+  // Get OpenClaw config from localStorage (per-user, via openclaw-engine)
+  const [openclawConfig, setOpenclawConfig] = useState<OpenClawConfig | null>(getOpenClawConfig);
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('baaton-openclaw-connection');
-      if (raw) setOpenclawConfig(JSON.parse(raw));
-    } catch { /* ignore */ }
+    setOpenclawConfig(getOpenClawConfig());
   }, [open]); // Re-check when panel opens
 
   // Reset state when clearing messages
   const handleClearMessages = useCallback(() => {
     clearMessages();
-    setAiStateContext(resetState());
+    setAiStateContext(createInitialState());
     setLastError(null);
     setLastFailedMessage(null);
   }, [clearMessages]);
@@ -331,29 +334,18 @@ export function AIAssistant() {
           contextParts.push(`- ${p.name} (${p.prefix}): ${issues.length} issues [${statusSummary}]`);
         }
         const context = contextParts.join('\n');
-        const fullMessage = `${msg}\n\n---\n${context}`;
 
-        // Call OpenClaw gateway directly
-        const baseUrl = openclawConfig.apiUrl.replace(/\/$/, '');
-        const res = await fetch(`${baseUrl}/api/sessions/send`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openclawConfig.apiToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: fullMessage }),
-          signal: AbortSignal.timeout(30000),
+        // Use openclaw-engine with session isolation
+        const response = await sendToOpenClaw(msg, openclawConfig, {
+          context,
         });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        addMessage('assistant', data.response || data.content || data.text || JSON.stringify(data));
+        addMessage('assistant', response.text);
       } catch (err) {
         console.error('OpenClaw error:', err);
-        addMessage(
-          'assistant',
-          `⚠️ ${t('ai.error', { message: err instanceof Error ? err.message : t('ai.errorGeneric') })}`,
-        );
+        const errorMsg = err instanceof OpenClawError
+          ? (err.isConnectionError ? t('ai.openclawConnectionError') : err.message)
+          : (err instanceof Error ? err.message : t('ai.errorGeneric'));
+        addMessage('assistant', `⚠️ ${t('ai.error', { message: errorMsg })}`);
       }
     },
     [openclawConfig, openclawConnected, projects, allIssuesByProject, addMessage, t],
