@@ -29,8 +29,43 @@ import {
   isApproachingTokenBudget,
 } from './ai-state';
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+// API key: prefer fetching from backend proxy (server-side), fallback to env
+let _cachedApiKey: string | null = null;
 const GEMINI_MODEL = 'gemini-2.0-flash';
+const API_URL = import.meta.env.VITE_API_URL || '';
+
+async function getGeminiApiKey(authToken?: string): Promise<string> {
+  // Return cached key if we have one
+  if (_cachedApiKey) return _cachedApiKey;
+
+  // Try to fetch from backend (keeps key server-side)
+  if (API_URL && authToken) {
+    try {
+      const res = await fetch(`${API_URL}/api/v1/ai/key`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.key) {
+          _cachedApiKey = data.key;
+          return _cachedApiKey;
+        }
+      }
+    } catch {
+      // Fallback to env
+    }
+  }
+
+  // Fallback: env variable (for local dev or if backend proxy unavailable)
+  const envKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+  if (envKey) {
+    _cachedApiKey = envKey;
+    return envKey;
+  }
+
+  throw new Error('AI non configuré. Clé API manquante.');
+}
 
 // ─── Client-side Rate Limiting ────────────────
 const RATE_LIMIT = { maxPerMinute: 10, maxPerHour: 100 };
@@ -320,15 +355,13 @@ async function callGemini(
   contents: GeminiContent[],
   systemPrompt: string,
   skillContext?: string,
+  authToken?: string,
 ): Promise<{
   text?: string;
   functionCalls?: GeminiFunctionCall[];
 }> {
-  if (!GEMINI_API_KEY) {
-    throw new Error('AI non configuré. Clé API manquante.');
-  }
-
-  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+  const apiKey = await getGeminiApiKey(authToken);
+  const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
     model: GEMINI_MODEL,
     systemInstruction: systemPrompt,
@@ -374,6 +407,7 @@ async function callGeminiWithRetry(
   contents: GeminiContent[],
   systemPrompt: string,
   skillContext?: string,
+  authToken?: string,
   maxRetries = 2,
   baseDelay = 1000,
 ): Promise<{
@@ -382,7 +416,7 @@ async function callGeminiWithRetry(
 }> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await callGemini(contents, systemPrompt, skillContext);
+      return await callGemini(contents, systemPrompt, skillContext, authToken);
     } catch (error: any) {
       if (attempt === maxRetries) throw error;
       const msg = error?.message || '';
@@ -478,6 +512,7 @@ export async function generateAIResponse(
   conversationHistory: { role: string; content: string }[],
   apiClient: ApiClientType,
   stateContext?: AIStateContext,
+  authToken?: string,
 ): Promise<AIResponse> {
   // ── Rate Limiting ──
   if (!checkRateLimit()) {
@@ -530,7 +565,7 @@ export async function generateAIResponse(
 
   // Agentic loop — keep calling Gemini until we get a text response (max 5 rounds)
   for (let round = 0; round < 5; round++) {
-    const response = await callGeminiWithRetry(contents, systemPrompt, skillContext);
+    const response = await callGeminiWithRetry(contents, systemPrompt, skillContext, authToken);
 
     // Track output tokens
     if (response.text) {

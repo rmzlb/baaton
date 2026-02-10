@@ -5,6 +5,7 @@ import {
   Wrench, CheckCircle2, XCircle, ChevronDown, Wifi, WifiOff,
   RefreshCw, Clock, AlertTriangle,
 } from 'lucide-react';
+import { useAuth } from '@clerk/clerk-react';
 import { useAIAssistantStore, type AIMessage } from '@/stores/ai-assistant';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -253,6 +254,7 @@ export function AIAssistant() {
   const [aiStateContext, setAiStateContext] = useState<AIStateContext>(createInitialState);
   const apiClient = useApi();
   const queryClient = useQueryClient();
+  const { getToken } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -371,6 +373,7 @@ export function AIAssistant() {
       try {
         const history = messages.map((m) => ({ role: m.role, content: m.content }));
 
+        const token = await getToken();
         const response = await generateAIResponse(
           msg,
           projects,
@@ -378,6 +381,7 @@ export function AIAssistant() {
           history,
           apiClient as unknown as Parameters<typeof generateAIResponse>[4],
           aiStateContext,
+          token || undefined,
         );
 
         // Update state context for next turn

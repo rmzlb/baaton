@@ -47,6 +47,7 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/issues/{id}/github", get(github::repos::get_issue_github_data))
         // AI proxy
         .route("/ai/chat", post(ai::chat))
+        .route("/ai/key", get(ai::get_key))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
         // Milestones (by ID)
