@@ -33,9 +33,10 @@ interface ListRowProps {
   statuses: ProjectStatus[];
   projectTags?: ProjectTag[];
   onClick: () => void;
+  onContextMenu?: (e: React.MouseEvent, issue: Issue) => void;
 }
 
-export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowProps) {
+export function ListRow({ issue, statuses, projectTags = [], onClick, onContextMenu }: ListRowProps) {
   const tc = typeConfig[issue.type] ?? typeConfig.feature;
   const TypeIcon = tc.icon;
   const status = statuses.find((s) => s.key === issue.status);
@@ -57,6 +58,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
       {/* Desktop: table row — single line, compact */}
       <div
         onClick={onClick}
+        onContextMenu={onContextMenu ? (e: React.MouseEvent) => onContextMenu(e, issue) : undefined}
         className={cn(
           'hidden md:grid grid-cols-[72px_1fr_110px_90px_80px_80px_100px_100px_90px] gap-1.5 border-b border-gray-100 dark:border-border/50 px-4 md:px-6 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-surface transition-colors items-center h-[38px]',
           isDone && 'opacity-60 hover:opacity-90',
@@ -151,6 +153,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
       {/* Mobile: card layout */}
       <div
         onClick={onClick}
+        onContextMenu={onContextMenu ? (e: React.MouseEvent) => onContextMenu(e, issue) : undefined}
         className="md:hidden flex flex-col gap-1.5 border-b border-border/50 px-3 py-2.5 cursor-pointer hover:bg-surface transition-colors active:bg-surface-hover"
       >
         {/* Top row: ID + status + priority */}

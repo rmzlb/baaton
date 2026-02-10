@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ListRow } from './ListRow';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { IssueContextMenu, DeleteConfirmModal, useIssueContextMenu } from '@/components/shared/IssueContextMenu';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import type { Issue, IssuePriority, ProjectStatus, ProjectTag } from '@/lib/types';
@@ -50,6 +51,11 @@ interface ListViewProps {
 
 export function ListView({ statuses, issues, onIssueClick, projectTags = [], projects = [] }: ListViewProps) {
   const { t } = useTranslation();
+  const {
+    contextMenu, setContextMenu, deleteTarget, setDeleteTarget,
+    handleContextMenu, handleStatusChange, handlePriorityChange,
+    handleDeleteConfirm, handleCopyId, handleOpen,
+  } = useIssueContextMenu(statuses, onIssueClick);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('status');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -427,6 +433,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
                             statuses={statuses}
                             projectTags={projectTags}
                             onClick={() => onIssueClick(issue)}
+                            onContextMenu={handleContextMenu}
                           />
                         ))}
                       </div>
@@ -441,6 +448,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
                       statuses={statuses}
                       projectTags={projectTags}
                       onClick={() => onIssueClick(issue)}
+                            onContextMenu={handleContextMenu}
                     />
                   ))
                 )
@@ -465,6 +473,30 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
           />
         )}
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <IssueContextMenu
+          issue={contextMenu.issue}
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          statuses={statuses}
+          onClose={() => setContextMenu(null)}
+          onStatusChange={handleStatusChange}
+          onPriorityChange={handlePriorityChange}
+          onDelete={(issue) => setDeleteTarget(issue)}
+          onCopyId={handleCopyId}
+          onOpen={handleOpen}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          issue={deleteTarget}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }
