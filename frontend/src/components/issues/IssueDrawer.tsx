@@ -361,9 +361,14 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       }
     }
 
-    await apiClient.issues.update(issueId, { attachments: newAttachments } as any);
-    queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
-    setUploadingCount(0);
+    try {
+      await apiClient.issues.update(issueId, { attachments: newAttachments } as any);
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+    } catch (err) {
+      console.error('[Upload] Failed to save attachments:', err);
+    } finally {
+      setUploadingCount(0);
+    }
   }, [issue, issueId, compressImage, apiClient, queryClient]);
 
   // ── Paste handler ──

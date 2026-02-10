@@ -13,6 +13,7 @@ mod invites;
 mod milestones;
 mod sprints;
 mod ai;
+pub mod activity;
 pub mod github;
 
 pub fn api_router(pool: PgPool) -> Router {
@@ -68,6 +69,9 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/issues/{id}/position", patch(issues::update_position))
         .route("/issues/{id}/comments", get(comments::list_by_issue).post(comments::create))
         .route("/issues/{id}/tldr", post(tldrs::create))
+        // Activity
+        .route("/issues/{id}/activity", get(activity::list_by_issue))
+        .route("/activity", get(activity::list_recent))
         // ── GitHub Integration ──
         .route("/github/install", get(github::oauth::install_redirect))
         .route("/github/callback", get(github::oauth::callback))
