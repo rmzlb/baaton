@@ -1,0 +1,25 @@
+{
+  "name": "@baaton/agent-skills",
+  "version": "1.0.0",
+  "description": "AI agent skills for Baaton project management — read tickets, update statuses, post TLDRs",
+  "keywords": [
+    "agent-skills",
+    "ai",
+    "project-management",
+    "claude",
+    "codex",
+    "mcp",
+    "baaton",
+    "kanban",
+    "issue-tracker"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/baaton-dev/agent-skills"
+  },
+  "homepage": "https://baaton.dev",
+  "bugs": {
+    "url": "https://github.com/baaton-dev/agent-skills/issues"
+  }
+}

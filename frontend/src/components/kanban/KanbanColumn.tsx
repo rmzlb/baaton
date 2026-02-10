@@ -12,6 +12,7 @@ interface KanbanColumnProps {
   provided: DroppableProvided;
   isDraggingOver: boolean;
   onIssueClick: (issue: Issue) => void;
+  onContextMenu?: (e: React.MouseEvent, issue: Issue) => void;
   onCreateIssue?: (statusKey: string) => void;
   projectTags?: ProjectTag[];
 }
@@ -34,6 +35,7 @@ export function KanbanColumn({
   provided,
   isDraggingOver,
   onIssueClick,
+  onContextMenu,
   onCreateIssue,
   projectTags,
 }: KanbanColumnProps) {
@@ -96,6 +98,7 @@ export function KanbanColumn({
                 provided={dragProvided}
                 isDragging={dragSnapshot.isDragging}
                 onClick={() => onIssueClick(issue)}
+                onContextMenu={onContextMenu}
                 projectTags={projectTags}
               />
             )}

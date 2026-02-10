@@ -15,6 +15,8 @@ interface IssuesState {
   openDetail: (id: string) => void;
   closeDetail: () => void;
 
+  removeIssue: (id: string) => void;
+
   // Optimistic operations
   moveIssueOptimistic: (issueId: string, newStatus: IssueStatus, newPosition: number) => Record<string, Issue>;
   updateIssueOptimistic: (id: string, patch: Partial<Issue>) => Record<string, Issue>;
@@ -40,6 +42,11 @@ export const useIssuesStore = create<IssuesState>()(
         if (state.issues[id]) {
           Object.assign(state.issues[id], patch);
         }
+      }),
+
+    removeIssue: (id) =>
+      set((state) => {
+        delete state.issues[id];
       }),
 
     moveIssue: (id, newStatus, newPosition) =>

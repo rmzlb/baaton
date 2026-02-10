@@ -31,6 +31,7 @@ interface KanbanCardProps {
   provided: DraggableProvided;
   isDragging: boolean;
   onClick: () => void;
+  onContextMenu?: (e: React.MouseEvent, issue: Issue) => void;
   projectTags?: ProjectTag[];
   githubPrs?: GitHubPrLink[];
 }
@@ -104,7 +105,14 @@ function TypeBadge({ type, size = 'sm' }: { type: IssueType; size?: 'sm' | 'xs' 
   );
 }
 
-export function KanbanCard({ issue, provided, isDragging, onClick, projectTags = [], githubPrs = [] }: KanbanCardProps) {
+export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, projectTags = [], githubPrs = [] }: KanbanCardProps) {
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (onContextMenu) {
+      e.preventDefault();
+      e.stopPropagation();
+      onContextMenu(e, issue);
+    }
+  };
   const density = useUIStore((s) => s.density);
   const PriorityConfig = issue.priority ? (priorityConfig[issue.priority] ?? null) : null;
   const isDone = issue.status === 'done' || issue.status === 'cancelled';
@@ -122,6 +130,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
         {...provided.draggableProps}
         {...provided.dragHandleProps}
         onClick={onClick}
+        onContextMenu={handleContextMenu}
         role="article"
         aria-roledescription="draggable item"
         aria-label={`${issue.display_id}: ${issue.title}`}
@@ -167,6 +176,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
         {...provided.draggableProps}
         {...provided.dragHandleProps}
         onClick={onClick}
+        onContextMenu={handleContextMenu}
         role="article"
         aria-roledescription="draggable item"
         aria-label={`${issue.display_id}: ${issue.title}`}
@@ -255,6 +265,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
       {...provided.draggableProps}
       {...provided.dragHandleProps}
       onClick={onClick}
+        onContextMenu={handleContextMenu}
       role="article"
       aria-roledescription="draggable item"
       aria-label={`${issue.display_id}: ${issue.title}`}

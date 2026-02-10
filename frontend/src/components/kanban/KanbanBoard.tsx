@@ -9,9 +9,11 @@ import {
   Tag, User, ChevronDown, Layers, Inbox, SearchX,
 } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
+import { KanbanContextMenu, DeleteConfirmModal } from './KanbanContextMenu';
 import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useApi } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/shared/EmptyState';
 import type { Issue, IssueStatus, IssuePriority, ProjectStatus, ProjectTag } from '@/lib/types';
@@ -51,13 +53,64 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCreateIssue, projectTags = [] }: KanbanBoardProps) {
   const { t } = useTranslation();
+  const apiClient = useApi();
   const moveIssueOptimistic = useIssuesStore((s) => s.moveIssueOptimistic);
   const restoreIssues = useIssuesStore((s) => s.restoreIssues);
+  const removeIssue = useIssuesStore((s) => s.removeIssue);
+  const updateIssueOptimistic = useIssuesStore((s) => s.updateIssueOptimistic);
   const addNotification = useNotificationStore((s) => s.addNotification);
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [sortMode, setSortMode] = useState<SortMode>('manual');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSort, setShowSort] = useState(false);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ issue: Issue; x: number; y: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Issue | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, issue: Issue) => {
+    e.preventDefault();
+    setContextMenu({ issue, x: e.clientX, y: e.clientY });
+  }, []);
+
+  const handleStatusChange = useCallback(async (issueId: string, status: IssueStatus) => {
+    updateIssueOptimistic(issueId, { status });
+    try {
+      await apiClient.issues.update(issueId, { status });
+      addNotification({ type: 'success', title: t('contextMenu.statusChanged') || 'Status updated' });
+    } catch {
+      addNotification({ type: 'warning', title: t('optimistic.updateError'), message: t('optimistic.updateErrorDesc') });
+    }
+  }, [apiClient, updateIssueOptimistic, addNotification, t]);
+
+  const handlePriorityChange = useCallback(async (issueId: string, priority: IssuePriority | null) => {
+    updateIssueOptimistic(issueId, { priority: priority as any });
+    try {
+      await apiClient.issues.update(issueId, { priority });
+      addNotification({ type: 'success', title: t('contextMenu.priorityChanged') || 'Priority updated' });
+    } catch {
+      addNotification({ type: 'warning', title: t('optimistic.updateError'), message: t('optimistic.updateErrorDesc') });
+    }
+  }, [apiClient, updateIssueOptimistic, addNotification, t]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    const displayId = deleteTarget.display_id;
+    setDeleteTarget(null);
+    try {
+      removeIssue(id);
+      await apiClient.issues.delete(id);
+      addNotification({ type: 'success', title: `${displayId} deleted` });
+    } catch {
+      addNotification({ type: 'warning', title: t('contextMenu.deleteError') || 'Failed to delete issue' });
+    }
+  }, [deleteTarget, apiClient, removeIssue, addNotification, t]);
+
+  const handleCopyId = useCallback((displayId: string) => {
+    navigator.clipboard.writeText(displayId);
+    addNotification({ type: 'success', title: `Copied ${displayId}` });
+  }, [addNotification]);
 
   // Enhanced filters
   const [selectedPriorities, setSelectedPriorities] = useState<IssuePriority[]>([]);
@@ -520,6 +573,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
                     provided={provided}
                     isDraggingOver={snapshot.isDraggingOver}
                     onIssueClick={onIssueClick}
+                    onContextMenu={handleContextMenu}
                     onCreateIssue={onCreateIssue}
                     projectTags={projectTags}
                   />
@@ -528,6 +582,30 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
             ))}
           </div>
         </DragDropContext>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <KanbanContextMenu
+          issue={contextMenu.issue}
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          statuses={statuses}
+          onClose={() => setContextMenu(null)}
+          onStatusChange={handleStatusChange}
+          onPriorityChange={handlePriorityChange}
+          onDelete={(issue) => setDeleteTarget(issue)}
+          onCopyId={handleCopyId}
+          onOpen={(issue) => onIssueClick(issue)}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          issue={deleteTarget}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );
