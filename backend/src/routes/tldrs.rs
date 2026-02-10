@@ -1,4 +1,5 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{extract::{Path, State}, http::StatusCode, Json};
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -8,7 +9,7 @@ pub async fn create(
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
     Json(body): Json<CreateTldr>,
-) -> Json<ApiResponse<Tldr>> {
+) -> Result<Json<ApiResponse<Tldr>>, (StatusCode, Json<serde_json::Value>)> {
     let tldr = sqlx::query_as::<_, Tldr>(
         r#"
         INSERT INTO tldrs (issue_id, agent_name, summary, files_changed, tests_status, pr_url)
@@ -24,7 +25,7 @@ pub async fn create(
     .bind(&body.pr_url)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Json(ApiResponse::new(tldr))
+    Ok(Json(ApiResponse::new(tldr)))
 }

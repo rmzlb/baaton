@@ -1,5 +1,6 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{extract::{Path, State}, http::StatusCode, Json};
 use serde::Deserialize;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -31,7 +32,7 @@ pub async fn create(
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
     Json(body): Json<CreateComment>,
-) -> Json<ApiResponse<Comment>> {
+) -> Result<Json<ApiResponse<Comment>>, (StatusCode, Json<serde_json::Value>)> {
     let comment = sqlx::query_as::<_, Comment>(
         r#"
         INSERT INTO comments (issue_id, author_id, author_name, body)
@@ -45,7 +46,7 @@ pub async fn create(
     .bind(&body.body)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Json(ApiResponse::new(comment))
+    Ok(Json(ApiResponse::new(comment)))
 }

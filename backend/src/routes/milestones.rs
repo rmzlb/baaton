@@ -1,6 +1,7 @@
-use axum::{extract::{Extension, Path, State}, Json};
+use axum::{extract::{Extension, Path, State}, http::StatusCode, Json};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
@@ -118,11 +119,12 @@ pub async fn create(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
     Json(body): Json<CreateMilestone>,
-) -> Result<Json<ApiResponse<MilestoneWithCounts>>, axum::http::StatusCode> {
-    let org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+) -> Result<Json<ApiResponse<MilestoneWithCounts>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     if body.name.trim().is_empty() {
-        return Err(axum::http::StatusCode::BAD_REQUEST);
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Milestone name is required"}))));
     }
 
     let status = body.status.as_deref().unwrap_or("active");
@@ -145,7 +147,7 @@ pub async fn create(
     .bind(org_id)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     let milestone = MilestoneWithCounts {
         id: row.id,
@@ -174,8 +176,9 @@ pub async fn update(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateMilestone>,
-) -> Result<Json<ApiResponse<MilestoneWithCounts>>, axum::http::StatusCode> {
-    let _org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+) -> Result<Json<ApiResponse<MilestoneWithCounts>>, (StatusCode, Json<serde_json::Value>)> {
+    let _org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     let target_date_provided = body.target_date.is_some();
     let target_date_value = body.target_date.flatten();
@@ -206,7 +209,7 @@ pub async fn update(
     .bind(estimated_days_value)
     .fetch_optional(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     match row {
         Some(row) => {
@@ -226,7 +229,7 @@ pub async fn update(
             .bind(id)
             .fetch_one(&pool)
             .await
-            .unwrap();
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
             let milestone = MilestoneWithCounts {
                 id: row.id,
@@ -248,7 +251,7 @@ pub async fn update(
 
             Ok(Json(ApiResponse::new(milestone)))
         }
-        None => Err(axum::http::StatusCode::NOT_FOUND),
+        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Milestone not found"})))),
     }
 }
 
@@ -266,19 +269,20 @@ pub async fn remove(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
-) -> Result<Json<ApiResponse<()>>, axum::http::StatusCode> {
-    let _org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
+    let _org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     let result = sqlx::query("DELETE FROM milestones WHERE id = $1")
         .bind(id)
         .execute(&pool)
         .await
-        .unwrap();
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     if result.rows_affected() > 0 {
         Ok(Json(ApiResponse::new(())))
     } else {
-        Err(axum::http::StatusCode::NOT_FOUND)
+        Err((StatusCode::NOT_FOUND, Json(json!({"error": "Milestone not found"}))))
     }
 }
 
@@ -287,8 +291,9 @@ pub async fn get_one(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
-) -> Result<Json<ApiResponse<MilestoneDetail>>, axum::http::StatusCode> {
-    let _org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+) -> Result<Json<ApiResponse<MilestoneDetail>>, (StatusCode, Json<serde_json::Value>)> {
+    let _org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     let row = sqlx::query_as::<_, MilestoneRow>(
         r#"
@@ -299,7 +304,7 @@ pub async fn get_one(
     .bind(id)
     .fetch_optional(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     match row {
         Some(row) => {
@@ -327,6 +332,6 @@ pub async fn get_one(
 
             Ok(Json(ApiResponse::new(detail)))
         }
-        None => Err(axum::http::StatusCode::NOT_FOUND),
+        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Milestone not found"})))),
     }
 }

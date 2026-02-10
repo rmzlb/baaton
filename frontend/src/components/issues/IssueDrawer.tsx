@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUser, useOrganization } from '@clerk/clerk-react';
+import DOMPurify from 'dompurify';
 import {
   X, ChevronDown, Tag, User, Calendar,
   MessageSquare, Activity, Bot, CheckCircle2, AlertTriangle,
@@ -810,7 +811,7 @@ function DescriptionView({ description, editing, draft, onStartEdit, onDraftChan
           {hasHtml ? (
             <div
               className="prose prose-xs dark:prose-invert prose-headings:text-primary prose-p:text-secondary prose-li:text-secondary prose-a:text-accent max-w-none text-[11px] leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: description }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description) }}
             />
           ) : (
             <NotionEditor

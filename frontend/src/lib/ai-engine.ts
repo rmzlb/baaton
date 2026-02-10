@@ -52,12 +52,7 @@ async function getGeminiApiKey(authToken?: string): Promise<string> {
           return _cachedApiKey;
         }
       }
-    } catch { /* fallback */ }
-  }
-  const envKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-  if (envKey) {
-    _cachedApiKey = envKey;
-    return envKey;
+    } catch { /* backend unreachable */ }
   }
   throw new Error('AI non configuré. Clé API manquante.');
 }

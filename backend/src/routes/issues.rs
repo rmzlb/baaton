@@ -1,5 +1,6 @@
-use axum::{extract::{Path, Query, State}, Extension, Json};
+use axum::{extract::{Path, Query, State}, http::StatusCode, Extension, Json};
 use serde::Deserialize;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -57,7 +58,7 @@ pub async fn create(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Json(body): Json<CreateIssue>,
-) -> Json<ApiResponse<Issue>> {
+) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
     // Generate display_id
     let count: (i64,) = sqlx::query_as(
         "SELECT COALESCE(COUNT(*), 0) FROM issues WHERE project_id = $1"
@@ -73,7 +74,7 @@ pub async fn create(
     .bind(body.project_id)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::NOT_FOUND, Json(json!({"error": format!("Project not found: {}", e)}))))?;
 
     let display_id = format!("{}-{}", project.0, count.0 + 1);
 
@@ -119,22 +120,22 @@ pub async fn create(
     .bind(body.due_date)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Json(ApiResponse::new(issue))
+    Ok(Json(ApiResponse::new(issue)))
 }
 
 pub async fn get_one(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
-) -> Json<ApiResponse<IssueDetail>> {
+) -> Result<Json<ApiResponse<IssueDetail>>, (StatusCode, Json<serde_json::Value>)> {
     let issue = sqlx::query_as::<_, Issue>(
         "SELECT * FROM issues WHERE id = $1",
     )
     .bind(id)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::NOT_FOUND, Json(json!({"error": format!("Issue not found: {}", e)}))))?;
 
     let tldrs = sqlx::query_as::<_, Tldr>(
         "SELECT * FROM tldrs WHERE issue_id = $1 ORDER BY created_at DESC",
@@ -152,18 +153,18 @@ pub async fn get_one(
     .await
     .unwrap_or_default();
 
-    Json(ApiResponse::new(IssueDetail {
+    Ok(Json(ApiResponse::new(IssueDetail {
         issue,
         tldrs,
         comments,
-    }))
+    })))
 }
 
 pub async fn update(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateIssue>,
-) -> Json<ApiResponse<Issue>> {
+) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
     // Option<Option<T>> pattern: outer None = not provided, Some(None) = set to null, Some(Some(v)) = set value
     let priority_provided = body.priority.is_some();
     let priority_value = body.priority.flatten();
@@ -207,16 +208,16 @@ pub async fn update(
     .bind(due_date_value)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Json(ApiResponse::new(issue))
+    Ok(Json(ApiResponse::new(issue)))
 }
 
 pub async fn update_position(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
-) -> Json<ApiResponse<Issue>> {
+) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
     let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("todo");
     let position = body.get("position").and_then(|v| v.as_f64()).unwrap_or(1000.0);
 
@@ -232,9 +233,9 @@ pub async fn update_position(
     .bind(position)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Json(ApiResponse::new(issue))
+    Ok(Json(ApiResponse::new(issue)))
 }
 
 #[derive(Debug, Deserialize)]
@@ -272,14 +273,14 @@ pub async fn list_mine(
 pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
-) -> Json<ApiResponse<()>> {
+) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
     sqlx::query("DELETE FROM issues WHERE id = $1")
         .bind(id)
         .execute(&pool)
         .await
-        .unwrap();
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Json(ApiResponse::new(()))
+    Ok(Json(ApiResponse::new(())))
 }
 
 // ─── Public Submission ────────────────────────────────
@@ -297,7 +298,17 @@ pub async fn public_submit(
     State(pool): State<PgPool>,
     Path(slug): Path<String>,
     Json(body): Json<PublicSubmission>,
-) -> Json<ApiResponse<Issue>> {
+) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
+    // Input validation
+    if body.title.trim().is_empty() || body.title.len() > 500 {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Title is required and must be under 500 characters"}))));
+    }
+    if let Some(ref desc) = body.description {
+        if desc.len() > 10_000 {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Description must be under 10000 characters"}))));
+        }
+    }
+
     // Find project by slug
     let project = sqlx::query_as::<_, (Uuid, String)>(
         "SELECT id, prefix FROM projects WHERE slug = $1"
@@ -305,7 +316,7 @@ pub async fn public_submit(
     .bind(&slug)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::NOT_FOUND, Json(json!({"error": format!("Project not found: {}", e)}))))?;
 
     let count: (i64,) = sqlx::query_as(
         "SELECT COALESCE(COUNT(*), 0) FROM issues WHERE project_id = $1"
@@ -336,7 +347,7 @@ pub async fn public_submit(
     .bind(&body.reporter_email)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Json(ApiResponse::new(issue))
+    Ok(Json(ApiResponse::new(issue)))
 }

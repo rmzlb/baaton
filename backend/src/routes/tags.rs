@@ -1,4 +1,5 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{extract::{Path, State}, http::StatusCode, Json};
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -23,7 +24,7 @@ pub async fn create(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
     Json(body): Json<CreateProjectTag>,
-) -> Json<ApiResponse<ProjectTag>> {
+) -> Result<Json<ApiResponse<ProjectTag>>, (StatusCode, Json<serde_json::Value>)> {
     let color = body.color.as_deref().unwrap_or("#6b7280");
 
     let tag = sqlx::query_as::<_, ProjectTag>(
@@ -39,20 +40,20 @@ pub async fn create(
     .bind(color)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Json(ApiResponse::new(tag))
+    Ok(Json(ApiResponse::new(tag)))
 }
 
 pub async fn remove(
     State(pool): State<PgPool>,
     Path(tag_id): Path<Uuid>,
-) -> Json<ApiResponse<()>> {
+) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
     sqlx::query("DELETE FROM project_tags WHERE id = $1")
         .bind(tag_id)
         .execute(&pool)
         .await
-        .unwrap();
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Json(ApiResponse::new(()))
+    Ok(Json(ApiResponse::new(())))
 }

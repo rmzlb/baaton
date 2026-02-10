@@ -1,6 +1,7 @@
-use axum::{extract::{Extension, Path, State}, Json};
+use axum::{extract::{Extension, Path, State}, http::StatusCode, Json};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
@@ -72,11 +73,12 @@ pub async fn create(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
     Json(body): Json<CreateSprint>,
-) -> Result<Json<ApiResponse<Sprint>>, axum::http::StatusCode> {
-    let org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+) -> Result<Json<ApiResponse<Sprint>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     if body.name.trim().is_empty() {
-        return Err(axum::http::StatusCode::BAD_REQUEST);
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Sprint name is required"}))));
     }
 
     let status = body.status.as_deref().unwrap_or("planning");
@@ -97,7 +99,7 @@ pub async fn create(
     .bind(org_id)
     .fetch_one(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     Ok(Json(ApiResponse::new(sprint)))
 }
@@ -108,8 +110,9 @@ pub async fn update(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateSprint>,
-) -> Result<Json<ApiResponse<Sprint>>, axum::http::StatusCode> {
-    let _org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+) -> Result<Json<ApiResponse<Sprint>>, (StatusCode, Json<serde_json::Value>)> {
+    let _org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     let start_date_provided = body.start_date.is_some();
     let start_date_value = body.start_date.flatten();
@@ -138,11 +141,11 @@ pub async fn update(
     .bind(&body.status)
     .fetch_optional(&pool)
     .await
-    .unwrap();
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     match sprint {
         Some(s) => Ok(Json(ApiResponse::new(s))),
-        None => Err(axum::http::StatusCode::NOT_FOUND),
+        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Sprint not found"})))),
     }
 }
 
@@ -151,18 +154,19 @@ pub async fn remove(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
-) -> Result<Json<ApiResponse<()>>, axum::http::StatusCode> {
-    let _org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
+    let _org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     let result = sqlx::query("DELETE FROM sprints WHERE id = $1")
         .bind(id)
         .execute(&pool)
         .await
-        .unwrap();
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     if result.rows_affected() > 0 {
         Ok(Json(ApiResponse::new(())))
     } else {
-        Err(axum::http::StatusCode::NOT_FOUND)
+        Err((StatusCode::NOT_FOUND, Json(json!({"error": "Sprint not found"}))))
     }
 }

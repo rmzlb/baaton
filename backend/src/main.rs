@@ -1,5 +1,6 @@
-use axum::{Router, routing::get};
-use tower_http::cors::{CorsLayer, Any};
+use axum::{Router, routing::get, middleware as axum_mw};
+use axum::http::{HeaderValue, Method};
+use tower_http::cors::{CorsLayer, AllowOrigin};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use std::net::SocketAddr;
@@ -57,16 +58,23 @@ async fn main() -> anyhow::Result<()> {
         github::jobs::start_job_runner(job_pool).await;
     });
 
-    // CORS
+    // CORS — restricted to known origins
+    let allowed_origins = [
+        "https://baaton.dev".parse::<HeaderValue>().unwrap(),
+        "https://app.baaton.dev".parse::<HeaderValue>().unwrap(),
+        "http://localhost:3000".parse::<HeaderValue>().unwrap(),
+        "http://localhost:5173".parse::<HeaderValue>().unwrap(),
+    ];
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin(AllowOrigin::list(allowed_origins))
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE, Method::OPTIONS])
+        .allow_headers(tower_http::cors::Any);
 
     // Router
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .nest("/api/v1", routes::api_router(pool.clone()))
+        .layer(axum_mw::from_fn(middleware::security::security_headers))
         .layer(cors)
         .layer(TraceLayer::new_for_http());
 

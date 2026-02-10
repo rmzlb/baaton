@@ -21,5 +21,10 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
         "Strict-Transport-Security",
         "max-age=31536000; includeSubDomains".parse().unwrap(),
     );
+    // Content-Security-Policy
+    headers.insert(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' https://clerk.baaton.dev; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.baaton.dev https://clerk.baaton.dev https://generativelanguage.googleapis.com; frame-src https://clerk.baaton.dev".parse().unwrap(),
+    );
     response
 }
