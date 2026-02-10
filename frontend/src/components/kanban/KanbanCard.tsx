@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/ui';
+import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { GitHubPrBadge } from '@/components/github/GitHubPrBadge';
 import type { Issue, IssuePriority, IssueType, ProjectTag, GitHubPrLink } from '@/lib/types';
 
@@ -114,6 +115,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
     }
   };
   const density = useUIStore((s) => s.density);
+  const { resolveUserName, resolveUserAvatar } = useClerkMembers();
   const PriorityConfig = issue.priority ? (priorityConfig[issue.priority] ?? null) : null;
   const isDone = issue.status === 'done' || issue.status === 'cancelled';
 
@@ -156,13 +158,18 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
             const style = getTagStyle(getTagColor(tag));
             return <span key={tag} className={cn('shrink-0 px-1.5 py-0 rounded text-[9px] font-medium border', style.bg, style.text, style.border)}>{tag}</span>;
           })}
-          {issue.assignee_ids.length > 0 && (
-            <img
-              src={`https://api.dicebear.com/9.x/initials/svg?seed=${issue.assignee_ids[0]}&backgroundColor=f0f0f0&textColor=666666`}
-              className="w-4 h-4 rounded-full ring-1 ring-white dark:ring-surface shrink-0"
-              alt="Assignee"
-            />
-          )}
+          {issue.assignee_ids.length > 0 && (() => {
+            const name = resolveUserName(issue.assignee_ids[0]);
+            const avatar = resolveUserAvatar(issue.assignee_ids[0]);
+            return (
+              <img
+                src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
+                className="w-4 h-4 rounded-full ring-1 ring-white dark:ring-surface shrink-0"
+                alt={name}
+                title={name}
+              />
+            );
+          })()}
         </div>
       </div>
     );
@@ -234,22 +241,30 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
             ) : PriorityConfig ? (
               <PriorityConfig.icon className={cn('w-3.5 h-3.5', PriorityConfig.color)} />
             ) : null}
-            {issue.created_by_name && (
-              <span className="text-[10px] text-gray-400 dark:text-muted flex items-center gap-0.5" title={`Created by ${issue.created_by_name}`}>
-                <User size={10} />
-                {issue.created_by_name.split(' ')[0]}
-              </span>
-            )}
+            {(issue.created_by_name || issue.created_by_id) && (() => {
+              const name = resolveUserName(issue.created_by_id, issue.created_by_name);
+              return (
+                <span className="text-[10px] text-gray-400 dark:text-muted flex items-center gap-0.5" title={`Created by ${name}`}>
+                  <User size={10} />
+                  {name.split(' ')[0]}
+                </span>
+              );
+            })()}
             {issue.assignee_ids.length > 0 ? (
               <div className="flex -space-x-1.5">
-                {issue.assignee_ids.slice(0, 2).map((id) => (
-                  <img
-                    key={id}
-                    src={`https://api.dicebear.com/9.x/initials/svg?seed=${id}&backgroundColor=f0f0f0&textColor=666666`}
-                    className="w-5 h-5 rounded-full ring-1 ring-white dark:ring-surface"
-                    alt="Assignee"
-                  />
-                ))}
+                {issue.assignee_ids.slice(0, 2).map((id) => {
+                  const name = resolveUserName(id);
+                  const avatar = resolveUserAvatar(id);
+                  return (
+                    <img
+                      key={id}
+                      src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
+                      className="w-5 h-5 rounded-full ring-1 ring-white dark:ring-surface"
+                      alt={name}
+                      title={name}
+                    />
+                  );
+                })}
               </div>
             ) : null}
           </div>
@@ -321,18 +336,26 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
           ) : PriorityConfig ? (
             <PriorityConfig.icon className={cn('w-3.5 h-3.5', PriorityConfig.color)} />
           ) : null}
-          {issue.created_by_name && (
-            <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-muted" title={`Created by ${issue.created_by_name}`}>
-              <User size={10} />
-            </span>
-          )}
-          {issue.assignee_ids.length > 0 && (
-            <img
-              src={`https://api.dicebear.com/9.x/initials/svg?seed=${issue.assignee_ids[0]}&backgroundColor=f0f0f0&textColor=666666`}
-              className="w-5 h-5 rounded-full ring-1 ring-white dark:ring-surface"
-              alt="Assignee"
-            />
-          )}
+          {(issue.created_by_name || issue.created_by_id) && (() => {
+            const name = resolveUserName(issue.created_by_id, issue.created_by_name);
+            return (
+              <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-muted" title={`Created by ${name}`}>
+                <User size={10} />
+              </span>
+            );
+          })()}
+          {issue.assignee_ids.length > 0 && (() => {
+            const name = resolveUserName(issue.assignee_ids[0]);
+            const avatar = resolveUserAvatar(issue.assignee_ids[0]);
+            return (
+              <img
+                src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
+                className="w-5 h-5 rounded-full ring-1 ring-white dark:ring-surface"
+                alt={name}
+                title={name}
+              />
+            );
+          })()}
         </div>
       </div>
     </div>

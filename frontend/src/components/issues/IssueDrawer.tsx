@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUser, useOrganization } from '@clerk/clerk-react';
+import { useClerkMembers } from '@/hooks/useClerkMembers';
 import DOMPurify from 'dompurify';
 import {
   X, ChevronDown, Tag, User, Calendar,
@@ -72,6 +73,8 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const { user } = useUser();
   const { memberships } = useOrganization({ memberships: { infinite: true } });
   const orgMembers = memberships?.data ?? [];
+  const { resolveUserName } = useClerkMembers();
+
   const updateIssue = useIssuesStore((s) => s.updateIssue);
   const updateIssueOptimistic = useIssuesStore((s) => s.updateIssueOptimistic);
   const restoreIssues = useIssuesStore((s) => s.restoreIssues);
@@ -601,17 +604,20 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             <TypeIcon size={14} className={typeColor} />
             <span className="text-sm font-mono font-semibold text-accent">{issue.display_id}</span>
             <span className="text-[10px] text-muted shrink-0">· {timeAgo(issue.created_at)}</span>
-            {(issue.created_by_name || issue.created_by_id) && (
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[10px] text-muted">by</span>
-                <div className="h-5 w-5 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-[8px] font-mono font-bold text-accent">
-                  {(issue.created_by_name || issue.created_by_id || '?').slice(0, 2).toUpperCase()}
+            {(issue.created_by_name || issue.created_by_id) && (() => {
+              const creatorName = resolveUserName(issue.created_by_id, issue.created_by_name);
+              return (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[10px] text-muted">by</span>
+                  <div className="h-5 w-5 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-[8px] font-mono font-bold text-accent">
+                    {creatorName.slice(0, 2).toUpperCase()}
+                  </div>
+                  <span className="text-[11px] text-secondary font-medium truncate max-w-[120px]">
+                    {creatorName}
+                  </span>
                 </div>
-                <span className="text-[11px] text-secondary font-medium truncate max-w-[120px]">
-                  {issue.created_by_name || issue.created_by_id?.slice(0, 12)}
-                </span>
-              </div>
-            )}
+              );
+            })()}
           </div>
           <button
             onClick={() => descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose()}
