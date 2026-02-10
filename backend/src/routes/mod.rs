@@ -1,9 +1,7 @@
 use axum::{Router, routing::{get, post, put, patch, delete}, middleware as axum_mw};
 use sqlx::PgPool;
-use tower::limit::RateLimitLayer;
-use std::time::Duration;
 
-use crate::middleware::{auth_middleware, JwksState};
+use crate::middleware::{auth_middleware, JwksKeys};
 
 mod projects;
 mod issues;
@@ -17,12 +15,7 @@ mod ai;
 pub mod activity;
 pub mod github;
 
-pub fn api_router(pool: PgPool, jwks: JwksState) -> Router {
-    // Public routes with rate limiting (10 req/sec burst, effectively ~10/min sustained)
-    let public_routes = Router::new()
-        .route("/public/{slug}/submit", post(issues::public_submit))
-        .layer(RateLimitLayer::new(10, Duration::from_secs(60)));
-
+pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
         // Projects
         .route("/projects", get(projects::list).post(projects::create))
@@ -64,10 +57,10 @@ pub fn api_router(pool: PgPool, jwks: JwksState) -> Router {
         .route("/invites", get(invites::list).post(invites::create))
         // Public routes (auth skipped in middleware)
         .route("/invite/{code}", get(invites::redirect_invite))
+        // Public routes (auth skipped in middleware based on path)
+        .route("/public/{slug}/submit", post(issues::public_submit))
         // Webhook
-        .route("/webhooks/github", post(github::webhooks::handle))
-        // Merge public routes
-        .merge(public_routes);
+        .route("/webhooks/github", post(github::webhooks::handle));
 
     // Apply auth middleware and inject JWKS state
     // Layer order: last added runs first (outer). Auth needs JWKS, so JWKS must be outer.

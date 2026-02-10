@@ -11,7 +11,7 @@ mod models;
 mod middleware;
 mod github;
 
-use middleware::{JwksState, fetch_jwks, jwks_refresh_task};
+use middleware::{JwksKeys, fetch_jwks_keys, jwks_refresh_task};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -76,17 +76,17 @@ async fn main() -> anyhow::Result<()> {
     let clerk_issuer = std::env::var("CLERK_ISSUER")
         .unwrap_or_else(|_| "https://clerk.baaton.dev".to_string());
 
-    let jwks = match fetch_jwks(&clerk_issuer).await {
-        Ok(j) => {
-            tracing::info!("Fetched {} JWKS keys from Clerk", j.keys.len());
-            j
+    let jwks_keys = match fetch_jwks_keys(&clerk_issuer).await {
+        Ok(keys) => {
+            tracing::info!("Fetched {} JWKS keys from Clerk", keys.len());
+            keys
         }
         Err(e) => {
             tracing::warn!("Failed to fetch initial JWKS (will retry on first request): {}", e);
-            middleware::JwkSet { keys: vec![] }
+            std::collections::HashMap::new()
         }
     };
-    let jwks_state: JwksState = Arc::new(RwLock::new(jwks));
+    let jwks_state: JwksKeys = Arc::new(RwLock::new(jwks_keys));
 
     // Background JWKS refresh
     let jwks_bg = jwks_state.clone();

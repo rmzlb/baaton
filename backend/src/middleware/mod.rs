@@ -8,10 +8,11 @@ use axum::{
 };
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// JWKS key set fetched from Clerk
+/// Raw JWK from Clerk JWKS endpoint
 #[derive(Debug, Clone, Deserialize)]
 pub struct JwkKey {
     pub kid: String,
@@ -27,11 +28,23 @@ pub struct JwkSet {
     pub keys: Vec<JwkKey>,
 }
 
-/// Shared JWKS state
-pub type JwksState = Arc<RwLock<JwkSet>>;
+/// Pre-computed decoding keys indexed by kid
+pub type JwksKeys = Arc<RwLock<HashMap<String, DecodingKey>>>;
 
-/// Fetch JWKS from Clerk
-pub async fn fetch_jwks(issuer: &str) -> Result<JwkSet, String> {
+/// Parse JWKS response into a map of kid → DecodingKey
+fn parse_jwks(jwks: &JwkSet) -> HashMap<String, DecodingKey> {
+    let mut map = HashMap::new();
+    for key in &jwks.keys {
+        match DecodingKey::from_rsa_components(&key.n, &key.e) {
+            Ok(dk) => { map.insert(key.kid.clone(), dk); }
+            Err(e) => { tracing::warn!("Failed to parse JWK kid={}: {}", key.kid, e); }
+        }
+    }
+    map
+}
+
+/// Fetch JWKS from Clerk and return pre-computed keys
+pub async fn fetch_jwks_keys(issuer: &str) -> Result<HashMap<String, DecodingKey>, String> {
     let url = format!("{}/.well-known/jwks.json", issuer);
     let resp = reqwest::get(&url)
         .await
@@ -40,17 +53,18 @@ pub async fn fetch_jwks(issuer: &str) -> Result<JwkSet, String> {
         .json()
         .await
         .map_err(|e| format!("JWKS parse error: {}", e))?;
-    Ok(jwks)
+    Ok(parse_jwks(&jwks))
 }
 
 /// Background task to refresh JWKS every hour
-pub async fn jwks_refresh_task(jwks: JwksState, issuer: String) {
+pub async fn jwks_refresh_task(keys: JwksKeys, issuer: String) {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-        match fetch_jwks(&issuer).await {
-            Ok(new_jwks) => {
-                *jwks.write().await = new_jwks;
-                tracing::info!("JWKS refreshed");
+        match fetch_jwks_keys(&issuer).await {
+            Ok(new_keys) => {
+                let count = new_keys.len();
+                *keys.write().await = new_keys;
+                tracing::info!("JWKS refreshed ({} keys)", count);
             }
             Err(e) => {
                 tracing::warn!("JWKS refresh failed: {}", e);
@@ -85,8 +99,12 @@ pub struct ClerkClaims {
     pub org_slug: Option<String>,
     #[serde(default)]
     pub org_role: Option<String>,
+    /// Authorized party (frontend origin)
     #[serde(default)]
     pub azp: Option<String>,
+    /// Session status — "pending" means user hasn't joined an org yet
+    #[serde(default)]
+    pub sts: Option<String>,
 }
 
 /// Extension added to the request by the auth middleware
@@ -98,41 +116,45 @@ pub struct AuthUser {
     pub org_role: Option<String>,
 }
 
-/// Verify JWT with JWKS
-fn verify_jwt(token: &str, jwks: &JwkSet, issuer: &str) -> Result<ClerkClaims, String> {
+/// Verify JWT signature + standard claims, return decoded claims
+fn verify_jwt(
+    token: &str,
+    keys: &HashMap<String, DecodingKey>,
+    issuer: &str,
+    authorized_parties: &[String],
+) -> Result<ClerkClaims, String> {
     let header = decode_header(token).map_err(|e| format!("JWT header error: {}", e))?;
     let kid = header.kid.ok_or("JWT missing kid")?;
 
-    let key = jwks
-        .keys
-        .iter()
-        .find(|k| k.kid == kid)
+    let decoding_key = keys
+        .get(&kid)
         .ok_or_else(|| format!("No matching JWK for kid: {}", kid))?;
-
-    let decoding_key = DecodingKey::from_rsa_components(&key.n, &key.e)
-        .map_err(|e| format!("RSA key error: {}", e))?;
 
     let mut validation = Validation::new(Algorithm::RS256);
     validation.set_issuer(&[issuer]);
     // Clerk tokens don't always have aud
     validation.validate_aud = false;
 
-    let token_data = decode::<ClerkClaims>(token, &decoding_key, &validation)
+    let token_data = decode::<ClerkClaims>(token, decoding_key, &validation)
         .map_err(|e| format!("JWT verification failed: {}", e))?;
 
-    // Validate azp (authorized parties) if present
-    if let Some(ref azp) = token_data.claims.azp {
-        let authorized_parties: Vec<String> = std::env::var("CLERK_AUTHORIZED_PARTIES")
-            .unwrap_or_else(|_| "https://app.baaton.dev,https://baaton.dev".to_string())
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect();
-        if !authorized_parties.contains(azp) {
-            return Err(format!("Invalid azp claim: {}", azp));
+    let claims = token_data.claims;
+
+    // Validate azp if present and authorized_parties is configured
+    if !authorized_parties.is_empty() {
+        if let Some(ref azp) = claims.azp {
+            if !authorized_parties.iter().any(|p| p == azp) {
+                return Err(format!("Unauthorized party: {}", azp));
+            }
         }
     }
 
-    Ok(token_data.claims)
+    // Reject pending sessions (user not in org)
+    if claims.sts.as_deref() == Some("pending") {
+        return Err("Session pending — user must join an organization".to_string());
+    }
+
+    Ok(claims)
 }
 
 /// Auth middleware — verifies Clerk JWT signature via JWKS and extracts AuthUser
@@ -164,28 +186,35 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         }
     };
 
-    // Get JWKS from extensions
-    let jwks = match req.extensions().get::<JwksState>() {
-        Some(j) => j.clone(),
+    // Get JWKS keys from extensions
+    let keys = match req.extensions().get::<JwksKeys>() {
+        Some(k) => k.clone(),
         None => {
-            tracing::error!("JWKS state not found in request extensions");
+            tracing::error!("JWKS keys not found in request extensions");
             return (StatusCode::INTERNAL_SERVER_ERROR, r#"{"error":"Auth not configured"}"#).into_response();
         }
     };
 
-    let issuer = std::env::var("CLERK_ISSUER").unwrap_or_else(|_| "https://clerk.baaton.dev".to_string());
+    let issuer = std::env::var("CLERK_ISSUER")
+        .unwrap_or_else(|_| "https://clerk.baaton.dev".to_string());
+    let authorized_parties: Vec<String> = std::env::var("CLERK_AUTHORIZED_PARTIES")
+        .unwrap_or_else(|_| "https://app.baaton.dev,https://baaton.dev".to_string())
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
 
-    // Try verification with current JWKS
-    let jwks_read = jwks.read().await;
-    let claims = match verify_jwt(token, &jwks_read, &issuer) {
+    // Try verification with current keys
+    let keys_read = keys.read().await;
+    let claims = match verify_jwt(token, &keys_read, &issuer, &authorized_parties) {
         Ok(c) => c,
-        Err(_first_err) => {
-            drop(jwks_read);
+        Err(first_err) => {
+            drop(keys_read);
             // Key rotation fallback: refresh JWKS once and retry
-            match fetch_jwks(&issuer).await {
-                Ok(new_jwks) => {
-                    let result = verify_jwt(token, &new_jwks, &issuer);
-                    *jwks.write().await = new_jwks;
+            match fetch_jwks_keys(&issuer).await {
+                Ok(new_keys) => {
+                    let result = verify_jwt(token, &new_keys, &issuer, &authorized_parties);
+                    *keys.write().await = new_keys;
                     match result {
                         Ok(c) => c,
                         Err(e) => {
@@ -199,10 +228,10 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("JWKS refresh failed: {}; original error: {}", e, _first_err);
+                    tracing::warn!("JWKS refresh failed: {}; original error: {}", e, first_err);
                     return (
                         StatusCode::UNAUTHORIZED,
-                        format!(r#"{{"error":"Invalid token: {}"}}"#, _first_err),
+                        format!(r#"{{"error":"Invalid token: {}"}}"#, first_err),
                     )
                         .into_response();
                 }
