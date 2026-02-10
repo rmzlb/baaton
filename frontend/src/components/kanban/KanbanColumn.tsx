@@ -13,6 +13,8 @@ interface KanbanColumnProps {
   isDraggingOver: boolean;
   onIssueClick: (issue: Issue) => void;
   onContextMenu?: (e: React.MouseEvent, issue: Issue) => void;
+  selectedIds?: Set<string>;
+  onSelect?: (id: string, shiftKey: boolean) => void;
   onCreateIssue?: (statusKey: string) => void;
   projectTags?: ProjectTag[];
 }
@@ -36,6 +38,8 @@ export function KanbanColumn({
   isDraggingOver,
   onIssueClick,
   onContextMenu,
+  selectedIds,
+  onSelect,
   onCreateIssue,
   projectTags,
 }: KanbanColumnProps) {
@@ -99,6 +103,8 @@ export function KanbanColumn({
                 isDragging={dragSnapshot.isDragging}
                 onClick={() => onIssueClick(issue)}
                 onContextMenu={onContextMenu}
+                selected={selectedIds?.has(issue.id)}
+                onSelect={onSelect}
                 projectTags={projectTags}
               />
             )}

@@ -34,9 +34,11 @@ interface ListRowProps {
   projectTags?: ProjectTag[];
   onClick: () => void;
   onContextMenu?: (e: React.MouseEvent, issue: Issue) => void;
+  selected?: boolean;
+  onSelect?: (id: string, shiftKey: boolean) => void;
 }
 
-export function ListRow({ issue, statuses, projectTags = [], onClick, onContextMenu }: ListRowProps) {
+export function ListRow({ issue, statuses, projectTags = [], onClick, onContextMenu, selected = false, onSelect }: ListRowProps) {
   const tc = typeConfig[issue.type] ?? typeConfig.feature;
   const TypeIcon = tc.icon;
   const status = statuses.find((s) => s.key === issue.status);
@@ -60,10 +62,24 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
         onClick={onClick}
         onContextMenu={onContextMenu ? (e: React.MouseEvent) => onContextMenu(e, issue) : undefined}
         className={cn(
-          'hidden md:grid grid-cols-[72px_1fr_110px_90px_80px_80px_100px_100px_90px] gap-1.5 border-b border-gray-100 dark:border-border/50 px-4 md:px-6 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-surface transition-colors items-center h-[38px]',
+          'hidden md:grid grid-cols-[28px_72px_1fr_110px_90px_80px_80px_100px_90px] gap-1.5 border-b border-gray-100 dark:border-border/50 px-4 md:px-6 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-surface transition-colors items-center h-[38px] group/row',
           isDone && 'opacity-60 hover:opacity-90',
+          selected && 'bg-accent/5 dark:bg-accent/10 hover:bg-accent/10',
         )}
       >
+        {/* Checkbox */}
+        <span
+          onClick={(e) => { e.stopPropagation(); onSelect?.(issue.id, e.shiftKey); }}
+          className={cn(
+            'flex items-center justify-center w-4 h-4 rounded border cursor-pointer transition-colors',
+            selected
+              ? 'bg-accent border-accent text-black'
+              : 'border-gray-300 dark:border-border opacity-0 group-hover/row:opacity-100',
+          )}
+        >
+          {selected && <span className="text-[9px] font-bold">✓</span>}
+        </span>
+
         {/* ID — compact, no subtitle */}
         <span className="font-mono text-gray-400 dark:text-secondary text-[11px] truncate">{issue.display_id}</span>
 

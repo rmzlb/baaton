@@ -10,9 +10,12 @@ import {
 } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
 import { IssueContextMenu, DeleteConfirmModal, useIssueContextMenu } from '@/components/shared/IssueContextMenu';
+import { BulkActionBar, useBulkKeyboardShortcuts } from '@/components/shared/BulkActionBar';
+import { useSelection } from '@/hooks/useSelection';
 import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useApi } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/shared/EmptyState';
 import type { Issue, IssueStatus, IssuePriority, ProjectStatus, ProjectTag } from '@/lib/types';
@@ -55,11 +58,16 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
   const moveIssueOptimistic = useIssuesStore((s) => s.moveIssueOptimistic);
   const restoreIssues = useIssuesStore((s) => s.restoreIssues);
   const addNotification = useNotificationStore((s) => s.addNotification);
+  const apiClient = useApi();
   const {
     contextMenu, setContextMenu, deleteTarget, setDeleteTarget,
     handleContextMenu, handleStatusChange, handlePriorityChange,
     handleDeleteConfirm, handleCopyId, handleOpen,
   } = useIssueContextMenu(statuses, onIssueClick);
+  const { selectedIds, toggle: toggleSelect, selectAll, deselectAll } = useSelection();
+  const updateIssueOpt = useIssuesStore((s) => s.updateIssueOptimistic);
+  const removeIssueStore = useIssuesStore((s) => s.removeIssue);
+  const addNotif = useNotificationStore((s) => s.addNotification);
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [sortMode, setSortMode] = useState<SortMode>('manual');
   const [searchQuery, setSearchQuery] = useState('');
@@ -188,6 +196,35 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
       announcer.textContent = message;
     }
   }, []);
+
+  const allIssueIds = useMemo(() => issues.map((i) => i.id), [issues]);
+
+  const bulkMarkDone = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    ids.forEach((id) => updateIssueOpt(id, { status: 'done' as IssueStatus }));
+    deselectAll();
+    await Promise.allSettled(ids.map((id) => apiClient.issues.update(id, { status: 'done' as IssueStatus })));
+    addNotif({ type: 'success', title: `${ids.length} → Done` });
+  }, [selectedIds, updateIssueOpt, deselectAll, apiClient, addNotif]);
+
+  const bulkMarkCancelled = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    ids.forEach((id) => updateIssueOpt(id, { status: 'cancelled' as IssueStatus }));
+    deselectAll();
+    await Promise.allSettled(ids.map((id) => apiClient.issues.update(id, { status: 'cancelled' as IssueStatus })));
+    addNotif({ type: 'success', title: `${ids.length} → Cancelled` });
+  }, [selectedIds, updateIssueOpt, deselectAll, apiClient, addNotif]);
+
+  const bulkDeleteKb = useCallback(async () => {
+    if (!confirm(`Delete ${selectedIds.size} issue(s)?`)) return;
+    const ids = Array.from(selectedIds);
+    ids.forEach((id) => removeIssueStore(id));
+    deselectAll();
+    await Promise.allSettled(ids.map((id) => apiClient.issues.delete(id)));
+    addNotif({ type: 'success', title: `${ids.length} deleted` });
+  }, [selectedIds, removeIssueStore, deselectAll, apiClient, addNotif]);
+
+  useBulkKeyboardShortcuts(selectedIds, statuses, bulkMarkDone, bulkMarkCancelled, bulkDeleteKb, deselectAll);
 
   const handleDragEnd = useCallback(
     (result: DropResult) => {
@@ -527,6 +564,8 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
                     isDraggingOver={snapshot.isDraggingOver}
                     onIssueClick={onIssueClick}
                     onContextMenu={handleContextMenu}
+                    selectedIds={selectedIds}
+                    onSelect={(id, shift) => toggleSelect(id, shift, allIssueIds)}
                     onCreateIssue={onCreateIssue}
                     projectTags={projectTags}
                   />
@@ -536,6 +575,17 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
           </div>
         </DragDropContext>
       )}
+
+      {/* Bulk Action Bar */}
+      <BulkActionBar
+        selectedIds={selectedIds}
+        issues={issues}
+        statuses={statuses}
+        onClear={deselectAll}
+        onDeselectAll={deselectAll}
+        onSelectAll={() => selectAll(allIssueIds)}
+        totalCount={issues.length}
+      />
 
       {/* Context Menu */}
       {contextMenu && (

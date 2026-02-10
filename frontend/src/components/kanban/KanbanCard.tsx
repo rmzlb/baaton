@@ -33,6 +33,8 @@ interface KanbanCardProps {
   isDragging: boolean;
   onClick: () => void;
   onContextMenu?: (e: React.MouseEvent, issue: Issue) => void;
+  selected?: boolean;
+  onSelect?: (id: string, shiftKey: boolean) => void;
   projectTags?: ProjectTag[];
   githubPrs?: GitHubPrLink[];
 }
@@ -106,7 +108,7 @@ function TypeBadge({ type, size = 'sm' }: { type: IssueType; size?: 'sm' | 'xs' 
   );
 }
 
-export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, projectTags = [], githubPrs = [] }: KanbanCardProps) {
+export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, selected = false, onSelect, projectTags = [], githubPrs = [] }: KanbanCardProps) {
   const handleContextMenu = (e: React.MouseEvent) => {
     if (onContextMenu) {
       e.preventDefault();
@@ -114,6 +116,21 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
       onContextMenu(e, issue);
     }
   };
+
+  // Selection checkbox overlay
+  const SelectCheckbox = onSelect ? (
+    <span
+      onClick={(e) => { e.stopPropagation(); onSelect(issue.id, e.shiftKey); }}
+      className={cn(
+        'absolute top-1.5 left-1.5 z-10 flex items-center justify-center w-4 h-4 rounded border cursor-pointer transition-all',
+        selected
+          ? 'bg-accent border-accent text-black opacity-100'
+          : 'border-gray-300 dark:border-border bg-white dark:bg-surface opacity-0 group-hover/card:opacity-100',
+      )}
+    >
+      {selected && <span className="text-[9px] font-bold">✓</span>}
+    </span>
+  ) : null;
   const density = useUIStore((s) => s.density);
   const { resolveUserName, resolveUserAvatar } = useClerkMembers();
   const PriorityConfig = issue.priority ? (priorityConfig[issue.priority] ?? null) : null;
@@ -138,11 +155,13 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         aria-label={`${issue.display_id}: ${issue.title}`}
         style={provided.draggableProps.style}
         className={cn(
-          'group cursor-pointer rounded-md border border-gray-200 dark:border-border bg-white dark:bg-surface px-2.5 py-1.5 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
+          'group group/card relative cursor-pointer rounded-md border border-gray-200 dark:border-border bg-white dark:bg-surface px-2.5 py-1.5 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
           isDone && 'opacity-60 hover:opacity-90',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
+          selected && 'ring-2 ring-accent/40 border-accent/30',
         )}
       >
+        {SelectCheckbox}
         <div className="flex items-center gap-2">
           {isDone ? (
             <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
@@ -192,9 +211,11 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
           'group cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-4 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
           isDone && 'opacity-60 hover:opacity-90',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
+          selected && 'ring-2 ring-accent/40 border-accent/30',
         )}
       >
         {/* Header: ID + menu */}
+        {SelectCheckbox}
         <div className="flex justify-between items-start mb-2">
           <span className="text-xs font-mono text-gray-400 dark:text-muted group-hover:text-gray-500 transition-colors">{issue.display_id}</span>
           <div className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
@@ -289,8 +310,10 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         'group cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-4 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
         isDone && 'opacity-75 hover:opacity-100',
         isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
+          selected && 'ring-2 ring-accent/40 border-accent/30',
       )}
     >
+      {SelectCheckbox}
       {/* Top row: ID + three-dot menu */}
       <div className="flex justify-between items-start mb-2">
         <span className="text-xs font-mono text-gray-400 dark:text-muted group-hover:text-gray-500 dark:group-hover:text-secondary transition-colors">

@@ -7,9 +7,14 @@ import {
 import { ListRow } from './ListRow';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { IssueContextMenu, DeleteConfirmModal, useIssueContextMenu } from '@/components/shared/IssueContextMenu';
+import { BulkActionBar, useBulkKeyboardShortcuts } from '@/components/shared/BulkActionBar';
+import { useSelection } from '@/hooks/useSelection';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useApi } from '@/hooks/useApi';
+import { useIssuesStore } from '@/stores/issues';
+import { useNotificationStore } from '@/stores/notifications';
 import { cn } from '@/lib/utils';
-import type { Issue, IssuePriority, ProjectStatus, ProjectTag } from '@/lib/types';
+import type { Issue, IssuePriority, IssueStatus, ProjectStatus, ProjectTag } from '@/lib/types';
 
 type SortField = 'display_id' | 'title' | 'status' | 'priority' | 'type' | 'created_at' | 'updated_at';
 type SortDir = 'asc' | 'desc';
@@ -56,6 +61,11 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
     handleContextMenu, handleStatusChange, handlePriorityChange,
     handleDeleteConfirm, handleCopyId, handleOpen,
   } = useIssueContextMenu(statuses, onIssueClick);
+  const { selectedIds, toggle: toggleSelect, selectAll, deselectAll } = useSelection();
+  const apiClient = useApi();
+  const updateIssueOptimistic = useIssuesStore((s) => s.updateIssueOptimistic);
+  const removeIssue = useIssuesStore((s) => s.removeIssue);
+  const addNotification = useNotificationStore((s) => s.addNotification);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('status');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -203,6 +213,37 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
     setSearchQuery('');
   };
 
+  // All issue IDs in current sort order for shift-select
+  const allIssueIds = useMemo(() => sortedIssues.map((i) => i.id), [sortedIssues]);
+
+  // Bulk actions via keyboard
+  const bulkMarkDone = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    ids.forEach((id) => updateIssueOptimistic(id, { status: 'done' as IssueStatus }));
+    deselectAll();
+    await Promise.allSettled(ids.map((id) => apiClient.issues.update(id, { status: 'done' as IssueStatus })));
+    addNotification({ type: 'success', title: `${ids.length} → Done` });
+  }, [selectedIds, updateIssueOptimistic, deselectAll, apiClient, addNotification]);
+
+  const bulkMarkCancelled = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    ids.forEach((id) => updateIssueOptimistic(id, { status: 'cancelled' as IssueStatus }));
+    deselectAll();
+    await Promise.allSettled(ids.map((id) => apiClient.issues.update(id, { status: 'cancelled' as IssueStatus })));
+    addNotification({ type: 'success', title: `${ids.length} → Cancelled` });
+  }, [selectedIds, updateIssueOptimistic, deselectAll, apiClient, addNotification]);
+
+  const bulkDeleteKb = useCallback(async () => {
+    if (!confirm(`Delete ${selectedIds.size} issue(s)? This cannot be undone.`)) return;
+    const ids = Array.from(selectedIds);
+    ids.forEach((id) => removeIssue(id));
+    deselectAll();
+    await Promise.allSettled(ids.map((id) => apiClient.issues.delete(id)));
+    addNotification({ type: 'success', title: `${ids.length} deleted` });
+  }, [selectedIds, removeIssue, deselectAll, apiClient, addNotification]);
+
+  useBulkKeyboardShortcuts(selectedIds, statuses, bulkMarkDone, bulkMarkCancelled, bulkDeleteKb, deselectAll);
+
   const SortIcon = ({ field }: { field: SortField }) =>
     sortField === field ? (
       <span className="text-accent text-[10px] ml-0.5">
@@ -341,7 +382,8 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
         {/* Table Header — hidden on mobile (cards don't need headers) */}
-        <div className="sticky top-0 z-10 hidden md:grid grid-cols-[72px_1fr_110px_90px_80px_80px_100px_90px] gap-1.5 border-b border-border bg-bg px-4 md:px-6 py-2 text-[10px] uppercase tracking-wider text-muted font-medium">
+        <div className="sticky top-0 z-10 hidden md:grid grid-cols-[28px_72px_1fr_110px_90px_80px_80px_100px_90px] gap-1.5 border-b border-border bg-bg px-4 md:px-6 py-2 text-[10px] uppercase tracking-wider text-muted font-medium">
+          <span />
           <button onClick={() => toggleSort('display_id')} className="text-left hover:text-secondary transition-colors flex items-center">
             {t('list.id')} <SortIcon field="display_id" />
           </button>
@@ -434,6 +476,8 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
                             projectTags={projectTags}
                             onClick={() => onIssueClick(issue)}
                             onContextMenu={handleContextMenu}
+                            selected={selectedIds.has(issue.id)}
+                            onSelect={(id, shift) => toggleSelect(id, shift, allIssueIds)}
                           />
                         ))}
                       </div>
@@ -449,6 +493,8 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
                       projectTags={projectTags}
                       onClick={() => onIssueClick(issue)}
                             onContextMenu={handleContextMenu}
+                            selected={selectedIds.has(issue.id)}
+                            onSelect={(id, shift) => toggleSelect(id, shift, allIssueIds)}
                     />
                   ))
                 )
@@ -473,6 +519,17 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
           />
         )}
       </div>
+
+      {/* Bulk Action Bar */}
+      <BulkActionBar
+        selectedIds={selectedIds}
+        issues={sortedIssues}
+        statuses={statuses}
+        onClear={deselectAll}
+        onDeselectAll={deselectAll}
+        onSelectAll={() => selectAll(allIssueIds)}
+        totalCount={sortedIssues.length}
+      />
 
       {/* Context Menu */}
       {contextMenu && (
