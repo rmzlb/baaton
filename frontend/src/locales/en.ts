@@ -607,6 +607,13 @@ As a [user], I want to [action] so that [benefit].
   'issueDrawer.dropHere': 'Drop here!',
   'issueDrawer.uploadHint': 'Images auto-compressed to WebP • Max 20MB',
 
+  // Unsaved changes modal
+  'unsavedModal.title': 'Unsaved changes',
+  'unsavedModal.description': 'Your description has unsaved changes that will be lost.',
+  'unsavedModal.cancel': 'Keep editing',
+  'unsavedModal.discard': 'Discard',
+  'unsavedModal.save': 'Save & close',
+
   // ─── Upload ─────────────────────────────────
   'upload.started': 'Uploading…',
   'upload.startedDesc': 'Compressing {{count}} file(s)…',

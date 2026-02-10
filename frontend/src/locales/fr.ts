@@ -607,6 +607,13 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'issueDrawer.dropHere': 'Déposer ici !',
   'issueDrawer.uploadHint': 'Images compressées en WebP • Max 20 Mo',
 
+  // Unsaved changes modal
+  'unsavedModal.title': 'Modifications non enregistrées',
+  'unsavedModal.description': 'Votre description contient des modifications non sauvegardées.',
+  'unsavedModal.cancel': 'Continuer',
+  'unsavedModal.discard': 'Abandonner',
+  'unsavedModal.save': 'Sauvegarder',
+
   // ─── Upload ─────────────────────────────────
   'upload.started': 'Téléchargement…',
   'upload.startedDesc': 'Compression de {{count}} fichier(s)…',

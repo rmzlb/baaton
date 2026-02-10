@@ -89,6 +89,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const [editingDueDate, setEditingDueDate] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [annotatingIndex, setAnnotatingIndex] = useState<number | null>(null);
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const dragCounter = useRef(0);
 
   // ── File upload hook ──
@@ -197,7 +198,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         if (lightboxIndex !== null) {
           setLightboxIndex(null);
         } else {
-          onClose();
+          guardedClose();
         }
       }
       // Focus trap: keep Tab within the drawer
@@ -223,12 +224,12 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose, lightboxIndex]);
+  }, [guardedClose, lightboxIndex]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose();
+        guardedClose();
       }
     };
     const timer = setTimeout(() => {
@@ -238,7 +239,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       clearTimeout(timer);
       document.removeEventListener('mousedown', handler);
     };
-  }, [onClose]);
+  }, [guardedClose]);
 
   // ── Handlers ──
   const handleTitleSave = useCallback(() => {
@@ -254,6 +255,33 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     }
     setEditingDescription(false);
   }, [descriptionDraft, issue?.description, updateMutation]);
+
+  // ── Unsaved changes guard ──
+  const hasUnsavedDescription = editingDescription && descriptionDraft !== (issue?.description || '');
+
+  const guardedClose = useCallback(() => {
+    if (hasUnsavedDescription) {
+      setShowUnsavedModal(true);
+    } else {
+      onClose();
+    }
+  }, [hasUnsavedDescription, onClose]);
+
+  const handleDiscardAndClose = useCallback(() => {
+    setEditingDescription(false);
+    setDescriptionDraft('');
+    setShowUnsavedModal(false);
+    onClose();
+  }, [onClose]);
+
+  const handleSaveAndClose = useCallback(() => {
+    if (descriptionDraft !== (issue?.description || '')) {
+      updateMutation.mutate({ field: 'description', value: descriptionDraft });
+    }
+    setEditingDescription(false);
+    setShowUnsavedModal(false);
+    onClose();
+  }, [descriptionDraft, issue?.description, updateMutation, onClose]);
 
   const handleFieldUpdate = useCallback(
     (field: string, value: unknown) => {
@@ -494,7 +522,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   if (isLoading || !issue) {
     return (
       <>
-        <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={onClose} />
+        <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={guardedClose} />
         <div
           ref={panelRef}
           className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right"
@@ -506,7 +534,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               <div className="h-4 w-20 animate-pulse rounded bg-surface-hover" />
             </div>
             <button
-              onClick={onClose}
+              onClick={guardedClose}
               aria-label="Close issue drawer"
               className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors shrink-0"
             >
@@ -527,7 +555,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   return (
     <>
       {/* Backdrop — hidden on mobile since drawer is full-screen */}
-      <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={onClose} />
+      <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={guardedClose} />
 
       {/* Panel — full-screen on mobile, side panel on tablet+ */}
       <div
@@ -556,7 +584,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             )}
           </div>
           <button
-            onClick={onClose}
+            onClick={guardedClose}
             aria-label="Close issue drawer"
             className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors shrink-0"
           >
@@ -746,6 +774,44 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
           onSave={handleAnnotationSave}
           onClose={() => setAnnotatingIndex(null)}
         />
+      )}
+
+      {/* Unsaved Changes Modal */}
+      {showUnsavedModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/50 dark:bg-black/60" onClick={() => setShowUnsavedModal(false)} />
+          <div className="relative z-10 w-full max-w-sm mx-4 rounded-xl bg-surface border border-border shadow-2xl p-6 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                <AlertTriangle size={20} className="text-amber-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-primary">{t('unsavedModal.title')}</h3>
+                <p className="text-xs text-muted mt-0.5">{t('unsavedModal.description')}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-5">
+              <button
+                onClick={() => setShowUnsavedModal(false)}
+                className="flex-1 rounded-lg border border-border px-3 py-2 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors"
+              >
+                {t('unsavedModal.cancel')}
+              </button>
+              <button
+                onClick={handleDiscardAndClose}
+                className="flex-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors"
+              >
+                {t('unsavedModal.discard')}
+              </button>
+              <button
+                onClick={handleSaveAndClose}
+                className="flex-1 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-black hover:bg-accent-hover transition-colors"
+              >
+                {t('unsavedModal.save')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
@@ -1857,13 +1923,13 @@ function ImageLightbox({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
-      onClick={onClose}
+      onClick={guardedClose}
       role="dialog"
       aria-modal="true"
       aria-label={`Image viewer: ${images[currentIndex]?.name || 'Image'}`}
     >
       <button
-        onClick={onClose}
+        onClick={guardedClose}
         aria-label="Close image viewer"
         className="absolute top-4 right-4 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
       >
