@@ -9,6 +9,23 @@ import { useUIStore } from '@/stores/ui';
 import { GitHubPrBadge } from '@/components/github/GitHubPrBadge';
 import type { Issue, IssuePriority, IssueType, ProjectTag, GitHubPrLink } from '@/lib/types';
 
+/** Strip HTML tags and collapse whitespace for clean text preview */
+function stripHtml(html: string): string {
+  const text = html
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/?(p|div|h[1-6]|li|ul|ol|blockquote|tr)[\s>]/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text;
+}
+
 interface KanbanCardProps {
   issue: Issue;
   provided: DraggableProvided;
@@ -177,11 +194,14 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
         </h3>
 
         {/* Description preview (not for done) */}
-        {issue.description && !isDone && (
-          <p className="text-xs text-gray-500 dark:text-muted leading-relaxed line-clamp-2 mb-3">
-            {issue.description}
-          </p>
-        )}
+        {issue.description && !isDone && (() => {
+          const preview = stripHtml(issue.description);
+          return preview ? (
+            <p className="text-xs text-gray-500 dark:text-muted leading-relaxed line-clamp-2 mb-3">
+              {preview}
+            </p>
+          ) : null;
+        })()}
 
         {/* Footer: type + tags + metadata */}
         <div className="flex items-center justify-between pt-2.5 border-t border-gray-100 dark:border-border/50">
