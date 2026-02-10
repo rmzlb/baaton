@@ -612,6 +612,82 @@ async function executePlanMilestones(
       ? Math.round((openIssues.length / effectiveVelocity) * 10) / 10
       : null;
 
+    // ── Auto-group issues into proposed milestones ──
+    // Group by: tags first, then category, then priority, then type
+    const groups: Record<string, typeof openIssues> = {};
+    
+    for (const issue of openIssues) {
+      // Primary grouping: first tag, or first category, or type
+      let groupKey = 'General';
+      if (issue.tags.length > 0) {
+        groupKey = issue.tags[0];
+      } else if (issue.category && issue.category.length > 0) {
+        groupKey = issue.category[0];
+      } else if (issue.type === 'bug') {
+        groupKey = 'Bug Fixes';
+      }
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(issue);
+    }
+
+    // If too many small groups, merge them
+    const MIN_GROUP_SIZE = 2;
+    const misc: typeof openIssues = [];
+    const validGroups: Record<string, typeof openIssues> = {};
+    for (const [key, items] of Object.entries(groups)) {
+      if (items.length < MIN_GROUP_SIZE) {
+        misc.push(...items);
+      } else {
+        validGroups[key] = items;
+      }
+    }
+    if (misc.length > 0) {
+      validGroups['Misc & Quick Wins'] = misc;
+    }
+
+    // Build proposed milestones with target dates
+    const now = new Date();
+    const weeksPerMilestone = effectiveVelocity
+      ? (ms: typeof openIssues) => Math.max(1, Math.ceil(ms.length / effectiveVelocity))
+      : () => 2; // default 2 weeks per milestone
+
+    let cumulativeWeeks = 0;
+    const proposedMilestones = Object.entries(validGroups).map(([name, issues], idx) => {
+      const weeks = weeksPerMilestone(issues);
+      cumulativeWeeks += weeks;
+      const target = new Date(now);
+      target.setDate(target.getDate() + cumulativeWeeks * 7);
+      const targetStr = target.toISOString().split('T')[0];
+
+      // Sort: urgent/high first, then bugs, then features
+      const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+      issues.sort((a, b) => {
+        const pa = priorityOrder[a.priority || 'medium'] ?? 2;
+        const pb = priorityOrder[b.priority || 'medium'] ?? 2;
+        if (pa !== pb) return pa - pb;
+        if (a.type === 'bug' && b.type !== 'bug') return -1;
+        if (b.type === 'bug' && a.type !== 'bug') return 1;
+        return 0;
+      });
+
+      return {
+        name,
+        description: `${issues.length} issues — ${issues.filter(i => i.type === 'bug').length} bugs, ${issues.filter(i => i.type === 'feature').length} features, ${issues.filter(i => i.type === 'improvement').length} improvements`,
+        target_date: targetStr,
+        order: idx,
+        estimated_weeks: weeks,
+        issue_ids: issues.map(i => i.id),
+        issues_summary: issues.map(i => ({
+          id: i.id,
+          display_id: i.display_id,
+          title: i.title,
+          type: i.type,
+          priority: i.priority,
+          tags: i.tags,
+        })),
+      };
+    });
+
     return {
       skill: 'plan_milestones',
       success: true,
@@ -620,21 +696,8 @@ async function executePlanMilestones(
         project_id: targetProjectId,
         target_date: targetDate || null,
         team_size: teamSize,
-        open_issues: openIssues.map((i) => ({
-          id: i.id,
-          display_id: i.display_id,
-          title: i.title,
-          description: i.description || '',
-          status: i.status,
-          priority: i.priority,
-          type: i.type,
-          tags: i.tags,
-          category: i.category,
-          milestone_id: i.milestone_id,
-          created_at: i.created_at,
-          updated_at: i.updated_at,
-        })),
         total_open: openIssues.length,
+        proposed_milestones: proposedMilestones,
         dependencies: dependencies.map((d) => ({
           from: d.from_display_id,
           to: d.to_display_id,
@@ -647,8 +710,9 @@ async function executePlanMilestones(
           estimated_weeks_to_complete: estimatedWeeks,
           team_size: teamSize,
         },
+        instructions: 'IMPORTANT: Present this plan to the user with the milestone names, issue counts, target dates, and issue list. Then ask if they want to apply it. When they confirm, call create_milestones_batch with project_id and the milestones array (name, description, target_date, order, issue_ids).',
       },
-      summary: `Fetched ${openIssues.length} open issues, detected ${dependencies.length} potential dependencies, velocity: ${effectiveVelocity ?? 'unknown'} issues/week`,
+      summary: `Analyzed ${openIssues.length} issues → proposed ${proposedMilestones.length} milestones. Velocity: ${effectiveVelocity ?? 'unknown'} issues/week`,
     };
   } catch (err) {
     return { skill: 'plan_milestones', success: false, error: String(err), summary: 'Failed to fetch issues for planning' };

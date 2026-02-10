@@ -92,23 +92,37 @@ function MessageBubble({ message, onAction }: { message: AIMessage; onAction?: (
         </div>
 
         {/* Action buttons for milestone proposals */}
-        {hasPlanProposal && onAction && (
-          <div className="flex items-center gap-2 mt-1">
-            <button
-              onClick={() => onAction('Yes, apply this milestone plan. Create all the milestones and assign the issues as proposed.')}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600 transition-colors"
-            >
-              <CheckCircle2 size={12} />
-              {t('milestones.applyPlan')}
-            </button>
-            <button
-              onClick={() => onAction('Adjust the plan: I want fewer milestones, merge the smaller ones together.')}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-secondary hover:bg-gray-50 dark:hover:bg-surface-hover transition-colors"
-            >
-              {t('milestones.adjustPlan')}
-            </button>
-          </div>
-        )}
+        {hasPlanProposal && onAction && (() => {
+          // Extract the proposed plan data from the skill result
+          const planResult = message.skills?.find((s) => s.skill === 'plan_milestones' && s.success);
+          const planData = planResult?.data as { project_id?: string; proposed_milestones?: Array<{ name: string; description?: string; target_date?: string; order?: number; issue_ids: string[] }> } | undefined;
+          const hasProposedMilestones = planData?.proposed_milestones && planData.proposed_milestones.length > 0;
+
+          return (
+            <div className="flex items-center gap-2 mt-1">
+              <button
+                onClick={() => {
+                  if (hasProposedMilestones) {
+                    // Send the actual plan data so AI can call create_milestones_batch directly
+                    onAction(`Yes, apply the plan now. Call create_milestones_batch with project_id="${planData!.project_id}" and these milestones: ${JSON.stringify(planData!.proposed_milestones!.map(m => ({ name: m.name, description: m.description, target_date: m.target_date, order: m.order, issue_ids: m.issue_ids })))}`);
+                  } else {
+                    onAction('Yes, apply this milestone plan. Create all the milestones and assign the issues as proposed.');
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600 transition-colors"
+              >
+                <CheckCircle2 size={12} />
+                {t('milestones.applyPlan')}
+              </button>
+              <button
+                onClick={() => onAction('Adjust the plan: I want fewer milestones, merge the smaller ones together and re-prioritize.')}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-secondary hover:bg-gray-50 dark:hover:bg-surface-hover transition-colors"
+              >
+                {t('milestones.adjustPlan')}
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Success confirmation for created milestones */}
         {hasCreatedMilestones && (
