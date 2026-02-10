@@ -287,3 +287,7 @@ body, .bg-transition {
   outline: 2px solid var(--color-accent);
   border-radius: 0.25rem;
 }
+
+/* Hide scrollbar but keep scroll functionality */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
