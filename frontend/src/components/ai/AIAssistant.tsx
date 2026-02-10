@@ -47,8 +47,14 @@ function SkillBadge({ result }: { result: SkillResult }) {
 }
 
 // ─── Message Bubble ───────────────────────────
-function MessageBubble({ message }: { message: AIMessage }) {
+function MessageBubble({ message, onAction }: { message: AIMessage; onAction?: (prompt: string) => void }) {
   const isUser = message.role === 'user';
+  const { t } = useTranslation();
+
+  // Detect if this message contains a milestone plan proposal (plan_milestones was executed)
+  const hasPlanProposal = !isUser && message.skills?.some((s) => s.skill === 'plan_milestones' && s.success);
+  // Detect if milestones were created
+  const hasCreatedMilestones = !isUser && message.skills?.some((s) => s.skill === 'create_milestones_batch' && s.success);
 
   return (
     <div className={cn('flex gap-2', isUser && 'flex-row-reverse')}>
@@ -84,6 +90,33 @@ function MessageBubble({ message }: { message: AIMessage }) {
             </div>
           )}
         </div>
+
+        {/* Action buttons for milestone proposals */}
+        {hasPlanProposal && onAction && (
+          <div className="flex items-center gap-2 mt-1">
+            <button
+              onClick={() => onAction('Yes, apply this milestone plan. Create all the milestones and assign the issues as proposed.')}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600 transition-colors"
+            >
+              <CheckCircle2 size={12} />
+              {t('milestones.applyPlan')}
+            </button>
+            <button
+              onClick={() => onAction('Adjust the plan: I want fewer milestones, merge the smaller ones together.')}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-secondary hover:bg-gray-50 dark:hover:bg-surface-hover transition-colors"
+            >
+              {t('milestones.adjustPlan')}
+            </button>
+          </div>
+        )}
+
+        {/* Success confirmation for created milestones */}
+        {hasCreatedMilestones && (
+          <div className="flex items-center gap-1.5 mt-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 px-3 py-1.5">
+            <CheckCircle2 size={12} className="text-emerald-500" />
+            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">{t('milestones.planApplied')}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -254,11 +287,12 @@ export function AIAssistant() {
 
         // If skills created/updated issues, invalidate queries to refresh the board
         if (response.skillsExecuted.some((s) =>
-          s.success && ['create_issue', 'update_issue', 'bulk_update_issues'].includes(s.skill),
+          s.success && ['create_issue', 'update_issue', 'bulk_update_issues', 'create_milestones_batch'].includes(s.skill),
         )) {
           queryClient.invalidateQueries({ queryKey: ['issues'] });
           queryClient.invalidateQueries({ queryKey: ['all-issues'] });
           queryClient.invalidateQueries({ queryKey: ['my-issues'] });
+          queryClient.invalidateQueries({ queryKey: ['milestones'] });
         }
       } catch (err) {
         console.error('AI error:', err);
@@ -426,9 +460,11 @@ export function AIAssistant() {
                         ['update_issue', t('ai.skillUpdate')],
                         ['bulk_update', t('ai.skillBulkUpdate')],
                         ['add_comment', t('ai.skillComment')],
+                        ['plan_milestones', t('ai.skillPlanMilestones')],
                         ['generate_prd', t('ai.skillPrd')],
                         ['analyze_sprint', t('ai.skillSprint')],
                         ['get_metrics', t('ai.skillMetrics')],
+                        ['adjust_timeline', t('ai.skillAdjustTimeline')],
                       ].map(([skill, label]) => (
                         <div key={skill} className="flex items-center gap-1 rounded border border-border/50 bg-surface/50 px-2 py-1">
                           <span className="text-accent">⚡</span>
@@ -455,7 +491,7 @@ export function AIAssistant() {
             ) : (
               <>
                 {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={msg} />
+                  <MessageBubble key={msg.id} message={msg} onAction={(prompt) => handleSend(prompt)} />
                 ))}
                 {loading && <TypingIndicator />}
                 <div ref={messagesEndRef} />

@@ -294,6 +294,8 @@ const en = {
   'ai.skillPrd': 'Generate PRD',
   'ai.skillSprint': 'Analyze sprint',
   'ai.skillMetrics': 'Metrics',
+  'ai.skillPlanMilestones': 'Plan milestones',
+  'ai.skillAdjustTimeline': 'Adjust timeline',
   'ai.placeholder': 'Create an issue, reprioritize, analyze…',
   'ai.realTimeData': 'real-time data',
   'ai.imagesHint': 'Images via ⌘V in issues',
@@ -847,6 +849,9 @@ As a [user], I want to [action] so that [benefit].
   'milestones.actualLine': 'Actual',
   'milestones.emptyAi': 'Ask AI to plan your roadmap 🤖',
   'milestones.aiPlan': 'AI Plan',
+  'milestones.applyPlan': 'Apply Plan',
+  'milestones.adjustPlan': 'Adjust',
+  'milestones.planApplied': 'Milestones created successfully!',
 
 // ── Landing Page ──
 'landing.badge': 'Orchestration Board Live',

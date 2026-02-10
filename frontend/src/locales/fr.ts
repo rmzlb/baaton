@@ -294,6 +294,8 @@ const fr = {
   'ai.skillPrd': 'Générer PRD',
   'ai.skillSprint': 'Analyser sprint',
   'ai.skillMetrics': 'Métriques',
+  'ai.skillPlanMilestones': 'Planifier jalons',
+  'ai.skillAdjustTimeline': 'Ajuster timeline',
   'ai.placeholder': 'Crée une issue, repriorise, analyse…',
   'ai.realTimeData': 'données temps réel',
   'ai.imagesHint': 'Images via ⌘V dans les issues',
@@ -847,6 +849,9 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'milestones.actualLine': 'Réel',
   'milestones.emptyAi': 'Demandez à l\'IA de planifier votre roadmap 🤖',
   'milestones.aiPlan': 'IA Planifier',
+  'milestones.applyPlan': 'Appliquer le plan',
+  'milestones.adjustPlan': 'Ajuster',
+  'milestones.planApplied': 'Jalons créés avec succès !',
 
 // ── Landing Page ──
 'landing.badge': 'Board d\'Orchestration Live',
