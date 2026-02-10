@@ -92,7 +92,7 @@ pub async fn remove(
 
     // Verify tag belongs to a project in user's org
     let result = sqlx::query(
-        "DELETE FROM project_tags t USING projects p WHERE t.project_id = p.id AND t.id = $1 AND p.org_id = $2"
+        "DELETE FROM project_tags WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = $2)"
     )
     .bind(tag_id)
     .bind(org_id)
