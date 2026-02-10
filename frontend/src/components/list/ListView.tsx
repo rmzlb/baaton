@@ -34,19 +34,27 @@ const CATEGORY_CONFIG: { key: string; label: string; color: string }[] = [
   { key: 'DB', label: 'Database', color: '#f97316' },
 ];
 
+interface Project {
+  id: string;
+  name: string;
+  prefix: string;
+}
+
 interface ListViewProps {
   statuses: ProjectStatus[];
   issues: Issue[];
   onIssueClick: (issue: Issue) => void;
   projectTags?: ProjectTag[];
+  projects?: Project[];
 }
 
-export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: ListViewProps) {
+export function ListView({ statuses, issues, onIssueClick, projectTags = [], projects = [] }: ListViewProps) {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('status');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [groupByProject, setGroupByProject] = useState(false);
 
   // Filters
   const [selectedPriorities, setSelectedPriorities] = useState<IssuePriority[]>([]);
@@ -199,7 +207,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: L
   return (
     <div className="flex h-full flex-col">
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-1.5 md:gap-2 border-b border-border px-3 md:px-6 py-2 overflow-x-auto">
+      <div className="relative flex flex-wrap items-center gap-1.5 md:gap-2 border-b border-border px-3 md:px-6 py-2 overflow-visible z-30">
         <div className="relative shrink-0">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
@@ -306,12 +314,28 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: L
             {t('kanban.clearAll')}
           </button>
         )}
+
+        {/* Group by Project toggle */}
+        {projects.length > 1 && (
+          <button
+            onClick={() => setGroupByProject(!groupByProject)}
+            className={cn(
+              'ml-auto flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition-colors min-h-[32px]',
+              groupByProject
+                ? 'border-accent/30 bg-accent/10 text-accent'
+                : 'border-border bg-surface text-secondary hover:text-primary',
+            )}
+          >
+            <Layers size={12} />
+            {t('list.groupByProject') || 'Group by project'}
+          </button>
+        )}
       </div>
 
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
         {/* Table Header — hidden on mobile (cards don't need headers) */}
-        <div className="sticky top-0 z-10 hidden md:grid grid-cols-[80px_1fr_120px_100px_90px_90px_120px_80px_100px] gap-2 border-b border-border bg-bg px-4 md:px-6 py-2 text-[10px] uppercase tracking-wider text-muted font-medium">
+        <div className="sticky top-0 z-10 hidden md:grid grid-cols-[72px_1fr_110px_90px_80px_80px_100px_90px] gap-1.5 border-b border-border bg-bg px-4 md:px-6 py-2 text-[10px] uppercase tracking-wider text-muted font-medium">
           <button onClick={() => toggleSort('display_id')} className="text-left hover:text-secondary transition-colors flex items-center">
             {t('list.id')} <SortIcon field="display_id" />
           </button>
@@ -327,12 +351,9 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: L
           <button onClick={() => toggleSort('type')} className="text-left hover:text-secondary transition-colors flex items-center">
             {t('list.type')} <SortIcon field="type" />
           </button>
-          <span>{t('list.category')}</span>
           <span>{t('list.tags')}</span>
+          <span>{t('list.createdBy') || 'Created by'}</span>
           <span>{t('list.assign')}</span>
-          <button onClick={() => toggleSort('updated_at')} className="text-left hover:text-secondary transition-colors flex items-center">
-            {t('list.updated')} <SortIcon field="updated_at" />
-          </button>
         </div>
 
         {/* Mobile sort controls */}
@@ -356,33 +377,74 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [] }: L
         {/* Grouped rows */}
         {groupedByStatus.map(({ status, issues: groupIssues }) => {
           const isCollapsed = collapsedGroups.has(status.key);
+
+          // Sub-group by project if enabled
+          const projectGroups = groupByProject && projects.length > 1
+            ? projects.filter((p) => groupIssues.some((i) => i.project_id === p.id)).map((p) => ({
+                project: p,
+                issues: groupIssues.filter((i) => i.project_id === p.id),
+              }))
+            : null;
+
           return (
             <div key={status.key}>
-              {/* Group header */}
+              {/* Status group header */}
               <button
                 onClick={() => toggleGroup(status.key)}
                 className="sticky top-0 md:top-[33px] z-[5] flex w-full items-center gap-2 border-b border-border/50 bg-surface px-3 md:px-6 py-2 text-xs font-medium text-secondary hover:bg-surface transition-colors"
               >
                 {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                <span
-                  className="h-2.5 w-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: status.color }}
-                />
+                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: status.color }} />
                 {status.label}
                 <span className="rounded-full bg-surface-hover px-2 py-0.5 text-[10px] text-muted font-mono">
                   {groupIssues.length}
                 </span>
               </button>
-              {!isCollapsed &&
-                groupIssues.map((issue) => (
-                  <ListRow
-                    key={issue.id}
-                    issue={issue}
-                    statuses={statuses}
-                    projectTags={projectTags}
-                    onClick={() => onIssueClick(issue)}
-                  />
-                ))}
+
+              {!isCollapsed && (
+                projectGroups ? (
+                  // Render with project sub-groups
+                  projectGroups.map(({ project, issues: projIssues }) => {
+                    const subKey = `${status.key}:${project.id}`;
+                    const isSubCollapsed = collapsedGroups.has(subKey);
+                    return (
+                      <div key={subKey}>
+                        <button
+                          onClick={() => toggleGroup(subKey)}
+                          className="flex w-full items-center gap-2 border-b border-border/30 bg-surface/50 px-6 md:px-10 py-1.5 text-[11px] font-medium text-muted hover:text-secondary transition-colors"
+                        >
+                          {isSubCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                          <span className="font-mono text-accent text-[10px]">{project.prefix}</span>
+                          <span className="text-secondary">{project.name}</span>
+                          <span className="rounded-full bg-surface-hover px-1.5 py-0 text-[9px] text-muted font-mono">
+                            {projIssues.length}
+                          </span>
+                        </button>
+                        {!isSubCollapsed && projIssues.map((issue) => (
+                          <ListRow
+                            key={issue.id}
+                            issue={issue}
+                            statuses={statuses}
+                            projectTags={projectTags}
+                            onClick={() => onIssueClick(issue)}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })
+                ) : (
+                  // Render flat
+                  groupIssues.map((issue) => (
+                    <ListRow
+                      key={issue.id}
+                      issue={issue}
+                      statuses={statuses}
+                      projectTags={projectTags}
+                      onClick={() => onIssueClick(issue)}
+                    />
+                  ))
+                )
+              )}
             </div>
           );
         })}
@@ -457,7 +519,7 @@ function FilterDropdown({
         <ChevronDown size={10} aria-hidden="true" />
       </button>
       {open && (
-        <div role="listbox" aria-label={label} className="absolute left-0 top-full z-20 mt-1 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl max-h-64 overflow-y-auto">
+        <div role="listbox" aria-label={label} className="absolute left-0 top-full z-50 mt-1 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl max-h-64 overflow-y-auto">
           {children}
         </div>
       )}

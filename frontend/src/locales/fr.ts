@@ -913,6 +913,10 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.nav.docs': 'Docs',
 'landing.nav.login': 'Connexion',
 
+// List View
+'list.createdBy': 'Créé par',
+'list.groupByProject': 'Grouper par projet',
+
 // Context Menu
 'contextMenu.open': 'Ouvrir',
 'contextMenu.copyId': 'Copier l\'ID',

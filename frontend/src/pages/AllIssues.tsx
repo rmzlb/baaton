@@ -434,6 +434,7 @@ export function AllIssues() {
             issues={filteredIssues}
             onIssueClick={(issue) => openDetail(issue.id)}
             projectTags={allTags}
+            projects={projects}
           />
         )}
       </div>

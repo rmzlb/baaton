@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { timeAgo } from '@/lib/utils';
+import { useClerkMembers } from '@/hooks/useClerkMembers';
 import type { Issue, IssuePriority, IssueType, ProjectStatus, ProjectTag } from '@/lib/types';
 
 const typeConfig: Record<IssueType, { icon: typeof Bug; color: string; bg: string; label: string }> = {
@@ -41,6 +42,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
   const priority = issue.priority ? priorityConfig[issue.priority] : null;
   const PriorityIcon = priority?.icon;
   const isDone = issue.status === 'done' || issue.status === 'cancelled';
+  const { resolveUserName, resolveUserAvatar } = useClerkMembers();
 
   const getTagColor = (tagName: string): string => {
     const found = projectTags.find((t) => t.name === tagName);
@@ -48,165 +50,137 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
   };
 
   const categories = issue.category || [];
+  const creatorName = resolveUserName(issue.created_by_id, issue.created_by_name);
 
   return (
     <>
-      {/* Desktop: table row */}
+      {/* Desktop: table row — single line, compact */}
       <div
         onClick={onClick}
         className={cn(
-          'hidden md:grid grid-cols-[80px_1fr_120px_100px_90px_90px_120px_80px_100px] gap-2 border-b border-gray-100 dark:border-border/50 px-4 md:px-6 py-2.5 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-surface transition-colors items-center min-h-[44px]',
+          'hidden md:grid grid-cols-[72px_1fr_110px_90px_80px_80px_100px_100px_90px] gap-1.5 border-b border-gray-100 dark:border-border/50 px-4 md:px-6 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-surface transition-colors items-center h-[38px]',
           isDone && 'opacity-60 hover:opacity-90',
         )}
       >
-        {/* ID */}
+        {/* ID — compact, no subtitle */}
         <span className="font-mono text-gray-400 dark:text-secondary text-[11px] truncate">{issue.display_id}</span>
 
-        {/* Title */}
-        <span className={cn('font-medium truncate', isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary')}>{issue.title}</span>
+        {/* Title — truncated, takes remaining space */}
+        <span className={cn('font-medium truncate text-[12px] leading-tight', isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary')}>
+          {issue.title}
+        </span>
 
         {/* Status */}
         <span className="flex items-center gap-1.5">
-          <span
-            className="h-2 w-2 rounded-full shrink-0"
-            style={{ backgroundColor: status?.color }}
-          />
-          <span className="text-secondary truncate">{status?.label || issue.status}</span>
+          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: status?.color }} />
+          <span className="text-secondary truncate text-[11px]">{status?.label || issue.status}</span>
         </span>
 
         {/* Priority */}
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-1">
           {isDone ? (
-            <CheckCircle2 size={12} className="text-emerald-500" />
+            <CheckCircle2 size={11} className="text-emerald-500" />
           ) : PriorityIcon ? (
-            <PriorityIcon size={12} className={priority?.color} />
+            <PriorityIcon size={11} className={priority?.color} />
           ) : null}
-          <span className="text-gray-500 dark:text-secondary">{isDone ? 'Done' : priority?.label || '—'}</span>
+          <span className="text-gray-500 dark:text-secondary text-[11px]">{isDone ? 'Done' : priority?.label || '—'}</span>
         </span>
 
         {/* Type */}
-        <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium w-fit', tc.bg, tc.color)}>
-          <TypeIcon size={11} />
+        <span className={cn('inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-medium w-fit', tc.bg, tc.color)}>
+          <TypeIcon size={10} />
           {tc.label}
         </span>
 
-        {/* Category */}
-        <span className="flex items-center gap-1 overflow-hidden">
-          {categories.length > 0 ? (
-            categories.slice(0, 2).map((cat) => {
-              const color = CATEGORY_COLORS[cat.toUpperCase()] || '#6b7280';
-              return (
-                <span
-                  key={cat}
-                  className="rounded px-1.5 py-0 text-[9px] font-bold uppercase"
-                  style={{
-                    backgroundColor: `${color}20`,
-                    color: color,
-                  }}
-                >
-                  {cat}
-                </span>
-              );
-            })
-          ) : (
-            <span className="text-muted">—</span>
-          )}
-        </span>
-
         {/* Tags */}
-        <span className="flex items-center gap-1 overflow-hidden">
-          {issue.tags.slice(0, 2).map((tag) => {
+        <span className="flex items-center gap-0.5 overflow-hidden">
+          {issue.tags.length > 0 ? issue.tags.slice(0, 1).map((tag) => {
             const color = getTagColor(tag);
             return (
               <span
                 key={tag}
-                className="rounded-full px-1.5 py-0 text-[9px] font-medium border truncate"
-                style={{
-                  backgroundColor: `${color}20`,
-                  borderColor: `${color}40`,
-                  color: color,
-                }}
+                className="rounded-full px-1.5 py-0 text-[9px] font-medium border truncate max-w-[70px]"
+                style={{ backgroundColor: `${color}20`, borderColor: `${color}40`, color }}
               >
                 {tag}
               </span>
             );
-          })}
-          {issue.tags.length > 2 && (
-            <span className="text-[9px] text-muted">+{issue.tags.length - 2}</span>
-          )}
+          }) : <span className="text-muted text-[10px]">—</span>}
+          {issue.tags.length > 1 && <span className="text-[9px] text-muted">+{issue.tags.length - 1}</span>}
+        </span>
+
+        {/* Created by */}
+        <span className="flex items-center gap-1 overflow-hidden">
+          {(issue.created_by_id || issue.created_by_name) ? (() => {
+            const avatar = resolveUserAvatar(issue.created_by_id);
+            return (
+              <>
+                <img
+                  src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(creatorName)}&backgroundColor=f0f0f0&textColor=666666`}
+                  className="w-4 h-4 rounded-full shrink-0"
+                  alt={creatorName}
+                />
+                <span className="text-[10px] text-secondary truncate">{creatorName.split(' ')[0]}</span>
+              </>
+            );
+          })() : <span className="text-muted text-[10px]">—</span>}
         </span>
 
         {/* Assignees */}
-        <span className="flex -space-x-1">
-          {issue.assignee_ids.slice(0, 2).map((id) => (
-            <img
-              key={id}
-              src={`https://api.dicebear.com/9.x/initials/svg?seed=${id}&backgroundColor=f0f0f0&textColor=666666`}
-              className="w-5 h-5 rounded-full ring-1 ring-white dark:ring-surface"
-              alt="Assignee"
-            />
-          ))}
-          {issue.assignee_ids.length === 0 && <span className="text-gray-400 dark:text-muted">—</span>}
+        <span className="flex items-center gap-1">
+          {issue.assignee_ids.length > 0 ? (
+            <div className="flex -space-x-1">
+              {issue.assignee_ids.slice(0, 2).map((id) => {
+                const name = resolveUserName(id);
+                const avatar = resolveUserAvatar(id);
+                return (
+                  <img
+                    key={id}
+                    src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
+                    className="w-4 h-4 rounded-full ring-1 ring-white dark:ring-surface"
+                    alt={name}
+                    title={name}
+                  />
+                );
+              })}
+            </div>
+          ) : <span className="text-gray-400 dark:text-muted text-[10px]">—</span>}
         </span>
-
-        {/* Due Date */}
-        <span className="text-[10px]">
-          {issue.due_date ? (() => {
-            const due = new Date(issue.due_date);
-            const now = new Date();
-            const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-            const isOverdue = diffDays < 0;
-            const isSoon = diffDays >= 0 && diffDays <= 3;
-            return (
-              <span className={cn(
-                'flex items-center gap-0.5',
-                isOverdue ? 'text-red-400' : isSoon ? 'text-amber-400' : 'text-muted',
-              )}>
-                <Clock size={10} />
-                {due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-              </span>
-            );
-          })() : <span className="text-muted">—</span>}
-        </span>
-
-        {/* Updated */}
-        <span className="text-muted text-[10px]">{timeAgo(issue.updated_at)}</span>
       </div>
 
       {/* Mobile: card layout */}
       <div
         onClick={onClick}
-        className="md:hidden flex flex-col gap-2 border-b border-border/50 px-3 py-3 cursor-pointer hover:bg-surface transition-colors active:bg-surface-hover min-h-[44px]"
+        className="md:hidden flex flex-col gap-1.5 border-b border-border/50 px-3 py-2.5 cursor-pointer hover:bg-surface transition-colors active:bg-surface-hover"
       >
         {/* Top row: ID + status + priority */}
         <div className="flex items-center gap-2">
           <span className="font-mono text-secondary text-[11px]">{issue.display_id}</span>
           <span className="flex items-center gap-1">
-            <span
-              className="h-2 w-2 rounded-full shrink-0"
-              style={{ backgroundColor: status?.color }}
-            />
+            <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: status?.color }} />
             <span className="text-[10px] text-secondary">{status?.label || issue.status}</span>
           </span>
+          {(issue.created_by_id || issue.created_by_name) && (
+            <span className="text-[10px] text-muted flex items-center gap-0.5">
+              <User size={9} />
+              {creatorName.split(' ')[0]}
+            </span>
+          )}
           {PriorityIcon && (
             <PriorityIcon size={12} style={{ color: priority?.color }} className="ml-auto shrink-0" />
           )}
           <TypeIcon size={12} className={cn(typeConfig[issue.type]?.color, 'shrink-0')} />
         </div>
 
-        {/* Title */}
-        <span className="text-sm text-primary font-medium leading-snug line-clamp-2">{issue.title}</span>
+        {/* Title — max 2 lines */}
+        <span className="text-[13px] text-primary font-medium leading-snug line-clamp-2">{issue.title}</span>
 
-        {/* Bottom row: tags + assignees + updated */}
+        {/* Bottom row: tags + assignees */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {categories.slice(0, 2).map((cat) => {
             const color = CATEGORY_COLORS[cat.toUpperCase()] || '#6b7280';
             return (
-              <span
-                key={cat}
-                className="rounded px-1.5 py-0 text-[9px] font-bold uppercase"
-                style={{ backgroundColor: `${color}20`, color }}
-              >
+              <span key={cat} className="rounded px-1.5 py-0 text-[9px] font-bold uppercase" style={{ backgroundColor: `${color}20`, color }}>
                 {cat}
               </span>
             );
@@ -214,28 +188,28 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
           {issue.tags.slice(0, 2).map((tag) => {
             const color = getTagColor(tag);
             return (
-              <span
-                key={tag}
-                className="rounded-full px-1.5 py-0 text-[9px] font-medium border"
-                style={{ backgroundColor: `${color}20`, borderColor: `${color}40`, color }}
-              >
+              <span key={tag} className="rounded-full px-1.5 py-0 text-[9px] font-medium border" style={{ backgroundColor: `${color}20`, borderColor: `${color}40`, color }}>
                 {tag}
               </span>
             );
           })}
           {issue.assignee_ids.length > 0 && (
             <div className="ml-auto flex -space-x-1">
-              {issue.assignee_ids.slice(0, 2).map((id) => (
-                <div
-                  key={id}
-                  className="h-5 w-5 rounded-full bg-surface-hover border border-bg flex items-center justify-center text-[7px] font-mono text-secondary"
-                >
-                  {id.slice(0, 2).toUpperCase()}
-                </div>
-              ))}
+              {issue.assignee_ids.slice(0, 2).map((id) => {
+                const name = resolveUserName(id);
+                const avatar = resolveUserAvatar(id);
+                return (
+                  <img
+                    key={id}
+                    src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
+                    className="h-5 w-5 rounded-full ring-1 ring-white dark:ring-surface"
+                    alt={name}
+                    title={name}
+                  />
+                );
+              })}
             </div>
           )}
-          <span className="text-muted text-[10px] ml-auto">{timeAgo(issue.updated_at)}</span>
         </div>
       </div>
     </>

@@ -913,6 +913,10 @@ As a [user], I want to [action] so that [benefit].
 'landing.nav.docs': 'Docs',
 'landing.nav.login': 'Log in',
 
+// List View
+'list.createdBy': 'Created by',
+'list.groupByProject': 'Group by project',
+
 // Context Menu
 'contextMenu.open': 'Open issue',
 'contextMenu.copyId': 'Copy ID',
