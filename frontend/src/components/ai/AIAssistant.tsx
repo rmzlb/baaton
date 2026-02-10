@@ -3,16 +3,18 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles, X, Send, Trash2, Bot, User, Loader2,
   Wrench, CheckCircle2, XCircle, ChevronDown, Wifi, WifiOff,
+  RefreshCw, Clock, AlertTriangle,
 } from 'lucide-react';
 import { useAIAssistantStore, type AIMessage } from '@/stores/ai-assistant';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { generateAIResponse } from '@/lib/ai-engine';
+import { generateAIResponse, RateLimitError } from '@/lib/ai-engine';
 import { cn } from '@/lib/utils';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import type { Issue } from '@/lib/types';
-import type { SkillResult} from '@/lib/ai-skills';
+import type { SkillResult } from '@/lib/ai-skills';
 import { SKILL_TOOLS } from '@/lib/ai-skills';
+import { type AIStateContext, resetState } from '@/lib/ai-state';
 
 type AIMode = 'gemini' | 'openclaw';
 
@@ -28,8 +30,15 @@ function useSuggestions() {
   ];
 }
 
-// ─── Skill Badge ──────────────────────────────
-function SkillBadge({ result }: { result: SkillResult }) {
+// ─── Enhanced Skill Result with execution time ─
+interface EnhancedSkillResult extends SkillResult {
+  executionTimeMs?: number;
+}
+
+// ─── Enhanced Skill Badge ─────────────────────
+function SkillBadge({ result }: { result: EnhancedSkillResult }) {
+  const [expanded, setExpanded] = useState(false);
+
   const icon = result.success ? (
     <CheckCircle2 size={11} className="text-emerald-400" />
   ) : (
@@ -37,11 +46,76 @@ function SkillBadge({ result }: { result: SkillResult }) {
   );
 
   return (
-    <div className="flex items-center gap-1.5 rounded-md border border-border/60 bg-surface-hover/50 px-2 py-1 text-[10px]">
-      <Wrench size={10} className="text-accent shrink-0" />
-      <span className="text-muted font-mono">{result.skill}</span>
-      {icon}
-      <span className="text-secondary">{result.summary}</span>
+    <div className="flex flex-col">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 rounded-md border border-border/60 bg-surface-hover/50 px-2 py-1 text-[10px] hover:bg-surface-hover transition-colors cursor-pointer"
+      >
+        <Wrench size={10} className="text-accent shrink-0" />
+        <span className="text-muted font-mono">{result.skill}</span>
+        {icon}
+        {result.executionTimeMs !== undefined && (
+          <span className="flex items-center gap-0.5 text-muted/60">
+            <Clock size={8} />
+            {result.executionTimeMs}ms
+          </span>
+        )}
+        <span className="text-secondary">{result.summary}</span>
+        <ChevronDown size={8} className={cn('text-muted transition-transform', expanded && 'rotate-180')} />
+      </button>
+      {expanded && result.data && (
+        <div className="mt-1 rounded-md border border-border/40 bg-surface/80 px-2 py-1.5 text-[9px] font-mono text-muted overflow-x-auto max-h-32 overflow-y-auto">
+          <pre className="whitespace-pre-wrap break-all">
+            {JSON.stringify(result.data, null, 2).substring(0, 1000)}
+            {JSON.stringify(result.data, null, 2).length > 1000 && '\n... (truncated)'}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Error Message Component ──────────────────
+function ErrorMessage({ error, onRetry }: { error: string; onRetry?: () => void }) {
+  const { t } = useTranslation();
+
+  let errorIcon = <AlertTriangle size={12} className="text-amber-400" />;
+  let errorText = error;
+  let retryable = true;
+
+  if (error.includes('429') || error.includes('Rate limit')) {
+    errorText = t('ai.errorRateLimit') || 'Rate limited — wait a moment and try again';
+    errorIcon = <Clock size={12} className="text-amber-400" />;
+  } else if (error.includes('403') || error.includes('API key')) {
+    errorText = t('ai.errorApiKey') || 'API key issue — check your configuration';
+    retryable = false;
+  } else if (error.includes('network') || error.includes('Network') || error.includes('fetch') || error.includes('Failed to fetch')) {
+    errorText = t('ai.errorNetwork') || 'Connection lost — check your internet';
+    errorIcon = <WifiOff size={12} className="text-red-400" />;
+  }
+
+  return (
+    <div className="flex gap-2">
+      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-amber-400 mt-0.5">
+        <AlertTriangle size={12} />
+      </div>
+      <div className="space-y-1.5">
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+          <div className="flex items-center gap-1.5 text-sm">
+            {errorIcon}
+            <span className="text-amber-200/90">{errorText}</span>
+          </div>
+        </div>
+        {retryable && onRetry && (
+          <button
+            onClick={onRetry}
+            className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1 text-[10px] text-secondary hover:text-primary hover:bg-surface-hover transition-colors"
+          >
+            <RefreshCw size={10} />
+            {t('ai.retry') || 'Retry'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -50,6 +124,9 @@ function SkillBadge({ result }: { result: SkillResult }) {
 function MessageBubble({ message, onAction }: { message: AIMessage; onAction?: (prompt: string) => void }) {
   const isUser = message.role === 'user';
   const { t } = useTranslation();
+
+  // Detect if this is an error message
+  const isError = !isUser && message.content.startsWith('⚠️');
 
   // Detect if this message contains a milestone plan proposal (plan_milestones was executed)
   const hasPlanProposal = !isUser && message.skills?.some((s) => s.skill === 'plan_milestones' && s.success);
@@ -69,9 +146,9 @@ function MessageBubble({ message, onAction }: { message: AIMessage; onAction?: (
       <div className={cn('max-w-[88%] space-y-1.5')}>
         {/* Skills executed */}
         {message.skills && message.skills.length > 0 && (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-col gap-1">
             {message.skills.map((s, i) => (
-              <SkillBadge key={i} result={s} />
+              <SkillBadge key={i} result={s as EnhancedSkillResult} />
             ))}
           </div>
         )}
@@ -79,7 +156,7 @@ function MessageBubble({ message, onAction }: { message: AIMessage; onAction?: (
         <div
           className={cn(
             'rounded-lg px-3 py-2',
-            isUser ? 'bg-accent text-black' : 'bg-surface border border-border',
+            isUser ? 'bg-accent text-black' : isError ? 'bg-amber-500/5 border border-amber-500/30' : 'bg-surface border border-border',
           )}
         >
           {isUser ? (
@@ -165,6 +242,9 @@ export function AIAssistant() {
   } = useAIAssistantStore();
 
   const [aiMode, setAiMode] = useState<AIMode>('gemini');
+  const [lastError, setLastError] = useState<string | null>(null);
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
+  const [aiStateContext, setAiStateContext] = useState<AIStateContext>(resetState);
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -178,6 +258,14 @@ export function AIAssistant() {
       if (raw) setOpenclawConfig(JSON.parse(raw));
     } catch { /* ignore */ }
   }, [open]); // Re-check when panel opens
+
+  // Reset state when clearing messages
+  const handleClearMessages = useCallback(() => {
+    clearMessages();
+    setAiStateContext(resetState());
+    setLastError(null);
+    setLastFailedMessage(null);
+  }, [clearMessages]);
 
   // Fetch all projects
   const { data: projects = [] } = useQuery({
@@ -277,6 +365,8 @@ export function AIAssistant() {
       if (!msg || loading) return;
 
       setInput('');
+      setLastError(null);
+      setLastFailedMessage(null);
       addMessage('user', msg);
       setLoading(true);
 
@@ -295,7 +385,11 @@ export function AIAssistant() {
           allIssuesByProject,
           history,
           apiClient as unknown as Parameters<typeof generateAIResponse>[4],
+          aiStateContext,
         );
+
+        // Update state context for next turn
+        setAiStateContext(response.stateContext);
 
         addMessage('assistant', response.text, response.skillsExecuted);
 
@@ -310,16 +404,46 @@ export function AIAssistant() {
         }
       } catch (err) {
         console.error('AI error:', err);
-        addMessage(
-          'assistant',
-          `⚠️ ${t('ai.error', { message: err instanceof Error ? err.message : t('ai.errorGeneric') })}`,
-        );
+
+        // ── Error Boundary: categorize and show user-friendly messages ──
+        const errorMsg = err instanceof Error ? err.message : String(err);
+
+        if (err instanceof RateLimitError) {
+          setLastError('Rate limit exceeded');
+          setLastFailedMessage(msg);
+          addMessage('assistant', `⚠️ ${t('ai.errorRateLimit') || 'Rate limited — wait a moment and try again'}`);
+        } else if (errorMsg.includes('429')) {
+          setLastError('429');
+          setLastFailedMessage(msg);
+          addMessage('assistant', `⚠️ ${t('ai.errorRateLimit') || 'Rate limited — wait a moment and try again'}`);
+        } else if (errorMsg.includes('403')) {
+          setLastError('403');
+          addMessage('assistant', `⚠️ ${t('ai.errorApiKey') || 'API key issue — check your configuration'}`);
+        } else if (errorMsg.includes('fetch') || errorMsg.includes('network') || errorMsg.includes('Network')) {
+          setLastError('network');
+          setLastFailedMessage(msg);
+          addMessage('assistant', `⚠️ ${t('ai.errorNetwork') || 'Connection lost — check your internet'}`);
+        } else {
+          setLastError(errorMsg);
+          setLastFailedMessage(msg);
+          addMessage(
+            'assistant',
+            `⚠️ ${t('ai.error', { message: errorMsg })}`,
+          );
+        }
       } finally {
         setLoading(false);
       }
     },
-    [input, loading, messages, projects, allIssuesByProject, apiClient, setInput, addMessage, setLoading, queryClient, aiMode, handleSendOpenClaw],
+    [input, loading, messages, projects, allIssuesByProject, apiClient, setInput, addMessage, setLoading, queryClient, aiMode, handleSendOpenClaw, aiStateContext, t],
   );
+
+  const handleRetry = useCallback(() => {
+    if (lastFailedMessage) {
+      setLastError(null);
+      handleSend(lastFailedMessage);
+    }
+  }, [lastFailedMessage, handleSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -399,7 +523,7 @@ export function AIAssistant() {
               <div className="flex items-center gap-1">
                 {messages.length > 0 && (
                   <button
-                    onClick={clearMessages}
+                    onClick={handleClearMessages}
                     className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
                     title={t('ai.clearHistory')}
                     aria-label={t('ai.clearHistory') || 'Clear chat history'}
@@ -508,6 +632,10 @@ export function AIAssistant() {
                   <MessageBubble key={msg.id} message={msg} onAction={(prompt) => handleSend(prompt)} />
                 ))}
                 {loading && <TypingIndicator />}
+                {/* Retry button on error */}
+                {lastError && !loading && lastFailedMessage && (
+                  <ErrorMessage error={lastError} onRetry={handleRetry} />
+                )}
                 <div ref={messagesEndRef} />
               </>
             )}
