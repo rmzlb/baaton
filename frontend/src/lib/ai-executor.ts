@@ -612,48 +612,78 @@ async function executePlanMilestones(
       ? Math.round((openIssues.length / effectiveVelocity) * 10) / 10
       : null;
 
-    // ── Auto-group issues into proposed milestones ──
-    // Group by: tags first, then category, then priority, then type
-    const groups: Record<string, typeof openIssues> = {};
+    // ── Smart auto-grouping into proposed milestones ──
+    // Strategy: 3-tier priority-based grouping
+    //  1. "Almost Done" — issues in_review (nearly complete)
+    //  2. "Critical & Urgent" — urgent/high priority 
+    //  3. By tag/domain — remaining issues grouped by tags
+    //  4. "Backlog & Improvements" — low priority, improvements, questions
     
+    const almostDone: typeof openIssues = [];
+    const critical: typeof openIssues = [];
+    const byTag: Record<string, typeof openIssues> = {};
+    const backlog: typeof openIssues = [];
+
     for (const issue of openIssues) {
-      // Primary grouping: first tag, or first category, or type
-      let groupKey = 'General';
-      if (issue.tags.length > 0) {
-        groupKey = issue.tags[0];
-      } else if (issue.category && issue.category.length > 0) {
-        groupKey = issue.category[0];
-      } else if (issue.type === 'bug') {
-        groupKey = 'Bug Fixes';
+      // Tier 1: Almost done (in_review)
+      if (issue.status === 'in_review') {
+        almostDone.push(issue);
       }
-      if (!groups[groupKey]) groups[groupKey] = [];
-      groups[groupKey].push(issue);
+      // Tier 2: Critical (urgent priority, not in_review)
+      else if (issue.priority === 'urgent') {
+        critical.push(issue);
+      }
+      // Tier 4: Low priority backlog
+      else if (issue.priority === 'low' || issue.type === 'question') {
+        backlog.push(issue);
+      }
+      // Tier 3: Group by first tag or category
+      else {
+        const tag = issue.tags[0] || (issue.category?.[0]) || (issue.type === 'bug' ? 'Bug Fixes' : 'Features');
+        if (!byTag[tag]) byTag[tag] = [];
+        byTag[tag].push(issue);
+      }
     }
 
-    // If too many small groups, merge them
+    // Merge small tag groups into biggest or into backlog
     const MIN_GROUP_SIZE = 2;
-    const misc: typeof openIssues = [];
-    const validGroups: Record<string, typeof openIssues> = {};
-    for (const [key, items] of Object.entries(groups)) {
+    const validTagGroups: Record<string, typeof openIssues> = {};
+    for (const [key, items] of Object.entries(byTag)) {
       if (items.length < MIN_GROUP_SIZE) {
-        misc.push(...items);
+        // Put in critical if high priority, otherwise backlog
+        for (const item of items) {
+          if (item.priority === 'high') critical.push(item);
+          else backlog.push(item);
+        }
       } else {
-        validGroups[key] = items;
+        validTagGroups[key] = items;
       }
     }
-    if (misc.length > 0) {
-      validGroups['Misc & Quick Wins'] = misc;
+
+    // Build ordered milestone list
+    const milestoneEntries: Array<[string, typeof openIssues]> = [];
+    if (almostDone.length > 0) milestoneEntries.push(['Almost Done — In Review', almostDone]);
+    if (critical.length > 0) milestoneEntries.push(['Critical & Urgent Fixes', critical]);
+    for (const [tag, items] of Object.entries(validTagGroups)) {
+      milestoneEntries.push([tag, items]);
+    }
+    if (backlog.length > 0) milestoneEntries.push(['Backlog & Improvements', backlog]);
+
+    // If no entries (shouldn't happen), fallback
+    if (milestoneEntries.length === 0) {
+      milestoneEntries.push(['All Issues', openIssues]);
     }
 
-    // Build proposed milestones with target dates
+    // Estimate realistic weeks: ~3-5 issues per week for a solo dev (not raw velocity which includes batch imports)
+    const realisticVelocity = Math.min(effectiveVelocity || 5, 8) * teamSize; // Cap at 8/week/person
     const now = new Date();
-    const weeksPerMilestone = effectiveVelocity
-      ? (ms: typeof openIssues) => Math.max(1, Math.ceil(ms.length / effectiveVelocity))
-      : () => 2; // default 2 weeks per milestone
 
     let cumulativeWeeks = 0;
-    const proposedMilestones = Object.entries(validGroups).map(([name, issues], idx) => {
-      const weeks = weeksPerMilestone(issues);
+    const proposedMilestones = milestoneEntries.map(([name, issues], idx) => {
+      // Almost Done should be 1 week (they're nearly finished)
+      const weeks = name.includes('Almost Done')
+        ? 1
+        : Math.max(1, Math.ceil(issues.length / realisticVelocity));
       cumulativeWeeks += weeks;
       const target = new Date(now);
       target.setDate(target.getDate() + cumulativeWeeks * 7);
@@ -705,14 +735,14 @@ async function executePlanMilestones(
           confidence: d.confidence,
         })),
         velocity: {
-          ...velocity,
-          effective_velocity: effectiveVelocity,
-          estimated_weeks_to_complete: estimatedWeeks,
+          raw_velocity: effectiveVelocity,
+          realistic_velocity: realisticVelocity,
+          estimated_weeks_total: cumulativeWeeks,
           team_size: teamSize,
         },
-        instructions: 'IMPORTANT: Present this plan to the user with the milestone names, issue counts, target dates, and issue list. Then ask if they want to apply it. When they confirm, call create_milestones_batch with project_id and the milestones array (name, description, target_date, order, issue_ids).',
+        instructions: 'IMPORTANT: Present this plan to the user. Show each milestone with its issues (display_id + title + type + priority). Show velocity and total estimated weeks. Ask if they want to apply. When they confirm, call create_milestones_batch with project_id and the milestones array (name, description, target_date, order, issue_ids).',
       },
-      summary: `Analyzed ${openIssues.length} issues → proposed ${proposedMilestones.length} milestones. Velocity: ${effectiveVelocity ?? 'unknown'} issues/week`,
+      summary: `Analyzed ${openIssues.length} issues → proposed ${proposedMilestones.length} milestones over ~${cumulativeWeeks} weeks (${realisticVelocity} issues/week realistic)`,
     };
   } catch (err) {
     return { skill: 'plan_milestones', success: false, error: String(err), summary: 'Failed to fetch issues for planning' };
