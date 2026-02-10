@@ -113,6 +113,7 @@ pub struct UpdateIssue {
     pub category: Option<Vec<String>>,
     pub position: Option<f64>,
     pub due_date: Option<Option<NaiveDate>>,
+    pub attachments: Option<serde_json::Value>,
 }
 
 // ─── TLDR ─────────────────────────────────────────────

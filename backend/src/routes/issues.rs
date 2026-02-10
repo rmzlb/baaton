@@ -187,6 +187,7 @@ pub async fn update(
             milestone_id = CASE WHEN $10::boolean THEN $11 ELSE milestone_id END,
             category = COALESCE($12, category),
             due_date = CASE WHEN $13::boolean THEN $14 ELSE due_date END,
+            attachments = COALESCE($15, attachments),
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -206,6 +207,7 @@ pub async fn update(
     .bind(&body.category)
     .bind(due_date_provided)
     .bind(due_date_value)
+    .bind(&body.attachments)
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
