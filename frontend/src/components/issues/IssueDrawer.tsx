@@ -83,7 +83,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const [newTagName, setNewTagName] = useState('');
   const [commentText, setCommentText] = useState('');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [editingDescription, setEditingDescription] = useState(true);
+  const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
   const [editingDueDate, setEditingDueDate] = useState(false);
@@ -181,12 +181,13 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     },
   });
 
-  // ── Always-edit mode: sync draft when issue loads ──
+  // ── Auto-enter edit mode once issue data is available ──
   useEffect(() => {
-    if (issue?.description !== undefined) {
+    if (issue && !editingDescription) {
       setDescriptionDraft(issue.description || '');
+      setEditingDescription(true);
     }
-  }, [issue?.id]); // Only on issue change, not every description update
+  }, [issue?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- only on issue load
 
   // ── Unsaved description tracking ──
   const descriptionIsDirty = useRef(false);
