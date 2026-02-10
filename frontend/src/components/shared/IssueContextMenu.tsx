@@ -47,26 +47,35 @@ export function useIssueContextMenu(statuses: ProjectStatus[], onIssueClick?: (i
     setContextMenu({ issue, x: e.clientX, y: e.clientY });
   }, []);
 
+  const handleApiError = useCallback((err: any, fallbackMsg: string) => {
+    const status = err?.status || err?.statusCode;
+    if (status === 401 || status === 403) {
+      addNotification({ type: 'warning', title: 'Session expired', message: 'Please sign out and sign back in.' });
+    } else {
+      addNotification({ type: 'warning', title: fallbackMsg, message: err?.message || '' });
+    }
+  }, [addNotification]);
+
   const handleStatusChange = useCallback(async (issueId: string, status: IssueStatus) => {
     // Optimistic
     updateIssueOptimistic(issueId, { status });
     try {
       await apiClient.issues.update(issueId, { status });
       addNotification({ type: 'success', title: t('contextMenu.statusChanged') || 'Status updated' });
-    } catch {
-      addNotification({ type: 'warning', title: t('optimistic.updateError') || 'Failed to update' });
+    } catch (err) {
+      handleApiError(err, t('optimistic.updateError') || 'Failed to update');
     }
-  }, [apiClient, updateIssueOptimistic, addNotification, t]);
+  }, [apiClient, updateIssueOptimistic, addNotification, handleApiError, t]);
 
   const handlePriorityChange = useCallback(async (issueId: string, priority: IssuePriority | null) => {
     updateIssueOptimistic(issueId, { priority: priority as any });
     try {
       await apiClient.issues.update(issueId, { priority });
       addNotification({ type: 'success', title: t('contextMenu.priorityChanged') || 'Priority updated' });
-    } catch {
-      addNotification({ type: 'warning', title: t('optimistic.updateError') || 'Failed to update' });
+    } catch (err) {
+      handleApiError(err, t('optimistic.updateError') || 'Failed to update');
     }
-  }, [apiClient, updateIssueOptimistic, addNotification, t]);
+  }, [apiClient, updateIssueOptimistic, addNotification, handleApiError, t]);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return;
@@ -76,10 +85,10 @@ export function useIssueContextMenu(statuses: ProjectStatus[], onIssueClick?: (i
     try {
       await apiClient.issues.delete(id);
       addNotification({ type: 'success', title: `${display_id} deleted` });
-    } catch {
-      addNotification({ type: 'warning', title: t('contextMenu.deleteError') || 'Failed to delete' });
+    } catch (err) {
+      handleApiError(err, t('contextMenu.deleteError') || 'Failed to delete');
     }
-  }, [deleteTarget, apiClient, removeIssue, addNotification, t]);
+  }, [deleteTarget, apiClient, removeIssue, addNotification, handleApiError, t]);
 
   const handleCopyId = useCallback((displayId: string) => {
     navigator.clipboard.writeText(displayId);
