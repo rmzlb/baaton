@@ -11,6 +11,7 @@ mod tags;
 mod invites;
 mod milestones;
 mod sprints;
+mod ai;
 pub mod github;
 
 pub fn api_router(pool: PgPool) -> Router {
@@ -44,6 +45,8 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/github/mappings/{id}", patch(github::repos::update_mapping).delete(github::repos::delete_mapping))
         // Issue-level GitHub data
         .route("/issues/{id}/github", get(github::repos::get_issue_github_data))
+        // AI proxy
+        .route("/ai/chat", post(ai::chat))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
         // Milestones (by ID)
