@@ -2,7 +2,7 @@ import type { DraggableProvided } from '@hello-pangea/dnd';
 import {
   Bug, Sparkles, Zap, HelpCircle,
   ArrowUp, ArrowDown, Minus, Flame, Bot, MessageSquare,
-  Clock,
+  Clock, MoreHorizontal, CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/ui';
@@ -39,60 +39,32 @@ const priorityConfig: Record<IssuePriority, { icon: typeof ArrowUp; color: strin
   low: { icon: ArrowDown, color: 'text-gray-400', label: 'Low' },
 };
 
-// Priority → left border color (Linear-style)
-const PRIORITY_BORDER: Record<IssuePriority, string> = {
-  urgent: '#ef4444',
-  high: '#f97316',
-  medium: '#eab308',
-  low: '#9ca3af',
-};
-
-// Category tag colors
-const CATEGORY_COLORS: Record<string, string> = {
-  FRONT: '#3b82f6',
-  BACK: '#22c55e',
-  API: '#8b5cf6',
-  DB: '#f97316',
-};
+// Tag color → pastel bg/border mapping for light mode readability
+function getTagStyle(color: string) {
+  // Map hex to Tailwind-style pastel classes
+  const MAP: Record<string, { bg: string; text: string; border: string }> = {
+    '#3b82f6': { bg: 'bg-blue-50 dark:bg-blue-500/10', text: 'text-blue-700 dark:text-blue-400', border: 'border-blue-100 dark:border-blue-500/20' },
+    '#22c55e': { bg: 'bg-emerald-50 dark:bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-400', border: 'border-emerald-100 dark:border-emerald-500/20' },
+    '#8b5cf6': { bg: 'bg-purple-50 dark:bg-purple-500/10', text: 'text-purple-700 dark:text-purple-400', border: 'border-purple-100 dark:border-purple-500/20' },
+    '#f97316': { bg: 'bg-orange-50 dark:bg-orange-500/10', text: 'text-orange-700 dark:text-orange-400', border: 'border-orange-100 dark:border-orange-500/20' },
+    '#ef4444': { bg: 'bg-red-50 dark:bg-red-500/10', text: 'text-red-700 dark:text-red-400', border: 'border-red-100 dark:border-red-500/20' },
+    '#eab308': { bg: 'bg-yellow-50 dark:bg-yellow-500/10', text: 'text-yellow-700 dark:text-yellow-400', border: 'border-yellow-100 dark:border-yellow-500/20' },
+    '#ec4899': { bg: 'bg-pink-50 dark:bg-pink-500/10', text: 'text-pink-700 dark:text-pink-400', border: 'border-pink-100 dark:border-pink-500/20' },
+    '#06b6d4': { bg: 'bg-cyan-50 dark:bg-cyan-500/10', text: 'text-cyan-700 dark:text-cyan-400', border: 'border-cyan-100 dark:border-cyan-500/20' },
+    '#14b8a6': { bg: 'bg-teal-50 dark:bg-teal-500/10', text: 'text-teal-700 dark:text-teal-400', border: 'border-teal-100 dark:border-teal-500/20' },
+  };
+  return MAP[color] || { bg: 'bg-gray-100 dark:bg-gray-500/10', text: 'text-gray-600 dark:text-gray-400', border: 'border-gray-200 dark:border-gray-500/20' };
+}
 
 export function KanbanCard({ issue, provided, isDragging, onClick, projectTags = [], githubPrs = [] }: KanbanCardProps) {
   const density = useUIStore((s) => s.density);
   const TypeIcon = typeIcons[issue.type] ?? Sparkles;
   const PriorityConfig = issue.priority ? (priorityConfig[issue.priority] ?? null) : null;
+  const isDone = issue.status === 'done' || issue.status === 'cancelled';
 
   const getTagColor = (tagName: string): string => {
     const found = projectTags.find((t) => t.name === tagName);
     return found?.color || '#6b7280';
-  };
-
-  // Left border style based on priority
-  const borderStyle = issue.priority && PRIORITY_BORDER[issue.priority]
-    ? { borderLeft: `4px solid ${PRIORITY_BORDER[issue.priority]}` }
-    : {};
-
-  // Category badges component
-  const CategoryBadges = () => {
-    const categories = issue.category || [];
-    if (categories.length === 0) return null;
-    return (
-      <div className="flex items-center gap-1 flex-wrap mb-1">
-        {categories.map((cat) => {
-          const color = CATEGORY_COLORS[cat.toUpperCase()] || '#6b7280';
-          return (
-            <span
-              key={cat}
-              className="rounded px-1.5 py-0 text-[9px] font-bold uppercase tracking-wider"
-              style={{
-                backgroundColor: `${color}20`,
-                color: color,
-              }}
-            >
-              {cat}
-            </span>
-          );
-        })}
-      </div>
-    );
   };
 
   // ── Compact: single line, minimal info ──
@@ -106,25 +78,31 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
         role="article"
         aria-roledescription="draggable item"
         aria-label={`${issue.display_id}: ${issue.title}`}
-        style={{ ...provided.draggableProps.style, ...borderStyle }}
+        style={provided.draggableProps.style}
         className={cn(
           'group cursor-pointer rounded-md border border-gray-200 dark:border-border bg-white dark:bg-surface px-2.5 py-1.5 will-change-transform transition-all duration-200 ease-out shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
+          isDone && 'opacity-60 hover:opacity-90',
           isDragging && 'shadow-xl shadow-black/20 dark:shadow-black/40 border-accent/30 rotate-1 scale-[1.02]',
         )}
       >
-        <CategoryBadges />
         <div className="flex items-center gap-2">
-          {PriorityConfig && (
+          {isDone ? (
+            <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
+          ) : PriorityConfig ? (
             <PriorityConfig.icon size={12} className={PriorityConfig.color} />
-          )}
-          <TypeIcon size={12} className={typeColors[issue.type]} />
-          <span className="text-[10px] font-mono text-muted shrink-0">{issue.display_id}</span>
-          <span className="text-xs text-primary font-medium truncate flex-1">{issue.title}</span>
+          ) : null}
+          <span className="text-[10px] font-mono text-gray-400 dark:text-muted shrink-0">{issue.display_id}</span>
+          <span className={cn(
+            'text-xs font-medium truncate flex-1',
+            isDone ? 'line-through text-gray-500 dark:text-muted' : 'text-gray-900 dark:text-primary',
+          )}>{issue.title}</span>
           {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
           {issue.assignee_ids.length > 0 && (
-            <div className="h-4 w-4 rounded-full bg-surface-hover flex items-center justify-center text-[7px] font-mono text-secondary shrink-0">
-              {issue.assignee_ids[0].slice(0, 2).toUpperCase()}
-            </div>
+            <img
+              src={`https://api.dicebear.com/9.x/initials/svg?seed=${issue.assignee_ids[0]}&backgroundColor=f0f0f0&textColor=666666`}
+              className="w-4 h-4 rounded-full ring-1 ring-white dark:ring-surface shrink-0"
+              alt="Assignee"
+            />
           )}
         </div>
       </div>
@@ -142,58 +120,45 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
         role="article"
         aria-roledescription="draggable item"
         aria-label={`${issue.display_id}: ${issue.title}`}
-        style={{ ...provided.draggableProps.style, ...borderStyle }}
+        style={provided.draggableProps.style}
         className={cn(
           'group cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-4 will-change-transform transition-all duration-200 ease-out shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
+          isDone && 'opacity-60 hover:opacity-90',
           isDragging && 'shadow-xl shadow-black/20 dark:shadow-black/40 border-accent/30 rotate-1 scale-[1.02]',
         )}
       >
-        {/* Category badges */}
-        <CategoryBadges />
-
-        {/* Header: ID + Priority + Type */}
-        <div className="flex items-center justify-between mb-2">
+        {/* Header: ID + menu */}
+        <div className="flex justify-between items-start mb-2">
           <div className="flex items-center gap-2">
-            <TypeIcon size={14} className={typeColors[issue.type]} />
-            <span className="text-[11px] font-mono text-secondary">{issue.display_id}</span>
+            <span className="text-xs font-mono text-gray-400 dark:text-muted">{issue.display_id}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            {PriorityConfig && (
-              <span className="flex items-center gap-1 text-[10px]" style={{ color: PriorityConfig.color === 'text-red-500' ? '#ef4444' : PriorityConfig.color === 'text-orange-400' ? '#f97316' : PriorityConfig.color === 'text-yellow-400' ? '#eab308' : '#6b7280' }}>
-                <PriorityConfig.icon size={12} className={PriorityConfig.color} />
-                {PriorityConfig.label}
-              </span>
-            )}
+          <div className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+            <MoreHorizontal className="w-3.5 h-3.5" />
           </div>
         </div>
 
         {/* Title */}
-        <p className="text-sm font-medium text-primary leading-snug mb-1.5">
+        <h3 className={cn(
+          'text-sm font-medium leading-snug tracking-tight mb-2',
+          isDone ? 'line-through text-gray-500 dark:text-muted' : 'text-gray-900 dark:text-primary',
+        )}>
           {issue.title}
-        </p>
+        </h3>
 
         {/* Description preview */}
-        {issue.description && (
-          <p className="text-xs text-muted leading-relaxed line-clamp-2 mb-2.5">
+        {issue.description && !isDone && (
+          <p className="text-xs text-gray-500 dark:text-muted leading-relaxed line-clamp-2 mb-3">
             {issue.description}
           </p>
         )}
 
         {/* Tags row */}
         {issue.tags.length > 0 && (
-          <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+          <div className="flex items-center gap-1.5 flex-wrap mb-3">
             {issue.tags.map((tag) => {
-              const color = getTagColor(tag);
+              const style = getTagStyle(getTagColor(tag));
               return (
-                <span
-                  key={tag}
-                  className="rounded-full px-2 py-0.5 text-[10px] font-medium border"
-                  style={{
-                    backgroundColor: `${color}20`,
-                    borderColor: `${color}40`,
-                    color: color,
-                  }}
-                >
+                <span key={tag} className={cn('inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border', style.bg, style.text, style.border)}>
                   {tag}
                 </span>
               );
@@ -201,40 +166,51 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
           </div>
         )}
 
-        {/* Footer: Assignees + Indicators */}
-        <div className="flex items-center justify-between pt-2 border-t border-border/50">
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-border/50">
           <div className="flex items-center gap-2">
             {issue.assignee_ids.length > 0 && (
               <div className="flex -space-x-1.5">
                 {issue.assignee_ids.slice(0, 3).map((id) => (
-                  <div
+                  <img
                     key={id}
-                    className="h-6 w-6 rounded-full bg-surface-hover border border-surface flex items-center justify-center text-[8px] font-mono text-secondary"
-                  >
-                    {id.slice(0, 2).toUpperCase()}
-                  </div>
+                    src={`https://api.dicebear.com/9.x/initials/svg?seed=${id}&backgroundColor=f0f0f0&textColor=666666`}
+                    className="w-6 h-6 rounded-full ring-1 ring-white dark:ring-surface"
+                    alt="Assignee"
+                  />
                 ))}
-                {issue.assignee_ids.length > 3 && (
-                  <div className="h-6 w-6 rounded-full bg-surface-hover border border-surface flex items-center justify-center text-[8px] font-mono text-muted">
-                    +{issue.assignee_ids.length - 3}
-                  </div>
-                )}
               </div>
             )}
+            {issue.due_date && (() => {
+              const due = new Date(issue.due_date);
+              const now = new Date();
+              const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+              const isOverdue = diffDays < 0;
+              const isSoon = diffDays >= 0 && diffDays <= 3;
+              return (
+                <span className={cn(
+                  'flex items-center gap-0.5 text-[10px]',
+                  isOverdue ? 'text-red-500' : isSoon ? 'text-amber-500' : 'text-gray-400 dark:text-muted',
+                )}>
+                  <Clock size={10} />
+                  {due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                </span>
+              );
+            })()}
           </div>
           <div className="flex items-center gap-2">
             {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
             {issue.comments && issue.comments.length > 0 && (
-              <span className="flex items-center gap-0.5 text-[10px] text-muted">
+              <span className="flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-muted">
                 <MessageSquare size={10} />
                 {issue.comments.length}
               </span>
             )}
-            {issue.tldrs && issue.tldrs.length > 0 && (
-              <span className="flex items-center gap-0.5 text-[10px] text-accent font-mono">
-                <Bot size={10} /> TLDR
-              </span>
-            )}
+            {isDone ? (
+              <CheckCircle2 size={14} className="text-emerald-500" />
+            ) : PriorityConfig ? (
+              <PriorityConfig.icon size={14} className={PriorityConfig.color} />
+            ) : null}
           </div>
         </div>
       </div>
@@ -251,9 +227,10 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
       role="article"
       aria-roledescription="draggable item"
       aria-label={`${issue.display_id}: ${issue.title}`}
-      style={{ ...provided.draggableProps.style, ...borderStyle }}
+      style={provided.draggableProps.style}
       className={cn(
-        'group relative cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-4 will-change-transform transition-all duration-200 ease-out shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
+        'group cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-4 will-change-transform transition-all duration-200 ease-out shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
+        isDone && 'opacity-75 hover:opacity-100',
         isDragging && 'shadow-xl shadow-black/20 dark:shadow-black/40 border-accent/30 rotate-1 scale-[1.02]',
       )}
     >
@@ -271,47 +248,28 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
       </div>
 
       {/* Title */}
-      <h3 className="text-sm font-medium text-gray-900 dark:text-primary mb-3 leading-snug tracking-tight line-clamp-2">
+      <h3 className={cn(
+        'text-sm font-medium mb-3 leading-snug tracking-tight line-clamp-2',
+        isDone ? 'line-through text-gray-500 dark:text-muted' : 'text-gray-900 dark:text-primary',
+      )}>
         {issue.title}
       </h3>
 
       {/* Bottom row: tags left, icons + avatar right */}
       <div className="flex items-center justify-between">
-        {/* Left: category/tag badges */}
-        <div className="flex items-center gap-2 min-w-0">
-          {(issue.category || []).map((cat) => {
-            const color = CATEGORY_COLORS[cat.toUpperCase()] || '#6b7280';
-            return (
-              <span
-                key={cat}
-                className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border"
-                style={{
-                  backgroundColor: `${color}10`,
-                  borderColor: `${color}30`,
-                  color: color,
-                }}
-              >
-                {cat}
-              </span>
-            );
-          })}
+        {/* Left: tag badges */}
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           {issue.tags.slice(0, 2).map((tag) => {
-            const color = getTagColor(tag);
+            const style = getTagStyle(getTagColor(tag));
             return (
               <span
                 key={tag}
-                className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border"
-                style={{
-                  backgroundColor: `${color}10`,
-                  borderColor: `${color}30`,
-                  color: color,
-                }}
+                className={cn('inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border', style.bg, style.text, style.border)}
               >
                 {tag}
               </span>
             );
           })}
-          {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
           {issue.due_date && (() => {
             const due = new Date(issue.due_date);
             const now = new Date();
@@ -321,7 +279,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
             return (
               <span className={cn(
                 'flex items-center gap-0.5 text-[10px]',
-                isOverdue ? 'text-red-400' : isSoon ? 'text-amber-400' : 'text-gray-400 dark:text-muted',
+                isOverdue ? 'text-red-500' : isSoon ? 'text-amber-500' : 'text-gray-400 dark:text-muted',
               )}>
                 <Clock size={10} />
                 {due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
@@ -330,22 +288,19 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
           })()}
         </div>
 
-        {/* Right: type icon + priority + avatar */}
+        {/* Right: priority/done icon + avatar */}
         <div className="flex items-center gap-2 shrink-0">
-          <TypeIcon size={14} className={typeColors[issue.type]} />
-          {PriorityConfig && (
-            <PriorityConfig.icon size={14} className={PriorityConfig.color} />
-          )}
-          {issue.assignee_ids.length > 0 ? (
+          {isDone ? (
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+          ) : PriorityConfig ? (
+            <PriorityConfig.icon className={cn('w-3.5 h-3.5', PriorityConfig.color)} />
+          ) : null}
+          {issue.assignee_ids.length > 0 && (
             <img
               src={`https://api.dicebear.com/9.x/initials/svg?seed=${issue.assignee_ids[0]}&backgroundColor=f0f0f0&textColor=666666`}
               className="w-5 h-5 rounded-full ring-1 ring-white dark:ring-surface"
               alt="Assignee"
             />
-          ) : (
-            <div className="w-5 h-5 rounded-full bg-gray-100 dark:bg-surface-hover flex items-center justify-center text-[10px] text-gray-500 dark:text-muted font-medium ring-1 ring-white dark:ring-surface">
-              ?
-            </div>
           )}
         </div>
       </div>

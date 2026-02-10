@@ -108,12 +108,12 @@ export function KanbanColumn({
           <button
             onClick={() => onCreateIssue?.(status.key)}
             className={cn(
-              'flex w-full items-center justify-center rounded-lg border border-dashed border-border text-xs text-secondary hover:border-accent hover:text-accent transition-colors',
-              density === 'compact' ? 'h-16' : density === 'spacious' ? 'h-28' : 'h-24',
+              'w-full border border-dashed border-gray-200 dark:border-border rounded-lg flex flex-col items-center justify-center text-gray-400 dark:text-secondary hover:text-gray-600 dark:hover:text-primary hover:border-gray-300 dark:hover:border-accent hover:bg-white dark:hover:bg-surface transition-all group/empty',
+              density === 'compact' ? 'h-20' : 'h-32',
             )}
           >
-            <Plus size={14} className="mr-1" />
-            {t('kanban.addIssue')}
+            <Plus size={20} className="mb-2 text-gray-300 dark:text-muted group-hover/empty:text-gray-500 dark:group-hover/empty:text-secondary transition-colors" />
+            <span className="text-sm font-medium">{t('kanban.addIssue')}</span>
           </button>
         )}
       </div>
