@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/ui';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { GitHubPrBadge } from '@/components/github/GitHubPrBadge';
+import { CopyableId } from '@/components/shared/CopyableId';
 import type { Issue, IssuePriority, IssueType, ProjectTag, GitHubPrLink } from '@/lib/types';
 
 /** Strip HTML tags and collapse whitespace for clean text preview */
@@ -168,7 +169,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
           ) : PriorityConfig ? (
             <PriorityConfig.icon size={12} className={PriorityConfig.color} />
           ) : null}
-          <span className="text-[10px] font-mono text-gray-400 dark:text-muted shrink-0">{issue.display_id}</span>
+          <CopyableId id={issue.display_id} className="text-[10px] text-gray-400 dark:text-muted shrink-0" iconSize={8} />
           <span className={cn(
             'text-xs font-medium truncate flex-1',
             isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
@@ -217,7 +218,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         {/* Header: ID + menu */}
         {SelectCheckbox}
         <div className="flex justify-between items-start mb-2">
-          <span className="text-xs font-mono text-gray-400 dark:text-muted group-hover:text-gray-500 transition-colors">{issue.display_id}</span>
+          <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
           <div className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
             <MoreHorizontal className="w-3.5 h-3.5" />
           </div>
@@ -316,9 +317,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
       {SelectCheckbox}
       {/* Top row: ID + three-dot menu */}
       <div className="flex justify-between items-start mb-2">
-        <span className="text-xs font-mono text-gray-400 dark:text-muted group-hover:text-gray-500 dark:group-hover:text-secondary transition-colors">
-          {issue.display_id}
-        </span>
+        <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
         <div
           className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 dark:text-muted opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={(e) => e.stopPropagation()}

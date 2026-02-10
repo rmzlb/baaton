@@ -5,6 +5,7 @@ import {
 import { cn } from '@/lib/utils';
 import { timeAgo } from '@/lib/utils';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
+import { CopyableId } from '@/components/shared/CopyableId';
 import type { Issue, IssuePriority, IssueType, ProjectStatus, ProjectTag } from '@/lib/types';
 
 const typeConfig: Record<IssueType, { icon: typeof Bug; color: string; bg: string; label: string }> = {
@@ -81,7 +82,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
         </span>
 
         {/* ID — compact, no subtitle */}
-        <span className="font-mono text-gray-400 dark:text-secondary text-[11px] truncate">{issue.display_id}</span>
+        <CopyableId id={issue.display_id} className="text-gray-400 dark:text-secondary text-[11px] truncate" iconSize={9} />
 
         {/* Title — truncated, takes remaining space */}
         <span className={cn('font-medium truncate text-[12px] leading-tight', isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary')}>
@@ -174,7 +175,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
       >
         {/* Top row: ID + status + priority */}
         <div className="flex items-center gap-2">
-          <span className="font-mono text-secondary text-[11px]">{issue.display_id}</span>
+          <CopyableId id={issue.display_id} className="text-secondary text-[11px]" iconSize={9} />
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: status?.color }} />
             <span className="text-[10px] text-secondary">{status?.label || issue.status}</span>

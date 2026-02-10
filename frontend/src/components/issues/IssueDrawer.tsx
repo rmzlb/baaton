@@ -22,6 +22,7 @@ import { GitHubSection } from '@/components/github/GitHubSection';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
 import { IssueDrawerSkeleton } from '@/components/shared/Skeleton';
+import { CopyableId } from '@/components/shared/CopyableId';
 import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment, Milestone } from '@/lib/types';
 
 /* ── Constants ─────────────────────────────────── */
@@ -602,7 +603,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         <div className="flex items-center justify-between border-b border-border px-4 py-2.5 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <TypeIcon size={14} className={typeColor} />
-            <span className="text-sm font-mono font-semibold text-accent">{issue.display_id}</span>
+            <CopyableId id={issue.display_id} className="text-sm font-semibold text-accent" iconSize={12} />
             <span className="text-[10px] text-muted shrink-0">· {timeAgo(issue.created_at)}</span>
             {(issue.created_by_name || issue.created_by_id) && (() => {
               const creatorName = resolveUserName(issue.created_by_id, issue.created_by_name);
