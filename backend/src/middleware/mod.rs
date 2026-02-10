@@ -98,6 +98,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         || path == "/health"
         || path.contains("/webhooks/")
         || path.starts_with("/api/v1/invite/")
+        || path.starts_with("/invite/")
     {
         return next.run(req).await;
     }

@@ -118,6 +118,15 @@ function buildAISDKTools(
     const params = decl.parameters || { type: 'OBJECT', properties: {} };
     const schema = convertGeminiPropertyToJsonSchema(params);
 
+    // Gemini API requires root schema to be { type: "object" } with properties
+    // Ensure the root always has type "object" and properties defined
+    if (schema.type !== 'object') {
+      schema.type = 'object';
+    }
+    if (!schema.properties) {
+      schema.properties = {};
+    }
+
     tools[decl.name] = {
       description: decl.description,
       parameters: jsonSchema(schema),

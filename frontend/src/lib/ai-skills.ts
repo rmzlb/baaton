@@ -61,6 +61,7 @@ const ALL_SKILL_DECLARATIONS = [
             },
             limit: { type: 'NUMBER', description: 'Max results (default 20)' },
           },
+          required: [],
         },
       },
       {
@@ -186,6 +187,7 @@ const ALL_SKILL_DECLARATIONS = [
           properties: {
             project_id: { type: 'STRING', description: 'Project to analyze (or all if omitted)' },
           },
+          required: [],
         },
       },
       {
@@ -197,6 +199,7 @@ const ALL_SKILL_DECLARATIONS = [
           properties: {
             project_id: { type: 'STRING', description: 'Project ID (omit for all projects)' },
           },
+          required: [],
         },
       },
       {
@@ -209,6 +212,7 @@ const ALL_SKILL_DECLARATIONS = [
             project_id: { type: 'STRING', description: 'Project ID (omit for all projects)' },
             days: { type: 'NUMBER', description: 'Number of days to look back (default 7)' },
           },
+          required: [],
         },
       },
       {
@@ -220,6 +224,7 @@ const ALL_SKILL_DECLARATIONS = [
           properties: {
             project_id: { type: 'STRING', description: 'Project ID (omit for all projects)' },
           },
+          required: [],
         },
       },
       {
