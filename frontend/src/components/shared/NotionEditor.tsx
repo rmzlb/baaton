@@ -261,6 +261,103 @@ function BubbleToolbar() {
 }
 
 // ─── Markdown → Tiptap JSON converter ───────────
+/**
+ * Convert HTML to Tiptap JSONContent, handling large data: URIs in <img> tags.
+ *
+ * Problem: generateJSON() and editor.commands.setContent() both use the browser's
+ * DOMParser which can fail on very large base64 data URIs (>50KB) in img src attrs.
+ *
+ * Solution: Extract <img> tags before parsing, replace with placeholders,
+ * run generateJSON on the cleaned HTML, then re-inject image nodes.
+ */
+function htmlToTiptapJSON(html: string, exts: any[]): JSONContent {
+  // Extract all <img> tags with their src (may be huge base64)
+  const imgRegex = /<img\s+[^>]*src="([^"]*)"[^>]*\/?>/gi;
+  const images: { full: string; src: string; alt: string }[] = [];
+  let cleanHtml = html;
+
+  let match;
+  while ((match = imgRegex.exec(html)) !== null) {
+    const altMatch = match[0].match(/alt="([^"]*)"/);
+    images.push({
+      full: match[0],
+      src: match[1],
+      alt: altMatch ? altMatch[1] : '',
+    });
+  }
+
+  // Replace each img tag with a unique placeholder <p>
+  images.forEach((img, i) => {
+    cleanHtml = cleanHtml.replace(img.full, `<p data-img-placeholder="${i}"></p>`);
+  });
+
+  // Parse the cleaned HTML (no huge data: URIs to choke on)
+  let json: JSONContent;
+  try {
+    json = generateJSON(cleanHtml, exts) as JSONContent;
+  } catch {
+    // Fallback: return minimal doc
+    return { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: html.replace(/<[^>]+>/g, '') }] }] };
+  }
+
+  if (!images.length) return json;
+
+  // Walk the JSON tree and replace placeholder paragraphs with image nodes
+  function walk(node: JSONContent): JSONContent {
+    if (node.type === 'paragraph' && node.attrs?.['data-img-placeholder'] != null) {
+      const idx = Number(node.attrs['data-img-placeholder']);
+      const img = images[idx];
+      if (img) {
+        return { type: 'image', attrs: { src: img.src, alt: img.alt, title: null } };
+      }
+    }
+    // Check for text content that might contain placeholder marker
+    if (node.content) {
+      node.content = node.content.map(walk);
+    }
+    return node;
+  }
+
+  // Also check for placeholders that ended up as text in empty paragraphs
+  // (generateJSON may not preserve data- attrs on <p>)
+  function walkText(node: JSONContent): JSONContent {
+    if (node.content) {
+      const newContent: JSONContent[] = [];
+      for (const child of node.content) {
+        newContent.push(walkText(child));
+      }
+      node.content = newContent;
+    }
+    return node;
+  }
+
+  json = walk(json);
+
+  // If data-attr approach didn't work (generateJSON strips unknown attrs),
+  // scan for empty paragraphs near where images should be and inject them
+  if (images.length > 0 && json.content) {
+    // Count image nodes already injected
+    let injected = 0;
+    function countImages(n: JSONContent) {
+      if (n.type === 'image') injected++;
+      n.content?.forEach(countImages);
+    }
+    countImages(json);
+
+    // If not all images were injected, append them at the end
+    if (injected < images.length) {
+      for (let i = injected; i < images.length; i++) {
+        json.content.push({
+          type: 'image',
+          attrs: { src: images[i].src, alt: images[i].alt, title: null },
+        });
+      }
+    }
+  }
+
+  return json;
+}
+
 function markdownToTiptap(md: string): JSONContent {
   const lines = md.split('\n');
   const content: JSONContent[] = [];
@@ -360,29 +457,21 @@ export function NotionEditor({
   );
 
   // Parse initial content — memoize to avoid re-parsing
-  // For HTML with images (data: URIs), we defer to editor.commands.setContent
-  // because generateJSON doesn't handle large base64 src attributes well
-  const isHtmlContent = typeof initialContent === 'string' && initialContent.trim().startsWith('<');
   const parsedContent = useMemo((): JSONContent | undefined => {
     if (typeof initialContent === 'string' && initialContent.trim()) {
-      if (isHtmlContent) {
-        // Will be set via editor.commands.setContent in onCreate
-        return undefined;
+      if (initialContent.trim().startsWith('<')) {
+        return htmlToTiptapJSON(initialContent, extensions);
       }
       return markdownToTiptap(initialContent);
     }
     return initialContent as JSONContent | undefined;
-  }, [initialContent, extensions, isHtmlContent]);
+  }, [initialContent, extensions]);
 
   const handleCreate = useCallback(
     ({ editor }: { editor: EditorInstance }) => {
       editorRef.current = editor;
-      // For HTML content, use editor's built-in parser (handles data: URIs correctly)
-      if (isHtmlContent && typeof initialContent === 'string') {
-        editor.commands.setContent(initialContent);
-      }
     },
-    [isHtmlContent, initialContent],
+    [],
   );
 
   const handleUpdate = useCallback(
