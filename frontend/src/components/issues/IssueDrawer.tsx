@@ -181,6 +181,43 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     },
   });
 
+  // ── Unsaved changes guard (must be before useEffects that reference guardedClose) ──
+  const hasUnsavedDescription = editingDescription && descriptionDraft !== (issue?.description || '');
+
+  const guardedClose = useCallback(() => {
+    if (hasUnsavedDescription) {
+      setShowUnsavedModal(true);
+    } else {
+      onClose();
+    }
+  }, [hasUnsavedDescription, onClose]);
+
+  const handleDiscardAndClose = useCallback(() => {
+    setEditingDescription(false);
+    setDescriptionDraft('');
+    setShowUnsavedModal(false);
+    onClose();
+  }, [onClose]);
+
+  const handleSaveAndClose = useCallback(() => {
+    if (descriptionDraft !== (issue?.description || '')) {
+      updateMutation.mutate({ field: 'description', value: descriptionDraft });
+    }
+    setEditingDescription(false);
+    setShowUnsavedModal(false);
+    onClose();
+  }, [descriptionDraft, issue?.description, updateMutation, onClose]);
+
+  // Browser beforeunload warning
+  useEffect(() => {
+    if (!hasUnsavedDescription) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedDescription]);
+
   // ── Focus trap: focus first focusable element when drawer opens ──
   useEffect(() => {
     if (panelRef.current) {
@@ -271,42 +308,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     };
   }, [descriptionDraft, editingDescription, issue?.description, updateMutation]);
 
-  // ── Unsaved changes guard ──
-  const hasUnsavedDescription = editingDescription && descriptionDraft !== (issue?.description || '');
-
-  // Browser beforeunload warning
-  useEffect(() => {
-    if (!hasUnsavedDescription) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [hasUnsavedDescription]);
-
-  const guardedClose = useCallback(() => {
-    if (hasUnsavedDescription) {
-      setShowUnsavedModal(true);
-    } else {
-      onClose();
-    }
-  }, [hasUnsavedDescription, onClose]);
-
-  const handleDiscardAndClose = useCallback(() => {
-    setEditingDescription(false);
-    setDescriptionDraft('');
-    setShowUnsavedModal(false);
-    onClose();
-  }, [onClose]);
-
-  const handleSaveAndClose = useCallback(() => {
-    if (descriptionDraft !== (issue?.description || '')) {
-      updateMutation.mutate({ field: 'description', value: descriptionDraft });
-    }
-    setEditingDescription(false);
-    setShowUnsavedModal(false);
-    onClose();
-  }, [descriptionDraft, issue?.description, updateMutation, onClose]);
+  // (guardedClose moved above useEffects to avoid TDZ in minified bundle)
 
   const handleFieldUpdate = useCallback(
     (field: string, value: unknown) => {
