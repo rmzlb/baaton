@@ -253,7 +253,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
       aria-label={`${issue.display_id}: ${issue.title}`}
       style={{ ...provided.draggableProps.style, ...borderStyle }}
       className={cn(
-        'cursor-pointer rounded-lg border border-border bg-surface p-3 will-change-transform transition-[box-shadow,border-color,transform] duration-200 ease-out hover:border-border min-h-[44px]',
+        'group cursor-pointer rounded-lg border border-border bg-surface p-4 will-change-transform transition-all duration-200 ease-out shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border min-h-[44px]',
         isDragging && 'shadow-xl shadow-black/20 dark:shadow-black/40 border-accent/30 rotate-1 scale-[1.02]',
       )}
     >
@@ -261,22 +261,24 @@ export function KanbanCard({ issue, provided, isDragging, onClick, projectTags =
       <CategoryBadges />
 
       {/* Top row: ID + Priority */}
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] font-mono text-secondary">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-mono text-muted group-hover:text-secondary transition-colors">
           {issue.display_id}
         </span>
-        {PriorityConfig && (
-          <PriorityConfig.icon
-            size={14}
-            className={PriorityConfig.color}
-          />
-        )}
+        <div className="flex items-center gap-1.5">
+          {PriorityConfig && (
+            <PriorityConfig.icon
+              size={14}
+              className={PriorityConfig.color}
+            />
+          )}
+        </div>
       </div>
 
       {/* Title */}
-      <p className="text-sm font-medium text-primary leading-snug line-clamp-2">
+      <h3 className="text-sm font-medium text-primary leading-snug tracking-tight line-clamp-2 mb-3">
         {issue.title}
-      </p>
+      </h3>
 
       {/* Bottom row: Type + Tags + Assignee */}
       <div className="mt-2 flex items-center gap-2 flex-wrap">

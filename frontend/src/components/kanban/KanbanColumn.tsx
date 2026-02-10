@@ -17,9 +17,9 @@ interface KanbanColumnProps {
 }
 
 const COLUMN_WIDTHS = {
-  compact: 'w-[75vw] sm:w-60 min-w-[240px]',
-  default: 'w-[80vw] sm:w-72 min-w-[280px]',
-  spacious: 'w-[85vw] sm:w-80 min-w-[320px]',
+  compact: 'w-[75vw] sm:w-64 min-w-[256px]',
+  default: 'w-[80vw] sm:w-80 min-w-[320px]',
+  spacious: 'w-[85vw] sm:w-[340px] min-w-[340px]',
 } as const;
 
 const CARD_GAPS = {
