@@ -126,6 +126,20 @@ function buildAISDKTools(
     if (!schema.properties) {
       schema.properties = {};
     }
+    // Gemini API is strict about OBJECT schemas:
+    // - Must have type "object" with properties  
+    // - Remove empty required arrays (Gemini rejects them)
+    // - Set additionalProperties to prevent SDK from treating as "empty" schema
+    if (Array.isArray(schema.required) && schema.required.length === 0) {
+      delete schema.required;
+    }
+    // CRITICAL: The @ai-sdk/google provider's isEmptyObjectSchema() returns true
+    // when properties is empty AND no additionalProperties. When true at root,
+    // it returns undefined → Gemini gets no parameters → "should be of type OBJECT" error.
+    // Setting additionalProperties to true prevents this.
+    if (!schema.additionalProperties) {
+      schema.additionalProperties = true;
+    }
 
     tools[decl.name] = {
       description: decl.description,
@@ -412,7 +426,11 @@ export async function generateAIResponse(
     // maxSteps = 5 → agentic loop (same as our old 5-round loop)
     // The SDK handles: tool call → execute → feed result → get next response
     const result = await generateText({
-      model: google('gemini-2.0-flash'),
+      model: google('gemini-2.0-flash', {
+        // Disable structuredOutputs to avoid strict schema validation issues
+        // with Gemini API's OBJECT type requirements
+        structuredOutputs: false,
+      }),
       system: systemPrompt,
       messages,
       tools,
