@@ -3,6 +3,7 @@ import {
   CheckCircle2, XCircle, Trash2, X,
   ArrowRight, Flame, ArrowUp, ArrowDown, Minus,
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useApi } from '@/hooks/useApi';
@@ -31,17 +32,37 @@ export function BulkActionBar({
 }: BulkActionBarProps) {
   const { t } = useTranslation();
   const apiClient = useApi();
+  const queryClient = useQueryClient();
   const updateIssueOptimistic = useIssuesStore((s) => s.updateIssueOptimistic);
   const removeIssue = useIssuesStore((s) => s.removeIssue);
   const addNotification = useNotificationStore((s) => s.addNotification);
+
+  // Optimistically update TanStack Query cache
+  const updateQueryCache = useCallback((issueId: string, patch: Partial<Issue>) => {
+    for (const key of ['all-issues', 'issues']) {
+      queryClient.setQueriesData({ queryKey: [key] }, (old: Issue[] | undefined) => {
+        if (!old) return old;
+        return old.map((i) => i.id === issueId ? { ...i, ...patch, updated_at: new Date().toISOString() } : i);
+      });
+    }
+  }, [queryClient]);
+
+  const removeFromQueryCache = useCallback((issueId: string) => {
+    for (const key of ['all-issues', 'issues']) {
+      queryClient.setQueriesData({ queryKey: [key] }, (old: Issue[] | undefined) => {
+        if (!old) return old;
+        return old.filter((i) => i.id !== issueId);
+      });
+    }
+  }, [queryClient]);
 
   const count = selectedIds.size;
   if (count === 0) return null;
 
   const bulkUpdateStatus = async (status: IssueStatus) => {
     const ids = Array.from(selectedIds);
-    // Optimistic
-    ids.forEach((id) => updateIssueOptimistic(id, { status }));
+    // Optimistic: store + query cache
+    ids.forEach((id) => { updateIssueOptimistic(id, { status }); updateQueryCache(id, { status }); });
     onClear();
     // API calls in parallel
     const results = await Promise.allSettled(
@@ -58,7 +79,7 @@ export function BulkActionBar({
 
   const bulkUpdatePriority = async (priority: IssuePriority | null) => {
     const ids = Array.from(selectedIds);
-    ids.forEach((id) => updateIssueOptimistic(id, { priority: priority as any }));
+    ids.forEach((id) => { updateIssueOptimistic(id, { priority: priority as any }); updateQueryCache(id, { priority: priority as any }); });
     onClear();
     const results = await Promise.allSettled(
       ids.map((id) => apiClient.issues.update(id, { priority })),
@@ -74,7 +95,7 @@ export function BulkActionBar({
   const bulkDelete = async () => {
     if (!confirm(`Delete ${count} issue${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
     const ids = Array.from(selectedIds);
-    ids.forEach((id) => removeIssue(id));
+    ids.forEach((id) => { removeIssue(id); removeFromQueryCache(id); });
     onClear();
     const results = await Promise.allSettled(
       ids.map((id) => apiClient.issues.delete(id)),

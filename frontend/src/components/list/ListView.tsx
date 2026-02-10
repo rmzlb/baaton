@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { IssueContextMenu, DeleteConfirmModal, useIssueContextMenu } from '@/components/shared/IssueContextMenu';
 import { BulkActionBar, useBulkKeyboardShortcuts } from '@/components/shared/BulkActionBar';
 import { useSelection } from '@/hooks/useSelection';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useApi } from '@/hooks/useApi';
 import { useIssuesStore } from '@/stores/issues';
@@ -63,9 +64,28 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
   } = useIssueContextMenu(statuses, onIssueClick);
   const { selectedIds, toggle: toggleSelect, selectAll, deselectAll } = useSelection();
   const apiClient = useApi();
+  const queryClient = useQueryClient();
   const updateIssueOptimistic = useIssuesStore((s) => s.updateIssueOptimistic);
   const removeIssue = useIssuesStore((s) => s.removeIssue);
   const addNotification = useNotificationStore((s) => s.addNotification);
+
+  const updateQueryCache = useCallback((issueId: string, patch: Partial<Issue>) => {
+    for (const key of ['all-issues', 'issues']) {
+      queryClient.setQueriesData({ queryKey: [key] }, (old: Issue[] | undefined) => {
+        if (!old) return old;
+        return old.map((i) => i.id === issueId ? { ...i, ...patch, updated_at: new Date().toISOString() } : i);
+      });
+    }
+  }, [queryClient]);
+
+  const removeFromQueryCache = useCallback((issueId: string) => {
+    for (const key of ['all-issues', 'issues']) {
+      queryClient.setQueriesData({ queryKey: [key] }, (old: Issue[] | undefined) => {
+        if (!old) return old;
+        return old.filter((i) => i.id !== issueId);
+      });
+    }
+  }, [queryClient]);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('status');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -219,28 +239,28 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
   // Bulk actions via keyboard
   const bulkMarkDone = useCallback(async () => {
     const ids = Array.from(selectedIds);
-    ids.forEach((id) => updateIssueOptimistic(id, { status: 'done' as IssueStatus }));
+    ids.forEach((id) => { updateIssueOptimistic(id, { status: 'done' as IssueStatus }); updateQueryCache(id, { status: 'done' }); });
     deselectAll();
     await Promise.allSettled(ids.map((id) => apiClient.issues.update(id, { status: 'done' as IssueStatus })));
     addNotification({ type: 'success', title: `${ids.length} → Done` });
-  }, [selectedIds, updateIssueOptimistic, deselectAll, apiClient, addNotification]);
+  }, [selectedIds, updateIssueOptimistic, updateQueryCache, deselectAll, apiClient, addNotification]);
 
   const bulkMarkCancelled = useCallback(async () => {
     const ids = Array.from(selectedIds);
-    ids.forEach((id) => updateIssueOptimistic(id, { status: 'cancelled' as IssueStatus }));
+    ids.forEach((id) => { updateIssueOptimistic(id, { status: 'cancelled' as IssueStatus }); updateQueryCache(id, { status: 'cancelled' }); });
     deselectAll();
     await Promise.allSettled(ids.map((id) => apiClient.issues.update(id, { status: 'cancelled' as IssueStatus })));
     addNotification({ type: 'success', title: `${ids.length} → Cancelled` });
-  }, [selectedIds, updateIssueOptimistic, deselectAll, apiClient, addNotification]);
+  }, [selectedIds, updateIssueOptimistic, updateQueryCache, deselectAll, apiClient, addNotification]);
 
   const bulkDeleteKb = useCallback(async () => {
     if (!confirm(`Delete ${selectedIds.size} issue(s)? This cannot be undone.`)) return;
     const ids = Array.from(selectedIds);
-    ids.forEach((id) => removeIssue(id));
+    ids.forEach((id) => { removeIssue(id); removeFromQueryCache(id); });
     deselectAll();
     await Promise.allSettled(ids.map((id) => apiClient.issues.delete(id)));
     addNotification({ type: 'success', title: `${ids.length} deleted` });
-  }, [selectedIds, removeIssue, deselectAll, apiClient, addNotification]);
+  }, [selectedIds, removeIssue, removeFromQueryCache, deselectAll, apiClient, addNotification]);
 
   useBulkKeyboardShortcuts(selectedIds, statuses, bulkMarkDone, bulkMarkCancelled, bulkDeleteKb, deselectAll);
 
