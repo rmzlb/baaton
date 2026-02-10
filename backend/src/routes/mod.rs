@@ -1,6 +1,5 @@
 use axum::{Router, routing::{get, post, put, patch, delete}, middleware as axum_mw};
 use sqlx::PgPool;
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer, key_extractor::SmartIpKeyExtractor};
 
 use crate::middleware::auth_middleware;
 
@@ -17,42 +16,8 @@ pub mod activity;
 pub mod github;
 
 pub fn api_router(pool: PgPool) -> Router {
-    // ── Rate limiters ──
-
-    // Public endpoints: 5 requests per minute per IP (1 token every 12 seconds)
-    let mut public_builder = GovernorConfigBuilder::default()
-        .key_extractor(SmartIpKeyExtractor);
-    public_builder.per_second(12).burst_size(5);
-    let public_rate_limit = GovernorLayer::new(public_builder.finish().unwrap());
-
-    // AI chat endpoint: 10 requests per minute per IP (1 token every 6 seconds)
-    let mut ai_builder = GovernorConfigBuilder::default()
-        .key_extractor(SmartIpKeyExtractor);
-    ai_builder.per_second(6).burst_size(10);
-    let ai_rate_limit = GovernorLayer::new(ai_builder.finish().unwrap());
-
-    // AI key endpoint: 5 requests per minute per IP
-    let mut ai_key_builder = GovernorConfigBuilder::default()
-        .key_extractor(SmartIpKeyExtractor);
-    ai_key_builder.per_second(12).burst_size(5);
-    let ai_key_rate_limit = GovernorLayer::new(ai_key_builder.finish().unwrap());
-
-    // ── Rate-limited route groups ──
-    let public_routes = Router::new()
-        .route("/public/{slug}/submit", post(issues::public_submit))
-        .route("/invite/{code}", get(invites::redirect_invite))
-        .layer(public_rate_limit);
-
-    let ai_chat_routes = Router::new()
-        .route("/ai/chat", post(ai::chat))
-        .layer(ai_rate_limit);
-
-    let ai_key_routes = Router::new()
-        .route("/ai/key", get(ai::get_key))
-        .layer(ai_key_rate_limit);
-
-    // ── Main authenticated routes ──
-    let main_routes = Router::new()
+    // All routes — auth middleware applied globally (skips public paths in middleware)
+    let routes = Router::new()
         // Projects (org-scoped via auth middleware)
         .route("/projects", get(projects::list).post(projects::create))
         .route("/projects/{id}", get(projects::get_one).patch(projects::update).delete(projects::remove))
@@ -81,6 +46,9 @@ pub fn api_router(pool: PgPool) -> Router {
         .route("/github/mappings", get(github::repos::list_mappings).post(github::repos::create_mapping))
         .route("/github/mappings/{id}", patch(github::repos::update_mapping).delete(github::repos::delete_mapping))
         .route("/issues/{id}/github", get(github::repos::get_issue_github_data))
+        // AI
+        .route("/ai/chat", post(ai::chat))
+        .route("/ai/key", get(ai::get_key))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
         // Milestones (by ID)
@@ -88,14 +56,13 @@ pub fn api_router(pool: PgPool) -> Router {
         // Sprints (by ID)
         .route("/sprints/{id}", put(sprints::update).delete(sprints::remove))
         .route("/invites", get(invites::list).post(invites::create))
+        // Public routes (auth skipped in middleware based on path)
+        .route("/invite/{code}", get(invites::redirect_invite))
+        .route("/public/{slug}/submit", post(issues::public_submit))
         // Webhook endpoint (public — uses HMAC verification, NOT Clerk auth)
         .route("/webhooks/github", post(github::webhooks::handle));
 
-    // Merge all route groups, apply auth middleware globally, then with_state
-    main_routes
-        .merge(public_routes)
-        .merge(ai_chat_routes)
-        .merge(ai_key_routes)
-        .layer(axum_mw::from_fn(auth_middleware))
+    // Apply auth middleware — it runs on all routes but public ones
+    routes.layer(axum_mw::from_fn(auth_middleware))
         .with_state(pool)
 }

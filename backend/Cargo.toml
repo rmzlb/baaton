@@ -48,9 +48,6 @@ regex = "1"
 lazy_static = "1"
 aes-gcm = "0.10"
 
-# Rate limiting
-tower_governor = "0.8"
-
 [profile.release]
 strip = true
 lto = true

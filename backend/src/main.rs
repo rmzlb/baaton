@@ -1,6 +1,5 @@
 use axum::{Router, routing::get, middleware as axum_mw};
-use axum::http::{HeaderValue, Method};
-use tower_http::cors::{CorsLayer, AllowOrigin};
+use tower_http::cors::{CorsLayer, Any};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use std::net::SocketAddr;
@@ -50,6 +49,12 @@ async fn main() -> anyhow::Result<()> {
     sqlx::raw_sql(migration_006).execute(&pool).await?;
     let migration_007 = include_str!("../migrations/007_issue_creator_duedate.sql");
     sqlx::raw_sql(migration_007).execute(&pool).await?;
+    let migration_008 = include_str!("../migrations/008_activity_log.sql");
+    sqlx::raw_sql(migration_008).execute(&pool).await?;
+    let migration_009 = include_str!("../migrations/009_openclaw_integration.sql");
+    sqlx::raw_sql(migration_009).execute(&pool).await?;
+    let migration_010 = include_str!("../migrations/010_milestone_enhancements.sql");
+    sqlx::raw_sql(migration_010).execute(&pool).await?;
     tracing::info!("Migrations applied");
 
     // Start GitHub sync job runner (background task)
@@ -58,17 +63,11 @@ async fn main() -> anyhow::Result<()> {
         github::jobs::start_job_runner(job_pool).await;
     });
 
-    // CORS — restricted to known origins
-    let allowed_origins = [
-        "https://baaton.dev".parse::<HeaderValue>().unwrap(),
-        "https://app.baaton.dev".parse::<HeaderValue>().unwrap(),
-        "http://localhost:3000".parse::<HeaderValue>().unwrap(),
-        "http://localhost:5173".parse::<HeaderValue>().unwrap(),
-    ];
+    // CORS
     let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::list(allowed_origins))
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE, Method::OPTIONS])
-        .allow_headers(tower_http::cors::Any);
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
 
     // Router
     let app = Router::new()
