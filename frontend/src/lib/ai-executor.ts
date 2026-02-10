@@ -26,6 +26,29 @@ type ApiClient = {
   };
 };
 
+// ─── Result Validation (lightweight Zod alternative) ──────
+function validateSkillResult(result: SkillResult): SkillResult {
+  // Ensure required fields exist
+  if (!result.skill || typeof result.skill !== 'string') {
+    return { skill: 'unknown', success: false, error: 'Invalid skill result: missing skill name', summary: 'Validation error' };
+  }
+  if (typeof result.success !== 'boolean') {
+    result.success = false;
+  }
+  if (!result.summary || typeof result.summary !== 'string') {
+    result.summary = result.success ? `${result.skill} completed` : `${result.skill} failed`;
+  }
+  // Sanitize data — prevent circular references
+  if (result.data !== undefined) {
+    try {
+      JSON.stringify(result.data);
+    } catch {
+      result.data = { error: 'Data too complex to serialize' };
+    }
+  }
+  return result;
+}
+
 // ─── Executors ────────────────────────────────
 
 async function executeSearchIssues(
@@ -895,39 +918,57 @@ export async function executeSkill(
   allIssues: Record<string, Issue[]>,
   projects: Project[],
 ): Promise<SkillResult> {
+  let result: SkillResult;
+
   switch (skillName) {
     case 'search_issues':
-      return executeSearchIssues(args, api, allIssues, projects);
+      result = await executeSearchIssues(args, api, allIssues, projects);
+      break;
     case 'create_issue':
-      return executeCreateIssue(args, api, projects);
+      result = await executeCreateIssue(args, api, projects);
+      break;
     case 'update_issue':
-      return executeUpdateIssue(args, api);
+      result = await executeUpdateIssue(args, api);
+      break;
     case 'bulk_update_issues':
-      return executeBulkUpdateIssues(args, api);
+      result = await executeBulkUpdateIssues(args, api);
+      break;
     case 'add_comment':
-      return executeAddComment(args, api);
+      result = await executeAddComment(args, api);
+      break;
     case 'get_project_metrics':
-      return executeGetMetrics(args, allIssues, projects);
+      result = await executeGetMetrics(args, allIssues, projects);
+      break;
     case 'analyze_sprint':
-      return executeGetMetrics(args, allIssues, projects);
+      result = await executeGetMetrics(args, allIssues, projects);
+      break;
     case 'weekly_recap':
-      return executeWeeklyRecap(args, allIssues, projects);
+      result = await executeWeeklyRecap(args, allIssues, projects);
+      break;
     case 'suggest_priorities':
-      return executeSuggestPriorities(args, allIssues, projects);
+      result = await executeSuggestPriorities(args, allIssues, projects);
+      break;
     case 'generate_prd':
-      return {
+      result = {
         skill: 'generate_prd',
         success: true,
         data: { brief: args.brief, project_id: args.project_id },
         summary: 'PRD context ready — generating document',
       };
+      break;
     case 'plan_milestones':
-      return executePlanMilestones(args, allIssues, projects);
+      result = await executePlanMilestones(args, allIssues, projects);
+      break;
     case 'create_milestones_batch':
-      return executeCreateMilestonesBatch(args, api, projects);
+      result = await executeCreateMilestonesBatch(args, api, projects);
+      break;
     case 'adjust_timeline':
-      return executeAdjustTimeline(args, api, allIssues, projects);
+      result = await executeAdjustTimeline(args, api, allIssues, projects);
+      break;
     default:
-      return { skill: skillName, success: false, error: `Unknown skill: ${skillName}`, summary: `Unknown skill: ${skillName}` };
+      result = { skill: skillName, success: false, error: `Unknown skill: ${skillName}`, summary: `Unknown skill: ${skillName}` };
   }
+
+  // Validate all results before returning to Gemini (Manus pattern)
+  return validateSkillResult(result);
 }

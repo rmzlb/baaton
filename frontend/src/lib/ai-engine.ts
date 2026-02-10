@@ -5,7 +5,7 @@
 
 import { GoogleGenerativeAI, type Content, type Part } from '@google/generative-ai';
 import type { Issue, Project, Milestone } from './types';
-import { SKILL_TOOLS } from './ai-skills';
+import { getToolsForContext, detectSkillContext } from './ai-skills';
 import { executeSkill } from './ai-executor';
 import type { SkillResult } from './ai-skills';
 
@@ -212,9 +212,9 @@ interface GeminiFunctionCall {
   args: Record<string, unknown>;
 }
 
-// Convert our SKILL_TOOLS format to SDK format
-function getToolDeclarations() {
-  const tools = SKILL_TOOLS;
+// Tool masking: return only context-relevant tools (Manus pattern)
+function getToolDeclarations(context?: string) {
+  const tools = getToolsForContext(context as any || 'default');
   if (!tools || !Array.isArray(tools)) return undefined;
   return tools;
 }
@@ -222,7 +222,7 @@ function getToolDeclarations() {
 async function callGemini(
   contents: GeminiContent[],
   systemPrompt: string,
-  _authToken?: string,
+  skillContext?: string,
 ): Promise<{
   text?: string;
   functionCalls?: GeminiFunctionCall[];
@@ -235,7 +235,7 @@ async function callGemini(
   const model = genAI.getGenerativeModel({
     model: GEMINI_MODEL,
     systemInstruction: systemPrompt,
-    tools: getToolDeclarations() as any,
+    tools: getToolDeclarations(skillContext) as any,
     generationConfig: {
       temperature: 0.4,
       maxOutputTokens: 2000,
@@ -310,6 +310,17 @@ export async function generateAIResponse(
   const systemPrompt = buildSystemPrompt(context);
   const skillsExecuted: SkillResult[] = [];
 
+  // ── Tool Masking: detect context from user message + recent history ──
+  const recentSkills = conversationHistory
+    .filter((m) => m.role === 'assistant')
+    .slice(-3)
+    .flatMap((m) => {
+      // Extract skill names from "[skill_name]" badges in message content
+      const matches = m.content.match(/\[(\w+)\]/g) || [];
+      return matches.map((s) => s.replace(/[[\]]/g, ''));
+    });
+  let skillContext = detectSkillContext(userMessage, recentSkills);
+
   // Build conversation contents
   const contents: GeminiContent[] = [];
 
@@ -329,7 +340,7 @@ export async function generateAIResponse(
 
   // Agentic loop — keep calling Gemini until we get a text response (max 5 rounds)
   for (let round = 0; round < 5; round++) {
-    const response = await callGemini(contents, systemPrompt);
+    const response = await callGemini(contents, systemPrompt, skillContext);
 
     // If we got function calls, execute them and feed results back
     if (response.functionCalls && response.functionCalls.length > 0) {
@@ -354,6 +365,11 @@ export async function generateAIResponse(
           projects,
         );
         skillsExecuted.push(result);
+
+        // Update tool masking context after skill execution
+        if (fc.name === 'plan_milestones' && result.success) {
+          skillContext = 'milestone_confirm';
+        }
 
         functionResponseParts.push({
           functionResponse: {

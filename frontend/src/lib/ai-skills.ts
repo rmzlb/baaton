@@ -1,12 +1,43 @@
 /**
  * Baaton AI Skills — Function calling definitions for Gemini.
  * Each skill maps to a Gemini tool and an executor that calls the Baaton API.
+ *
+ * TOOL MASKING (Manus pattern):
+ * Not all tools are relevant at all times. Use getToolsForContext()
+ * to get context-appropriate tools instead of exposing all 13.
  */
 
-// ─── Gemini Tool Definitions ──────────────────
-export const SKILL_TOOLS = [
-  {
-    functionDeclarations: [
+// ─── Skill Groups (for tool masking) ──────────
+export type SkillContext = 'default' | 'milestone_planning' | 'milestone_confirm' | 'read_only' | 'creation';
+
+const SKILL_GROUPS: Record<SkillContext, string[]> = {
+  // Default: core skills for general chat
+  default: [
+    'search_issues', 'create_issue', 'update_issue', 'bulk_update_issues',
+    'add_comment', 'get_project_metrics', 'analyze_sprint', 'generate_prd',
+    'weekly_recap', 'suggest_priorities', 'plan_milestones',
+  ],
+  // Milestone planning: after user asks to plan milestones
+  milestone_planning: [
+    'plan_milestones', 'search_issues', 'get_project_metrics',
+  ],
+  // Milestone confirm: after plan proposed, waiting for confirm/adjust
+  milestone_confirm: [
+    'create_milestones_batch', 'adjust_timeline', 'plan_milestones',
+  ],
+  // Read-only: for analytics/reporting queries
+  read_only: [
+    'search_issues', 'get_project_metrics', 'analyze_sprint', 'weekly_recap', 'suggest_priorities',
+  ],
+  // Creation: when user wants to create things
+  creation: [
+    'create_issue', 'add_comment', 'generate_prd', 'plan_milestones',
+    'create_milestones_batch', 'search_issues',
+  ],
+};
+
+// ─── All Skill Declarations ───────────────────
+const ALL_SKILL_DECLARATIONS = [
       {
         name: 'search_issues',
         description:
@@ -260,9 +291,55 @@ export const SKILL_TOOLS = [
           required: ['project_id', 'constraint'],
         },
       },
-    ],
-  },
 ];
+
+// ─── Tool Masking (Manus Pattern) ─────────────
+// Returns ONLY context-relevant tools, reducing confusion and improving accuracy.
+// HelmAI: state-aware masking via XState meta. Baaton: intent-based masking.
+
+export function getToolsForContext(context: SkillContext = 'default') {
+  const allowedNames = SKILL_GROUPS[context] || SKILL_GROUPS.default;
+  const filtered = ALL_SKILL_DECLARATIONS.filter((d) => allowedNames.includes(d.name));
+  return [{ functionDeclarations: filtered }];
+}
+
+// Detect context from user message (simple intent classification)
+export function detectSkillContext(message: string, recentSkills: string[] = []): SkillContext {
+  const lower = message.toLowerCase();
+
+  // If last skill was plan_milestones → we're in confirm mode
+  if (recentSkills.includes('plan_milestones') && 
+      (lower.includes('apply') || lower.includes('appliquer') || lower.includes('oui') || 
+       lower.includes('yes') || lower.includes('ok') || lower.includes('go') ||
+       lower.includes('adjust') || lower.includes('ajust'))) {
+    return 'milestone_confirm';
+  }
+
+  // Milestone planning intent
+  if (lower.includes('milestone') || lower.includes('jalon') || lower.includes('plan') || 
+      lower.includes('roadmap') || lower.includes('timeline') || lower.includes('gantt')) {
+    return 'milestone_planning';
+  }
+
+  // Read-only intent
+  if (lower.includes('recap') || lower.includes('résumé') || lower.includes('metric') || 
+      lower.includes('analyse') || lower.includes('analyze') || lower.includes('report') ||
+      lower.includes('how many') || lower.includes('combien') || lower.includes('stats')) {
+    return 'read_only';
+  }
+
+  // Creation intent
+  if (lower.includes('create') || lower.includes('créer') || lower.includes('ajoute') ||
+      lower.includes('add') || lower.includes('new issue') || lower.includes('nouveau') ||
+      lower.includes('generate prd') || lower.includes('prd')) {
+    return 'creation';
+  }
+
+  return 'default';
+}
+
+// Legacy: full tool set (for backwards compat)
+export const SKILL_TOOLS = [{ functionDeclarations: ALL_SKILL_DECLARATIONS }];
 
 // ─── Skill Result Types ───────────────────────
 export interface SkillResult {
