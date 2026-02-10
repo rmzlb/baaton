@@ -186,9 +186,14 @@ function compressImageToBase64(file: File | Blob): Promise<string> {
   });
 }
 
-// ─── Insert image into editor ─
-function insertImageIntoEditor(editor: EditorInstance, src: string) {
-  editor.chain().focus().setImage({ src }).run();
+// ─── Insert image into ProseMirror view ─
+function insertImageIntoView(view: { state: any; dispatch: any }, src: string) {
+  const { state, dispatch } = view;
+  const node = state.schema.nodes.image?.create({ src });
+  if (node) {
+    const tr = state.tr.replaceSelectionWith(node);
+    dispatch(tr);
+  }
 }
 
 // ─── Build extensions (must include Command for slash menu) ─
@@ -365,6 +370,13 @@ export function NotionEditor({
     return initialContent as JSONContent | undefined;
   }, [initialContent, extensions]);
 
+  const handleCreate = useCallback(
+    ({ editor }: { editor: EditorInstance }) => {
+      editorRef.current = editor;
+    },
+    [],
+  );
+
   const handleUpdate = useCallback(
     ({ editor }: { editor: EditorInstance }) => {
       editorRef.current = editor;
@@ -380,6 +392,7 @@ export function NotionEditor({
           initialContent={parsedContent}
           extensions={extensions}
           editable={editable}
+          onCreate={handleCreate}
           onUpdate={handleUpdate}
           editorProps={{
             handleDOMEvents: {
@@ -387,7 +400,7 @@ export function NotionEditor({
                 return handleCommandNavigation(event) ?? false;
               },
             },
-            handlePaste: (_view, event) => {
+            handlePaste: (view, event) => {
               const items = event.clipboardData?.items;
               if (!items) return false;
               for (const item of Array.from(items)) {
@@ -395,27 +408,21 @@ export function NotionEditor({
                   const file = item.getAsFile();
                   if (file && file.size <= 20 * 1024 * 1024) {
                     event.preventDefault();
-                    const editor = editorRef.current;
-                    if (editor) {
-                      compressImageToBase64(file).then((src) => insertImageIntoEditor(editor, src));
-                    }
+                    compressImageToBase64(file).then((src) => insertImageIntoView(view, src));
                     return true;
                   }
                 }
               }
               return false;
             },
-            handleDrop: (_view, event, _slice, moved) => {
+            handleDrop: (view, event, _slice, moved) => {
               if (moved) return false;
               const files = event.dataTransfer?.files;
               if (!files?.length) return false;
               const file = files[0];
               if (file.type.startsWith('image/') && file.size <= 20 * 1024 * 1024) {
                 event.preventDefault();
-                const editor = editorRef.current;
-                if (editor) {
-                  compressImageToBase64(file).then((src) => insertImageIntoEditor(editor, src));
-                }
+                compressImageToBase64(file).then((src) => insertImageIntoView(view, src));
                 return true;
               }
               return false;
