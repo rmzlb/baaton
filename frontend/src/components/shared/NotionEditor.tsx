@@ -220,7 +220,7 @@ function buildExtensions(placeholder: string) {
     UpdatedImage,
     TiptapUnderline,
     HighlightExtension.configure({ multicolor: true }),
-    HorizontalRule,
+    // HorizontalRule removed — already included in StarterKit
     Color,
     TextStyle,
     GlobalDragHandle,

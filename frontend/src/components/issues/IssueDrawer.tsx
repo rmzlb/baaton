@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUser, useOrganization } from '@clerk/clerk-react';
-// DOMPurify removed — using NotionEditor for all rendering
+import DOMPurify from 'dompurify';
 import {
   X, ChevronDown, Tag, User, Calendar,
   MessageSquare, Activity, Bot, CheckCircle2, AlertTriangle,
@@ -954,10 +954,17 @@ function DescriptionView({ description, editing, draft, hasUnsavedChanges, isSav
           onDoubleClick={onStartEdit}
           className="rounded-lg bg-surface border border-border p-4 cursor-text hover:border-accent/30 transition-colors min-h-[80px]"
         >
-          <NotionEditor
-            initialContent={description}
-            editable={false}
-          />
+          {description.trim().startsWith('<') ? (
+            <div
+              className="prose prose-xs dark:prose-invert prose-headings:text-primary prose-p:text-secondary prose-li:text-secondary prose-a:text-accent prose-img:rounded-lg prose-img:border prose-img:border-border max-w-none text-[11px] leading-relaxed [&_img]:max-w-full [&_img]:my-2"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description, { ADD_DATA_URI_TAGS: ['img'], ADD_ATTR: ['target'], ALLOWED_URI_REGEXP: /^(?:(?:https?|data):)/i }) }}
+            />
+          ) : (
+            <NotionEditor
+              initialContent={description}
+              editable={false}
+            />
+          )}
         </div>
       ) : (
         <p
