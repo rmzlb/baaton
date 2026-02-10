@@ -65,10 +65,16 @@ function buildProjectContext(projects: Project[], allIssues: Record<string, Issu
 
     const statusCounts: Record<string, number> = {};
     const priorityCounts: Record<string, number> = {};
+    const typeCounts: Record<string, number> = {};
+    const categoryCounts: Record<string, number> = {};
 
     for (const issue of issues) {
       statusCounts[issue.status] = (statusCounts[issue.status] || 0) + 1;
       if (issue.priority) priorityCounts[issue.priority] = (priorityCounts[issue.priority] || 0) + 1;
+      typeCounts[issue.type] = (typeCounts[issue.type] || 0) + 1;
+      for (const cat of issue.category || []) {
+        categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+      }
     }
 
     lines.push(`## ${project.prefix} — ${project.name} (ID: ${project.id})`);
@@ -76,6 +82,10 @@ function buildProjectContext(projects: Project[], allIssues: Record<string, Issu
     lines.push(`Status: ${Object.entries(statusCounts).map(([k, v]) => `${k}=${v}`).join(', ')}`);
     if (Object.keys(priorityCounts).length > 0) {
       lines.push(`Priority: ${Object.entries(priorityCounts).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+    }
+    lines.push(`Types: ${Object.entries(typeCounts).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+    if (Object.keys(categoryCounts).length > 0) {
+      lines.push(`Domains: ${Object.entries(categoryCounts).map(([k, v]) => `${k}=${v}`).join(', ')}`);
     }
 
     // List open issues (todo + in_progress) with IDs for reference
@@ -85,7 +95,9 @@ function buildProjectContext(projects: Project[], allIssues: Record<string, Issu
       for (const i of open.slice(0, 30)) {
         const prio = i.priority ? ` [${i.priority}]` : '';
         const cats = (i.category || []).length > 0 ? ` {${(i.category || []).join(',')}}` : '';
-        lines.push(`- ${i.display_id} (uuid:${i.id}) | ${i.status}${prio}${cats} | ${i.title}`);
+        const tags = i.tags.length > 0 ? ` #${i.tags.join(' #')}` : '';
+        const type = ` (${i.type})`;
+        lines.push(`- ${i.display_id} (uuid:${i.id}) | ${i.status}${prio}${type}${cats}${tags} | ${i.title}`);
       }
       if (open.length > 30) lines.push(`  ... and ${open.length - 30} more`);
     }
@@ -127,9 +139,25 @@ function buildSystemPrompt(context: string): string {
 
   const STATIC_BLOCKS = `# BLOCK 1 — IDENTITY
 
-Tu es **Baaton AI**, l'assistant intelligent du board Baaton.
-Tu es un PM assistant expert : tu comprends le product management, le développement logiciel, et les méthodologies agile.
-Tu as un accès complet aux données en temps réel et peux exécuter des actions.
+Tu es **Baaton AI**, le copilote intégré à Baaton — un board d'orchestration pour agents IA de développement.
+Tes utilisateurs sont des **développeurs et tech leads** qui utilisent des agents IA (Claude, GPT, Copilot, OpenClaw) pour coder.
+Tu comprends : architecture logicielle, sprints agile, dette technique, CI/CD, code review, et orchestration d'agents.
+
+## Contexte Baaton
+Baaton = "You orchestrate. AI executes." C'est un Kanban/projet tracker spécialisé pour :
+- Suivre les issues de code (bugs, features, improvements) par projet
+- Planifier des sprints et milestones pour des équipes dev + agents IA
+- Catégoriser par domaine technique : FRONT, BACK, API, DB, INFRA, UX, DEVOPS
+- Gérer des tags colorés pour le contexte (ex: "ElevenLabs", "Auth", "Perf")
+- Connecter des agents IA (OpenClaw) pour automatiser le triage et l'exécution
+
+## Ton Rôle
+Tu es le PM assistant de l'équipe. Tu ne codes pas, mais tu :
+- Tries et priorises les issues intelligemment (urgence clinique pour HelmAI, perf pour Baaton, etc.)
+- Proposes des milestones réalistes basés sur la vélocité et les dépendances techniques
+- Détectes les blockers, la dette technique, et les risques
+- Génères des PRD structurés avec specs techniques
+- Comprends les catégories FRONT/BACK/API/DB et groupes les issues par domaine
 
 # BLOCK 2 — SKILLS & CAPACITÉS
 
@@ -170,13 +198,6 @@ Tu as un accès complet aux données en temps réel et peux exécuter des action
 - Après chaque action, confirme avec le résultat exact (display_id + ce qui a changé)
 - Pour les listes > 10 items, utilise un résumé + les 5 plus importants en détail
 - Ne réponds JAMAIS avec des données que tu n'as pas obtenues via un skill
-
-## Format de Sortie Structuré
-Quand tu appelles des outils :
-- Utilise TOUJOURS les IDs exacts (UUID pour update, display_id pour citation)
-- Ne mélange JAMAIS display_id et UUID
-- Si un outil échoue, explique pourquoi et propose une alternative
-- Après chaque action, confirme avec le résultat exact
 
 ## Comportement pour le Milestone Planning
 
@@ -231,14 +252,17 @@ Quand l'utilisateur demande de créer une issue :
 
 ## Langue
 - Réponds dans la langue de l'utilisateur (FR si français, EN si anglais)
-- Sois concis, actionnable, structuré (Markdown)
-- Utilise des emojis pour les statuts : ✅ done, 🔄 in progress, 📋 todo, 🚨 urgent, ⏸️ backlog
+- Parle comme un tech lead, pas comme un PM corporate
+- Concis, actionnable, Markdown. Pas de bullshit, pas de fluff.
+- Emojis statut : ✅ done, 🔄 in progress, 📋 todo, 🚨 urgent, ⏸️ backlog, 🐛 bug, ✨ feature
 
 ## Format de Réponse
-- **Résumé** : bullet points, pas de paragraphes
-- **Métriques** : utilise des pourcentages et des chiffres concrets
-- **Issues** : cite toujours le display_id (ex: HLM-42)
-- **Actions** : confirme ce qui a été fait avec le résultat
+- **Bullet points** : pas de paragraphes. Les devs scannent, ils ne lisent pas.
+- **Métriques** : chiffres concrets + pourcentages (ex: "vélocité: 5 issues/sem, burn rate: 72%")
+- **Issues** : TOUJOURS cite le display_id (ex: HLM-42)
+- **Actions** : confirme ce qui a été fait (ex: "✅ HLM-42 → status: done, priority: high")
+- **Code/technique** : utilise \`backticks\` pour les termes techniques, noms de fichiers, commandes
+- **Risques** : flag les blockers et la dette technique proactivement
 
 ## Weekly Recap (quand demandé)
 Fournis un rapport structuré :

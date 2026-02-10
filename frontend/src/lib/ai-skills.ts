@@ -66,7 +66,7 @@ const ALL_SKILL_DECLARATIONS = [
       {
         name: 'create_issue',
         description:
-          'Create a new issue/ticket in a project. Use when the user asks to create, add, or log a new task, bug, feature request, etc.',
+          'Create a new issue/ticket in a project. Auto-detect type (bug/feature/improvement), priority from urgency, and category from technical domain (FRONT/BACK/API/DB/INFRA). Fill as many fields as possible.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -96,7 +96,7 @@ const ALL_SKILL_DECLARATIONS = [
             category: {
               type: 'ARRAY',
               items: { type: 'STRING' },
-              description: 'Categories: FRONT, BACK, API, DB',
+              description: 'Technical domains: FRONT, BACK, API, DB, INFRA, UX, DEVOPS. Auto-detect from context.',
             },
           },
           required: ['project_id', 'title'],
@@ -225,7 +225,7 @@ const ALL_SKILL_DECLARATIONS = [
       {
         name: 'plan_milestones',
         description:
-          'Analyze all open tickets in a project and propose a milestone plan with groupings, timing estimates, and priority ordering. Auto-detects dependencies between issues (by title/description similarity and explicit references). Returns velocity data (issues/week) for realistic timeline estimates. The AI will group related tickets into logical milestones, identify the critical path (longest dependency chain), and suggest a sequenced delivery plan.',
+          'Analyze all open tickets and auto-group into dev-ready milestones. Groups by: 1) Ship It (in_review/in_progress), 2) Critical Hotfixes (urgent bugs), 3) Technical domain (FRONT/BACK/API/DB), 4) Feature tags, 5) Tech Debt. Returns proposed milestones with target dates based on team velocity. Detects cross-issue dependencies by title similarity.',
         parameters: {
           type: 'OBJECT',
           properties: {

@@ -635,43 +635,70 @@ async function executePlanMilestones(
       ? Math.round((openIssues.length / effectiveVelocity) * 10) / 10
       : null;
 
-    // ── Smart auto-grouping into proposed milestones ──
-    // Strategy: 3-tier priority-based grouping
-    //  1. "Almost Done" — issues in_review (nearly complete)
-    //  2. "Critical & Urgent" — urgent/high priority 
-    //  3. By tag/domain — remaining issues grouped by tags
-    //  4. "Backlog & Improvements" — low priority, improvements, questions
+    // ── Smart auto-grouping for dev teams (Baaton-specific) ──
+    // Strategy: dev-first grouping optimized for software projects
+    //  1. "Ship It" — issues in_review (nearly complete, ship first)
+    //  2. "Critical Hotfixes" — urgent bugs and blockers
+    //  3. By technical domain — FRONT/BACK/API/DB/INFRA categories
+    //  4. By feature tag — grouped by first tag (e.g., "Auth", "ElevenLabs")
+    //  5. "Tech Debt & Backlog" — low priority, improvements, questions
+
+    // Dev-friendly milestone name mapping for categories
+    const CATEGORY_NAMES: Record<string, string> = {
+      FRONT: 'Frontend',
+      BACK: 'Backend',
+      API: 'API & Integrations',
+      DB: 'Database & Migrations',
+      INFRA: 'Infrastructure & DevOps',
+      UX: 'UX & Design',
+      DEVOPS: 'Infrastructure & DevOps',
+    };
     
-    const almostDone: typeof openIssues = [];
+    const shipIt: typeof openIssues = [];
     const critical: typeof openIssues = [];
+    const byDomain: Record<string, typeof openIssues> = {};
     const byTag: Record<string, typeof openIssues> = {};
     const backlog: typeof openIssues = [];
 
     for (const issue of openIssues) {
-      // Tier 1: Almost done (in_review)
-      if (issue.status === 'in_review') {
-        almostDone.push(issue);
+      // Tier 1: Ship it — almost done (in_review, in_progress with high priority)
+      if (issue.status === 'in_review' || (issue.status === 'in_progress' && issue.priority === 'high')) {
+        shipIt.push(issue);
       }
-      // Tier 2: Critical (urgent priority, not in_review)
-      else if (issue.priority === 'urgent') {
+      // Tier 2: Critical hotfixes — urgent priority or high-priority bugs
+      else if (issue.priority === 'urgent' || (issue.priority === 'high' && issue.type === 'bug')) {
         critical.push(issue);
       }
-      // Tier 4: Low priority backlog
+      // Tier 5: Low priority backlog
       else if (issue.priority === 'low' || issue.type === 'question') {
         backlog.push(issue);
       }
-      // Tier 3: Group by first tag or category
-      else {
-        const tag = issue.tags[0] || (issue.category?.[0]) || (issue.type === 'bug' ? 'Bug Fixes' : 'Features');
+      // Tier 3: Group by technical domain (category)
+      else if (issue.category && issue.category.length > 0) {
+        const cat = issue.category[0];
+        const domainName = CATEGORY_NAMES[cat.toUpperCase()] || cat;
+        if (!byDomain[domainName]) byDomain[domainName] = [];
+        byDomain[domainName].push(issue);
+      }
+      // Tier 4: Group by tag (feature context)
+      else if (issue.tags.length > 0) {
+        const tag = issue.tags[0];
         if (!byTag[tag]) byTag[tag] = [];
         byTag[tag].push(issue);
       }
+      // Fallback: type-based
+      else {
+        const typeGroup = issue.type === 'bug' ? 'Bug Fixes' : issue.type === 'feature' ? 'New Features' : 'Improvements';
+        if (!byTag[typeGroup]) byTag[typeGroup] = [];
+        byTag[typeGroup].push(issue);
+      }
     }
 
-    // Merge small tag groups into biggest or into backlog
+    // Merge domain + tag groups, collapse small ones
+    const allGroups = { ...byDomain, ...byTag };
     const MIN_GROUP_SIZE = 2;
     const validTagGroups: Record<string, typeof openIssues> = {};
-    for (const [key, items] of Object.entries(byTag)) {
+    for (const [key, items] of Object.entries(allGroups)) {
       if (items.length < MIN_GROUP_SIZE) {
         // Put in critical if high priority, otherwise backlog
         for (const item of items) {
@@ -683,14 +710,14 @@ async function executePlanMilestones(
       }
     }
 
-    // Build ordered milestone list
+    // Build ordered milestone list (dev-optimized naming)
     const milestoneEntries: Array<[string, typeof openIssues]> = [];
-    if (almostDone.length > 0) milestoneEntries.push(['Almost Done — In Review', almostDone]);
-    if (critical.length > 0) milestoneEntries.push(['Critical & Urgent Fixes', critical]);
+    if (shipIt.length > 0) milestoneEntries.push(['Ship It — Ready to Merge', shipIt]);
+    if (critical.length > 0) milestoneEntries.push(['Critical Hotfixes', critical]);
     for (const [tag, items] of Object.entries(validTagGroups)) {
       milestoneEntries.push([tag, items]);
     }
-    if (backlog.length > 0) milestoneEntries.push(['Backlog & Improvements', backlog]);
+    if (backlog.length > 0) milestoneEntries.push(['Tech Debt & Backlog', backlog]);
 
     // If no entries (shouldn't happen), fallback
     if (milestoneEntries.length === 0) {
@@ -703,8 +730,8 @@ async function executePlanMilestones(
 
     let cumulativeWeeks = 0;
     const proposedMilestones = milestoneEntries.map(([name, issues], idx) => {
-      // Almost Done should be 1 week (they're nearly finished)
-      const weeks = name.includes('Almost Done')
+      // Ship It / already in progress should be 1 week
+      const weeks = name.includes('Ship It')
         ? 1
         : Math.max(1, Math.ceil(issues.length / realisticVelocity));
       cumulativeWeeks += weeks;
