@@ -945,8 +945,6 @@ function DescriptionView({ description, editing, draft, hasUnsavedChanges, isSav
     );
   }
 
-  const hasHtml = description && description.trim().startsWith('<');
-
   return (
     <div>
       <label className="flex items-center gap-1.5 text-[10px] text-muted mb-1.5 uppercase tracking-wider font-medium">
@@ -959,17 +957,10 @@ function DescriptionView({ description, editing, draft, hasUnsavedChanges, isSav
           onDoubleClick={onStartEdit}
           className="rounded-lg bg-surface border border-border p-4 cursor-text hover:border-accent/30 transition-colors min-h-[80px]"
         >
-          {hasHtml ? (
-            <div
-              className="prose prose-xs dark:prose-invert prose-headings:text-primary prose-p:text-secondary prose-li:text-secondary prose-a:text-accent max-w-none text-[11px] leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description) }}
-            />
-          ) : (
-            <NotionEditor
-              initialContent={description}
-              editable={false}
-            />
-          )}
+          <NotionEditor
+            initialContent={description}
+            editable={false}
+          />
         </div>
       ) : (
         <p
