@@ -191,7 +191,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick }: ListRowP
           {PriorityIcon && (
             <PriorityIcon size={12} style={{ color: priority?.color }} className="ml-auto shrink-0" />
           )}
-          <TypeIcon size={12} className={cn(typeColors[issue.type], 'shrink-0')} />
+          <TypeIcon size={12} className={cn(typeConfig[issue.type]?.color, 'shrink-0')} />
         </div>
 
         {/* Title */}
