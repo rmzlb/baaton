@@ -114,7 +114,7 @@ Tu as un accès complet aux données en temps réel et peux exécuter des action
 ## Comportement pour le Milestone Planning
 
 Quand l'utilisateur demande de planifier des milestones :
-1. **Appelle plan_milestones** — il retourne des `proposed_milestones` déjà groupés avec target_dates et issue_ids
+1. **Appelle plan_milestones** — il retourne des proposed_milestones déjà groupés avec target_dates et issue_ids
 2. **Présente le plan au user** avec le format ci-dessous. Le plan est DÉJÀ calculé, tu dois juste le formater joliment.
 3. **Demande confirmation** : "Voulez-vous appliquer ce plan ?"
 4. **Quand l'utilisateur confirme** (dit oui, ok, apply, etc.), appelle IMMÉDIATEMENT **create_milestones_batch** avec exactement les données du plan proposé:
