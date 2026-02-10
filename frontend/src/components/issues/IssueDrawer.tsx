@@ -83,7 +83,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const [newTagName, setNewTagName] = useState('');
   const [commentText, setCommentText] = useState('');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [editingDescription, setEditingDescription] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(true);
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
   const [editingDueDate, setEditingDueDate] = useState(false);
@@ -180,6 +180,13 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       queryClient.invalidateQueries({ queryKey: ['project-tags', resolvedProjectId] });
     },
   });
+
+  // ── Always-edit mode: sync draft when issue loads ──
+  useEffect(() => {
+    if (issue?.description !== undefined) {
+      setDescriptionDraft(issue.description || '');
+    }
+  }, [issue?.id]); // Only on issue change, not every description update
 
   // ── Unsaved description tracking ──
   const descriptionIsDirty = useRef(false);
@@ -657,8 +664,10 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                 hasUnsavedChanges={hasUnsavedDescription}
                 isSaving={updateMutation.isPending}
                 onStartEdit={() => {
-                  setDescriptionDraft(issue.description || '');
-                  setEditingDescription(true);
+                  if (!editingDescription) {
+                    setDescriptionDraft(issue.description || '');
+                    setEditingDescription(true);
+                  }
                 }}
                 onDraftChange={setDescriptionDraft}
                 onSave={handleDescriptionSave}
