@@ -57,13 +57,13 @@ export function KanbanColumn({
             aria-hidden="true"
           />
           <span className={cn(
-            'font-medium text-primary',
+            'font-medium text-gray-900 dark:text-primary',
             density === 'compact' ? 'text-xs' : 'text-sm',
           )}>
             {status.label}
           </span>
           <span className={cn(
-            'rounded-full bg-surface-hover px-2 py-0.5 text-secondary font-mono',
+            'px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-surface-hover text-gray-500 dark:text-secondary font-medium',
             density === 'compact' ? 'text-[10px]' : 'text-xs',
           )} aria-label={`${issues.length} issues`}>
             {issues.length}
@@ -72,7 +72,7 @@ export function KanbanColumn({
         <button
           onClick={() => onCreateIssue?.(status.key)}
           aria-label={`${t('kanban.addIssue')} in ${status.label}`}
-          className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors min-h-[28px] min-w-[28px] flex items-center justify-center"
+          className="rounded-md p-1 text-gray-400 dark:text-secondary hover:text-gray-600 dark:hover:text-primary hover:bg-gray-50 dark:hover:bg-surface-hover transition-colors min-h-[28px] min-w-[28px] flex items-center justify-center"
         >
           <Plus size={density === 'compact' ? 14 : 16} aria-hidden="true" />
         </button>
