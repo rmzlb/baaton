@@ -25,6 +25,8 @@ export default defineConfig({
           if (id.includes('node_modules/@tanstack/')) return 'query';
           if (id.includes('node_modules/@hello-pangea/')) return 'dnd';
           if (id.includes('node_modules/framer-motion')) return 'motion';
+          if (id.includes('node_modules/ai/') || id.includes('node_modules/@ai-sdk/')) return 'ai-sdk';
+          if (id.includes('node_modules/zod')) return 'ai-sdk';
         },
       },
     },

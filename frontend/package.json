@@ -13,6 +13,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.23",
+    "@ai-sdk/react": "^3.0.80",
     "@base-ui/react": "^1.1.0",
     "@clerk/clerk-react": "^5.60.0",
     "@google/generative-ai": "^0.24.1",
@@ -29,6 +31,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "@tanstack/react-query": "^5.90.20",
     "@vitest/coverage-v8": "^4.0.18",
+    "ai": "^6.0.78",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -50,7 +53,11 @@
     "react-router-dom": "^7.13.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^2.6.0",
+    "zod": "^4.3.6",
     "zustand": "^5.0.11"
+  },
+  "overrides": {
+    "vite": "8.0.0-beta.13"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",
