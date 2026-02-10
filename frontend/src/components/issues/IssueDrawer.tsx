@@ -7,12 +7,14 @@ import {
   MessageSquare, Activity, Bot, CheckCircle2, AlertTriangle,
   Minus, ArrowUp, ArrowDown, Bug, Sparkles, Zap, HelpCircle,
   FileText, GitPullRequest, TestTube2, Paperclip, Upload, Image,
-  Send, Plus,
+  Send, Plus, RotateCw, AlertCircle,
 } from 'lucide-react';
 import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useFileUpload, validateFiles } from '@/hooks/useFileUpload';
+import type { PendingFile } from '@/hooks/useFileUpload';
 import { cn, timeAgo } from '@/lib/utils';
 import { NotionEditor } from '@/components/shared/NotionEditor';
 import { GitHubSection } from '@/components/github/GitHubSection';
@@ -85,9 +87,16 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
   const [editingDueDate, setEditingDueDate] = useState(false);
-  const [uploadingCount, setUploadingCount] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [annotatingIndex, setAnnotatingIndex] = useState<number | null>(null);
+  const dragCounter = useRef(0);
+
+  // ── File upload hook ──
+  const { pendingFiles, isUploading, processFiles, retryFile, removePending } = useFileUpload({
+    maxAttachments: 10,
+    maxDimension: 1920,
+    webpQuality: 0.82,
+  });
 
   // ── Queries ──
   const { data: issue, isLoading } = useQuery({
@@ -287,120 +296,124 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     commentMutation.mutate(commentText.trim());
   }, [commentText, commentMutation]);
 
-  // ── Image compression ──
-  const compressImage = useCallback((file: File | Blob, fileName: string): Promise<{ base64: string; size: number; name: string; mime: string }> => {
-    return new Promise((resolve) => {
-      const img = new window.Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        const MAX = 1600;
-        let { width, height } = img;
-        if (width > MAX || height > MAX) {
-          const ratio = Math.min(MAX / width, MAX / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0, width, height);
-        const isPng = file.type === 'image/png';
-        const mime = isPng ? 'image/png' : 'image/jpeg';
-        const quality = isPng ? 0.9 : 0.8;
-        const base64 = canvas.toDataURL(mime, quality);
-        const sizeBytes = Math.round((base64.length - `data:${mime};base64,`.length) * 0.75);
-        resolve({ base64, size: sizeBytes, name: fileName, mime });
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        const reader = new FileReader();
-        reader.onload = () => resolve({
-          base64: reader.result as string,
-          size: file.size,
-          name: fileName,
-          mime: file.type || 'application/octet-stream',
-        });
-        reader.readAsDataURL(file);
-      };
-      img.src = url;
-    });
-  }, []);
-
+  // ── File upload handler (uses hook) ──
   const handleFileUpload = useCallback(async (files: FileList | File[] | null) => {
     if (!files || files.length === 0 || !issue) return;
-    const fileArray = Array.from(files);
-    setUploadingCount(fileArray.length);
-    const newAttachments = [...(issue.attachments || [])];
 
-    for (const file of fileArray) {
-      if (file.size > 20 * 1024 * 1024) continue;
-      const isImage = file.type.startsWith('image/');
-      if (isImage) {
-        const compressed = await compressImage(file, file.name || `paste-${Date.now()}.jpg`);
-        newAttachments.push({
-          url: compressed.base64,
-          name: compressed.name,
-          size: compressed.size,
-          mime_type: compressed.mime,
-        });
-      } else {
-        if (file.size > 5 * 1024 * 1024) continue;
-        const reader = new FileReader();
-        const base64 = await new Promise<string>((resolve) => {
-          reader.onload = () => resolve(reader.result as string);
-          reader.readAsDataURL(file);
-        });
-        newAttachments.push({
-          url: base64,
-          name: file.name,
-          size: file.size,
-          mime_type: file.type,
-        });
+    const existingAttachments = issue.attachments || [];
+    const fileArray = Array.from(files);
+
+    // Pre-validate for user feedback
+    const { valid, errors } = validateFiles(fileArray, existingAttachments.length, 10, 20 * 1024 * 1024, 5 * 1024 * 1024);
+
+    if (errors.length > 0) {
+      for (const err of errors) {
+        if (err.reason === 'limit') {
+          addNotification({ type: 'warning', title: t('upload.limitReached'), message: t('upload.limitReachedDesc', { max: 10 }) });
+          break;
+        } else if (err.reason === 'size') {
+          addNotification({ type: 'warning', title: t('upload.fileTooLarge'), message: err.message });
+        } else if (err.reason === 'type') {
+          addNotification({ type: 'warning', title: t('upload.unsupportedType'), message: err.message });
+        }
       }
     }
 
+    if (valid.length === 0) return;
+
+    // Toast: uploading
+    addNotification({ type: 'info', title: t('upload.started'), message: t('upload.startedDesc', { count: valid.length }) });
+
     try {
-      await apiClient.issues.update(issueId, { attachments: newAttachments } as any);
-      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+      const newAttachments = await processFiles(files, existingAttachments);
+      if (newAttachments.length > 0) {
+        const allAttachments = [...existingAttachments, ...newAttachments];
+        await apiClient.issues.update(issueId, { attachments: allAttachments } as any);
+        queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+        addNotification({ type: 'success', title: t('upload.success'), message: t('upload.successDesc', { count: newAttachments.length }) });
+      }
     } catch (err) {
       console.error('[Upload] Failed to save attachments:', err);
-    } finally {
-      setUploadingCount(0);
+      addNotification({ type: 'warning', title: t('upload.error'), message: t('upload.errorDesc') });
     }
-  }, [issue, issueId, compressImage, apiClient, queryClient]);
+  }, [issue, issueId, apiClient, queryClient, processFiles, addNotification, t]);
 
-  // ── Paste handler ──
+  const handleRetryFile = useCallback(async (fileId: string) => {
+    if (!issue) return;
+    const existingAttachments = issue.attachments || [];
+    const result = await retryFile(fileId, existingAttachments);
+    if (result) {
+      try {
+        const allAttachments = [...existingAttachments, result];
+        await apiClient.issues.update(issueId, { attachments: allAttachments } as any);
+        queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+        addNotification({ type: 'success', title: t('upload.success'), message: t('upload.successDesc', { count: 1 }) });
+      } catch {
+        addNotification({ type: 'warning', title: t('upload.error'), message: t('upload.errorDesc') });
+      }
+    }
+  }, [issue, issueId, apiClient, queryClient, retryFile, addNotification, t]);
+
+  // ── Paste handler (skip when focused inside NotionEditor) ──
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       if (!panelRef.current) return;
+      // Don't intercept pastes in the Notion editor or other contenteditable areas
+      const active = document.activeElement;
+      if (active) {
+        const isEditable = active.getAttribute('contenteditable') === 'true'
+          || active.tagName === 'TEXTAREA'
+          || active.tagName === 'INPUT'
+          || active.closest('[data-notion-editor]')
+          || active.closest('.ProseMirror')
+          || active.closest('.tiptap');
+        if (isEditable) return;
+      }
+
       const items = e.clipboardData?.items;
       if (!items) return;
-      const imageFiles: File[] = [];
+      const pasteFiles: File[] = [];
       for (const item of Array.from(items)) {
-        if (item.type.startsWith('image/')) {
+        if (item.kind === 'file') {
           const file = item.getAsFile();
-          if (file) imageFiles.push(file);
+          if (file) pasteFiles.push(file);
         }
       }
-      if (imageFiles.length > 0) {
+      if (pasteFiles.length > 0) {
         e.preventDefault();
-        handleFileUpload(imageFiles);
+        handleFileUpload(pasteFiles);
       }
     };
     document.addEventListener('paste', handlePaste);
     return () => document.removeEventListener('paste', handlePaste);
   }, [handleFileUpload]);
 
-  // ── Drag & Drop ──
+  // ── Drag & Drop (with counter to avoid flickering) ──
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragging(true);
+    }
+  }, []);
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(true);
+    e.stopPropagation();
   }, []);
-  const handleDragLeave = useCallback(() => setIsDragging(false), []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setIsDragging(false);
+    }
+  }, []);
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current = 0;
     setIsDragging(false);
     handleFileUpload(e.dataTransfer.files);
   }, [handleFileUpload]);
@@ -422,9 +435,23 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     setLightboxIndex(null);
   }, [issue, annotatingIndex, issueId, apiClient, queryClient]);
 
-  const handleDeleteAttachment = useCallback((attachmentUrl: string) => {
+  const handleDeleteAttachment = useCallback((attachmentUrl: string, imageIndex?: number) => {
     if (!issue) return;
-    const next = (issue.attachments || []).filter((a) => a.url !== attachmentUrl);
+    const all = issue.attachments || [];
+    let next: typeof all;
+    if (typeof imageIndex === 'number') {
+      // Delete by index within image attachments to handle duplicates correctly
+      const images = all.filter((a) => a.mime_type?.startsWith('image/') || a.url?.startsWith('data:image/'));
+      const toRemove = images[imageIndex];
+      if (!toRemove) return;
+      // Find the actual index in the full array (first match by reference)
+      const actualIdx = all.indexOf(toRemove);
+      next = actualIdx >= 0 ? [...all.slice(0, actualIdx), ...all.slice(actualIdx + 1)] : all;
+    } else {
+      // Fallback: remove first match by URL (for backward compat)
+      const idx = all.findIndex((a) => a.url === attachmentUrl);
+      next = idx >= 0 ? [...all.slice(0, idx), ...all.slice(idx + 1)] : all;
+    }
     apiClient.issues.update(issueId, { attachments: next } as any).then(() => {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
     });
@@ -657,14 +684,18 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               <AttachmentSection
                 imageAttachments={imageAttachments}
                 nonImageAttachments={nonImageAttachments}
-                uploadingCount={uploadingCount}
+                pendingFiles={pendingFiles}
+                isUploading={isUploading}
                 isDragging={isDragging}
+                onDragEnter={handleDragEnter}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onFileUpload={handleFileUpload}
                 onDeleteImage={handleDeleteAttachment}
                 onDeleteNonImage={handleDeleteNonImageAttachment}
+                onRetryFile={handleRetryFile}
+                onRemovePending={removePending}
                 onLightbox={setLightboxIndex}
                 t={t}
               />
@@ -1232,14 +1263,18 @@ function SidebarField({ label, children }: { label: string; children: React.Reac
 interface AttachmentSectionProps {
   imageAttachments: Attachment[];
   nonImageAttachments: Attachment[];
-  uploadingCount: number;
+  pendingFiles: PendingFile[];
+  isUploading: boolean;
   isDragging: boolean;
+  onDragEnter: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
-  onDragLeave: () => void;
+  onDragLeave: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
   onFileUpload: (files: FileList | File[] | null) => void;
   onDeleteImage: (url: string) => void;
   onDeleteNonImage: (idx: number) => void;
+  onRetryFile: (fileId: string) => void;
+  onRemovePending: (fileId: string) => void;
   onLightbox: (idx: number) => void;
   t: (key: string, vars?: Record<string, string | number>) => string;
 }
@@ -1247,41 +1282,63 @@ interface AttachmentSectionProps {
 function AttachmentSection({
   imageAttachments,
   nonImageAttachments,
-  uploadingCount,
+  pendingFiles,
+  isUploading,
   isDragging,
+  onDragEnter,
   onDragOver,
   onDragLeave,
   onDrop,
   onFileUpload,
   onDeleteImage,
   onDeleteNonImage,
+  onRetryFile,
+  onRemovePending,
   onLightbox,
   t,
 }: AttachmentSectionProps) {
+  const pendingImageFiles = pendingFiles.filter(
+    (f) => f.mime.startsWith('image/') || f.previewUrl !== null,
+  );
+  const pendingNonImageFiles = pendingFiles.filter(
+    (f) => !f.mime.startsWith('image/') && f.previewUrl === null,
+  );
+
   return (
     <div
+      onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
+      className="relative"
     >
       <label className="flex items-center gap-1.5 text-[10px] text-muted mb-1.5 uppercase tracking-wider font-medium">
         <Paperclip size={10} />
         {t('issueDrawer.attachments')}
+        {imageAttachments.length + nonImageAttachments.length > 0 && (
+          <span className="text-[9px] text-muted/70 ml-0.5">
+            ({imageAttachments.length + nonImageAttachments.length}/10)
+          </span>
+        )}
         <span className="text-[9px] text-muted/50 ml-1 normal-case tracking-normal">⌘V {t('issueDrawer.pasteHint')}</span>
       </label>
 
-      {uploadingCount > 0 && (
-        <div className="flex items-center gap-1.5 rounded-md bg-accent/10 border border-accent/20 px-2 py-1.5 mb-1.5 text-[11px] text-accent">
-          <div className="h-2.5 w-2.5 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-          {t('issueDrawer.uploading', { count: uploadingCount })}
+      {/* Drag overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 z-20 rounded-lg border-2 border-dashed border-accent bg-accent/10 backdrop-blur-[2px] flex flex-col items-center justify-center gap-1.5 pointer-events-none"
+          style={{ animation: 'pulse 1.5s ease-in-out infinite' }}
+        >
+          <Upload size={20} className="text-accent" />
+          <span className="text-xs font-medium text-accent">{t('upload.dropZone')}</span>
         </div>
       )}
 
-      {/* Image thumbnails */}
-      {imageAttachments.length > 0 && (
+      {/* Image thumbnails grid (existing + pending) */}
+      {(imageAttachments.length > 0 || pendingImageFiles.length > 0) && (
         <div className="grid grid-cols-3 gap-1.5 mb-1.5">
+          {/* Existing saved images */}
           {imageAttachments.map((att, idx) => (
-            <div key={idx} className="group relative aspect-square rounded-md border border-border overflow-hidden hover:border-accent transition-colors">
+            <div key={`saved-${idx}`} className="group relative aspect-square rounded-md border border-border overflow-hidden hover:border-accent transition-colors">
               <button
                 onClick={() => onLightbox(idx)}
                 className="h-full w-full"
@@ -1320,6 +1377,67 @@ function AttachmentSection({
               </span>
             </div>
           ))}
+
+          {/* Pending image uploads (optimistic preview) */}
+          {pendingImageFiles.map((pf) => (
+            <div key={pf.id} className="relative aspect-square rounded-md border border-border overflow-hidden">
+              {/* Preview image */}
+              {(pf.previewUrl || pf.dataUrl) && (
+                <img
+                  src={pf.dataUrl || pf.previewUrl || ''}
+                  alt={pf.name}
+                  className="h-full w-full object-cover"
+                />
+              )}
+              {!pf.previewUrl && !pf.dataUrl && (
+                <div className="h-full w-full flex items-center justify-center bg-surface">
+                  <Image size={16} className="text-muted" />
+                </div>
+              )}
+
+              {/* Status overlay */}
+              {pf.status !== 'done' && (
+                <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-1">
+                  {pf.status === 'error' ? (
+                    <>
+                      <AlertCircle size={14} className="text-red-400" />
+                      <button
+                        onClick={() => onRetryFile(pf.id)}
+                        className="flex items-center gap-0.5 rounded bg-white/20 px-1.5 py-0.5 text-[9px] text-white hover:bg-white/30 transition-colors"
+                      >
+                        <RotateCw size={8} />
+                        {t('upload.retry')}
+                      </button>
+                      <button
+                        onClick={() => onRemovePending(pf.id)}
+                        className="rounded bg-red-500/60 px-1.5 py-0.5 text-[9px] text-white hover:bg-red-500/80 transition-colors"
+                      >
+                        <X size={8} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Spinner */}
+                      <div className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                      <span className="text-[9px] text-white/80 font-medium">
+                        {pf.status === 'compressing' ? t('upload.compressing') : t('upload.saving')}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Progress bar */}
+              {pf.status !== 'done' && pf.status !== 'error' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-black/20">
+                  <div
+                    className="h-full bg-accent transition-all duration-300"
+                    style={{ width: `${Math.round(pf.progress * 100)}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -1340,20 +1458,33 @@ function AttachmentSection({
         </div>
       ))}
 
+      {/* Pending non-image files */}
+      {pendingNonImageFiles.map((pf) => (
+        <div key={pf.id} className="flex items-center gap-1.5 rounded-md bg-surface border border-border px-2 py-1.5 mb-1">
+          <FileText size={10} className="text-secondary shrink-0" />
+          <span className="text-[11px] text-secondary truncate flex-1">{pf.name}</span>
+          {pf.status === 'error' ? (
+            <button onClick={() => onRetryFile(pf.id)} className="text-[9px] text-accent hover:underline">
+              {t('upload.retry')}
+            </button>
+          ) : pf.status !== 'done' ? (
+            <div className="h-2.5 w-2.5 rounded-full border-2 border-accent border-t-transparent animate-spin shrink-0" />
+          ) : null}
+        </div>
+      ))}
+
       {/* Upload area */}
       <label className={cn(
         'flex flex-col items-center justify-center gap-0.5 rounded-md border border-dashed p-2.5 text-[11px] cursor-pointer transition-all mt-1',
-        isDragging
-          ? 'border-accent bg-accent/5 text-accent scale-[1.02]'
-          : 'border-border text-muted hover:border-accent hover:text-accent',
+        'border-border text-muted hover:border-accent hover:text-accent',
       )}>
         <Upload size={14} />
-        <span className="text-center">{isDragging ? t('issueDrawer.dropHere') : t('issueDrawer.dropFiles')}</span>
+        <span className="text-center">{t('issueDrawer.dropFiles')}</span>
         <span className="text-[9px] text-muted/50">{t('issueDrawer.uploadHint')}</span>
         <input
           type="file"
           multiple
-          accept="image/*,.pdf,.doc,.docx,.txt"
+          accept="image/*,.pdf,.doc,.docx,.txt,.heic,.heif"
           className="hidden"
           aria-label={t('issueDrawer.dropFiles') || 'Upload files'}
           onChange={(e) => onFileUpload(e.target.files)}

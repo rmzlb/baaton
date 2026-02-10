@@ -16,6 +16,9 @@ import {
   useEditor as useNovelEditor,
   createSuggestionItems,
   handleCommandNavigation,
+  handleImagePaste,
+  handleImageDrop,
+  createImageUpload,
   Command,
   renderItems,
   Placeholder,
@@ -37,7 +40,7 @@ import { cn } from '@/lib/utils';
 import {
   Heading1, Heading2, Heading3, List, ListOrdered, CheckSquare,
   Code, Quote, Minus, Bold, Italic, Underline, Strikethrough,
-  Code2, Highlighter, Type,
+  Code2, Highlighter, Type, ImageIcon,
 } from 'lucide-react';
 
 // ─── Slash command items (static, never re-created) ─
@@ -132,7 +135,73 @@ const SUGGESTION_ITEMS = createSuggestionItems([
       editor.chain().focus().deleteRange(range).setHorizontalRule().run();
     },
   },
+  {
+    title: 'Image',
+    description: 'Upload or paste an image',
+    searchTerms: ['image', 'photo', 'picture', 'img'],
+    icon: <ImageIcon size={18} />,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (file) {
+          const url = await uploadImage(file);
+          if (url) {
+            editor.chain().focus().setImage({ src: url }).run();
+          }
+        }
+      };
+      input.click();
+    },
+  },
 ]);
+
+// ─── Image upload handler (converts to base64 data URL) ─
+const uploadImage = createImageUpload({
+  onUpload: (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const MAX = 1920;
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          const ratio = Math.min(MAX / width, MAX / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        // Use WebP if supported, fallback to JPEG
+        const webp = canvas.toDataURL('image/webp', 0.82);
+        if (webp.startsWith('data:image/webp')) {
+          resolve(webp);
+        } else {
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      };
+      img.src = url;
+    });
+  },
+  validateFn: (file: File) => {
+    if (!file.type.startsWith('image/')) return false;
+    if (file.size > 20 * 1024 * 1024) return false;
+    return true;
+  },
+});
 
 // ─── Build extensions (must include Command for slash menu) ─
 function buildExtensions(placeholder: string) {
@@ -330,6 +399,8 @@ export function NotionEditor({
                 return handleCommandNavigation(event) ?? false;
               },
             },
+            handlePaste: (view, event) => handleImagePaste(view, event, uploadImage),
+            handleDrop: (view, event, _slice, moved) => handleImageDrop(view, event, moved, uploadImage),
             attributes: {
               class: 'focus:outline-none min-h-[120px]',
             },
