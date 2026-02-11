@@ -535,6 +535,60 @@ export async function generateAIResponse(
       throw new RateLimitError();
     }
 
+    // Gemini occasionally rejects a specific function declaration schema
+    // (observed on search_issues) even when normalized.
+    // Fail soft: retry once without the problematic tool instead of hard-failing the user flow.
+    if (
+      msg.includes('search_issues') &&
+      msg.toLowerCase().includes('parameters schema should be of type object')
+    ) {
+      console.warn('[AI][GenerateTextRetryWithoutTool]', {
+        reason: 'search_issues schema mismatch',
+        skillContext,
+      });
+
+      const retryTools = Object.fromEntries(
+        Object.entries(tools).filter(([name]) => name !== 'search_issues'),
+      );
+
+      try {
+        const retry = await generateText({
+          model: google('gemini-2.0-flash', {
+            structuredOutputs: false,
+          }),
+          system: systemPrompt,
+          messages,
+          tools: retryTools,
+          maxSteps: 5,
+          temperature: 0.4,
+          maxTokens: 2000,
+        });
+
+        const usage = retry.usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+        const inputTokens = usage.promptTokens || estimateTokens(systemPrompt + userMessage);
+        const outputTokens = usage.completionTokens || estimateTokens(retry.text || '');
+
+        state = transition(state, { type: 'AI_RESPONSE', tokens: outputTokens });
+
+        return {
+          text: retry.text || "Je n'ai pas pu générer de réponse. Réessaie avec plus de détails.",
+          skillsExecuted,
+          usage: {
+            inputTokens,
+            outputTokens,
+            totalTokens: inputTokens + outputTokens,
+            turnCount: state.usage.turnCount,
+          },
+          stateContext: state,
+        };
+      } catch (retryErr: any) {
+        console.error('[AI][GenerateTextRetryFailed]', {
+          message: retryErr?.message || String(retryErr),
+          skillContext,
+        });
+      }
+    }
+
     const friendly = mapProviderErrorToUserMessage(err);
     console.error('[AI][GenerateTextFailed]', {
       message: msg,
