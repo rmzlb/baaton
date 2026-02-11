@@ -29,12 +29,12 @@ export function Sidebar() {
     { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks'), tourId: 'my-tasks' as const },
     { to: '/all-issues', icon: Layers, label: t('sidebar.allIssues'), tourId: undefined },
     { to: '/projects', icon: Kanban, label: t('sidebar.projects'), tourId: 'projects-list' as const },
-    ...(currentProjectSlug ? [{
-      to: `/projects/${currentProjectSlug}/milestones`,
+    {
+      to: currentProjectSlug ? `/projects/${currentProjectSlug}/milestones` : '/milestones',
       icon: Target,
       label: t('sidebar.milestones'),
       tourId: undefined,
-    }] : []),
+    },
     { to: '/org', icon: Users, label: t('sidebar.team'), tourId: undefined },
     { to: '/settings', icon: Settings, label: t('sidebar.settings'), tourId: 'settings' as const },
   ];

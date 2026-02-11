@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Kanban, ArrowRight, Trash2, X, Github, ArrowUpDown, AlertTriangle, Copy, Check } from 'lucide-react';
+import { Plus, Kanban, ArrowRight, Trash2, X, Github, AlertTriangle, Copy, Check } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
