@@ -8,7 +8,7 @@ import {
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
-import type { Sprint, SprintStatus, Issue } from '@/lib/types';
+import type { SprintStatus, Issue } from '@/lib/types';
 
 /* ── Status config ──────────────────────────── */
 
@@ -42,7 +42,6 @@ export default function Sprints() {
   const queryClient = useQueryClient();
 
   const [showCreate, setShowCreate] = useState(false);
-  const [selectedSprintId, setSelectedSprintId] = useState<string | null>(null);
   const [expandedSprints, setExpandedSprints] = useState<Set<string>>(new Set());
 
   // Form state
@@ -218,7 +217,6 @@ export default function Sprints() {
           </div>
           <div className="flex items-center gap-2">
             {(['planning', 'active', 'completed'] as SprintStatus[]).map(s => {
-              const style = STATUS_STYLES[s];
               return (
                 <button key={s} onClick={() => setFormStatus(s)}
                   className={cn('rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',

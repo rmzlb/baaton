@@ -74,7 +74,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
         onClick={onClick}
         onContextMenu={onContextMenu ? (e: React.MouseEvent) => onContextMenu(e, issue) : undefined}
         className={cn(
-          'hidden md:grid grid-cols-[28px_72px_1fr_110px_90px_80px_80px_100px_90px] gap-1.5 border-b border-gray-100 dark:border-border/50 px-4 md:px-6 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-surface transition-colors items-center h-[38px] group/row',
+          'hidden md:grid grid-cols-[28px_72px_1fr_110px_90px_80px_56px_80px_100px_90px] gap-1.5 border-b border-gray-100 dark:border-border/50 px-4 md:px-6 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-surface transition-colors items-center h-[38px] group/row',
           isDone && 'opacity-60 hover:opacity-90',
           selected && 'bg-accent/5 dark:bg-accent/10 hover:bg-accent/10',
         )}
@@ -123,6 +123,11 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
         <span className={cn('inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-medium w-fit', tc.bg, tc.color)}>
           <TypeIcon size={10} />
           {tc.label}
+        </span>
+
+        {/* Estimate */}
+        <span className="text-[10px] text-secondary font-medium">
+          {issue.estimate ? ({ 1: 'XS', 2: 'S', 3: 'M', 5: 'L', 8: 'XL' } as Record<number, string>)[issue.estimate] || `${issue.estimate}pt` : '—'}
         </span>
 
         {/* Tags */}

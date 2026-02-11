@@ -218,6 +218,7 @@ const en = {
   'list.tags': 'Tags',
   'list.assign': 'Assign',
   'list.updated': 'Updated',
+  'list.estimate': 'Est.',
   'list.noIssues': 'No issues found',
 
   // ─── IssueDrawer ───────────────────────────
