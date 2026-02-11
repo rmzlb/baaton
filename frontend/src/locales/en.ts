@@ -1035,6 +1035,30 @@ As a [user], I want to [action] so that [benefit].
   'analytics.idealRemaining': 'Blue = ideal remaining',
   'analytics.actualRemaining': 'Red = actual remaining',
 
+
+  // AI PM Plan Panel
+  'ai.pmPlan.queueTitle': 'Plan apply queue',
+  'ai.pmPlan.queueValidate': 'Validate',
+  'ai.pmPlan.queuePersist': 'Persist',
+  'ai.pmPlan.queueRefresh': 'Refresh',
+  'ai.pmPlan.queueDone': 'Done',
+  'ai.pmPlan.taskBlock': 'Milestones',
+  'ai.pmPlan.toolBlock': 'Sprints',
+  'ai.pmPlan.accept': 'Accept plan',
+  'ai.pmPlan.edit': 'Edit plan',
+  'ai.pmPlan.applyChanges': 'Apply changes',
+  'ai.pmPlan.cancel': 'Cancel',
+  'ai.pmPlan.applying': 'Applying…',
+  'ai.pmPlan.appliedInline': 'Plan applied successfully',
+  'ai.pmPlan.editTitle': 'Edit plan payload',
+  'ai.pmPlan.editHint': 'Adjust JSON before applying to database.',
+  'ai.pmPlan.editPlaceholder': 'Paste valid JSON payload here…',
+  'ai.pmPlan.invalidDraft': 'Invalid plan payload. Use valid JSON format.',
+  'ai.pmPlan.appliedTitle': 'Plan applied',
+  'ai.pmPlan.appliedMessage': 'Created {milestones} milestones, {sprints} sprints, updated {issues} issues.',
+  'ai.pmPlan.applyError': 'Failed to apply plan changes.',
+  'ai.pmPlan.applyFailedTitle': 'Apply failed',
+
   // SLA
   'sla.label': 'SLA',
   'sla.level.urgent': 'Urgent',

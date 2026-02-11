@@ -1035,6 +1035,30 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'analytics.idealRemaining': 'Bleu = restant idéal',
   'analytics.actualRemaining': 'Rouge = restant réel',
 
+
+  // Panneau plan PM IA
+  'ai.pmPlan.queueTitle': "File d'application du plan",
+  'ai.pmPlan.queueValidate': 'Validation',
+  'ai.pmPlan.queuePersist': 'Sauvegarde',
+  'ai.pmPlan.queueRefresh': 'Rafraîchir',
+  'ai.pmPlan.queueDone': 'Terminé',
+  'ai.pmPlan.taskBlock': 'Jalons',
+  'ai.pmPlan.toolBlock': 'Sprints',
+  'ai.pmPlan.accept': 'Accepter le plan',
+  'ai.pmPlan.edit': 'Modifier le plan',
+  'ai.pmPlan.applyChanges': 'Appliquer les changements',
+  'ai.pmPlan.cancel': 'Annuler',
+  'ai.pmPlan.applying': 'Application…',
+  'ai.pmPlan.appliedInline': 'Plan appliqué avec succès',
+  'ai.pmPlan.editTitle': 'Modifier la payload du plan',
+  'ai.pmPlan.editHint': 'Ajuste le JSON avant application en base.',
+  'ai.pmPlan.editPlaceholder': 'Colle ici un JSON valide…',
+  'ai.pmPlan.invalidDraft': 'Payload invalide. Utilise un JSON valide.',
+  'ai.pmPlan.appliedTitle': 'Plan appliqué',
+  'ai.pmPlan.appliedMessage': '{milestones} jalons, {sprints} sprints créés, {issues} tickets mis à jour.',
+  'ai.pmPlan.applyError': "Impossible d'appliquer les changements du plan.",
+  'ai.pmPlan.applyFailedTitle': "Échec de l'application",
+
   // SLA
   'sla.label': 'SLA',
   'sla.level.urgent': 'Urgent',

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useAIAssistantStore, type AIMessage } from '@/stores/ai-assistant';
+import { useNotificationStore } from '@/stores/notifications';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { generateAIResponse, RateLimitError } from '@/lib/ai-engine';
@@ -18,12 +19,114 @@ import {
 } from '@/lib/openclaw-engine';
 import { cn } from '@/lib/utils';
 import { MarkdownView } from '@/components/shared/MarkdownView';
-import type { Issue } from '@/lib/types';
+import {
+  PmPlanResultPanel,
+  type PmPlanUiState,
+  type PmReviewPlanData,
+} from '@/components/ai/PmPlanResultPanel';
+import type { Issue, Milestone, Sprint } from '@/lib/types';
 import type { SkillResult } from '@/lib/ai-skills';
 import { SKILL_TOOLS } from '@/lib/ai-skills';
 import { type AIStateContext, createInitialState } from '@/lib/ai-state';
 
 type AIMode = 'gemini' | 'openclaw';
+
+interface PmPlanApplyPayload {
+  projects: Array<{
+    project_id: string;
+    milestones: Array<{
+      key?: string;
+      name: string;
+      description?: string;
+      target_date?: string;
+      issue_ids: string[];
+    }>;
+    sprints: Array<{
+      key?: string;
+      name: string;
+      goal?: string;
+      start_date?: string;
+      end_date?: string;
+      issue_ids: string[];
+    }>;
+  }>;
+}
+
+function isPmReviewPlanData(value: unknown): value is PmReviewPlanData {
+  if (!value || typeof value !== 'object') return false;
+  const maybePlan = value as { projects?: unknown[] };
+  return Array.isArray(maybePlan.projects);
+}
+
+function buildPmApplyPayloadFromReview(plan: PmReviewPlanData): PmPlanApplyPayload {
+  const sprintByKey = new Map(plan.sprint_windows.map((window) => [window.key, window]));
+
+  const milestoneTargetDateByKey: Record<string, string | undefined> = {
+    milestone_a: sprintByKey.get('sprint1')?.end_date,
+    milestone_b: sprintByKey.get('sprint2')?.end_date,
+    milestone_c: sprintByKey.get('sprint3')?.end_date ?? plan.period.end_date,
+  };
+
+  return {
+    projects: plan.projects.map((project) => ({
+      project_id: project.project_id,
+      milestones: project.milestones.map((milestone) => ({
+        key: milestone.key,
+        name: milestone.name,
+        target_date: milestoneTargetDateByKey[milestone.key],
+        issue_ids: milestone.issues.map((issue) => issue.id),
+      })),
+      sprints: project.sprints.map((sprint) => ({
+        key: sprint.key,
+        name: sprint.name,
+        start_date: sprint.start_date,
+        end_date: sprint.end_date,
+        issue_ids: sprint.issues.map((issue) => issue.id),
+      })),
+    })),
+  };
+}
+
+function serializePmPlanDraft(payload: PmPlanApplyPayload): string {
+  return JSON.stringify(payload, null, 2);
+}
+
+function parsePmPlanDraft(draft: string): PmPlanApplyPayload | null {
+  const normalized = draft.trim();
+  if (!normalized) return null;
+
+  const parseJson = (input: string): PmPlanApplyPayload | null => {
+    try {
+      const parsed: unknown = JSON.parse(input);
+      if (!parsed || typeof parsed !== 'object') return null;
+      const payload = parsed as { projects?: unknown };
+      if (!Array.isArray(payload.projects)) return null;
+      return parsed as PmPlanApplyPayload;
+    } catch {
+      return null;
+    }
+  };
+
+  const direct = parseJson(normalized);
+  if (direct) return direct;
+
+  const fencedMatch = normalized.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (!fencedMatch) return null;
+
+  return parseJson(fencedMatch[1]?.trim() ?? '');
+}
+
+function createDefaultPmPlanState(initialDraft = ''): PmPlanUiState {
+  return {
+    isEditing: false,
+    draft: initialDraft,
+    applying: false,
+    stage: 'idle',
+    dismissed: false,
+    applied: false,
+    error: null,
+  };
+}
 
 function useSuggestions() {
   const { t } = useTranslation();
@@ -128,12 +231,44 @@ function ErrorMessage({ error, onRetry }: { error: string; onRetry?: () => void 
 }
 
 // ─── Message Bubble ───────────────────────────
-function MessageBubble({ message, onAction }: { message: AIMessage; onAction?: (prompt: string) => void }) {
+interface MessageBubbleProps {
+  message: AIMessage;
+  onAction?: (prompt: string) => void;
+  onPmPlanAccept?: (messageId: string, plan: PmReviewPlanData) => void;
+  onPmPlanEdit?: (messageId: string, initialDraft: string) => void;
+  onPmPlanApplyChanges?: (messageId: string, draft: string) => void;
+  onPmPlanCancel?: (messageId: string) => void;
+  onPmPlanDraftChange?: (messageId: string, draft: string) => void;
+  getPmPlanState?: (messageId: string, initialDraft: string) => PmPlanUiState;
+}
+
+function MessageBubble({
+  message,
+  onAction,
+  onPmPlanAccept,
+  onPmPlanEdit,
+  onPmPlanApplyChanges,
+  onPmPlanCancel,
+  onPmPlanDraftChange,
+  getPmPlanState,
+}: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const { t } = useTranslation();
 
   // Detect if this is an error message
   const isError = !isUser && message.content.startsWith('⚠️');
+
+  const visibleSkills = message.skills?.filter((s) => s.skill !== 'pm_full_review');
+
+  const pmPlanSkill = !isUser
+    ? message.skills?.find((s) => s.skill === 'pm_full_review' && s.success)
+    : undefined;
+  const pmPlan = isPmReviewPlanData(pmPlanSkill?.data) ? pmPlanSkill.data : null;
+  const initialPmDraft = pmPlan ? serializePmPlanDraft(buildPmApplyPayloadFromReview(pmPlan)) : '';
+
+  const pmState = pmPlan && getPmPlanState
+    ? getPmPlanState(message.id, initialPmDraft)
+    : createDefaultPmPlanState(initialPmDraft);
 
   // Detect if this message contains a milestone plan proposal (plan_milestones was executed)
   const hasPlanProposal = !isUser && message.skills?.some((s) => s.skill === 'plan_milestones' && s.success);
@@ -152,9 +287,9 @@ function MessageBubble({ message, onAction }: { message: AIMessage; onAction?: (
       </div>
       <div className={cn('max-w-[88%] space-y-1.5')}>
         {/* Skills executed */}
-        {message.skills && message.skills.length > 0 && (
+        {visibleSkills && visibleSkills.length > 0 && (
           <div className="flex flex-col gap-1">
-            {message.skills.map((s, i) => (
+            {visibleSkills.map((s, i) => (
               <SkillBadge key={i} result={s as EnhancedSkillResult} />
             ))}
           </div>
@@ -174,6 +309,19 @@ function MessageBubble({ message, onAction }: { message: AIMessage; onAction?: (
             </div>
           )}
         </div>
+
+        {/* PM full-review plan action panel */}
+        {pmPlan && onPmPlanAccept && onPmPlanEdit && onPmPlanApplyChanges && onPmPlanCancel && onPmPlanDraftChange && (
+          <PmPlanResultPanel
+            plan={pmPlan}
+            state={pmState}
+            onAccept={() => onPmPlanAccept(message.id, pmPlan)}
+            onEdit={() => onPmPlanEdit(message.id, initialPmDraft)}
+            onApplyChanges={() => onPmPlanApplyChanges(message.id, pmState.draft)}
+            onCancel={() => onPmPlanCancel(message.id)}
+            onDraftChange={(draft) => onPmPlanDraftChange(message.id, draft)}
+          />
+        )}
 
         {/* Action buttons for milestone proposals */}
         {hasPlanProposal && onAction && (() => {
@@ -252,8 +400,10 @@ export function AIAssistant() {
   const [lastError, setLastError] = useState<string | null>(null);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [aiStateContext, setAiStateContext] = useState<AIStateContext>(createInitialState);
+  const [pmPlanStates, setPmPlanStates] = useState<Record<string, PmPlanUiState>>({});
   const apiClient = useApi();
   const queryClient = useQueryClient();
+  const addNotification = useNotificationStore((state) => state.addNotification);
   const { getToken } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -270,6 +420,7 @@ export function AIAssistant() {
     setAiStateContext(createInitialState());
     setLastError(null);
     setLastFailedMessage(null);
+    setPmPlanStates({});
   }, [clearMessages]);
 
   // Fetch all projects
@@ -438,6 +589,196 @@ export function AIAssistant() {
       handleSend(lastFailedMessage);
     }
   }, [lastFailedMessage, handleSend]);
+
+  const getPmPlanState = useCallback((messageId: string, initialDraft: string): PmPlanUiState => {
+    const existing = pmPlanStates[messageId];
+    if (existing) return existing;
+    return createDefaultPmPlanState(initialDraft);
+  }, [pmPlanStates]);
+
+  const updatePmPlanState = useCallback((messageId: string, updater: (prev: PmPlanUiState) => PmPlanUiState) => {
+    setPmPlanStates((prev) => {
+      const current = prev[messageId] ?? createDefaultPmPlanState('');
+      return { ...prev, [messageId]: updater(current) };
+    });
+  }, []);
+
+  const applyPmPlanPayload = useCallback(async (payload: PmPlanApplyPayload) => {
+    const createdMilestones: Milestone[] = [];
+    const createdSprints: Sprint[] = [];
+    const updatesByIssueId = new Map<string, { milestone_id?: string | null; sprint_id?: string | null }>();
+
+    for (const project of payload.projects) {
+      const milestoneIdByKey = new Map<string, string>();
+      const sprintIdByKey = new Map<string, string>();
+
+      for (const milestone of project.milestones) {
+        const created = await apiClient.milestones.create(project.project_id, {
+          name: milestone.name,
+          description: milestone.description,
+          target_date: milestone.target_date,
+          status: 'planned',
+        });
+        createdMilestones.push(created);
+        if (milestone.key) milestoneIdByKey.set(milestone.key, created.id);
+
+        for (const issueId of milestone.issue_ids) {
+          const prev = updatesByIssueId.get(issueId) ?? {};
+          updatesByIssueId.set(issueId, { ...prev, milestone_id: created.id });
+        }
+      }
+
+      for (const sprint of project.sprints) {
+        const created = await apiClient.sprints.create(project.project_id, {
+          name: sprint.name,
+          goal: sprint.goal,
+          start_date: sprint.start_date,
+          end_date: sprint.end_date,
+          status: 'planned',
+        });
+        createdSprints.push(created);
+        if (sprint.key) sprintIdByKey.set(sprint.key, created.id);
+
+        for (const issueId of sprint.issue_ids) {
+          const prev = updatesByIssueId.get(issueId) ?? {};
+          updatesByIssueId.set(issueId, { ...prev, sprint_id: created.id });
+        }
+      }
+
+      void milestoneIdByKey;
+      void sprintIdByKey;
+    }
+
+    for (const [issueId, update] of updatesByIssueId.entries()) {
+      await apiClient.issues.update(issueId, update);
+    }
+
+    return {
+      milestonesCreated: createdMilestones.length,
+      sprintsCreated: createdSprints.length,
+      issuesUpdated: updatesByIssueId.size,
+    };
+  }, [apiClient]);
+
+  const handlePmPlanAccept = useCallback(async (messageId: string, plan: PmReviewPlanData) => {
+    const payload = buildPmApplyPayloadFromReview(plan);
+    updatePmPlanState(messageId, (prev) => ({
+      ...prev,
+      applying: true,
+      stage: 'validating',
+      dismissed: false,
+      applied: false,
+      error: null,
+      draft: prev.draft || serializePmPlanDraft(payload),
+    }));
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      updatePmPlanState(messageId, (prev) => ({ ...prev, stage: 'persisting' }));
+      const result = await applyPmPlanPayload(payload);
+
+      updatePmPlanState(messageId, (prev) => ({ ...prev, stage: 'refreshing' }));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['issues'] }),
+        queryClient.invalidateQueries({ queryKey: ['all-issues'] }),
+        queryClient.invalidateQueries({ queryKey: ['milestones'] }),
+        queryClient.invalidateQueries({ queryKey: ['sprints'] }),
+        queryClient.invalidateQueries({ queryKey: ['roadmap-items'] }),
+      ]);
+
+      updatePmPlanState(messageId, (prev) => ({ ...prev, applying: false, stage: 'success', applied: true }));
+
+      addNotification({
+        type: 'success',
+        title: t('ai.pmPlan.appliedTitle'),
+        message: t('ai.pmPlan.appliedMessage', {
+          milestones: String(result.milestonesCreated),
+          sprints: String(result.sprintsCreated),
+          issues: String(result.issuesUpdated),
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('ai.pmPlan.applyError');
+      updatePmPlanState(messageId, (prev) => ({ ...prev, applying: false, stage: 'error', error: message }));
+      addNotification({
+        type: 'warning',
+        title: t('ai.pmPlan.applyFailedTitle'),
+        message,
+      });
+    }
+  }, [applyPmPlanPayload, updatePmPlanState, queryClient, addNotification, t]);
+
+  const handlePmPlanEdit = useCallback((messageId: string, initialDraft: string) => {
+    updatePmPlanState(messageId, (prev) => ({
+      ...prev,
+      isEditing: true,
+      dismissed: false,
+      error: null,
+      draft: prev.draft || initialDraft,
+    }));
+  }, [updatePmPlanState]);
+
+  const handlePmPlanDraftChange = useCallback((messageId: string, draft: string) => {
+    updatePmPlanState(messageId, (prev) => ({ ...prev, draft }));
+  }, [updatePmPlanState]);
+
+  const handlePmPlanApplyChanges = useCallback(async (messageId: string, draft: string) => {
+    const parsed = parsePmPlanDraft(draft);
+    if (!parsed) {
+      updatePmPlanState(messageId, (prev) => ({ ...prev, stage: 'error', error: t('ai.pmPlan.invalidDraft') }));
+      return;
+    }
+
+    updatePmPlanState(messageId, (prev) => ({ ...prev, applying: true, stage: 'validating', error: null }));
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      updatePmPlanState(messageId, (prev) => ({ ...prev, stage: 'persisting' }));
+      const result = await applyPmPlanPayload(parsed);
+
+      updatePmPlanState(messageId, (prev) => ({ ...prev, stage: 'refreshing' }));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['issues'] }),
+        queryClient.invalidateQueries({ queryKey: ['all-issues'] }),
+        queryClient.invalidateQueries({ queryKey: ['milestones'] }),
+        queryClient.invalidateQueries({ queryKey: ['sprints'] }),
+        queryClient.invalidateQueries({ queryKey: ['roadmap-items'] }),
+      ]);
+
+      updatePmPlanState(messageId, (prev) => ({
+        ...prev,
+        applying: false,
+        isEditing: false,
+        stage: 'success',
+        applied: true,
+      }));
+
+      addNotification({
+        type: 'success',
+        title: t('ai.pmPlan.appliedTitle'),
+        message: t('ai.pmPlan.appliedMessage', {
+          milestones: String(result.milestonesCreated),
+          sprints: String(result.sprintsCreated),
+          issues: String(result.issuesUpdated),
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('ai.pmPlan.applyError');
+      updatePmPlanState(messageId, (prev) => ({ ...prev, applying: false, stage: 'error', error: message }));
+      addNotification({ type: 'warning', title: t('ai.pmPlan.applyFailedTitle'), message });
+    }
+  }, [applyPmPlanPayload, updatePmPlanState, queryClient, addNotification, t]);
+
+  const handlePmPlanCancel = useCallback((messageId: string) => {
+    updatePmPlanState(messageId, (prev) => ({
+      ...prev,
+      isEditing: false,
+      applying: false,
+      stage: prev.applied ? 'success' : 'idle',
+      dismissed: !prev.applied,
+      error: null,
+    }));
+  }, [updatePmPlanState]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -623,7 +964,17 @@ export function AIAssistant() {
             ) : (
               <>
                 {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={msg} onAction={(prompt) => handleSend(prompt)} />
+                  <MessageBubble
+                    key={msg.id}
+                    message={msg}
+                    onAction={(prompt) => handleSend(prompt)}
+                    onPmPlanAccept={handlePmPlanAccept}
+                    onPmPlanEdit={handlePmPlanEdit}
+                    onPmPlanApplyChanges={handlePmPlanApplyChanges}
+                    onPmPlanCancel={handlePmPlanCancel}
+                    onPmPlanDraftChange={handlePmPlanDraftChange}
+                    getPmPlanState={getPmPlanState}
+                  />
                 ))}
                 {loading && <TypingIndicator />}
                 {/* Retry button on error */}

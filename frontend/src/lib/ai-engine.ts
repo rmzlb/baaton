@@ -647,6 +647,12 @@ export async function generateAIResponse(
       });
 
       text = renderPmFullReviewMarkdown(plan);
+      skillsExecuted.push({
+        skill: 'pm_full_review',
+        success: true,
+        summary: `Generated PM plan for ${plan.summary.project_count} project(s)`,
+        data: plan,
+      });
     } catch (error) {
       console.warn('[AI][PmFullReviewEndpointFallback]', {
         error: error instanceof Error ? error.message : String(error),
@@ -654,6 +660,12 @@ export async function generateAIResponse(
 
       // Safety net: keep local deterministic fallback if backend endpoint fails.
       text = buildLegacyPmFallback(projects, allIssuesByProject);
+      skillsExecuted.push({
+        skill: 'pm_full_review',
+        success: false,
+        summary: 'Used fallback PM review renderer',
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
     const outputTokens = estimateTokens(text);
