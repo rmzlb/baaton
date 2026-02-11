@@ -535,37 +535,35 @@ export async function generateAIResponse(
       throw new RateLimitError();
     }
 
-    // Gemini occasionally rejects a specific function declaration schema
-    // (observed on search_issues) even when normalized.
-    // Fail soft: retry once without the problematic tool instead of hard-failing the user flow.
-    if (
-      msg.includes('search_issues') &&
-      msg.toLowerCase().includes('parameters schema should be of type object')
-    ) {
-      console.warn('[AI][GenerateTextRetryWithoutTool]', {
-        reason: 'search_issues schema mismatch',
+    // Gemini function-calling can fail on schema validation in some deployments.
+    // Fail soft with a NO-TOOLS fallback that still produces actionable PM output.
+    if (msg.toLowerCase().includes('parameters schema should be of type object')) {
+      console.warn('[AI][GenerateTextFallbackNoTools]', {
+        reason: 'tool schema mismatch',
         skillContext,
       });
 
-      const retryTools = Object.fromEntries(
-        Object.entries(tools).filter(([name]) => name !== 'search_issues'),
-      );
-
       try {
+        const [metrics, priorities] = await Promise.all([
+          skillExecutors.get_project_metrics({}),
+          skillExecutors.suggest_priorities({}),
+        ]);
+
+        const fallbackSystem = `${systemPrompt}\n\nTOOLING FALLBACK MODE: function-calling is temporarily unavailable. Use ONLY the provided JSON context below to answer.\n\nPROJECT_METRICS:\n${JSON.stringify(metrics)}\n\nPRIORITY_SUGGESTIONS:\n${JSON.stringify(priorities)}`;
+
         const retry = await generateText({
           model: google('gemini-2.0-flash', {
             structuredOutputs: false,
           }),
-          system: systemPrompt,
+          system: fallbackSystem,
           messages,
-          tools: retryTools,
-          maxSteps: 5,
+          maxSteps: 1,
           temperature: 0.4,
           maxTokens: 2000,
         });
 
         const usage = retry.usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-        const inputTokens = usage.promptTokens || estimateTokens(systemPrompt + userMessage);
+        const inputTokens = usage.promptTokens || estimateTokens(fallbackSystem + userMessage);
         const outputTokens = usage.completionTokens || estimateTokens(retry.text || '');
 
         state = transition(state, { type: 'AI_RESPONSE', tokens: outputTokens });
