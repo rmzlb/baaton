@@ -112,6 +112,7 @@ pub struct ClerkClaims {
 
 /// Extension added to the request by the auth middleware
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AuthUser {
     pub user_id: String,
     pub org_id: Option<String>,

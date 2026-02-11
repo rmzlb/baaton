@@ -255,7 +255,7 @@ export function AllIssues() {
       return results.flat();
     },
     enabled: projects.length > 0,
-    staleTime: 30_000,
+    staleTime: 60_000,
   });
 
   const { data: allTags = [] } = useQuery({

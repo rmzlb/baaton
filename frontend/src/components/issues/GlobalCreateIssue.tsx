@@ -5,8 +5,11 @@
  */
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Kanban, Search, ChevronRight } from 'lucide-react';
+import { Plus, Kanban, Search, ChevronRight, Building2, ArrowLeft } from 'lucide-react';
+import { useAuth } from '@clerk/clerk-react';
+import { useOrganizationList, useOrganization } from '@clerk/clerk-react';
 import { useApi } from '@/hooks/useApi';
+import { api } from '@/lib/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import { CreateIssueModal } from './CreateIssueModal';
 import { cn } from '@/lib/utils';
@@ -62,14 +65,31 @@ export function GlobalCreateIssueButton({ variant = 'big', className }: GlobalCr
 
 function GlobalCreateModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
+  const { getToken } = useAuth();
   const apiClient = useApi();
+  const { organization: activeOrg } = useOrganization();
+  const { userMemberships } = useOrganizationList({
+    userMemberships: { infinite: true },
+  });
+  const memberships = userMemberships?.data ?? [];
+  const isMultiOrg = memberships.length > 1;
+
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(
+    isMultiOrg ? null : (activeOrg?.id ?? null),
+  );
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [search, setSearch] = useState('');
 
-  // Fetch all projects
+  // Fetch projects for selected org (cross-org aware)
   const { data: projects = [], isLoading } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => apiClient.projects.list(),
+    queryKey: ['projects-for-org', selectedOrgId],
+    queryFn: async () => {
+      if (!selectedOrgId) return [];
+      const token = await getToken({ organizationId: selectedOrgId });
+      if (!token) return [];
+      return api.get<Project[]>('/projects', token);
+    },
+    enabled: !!selectedOrgId,
   });
 
   // Fetch tags for selected project
@@ -99,6 +119,56 @@ function GlobalCreateModal({ onClose }: { onClose: () => void }) {
     );
   }
 
+  // Step -1: Org selection (multi-org users only)
+  if (isMultiOrg && !selectedOrgId) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+        <div className="relative w-full max-w-md mx-3 sm:mx-4 rounded-2xl border border-border bg-surface shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="p-6 pb-4">
+            <h2 className="text-lg font-bold text-primary">Select organization</h2>
+            <p className="mt-1 text-sm text-secondary">Choose which org to create the issue in</p>
+          </div>
+          <div className="px-3 pb-3 max-h-[340px] overflow-y-auto">
+            <div className="space-y-1">
+              {memberships.map((m) => {
+                const org = m.organization;
+                return (
+                  <button
+                    key={org.id}
+                    onClick={() => { setSelectedOrgId(org.id); setSearch(''); }}
+                    className="flex items-center gap-3 w-full rounded-xl px-3 py-3 hover:bg-surface-hover transition-colors group text-left"
+                  >
+                    {(org as any).imageUrl ? (
+                      <img src={(org as any).imageUrl} alt="" className="h-9 w-9 rounded-lg shrink-0" />
+                    ) : (
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent/10 shrink-0">
+                        <Building2 size={16} className="text-accent" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-primary truncate">{org.name}</p>
+                      <p className="text-xs text-muted truncate mt-0.5">{org.slug}</p>
+                    </div>
+                    {org.id === activeOrg?.id && (
+                      <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[9px] font-semibold text-accent uppercase">Active</span>
+                    )}
+                    <ChevronRight size={16} className="text-secondary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="px-6 py-3 border-t border-border flex items-center justify-end">
+            <button onClick={onClose} className="text-xs text-secondary hover:text-primary transition-colors">
+              {t('global.cancel')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Step 0: Project selection
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="select-project-title">
@@ -109,8 +179,20 @@ function GlobalCreateModal({ onClose }: { onClose: () => void }) {
       <div className="relative w-full max-w-md mx-3 sm:mx-4 rounded-2xl border border-border bg-surface shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-6 pb-4">
-          <h2 id="select-project-title" className="text-lg font-bold text-primary">{t('global.selectProject')}</h2>
-          <p className="mt-1 text-sm text-secondary">{t('global.selectProjectDesc')}</p>
+          <div className="flex items-center gap-2">
+            {isMultiOrg && (
+              <button
+                onClick={() => { setSelectedOrgId(null); setSearch(''); }}
+                className="p-1.5 rounded-lg hover:bg-surface-hover text-secondary hover:text-primary transition-colors"
+              >
+                <ArrowLeft size={16} />
+              </button>
+            )}
+            <div>
+              <h2 id="select-project-title" className="text-lg font-bold text-primary">{t('global.selectProject')}</h2>
+              <p className="mt-1 text-sm text-secondary">{t('global.selectProjectDesc')}</p>
+            </div>
+          </div>
         </div>
 
         {/* Search */}

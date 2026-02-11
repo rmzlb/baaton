@@ -190,6 +190,13 @@ function OrgSection({
             {projects.length} proj · {totalActive} active / {totalIssues}
           </span>
         </div>
+        <Link
+          to={`/all-issues?org=${encodeURIComponent(orgSlug)}`}
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0 text-[10px] text-secondary hover:text-accent transition-colors"
+        >
+          All issues →
+        </Link>
         {!isCurrentOrg && onSwitch && (
           <button
             onClick={(e) => { e.stopPropagation(); onSwitch(); }}
@@ -348,9 +355,14 @@ export function Dashboard() {
             <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">
               {t('dashboard.projects')}
             </h2>
-            <Link to="/projects" className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors">
-              {t('dashboard.viewAll')} <ArrowRight size={12} />
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link to="/all-issues" className="flex items-center gap-1 text-xs text-secondary hover:text-accent transition-colors">
+                {t('allIssues.title') || 'All issues'} <ArrowRight size={12} />
+              </Link>
+              <Link to="/projects" className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors">
+                {t('dashboard.viewAll')} <ArrowRight size={12} />
+              </Link>
+            </div>
           </div>
 
           {isLoading ? (
