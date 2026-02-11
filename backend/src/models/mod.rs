@@ -27,6 +27,8 @@ pub struct Project {
     pub description: Option<String>,
     pub prefix: String,
     pub statuses: serde_json::Value,
+    pub auto_assign_mode: String,
+    pub default_assignee_id: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -36,6 +38,21 @@ pub struct CreateProject {
     pub slug: String,
     pub description: Option<String>,
     pub prefix: String,
+    pub auto_assign_mode: Option<String>,
+    pub default_assignee_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct ProjectAutoAssignSettings {
+    pub project_id: Uuid,
+    pub auto_assign_mode: String,
+    pub default_assignee_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProjectAutoAssignSettings {
+    pub auto_assign_mode: String,
+    pub default_assignee_id: Option<String>,
 }
 
 // ─── Milestone ────────────────────────────────────────

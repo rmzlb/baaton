@@ -24,6 +24,8 @@ export interface ProjectStatus {
   hidden: boolean;
 }
 
+export type AutoAssignMode = 'off' | 'default_assignee' | 'round_robin';
+
 export interface Project {
   id: string;
   org_id: string;
@@ -32,8 +34,16 @@ export interface Project {
   description: string | null;
   prefix: string;
   statuses: ProjectStatus[];
+  auto_assign_mode: AutoAssignMode;
+  default_assignee_id: string | null;
   github_repo_url?: string;
   created_at: string;
+}
+
+export interface ProjectAutoAssignSettings {
+  project_id: string;
+  auto_assign_mode: AutoAssignMode;
+  default_assignee_id: string | null;
 }
 
 export interface OpenClawConnection {

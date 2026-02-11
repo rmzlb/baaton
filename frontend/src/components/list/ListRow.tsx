@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { timeAgo } from '@/lib/utils';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { CopyableId } from '@/components/shared/CopyableId';
+import { evaluateIssueSla } from '@/lib/sla';
 import type { Issue, IssuePriority, IssueType, ProjectStatus, ProjectTag } from '@/lib/types';
 
 const typeConfig: Record<IssueType, { icon: typeof Bug; color: string; bg: string; label: string }> = {
@@ -66,6 +67,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
 
   const categories = issue.category || [];
   const creatorName = resolveUserName(issue.created_by_id, issue.created_by_name);
+  const sla = evaluateIssueSla(issue);
 
   return (
     <>
@@ -117,6 +119,9 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
             <PriorityIcon size={11} className={priority?.color} />
           ) : null}
           <span className="text-gray-500 dark:text-secondary text-[11px]">{isDone ? 'Done' : priority?.label || '—'}</span>
+          {sla.status === 'breached' && (
+            <span className="rounded-full bg-red-500/15 px-1.5 py-0 text-[9px] font-medium text-red-400">SLA</span>
+          )}
         </span>
 
         {/* Type */}

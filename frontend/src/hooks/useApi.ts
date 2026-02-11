@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react';
 import { api, ApiError } from '@/lib/api';
 import type {
   Project,
+  ProjectAutoAssignSettings,
   Issue,
   IssueDetail,
   ApiKey,
@@ -158,6 +159,21 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.delete(`/projects/${id}`, token);
+        }),
+
+      getAutoAssign: async (id: string): Promise<ProjectAutoAssignSettings> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<ProjectAutoAssignSettings>(`/projects/${id}/auto-assign`, token);
+        }),
+
+      updateAutoAssign: async (
+        id: string,
+        body: { auto_assign_mode: 'off' | 'default_assignee' | 'round_robin'; default_assignee_id?: string | null },
+      ): Promise<ProjectAutoAssignSettings> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<ProjectAutoAssignSettings>(`/projects/${id}/auto-assign`, body, token);
         }),
     },
 

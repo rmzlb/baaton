@@ -65,6 +65,25 @@ export class RateLimitError extends Error {
   }
 }
 
+function mapProviderErrorToUserMessage(errorLike: unknown): string {
+  const msg = errorLike instanceof Error ? errorLike.message : String(errorLike || '');
+
+  if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
+    return 'Rate limited — wait a moment and try again.';
+  }
+  if (msg.includes('403') || msg.includes('API_KEY') || msg.includes('permission')) {
+    return 'AI configuration issue (API key/permissions). Please check settings.';
+  }
+  if (msg.includes('ECONNRESET') || msg.includes('fetch') || msg.includes('network') || msg.includes('Network')) {
+    return 'Network issue while contacting AI provider. Please retry.';
+  }
+  if (msg.toLowerCase().includes('schema') || msg.toLowerCase().includes('object')) {
+    return 'AI tool schema mismatch detected. Please retry; if it persists, contact support.';
+  }
+
+  return 'AI request failed unexpectedly. Please try again.';
+}
+
 // ─── Convert Gemini Tool Declarations → AI SDK Tools ────
 // Bridge: getToolsForContext returns Gemini format [{functionDeclarations: [...]}]
 // AI SDK needs Record<string, CoreTool> with jsonSchema parameters
@@ -152,7 +171,21 @@ function buildAISDKTools(
     tools[decl.name] = {
       description: decl.description,
       parameters: jsonSchema(schema),
-      execute: async (args: any) => executor(decl.name, args),
+      execute: async (args: any) => {
+        try {
+          return await executor(decl.name, args);
+        } catch (error) {
+          console.error('[AI][ToolInvocationFailed]', {
+            tool: decl.name,
+            args,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return {
+            success: false,
+            error: mapProviderErrorToUserMessage(error),
+          };
+        }
+      },
     };
   }
 
@@ -291,6 +324,12 @@ Tu es le PM assistant de l'équipe. Tu ne codes pas, mais tu :
 3. Demande confirmation
 4. Sur confirmation → **create_milestones_batch** avec les données exactes du plan
 5. Ne rappelle PAS plan_milestones sur confirmation
+6. Si l'utilisateur demande d'ajuster un planning existant: utilise **adjust_timeline**
+7. Si un tool milestone est indisponible/échoue: explique clairement l'échec, puis fallback sur **search_issues** + **get_project_metrics** pour proposer un plan manuel
+
+## Sprint / Planning Guidance
+- Pour questions sprint: utilise **analyze_sprint** et/ou **get_project_metrics** avant de conclure
+- Si données incomplètes: dis explicitement ce qui manque au lieu d'inventer
 
 ## Issue Creation
 1. Si projet ambigu → demande
@@ -413,18 +452,41 @@ export async function generateAIResponse(
   const executor = async (name: string, args: Record<string, unknown>) => {
     state = transition(state, { type: 'SKILL_STARTED', name });
     const startTime = performance.now();
-    const result = await executeSkill(name, args, apiClient, allIssuesByProject, projects);
-    const executionTime = Math.round(performance.now() - startTime);
-    const enriched = { ...result, executionTimeMs: executionTime };
-    skillsExecuted.push(enriched);
 
-    if (result.success) {
-      state = transition(state, { type: 'SKILL_COMPLETED', name, data: result.data });
-    } else {
-      state = transition(state, { type: 'SKILL_FAILED', name, error: result.error || 'Unknown error' });
+    try {
+      const result = await executeSkill(name, args, apiClient, allIssuesByProject, projects);
+      const executionTime = Math.round(performance.now() - startTime);
+      const enriched = { ...result, executionTimeMs: executionTime };
+      skillsExecuted.push(enriched);
+
+      if (result.success) {
+        state = transition(state, { type: 'SKILL_COMPLETED', name, data: result.data });
+      } else {
+        console.warn('[AI][SkillFailed]', { name, args, error: result.error, summary: result.summary });
+        state = transition(state, { type: 'SKILL_FAILED', name, error: result.error || 'Unknown error' });
+      }
+
+      return result.data || { success: result.success, error: result.error };
+    } catch (error) {
+      const executionTime = Math.round(performance.now() - startTime);
+      console.error('[AI][SkillCrash]', {
+        name,
+        args,
+        executionTimeMs: executionTime,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      const friendly = mapProviderErrorToUserMessage(error);
+      const fallbackResult: SkillResult = {
+        skill: name,
+        success: false,
+        error: friendly,
+        summary: `${name} failed safely`,
+      };
+      skillsExecuted.push({ ...fallbackResult, executionTimeMs: executionTime } as any);
+      state = transition(state, { type: 'SKILL_FAILED', name, error: friendly });
+      return { success: false, error: friendly };
     }
-
-    return result.data || { success: result.success, error: result.error };
   };
 
   const tools = buildAISDKTools(skillContext, executor);
@@ -468,17 +530,19 @@ export async function generateAIResponse(
   } catch (err: any) {
     state = transition(state, { type: 'ERROR', error: String(err) });
 
-    // ── Typed error handling ──
     const msg = err?.message || String(err);
     if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
       throw new RateLimitError();
     }
-    if (msg.includes('403') || msg.includes('API_KEY')) {
-      throw new Error('Clé API invalide ou expirée. Vérifie ta configuration.');
-    }
-    if (msg.includes('ECONNRESET') || msg.includes('fetch') || msg.includes('network')) {
-      throw new Error('Erreur réseau. Vérifie ta connexion et réessaie.');
-    }
-    throw err;
+
+    const friendly = mapProviderErrorToUserMessage(err);
+    console.error('[AI][GenerateTextFailed]', {
+      message: msg,
+      friendly,
+      skillContext,
+      skillCount: Object.keys(tools).length,
+    });
+
+    throw new Error(friendly);
   }
 }

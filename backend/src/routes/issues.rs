@@ -1,7 +1,7 @@
 use axum::{extract::{Path, Query, State}, http::StatusCode, Extension, Json};
 use serde::Deserialize;
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
@@ -16,6 +16,95 @@ pub struct ListParams {
     pub search: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+}
+
+#[derive(sqlx::FromRow)]
+struct ProjectAutoAssignRow {
+    prefix: String,
+    auto_assign_mode: String,
+    default_assignee_id: Option<String>,
+    auto_assign_rr_index: i32,
+}
+
+async fn resolve_auto_assign_assignees(
+    tx: &mut Transaction<'_, Postgres>,
+    project_id: Uuid,
+    org_id: &str,
+    explicit_assignees: Option<Vec<String>>,
+) -> Result<(String, Vec<String>), (StatusCode, Json<serde_json::Value>)> {
+    let project = sqlx::query_as::<_, ProjectAutoAssignRow>(
+        r#"
+        SELECT prefix, auto_assign_mode, default_assignee_id, auto_assign_rr_index
+        FROM projects
+        WHERE id = $1 AND org_id = $2
+        FOR UPDATE
+        "#,
+    )
+    .bind(project_id)
+    .bind(org_id)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
+
+    if let Some(assignees) = explicit_assignees {
+        if !assignees.is_empty() {
+            return Ok((project.prefix, assignees));
+        }
+    }
+
+    match project.auto_assign_mode.as_str() {
+        "default_assignee" => {
+            let assignees = project.default_assignee_id.into_iter().collect::<Vec<_>>();
+            Ok((project.prefix, assignees))
+        }
+        "round_robin" => {
+            let members = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT DISTINCT member_id
+                FROM (
+                    SELECT al.user_id AS member_id
+                    FROM activity_log al
+                    WHERE al.project_id = $1
+                      AND al.user_id IS NOT NULL
+                      AND al.created_at >= NOW() - INTERVAL '90 days'
+                    UNION
+                    SELECT i.created_by_id AS member_id
+                    FROM issues i
+                    WHERE i.project_id = $1
+                      AND i.created_by_id IS NOT NULL
+                    UNION
+                    SELECT UNNEST(i.assignee_ids) AS member_id
+                    FROM issues i
+                    WHERE i.project_id = $1
+                ) m
+                WHERE member_id IS NOT NULL AND BTRIM(member_id) <> ''
+                ORDER BY member_id ASC
+                "#,
+            )
+            .bind(project_id)
+            .fetch_all(tx.as_mut())
+            .await
+            .unwrap_or_default();
+
+            if members.is_empty() {
+                return Ok((project.prefix, vec![]));
+            }
+
+            let idx = (project.auto_assign_rr_index.max(0) as usize) % members.len();
+            let selected = members[idx].clone();
+
+            let next_idx = ((idx + 1) % members.len()) as i32;
+            let _ = sqlx::query("UPDATE projects SET auto_assign_rr_index = $2 WHERE id = $1")
+                .bind(project_id)
+                .bind(next_idx)
+                .execute(tx.as_mut())
+                .await;
+
+            Ok((project.prefix, vec![selected]))
+        }
+        _ => Ok((project.prefix, vec![])),
+    }
 }
 
 pub async fn list_all(
@@ -109,32 +198,35 @@ pub async fn create(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    // Verify project belongs to user's org
-    let project = sqlx::query_as::<_, (String,)>(
-        "SELECT prefix FROM projects WHERE id = $1 AND org_id = $2"
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    let (project_prefix, resolved_assignees) = resolve_auto_assign_assignees(
+        &mut tx,
+        body.project_id,
+        org_id,
+        body.assignee_ids.clone(),
     )
-    .bind(body.project_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
+    .await?;
 
     let count: (i64,) = sqlx::query_as(
         "SELECT COALESCE(COUNT(*), 0) FROM issues WHERE project_id = $1"
     )
     .bind(body.project_id)
-    .fetch_one(&pool)
+    .fetch_one(tx.as_mut())
     .await
     .unwrap_or((0i64,));
 
-    let display_id = format!("{}-{}", project.0, count.0 + 1);
+    let display_id = format!("{}-{}", project_prefix, count.0 + 1);
 
     let max_pos: Option<(Option<f64>,)> = sqlx::query_as(
         "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status = $2"
     )
     .bind(body.project_id)
     .bind(body.status.as_deref().unwrap_or("backlog"))
-    .fetch_optional(&pool)
+    .fetch_optional(tx.as_mut())
     .await
     .unwrap_or(None);
 
@@ -163,16 +255,20 @@ pub async fn create(
     .bind(body.parent_id)
     .bind(&body.tags.unwrap_or_default())
     .bind(&body.category.unwrap_or_default())
-    .bind(&body.assignee_ids.unwrap_or_default())
+    .bind(&resolved_assignees)
     .bind(position)
     .bind(&auth.user_id)
     .bind(None::<String>)
     .bind(body.due_date)
     .bind(body.estimate)
     .bind(body.sprint_id)
-    .fetch_one(&pool)
+    .fetch_one(tx.as_mut())
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     Ok(Json(ApiResponse::new(issue)))
 }
@@ -249,12 +345,60 @@ pub async fn update(
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
     }
 
-    let priority_provided = body.priority.is_some();
-    let priority_value = body.priority.flatten();
+    let existing = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
+
+    let new_status = body.status.clone().unwrap_or(existing.status.clone());
+    let status_changed = new_status != existing.status;
+
+    let mut effective_priority = if body.priority.is_some() {
+        body.priority.clone().flatten()
+    } else {
+        existing.priority.clone()
+    };
+
+    let mut effective_due_date = if body.due_date.is_some() {
+        body.due_date
+    } else {
+        existing.due_date.map(Some)
+    };
+
+    let mut effective_tags = body.tags.clone().unwrap_or_else(|| existing.tags.clone());
+
+    if status_changed {
+        let status_marker = format!("auto:status:{}", new_status);
+        if !effective_tags.iter().any(|t| t == &status_marker) {
+            effective_tags.push(status_marker);
+        }
+
+        if new_status == "in_review" && effective_priority.is_none() {
+            effective_priority = Some("high".to_string());
+        }
+
+        if new_status == "in_progress" && effective_due_date.flatten().is_none() {
+            let days = match effective_priority.as_deref() {
+                Some("urgent") => 1,
+                Some("high") => 2,
+                Some("medium") => 4,
+                Some("low") => 7,
+                _ => 5,
+            };
+            let auto_due = chrono::Utc::now().date_naive() + chrono::Duration::days(days);
+            effective_due_date = Some(Some(auto_due));
+        }
+    }
+
+    let priority_provided = true;
+    let priority_value = effective_priority;
     let milestone_provided = body.milestone_id.is_some();
     let milestone_value = body.milestone_id.flatten();
-    let due_date_provided = body.due_date.is_some();
-    let due_date_value = body.due_date.flatten();
+    let due_date_provided = true;
+    let due_date_value = effective_due_date.flatten();
+    let tags_provided = true;
+    let tags_value = effective_tags;
     let estimate_provided = body.estimate.is_some();
     let estimate_value = body.estimate.flatten();
     let sprint_id_provided = body.sprint_id.is_some();
@@ -268,14 +412,14 @@ pub async fn update(
             type = COALESCE($4, type),
             status = COALESCE($5, status),
             priority = CASE WHEN $6::boolean THEN $7 ELSE priority END,
-            tags = COALESCE($8, tags),
-            assignee_ids = COALESCE($9, assignee_ids),
-            milestone_id = CASE WHEN $10::boolean THEN $11 ELSE milestone_id END,
-            category = COALESCE($12, category),
-            due_date = CASE WHEN $13::boolean THEN $14 ELSE due_date END,
-            attachments = COALESCE($15, attachments),
-            estimate = CASE WHEN $16::boolean THEN $17 ELSE estimate END,
-            sprint_id = CASE WHEN $18::boolean THEN $19 ELSE sprint_id END,
+            tags = CASE WHEN $8::boolean THEN $9 ELSE tags END,
+            assignee_ids = COALESCE($10, assignee_ids),
+            milestone_id = CASE WHEN $11::boolean THEN $12 ELSE milestone_id END,
+            category = COALESCE($13, category),
+            due_date = CASE WHEN $14::boolean THEN $15 ELSE due_date END,
+            attachments = COALESCE($16, attachments),
+            estimate = CASE WHEN $17::boolean THEN $18 ELSE estimate END,
+            sprint_id = CASE WHEN $19::boolean THEN $20 ELSE sprint_id END,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -288,7 +432,8 @@ pub async fn update(
     .bind(&body.status)
     .bind(priority_provided)
     .bind(&priority_value)
-    .bind(&body.tags)
+    .bind(tags_provided)
+    .bind(&tags_value)
     .bind(&body.assignee_ids)
     .bind(milestone_provided)
     .bind(milestone_value)
@@ -442,19 +587,32 @@ pub async fn public_submit(
         }
     }
 
-    let project = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id, prefix FROM projects WHERE slug = $1"
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    let project = sqlx::query_as::<_, (Uuid, String, String)>(
+        "SELECT id, prefix, org_id FROM projects WHERE slug = $1 FOR UPDATE"
     )
     .bind(&slug)
-    .fetch_one(&pool)
+    .fetch_one(tx.as_mut())
     .await
     .map_err(|e| (StatusCode::NOT_FOUND, Json(json!({"error": format!("Project not found: {}", e)}))))?;
+
+    let (_, resolved_assignees) = resolve_auto_assign_assignees(
+        &mut tx,
+        project.0,
+        &project.2,
+        None,
+    )
+    .await?;
 
     let count: (i64,) = sqlx::query_as(
         "SELECT COALESCE(COUNT(*), 0) FROM issues WHERE project_id = $1"
     )
     .bind(project.0)
-    .fetch_one(&pool)
+    .fetch_one(tx.as_mut())
     .await
     .unwrap_or((0i64,));
 
@@ -464,9 +622,9 @@ pub async fn public_submit(
         r#"
         INSERT INTO issues (
             project_id, display_id, title, description, type,
-            reporter_name, reporter_email, source, position
+            reporter_name, reporter_email, source, position, assignee_ids
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'form', 99999)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'form', 99999, $8)
         RETURNING *
         "#,
     )
@@ -477,9 +635,14 @@ pub async fn public_submit(
     .bind(body.r#type.as_deref().unwrap_or("bug"))
     .bind(&body.reporter_name)
     .bind(&body.reporter_email)
-    .fetch_one(&pool)
+    .bind(&resolved_assignees)
+    .fetch_one(tx.as_mut())
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     Ok(Json(ApiResponse::new(issue)))
 }

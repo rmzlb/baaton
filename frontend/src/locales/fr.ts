@@ -7,6 +7,8 @@ const fr = {
   'sidebar.team': 'Équipe',
   'sidebar.settings': 'Paramètres',
   'sidebar.milestones': 'Jalons',
+  'sidebar.roadmap': 'Feuille de route',
+  'sidebar.analytics': 'Analytique',
   'sidebar.lightMode': 'Mode clair',
   'sidebar.darkMode': 'Mode sombre',
   'sidebar.language': 'Langue',
@@ -1003,6 +1005,41 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 
   // Create Issue extras
   'createIssue.estimateLabel': 'Estimation',
+
+  // Roadmap
+  'roadmap.title': 'Timeline roadmap',
+  'roadmap.subtitle': 'Vue transversale des jalons et sprints sur tous les projets.',
+  'roadmap.allProjects': 'Tous les projets',
+  'roadmap.empty': 'Aucun élément de timeline pour le moment. Ajoutez des jalons ou sprints.',
+  'roadmap.project': 'Projet',
+  'roadmap.timeline': 'Timeline',
+
+  // Analytics
+  'analytics.title': 'Analytique PM',
+  'analytics.subtitle': 'Vélocité, burnup et cycle-time à partir du flux de tickets.',
+  'analytics.cycleTime': 'Cycle-time moyen',
+  'analytics.cycleTimeDesc': 'Tickets terminés entre création et done',
+  'analytics.completedIssues': 'Tickets terminés',
+  'analytics.completedDesc': 'Total des tickets en statut done',
+  'analytics.activeSprintProgress': 'Progression sprint actif',
+  'analytics.startSprintHint': 'Démarrez un sprint pour voir le burnup',
+  'analytics.noActiveSprint': 'Aucun sprint actif',
+  'analytics.velocity': 'Vélocité par sprint',
+  'analytics.noVelocityData': 'Pas encore assez de données sprint.',
+  'analytics.burnup': 'Burnup du sprint actif',
+  'analytics.idealLine': 'Bleu = idéal',
+  'analytics.actualLine': 'Vert = réel',
+
+  // SLA
+  'sla.label': 'SLA',
+  'sla.level.urgent': 'Urgent',
+  'sla.level.high': 'Élevé',
+  'sla.level.standard': 'Standard',
+  'sla.status.ok': 'En bonne voie',
+  'sla.status.at_risk': 'À risque',
+  'sla.status.breached': 'Dépassé',
+  'sla.status.completed': 'Terminé',
+  'sla.deadline': 'Échéance SLA',
 
 } as const;
 

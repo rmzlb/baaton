@@ -22,6 +22,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Projects
         .route("/projects", get(projects::list).post(projects::create))
         .route("/projects/{id}", get(projects::get_one).patch(projects::update).delete(projects::remove))
+        .route("/projects/{id}/auto-assign", get(projects::get_auto_assign_settings).patch(projects::update_auto_assign_settings))
         .route("/projects/{id}/issues", get(issues::list_by_project))
         .route("/projects/{id}/tags", get(tags::list_by_project).post(tags::create))
         // Milestones

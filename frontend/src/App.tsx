@@ -20,6 +20,8 @@ const Milestones = lazy(() => import('./pages/Milestones'));
 const AllMilestones = lazy(() => import('./pages/AllMilestones'));
 const Sprints = lazy(() => import('./pages/Sprints'));
 const Triage = lazy(() => import('./pages/Triage'));
+const RoadmapTimeline = lazy(() => import('./pages/RoadmapTimeline'));
+const AnalyticsPM = lazy(() => import('./pages/AnalyticsPM'));
 
 const isAppDomain = window.location.hostname === 'app.baaton.dev';
 
@@ -107,6 +109,8 @@ export function App() {
             <Route path="/projects" element={<ProjectList />} />
             <Route path="/projects/:slug" element={<ProjectBoard />} />
             <Route path="/milestones" element={<AllMilestones />} />
+            <Route path="/roadmap" element={<RoadmapTimeline />} />
+            <Route path="/analytics" element={<AnalyticsPM />} />
             <Route path="/projects/:slug/milestones" element={<Milestones />} />
             <Route path="/projects/:slug/sprints" element={<Sprints />} />
             <Route path="/settings" element={<Settings />} />

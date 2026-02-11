@@ -7,6 +7,8 @@ const en = {
   'sidebar.team': 'Team',
   'sidebar.settings': 'Settings',
   'sidebar.milestones': 'Milestones',
+  'sidebar.roadmap': 'Roadmap',
+  'sidebar.analytics': 'Analytics',
   'sidebar.lightMode': 'Light mode',
   'sidebar.darkMode': 'Dark mode',
   'sidebar.language': 'Language',
@@ -1003,6 +1005,41 @@ As a [user], I want to [action] so that [benefit].
 
   // Create Issue extras
   'createIssue.estimateLabel': 'Estimate',
+
+  // Roadmap
+  'roadmap.title': 'Roadmap Timeline',
+  'roadmap.subtitle': 'Cross-project milestones and sprints in one timeline view.',
+  'roadmap.allProjects': 'All projects',
+  'roadmap.empty': 'No timeline items yet. Add milestones or sprints to populate this view.',
+  'roadmap.project': 'Project',
+  'roadmap.timeline': 'Timeline',
+
+  // Analytics
+  'analytics.title': 'PM Analytics',
+  'analytics.subtitle': 'Velocity, burnup, and cycle-time from your current issue flow.',
+  'analytics.cycleTime': 'Avg cycle time',
+  'analytics.cycleTimeDesc': 'Done issues from create to done',
+  'analytics.completedIssues': 'Completed issues',
+  'analytics.completedDesc': 'Total issues currently done',
+  'analytics.activeSprintProgress': 'Active sprint progress',
+  'analytics.startSprintHint': 'Start a sprint to see burnup',
+  'analytics.noActiveSprint': 'No active sprint',
+  'analytics.velocity': 'Velocity by sprint',
+  'analytics.noVelocityData': 'Not enough sprint data yet.',
+  'analytics.burnup': 'Active sprint burnup',
+  'analytics.idealLine': 'Blue = ideal',
+  'analytics.actualLine': 'Green = actual done',
+
+  // SLA
+  'sla.label': 'SLA',
+  'sla.level.urgent': 'Urgent',
+  'sla.level.high': 'High',
+  'sla.level.standard': 'Standard',
+  'sla.status.ok': 'On track',
+  'sla.status.at_risk': 'At risk',
+  'sla.status.breached': 'Breached',
+  'sla.status.completed': 'Completed',
+  'sla.deadline': 'SLA deadline',
 
 } as const;
 

@@ -298,13 +298,51 @@ const ALL_SKILL_DECLARATIONS = [
       },
 ];
 
+function normalizeGeminiSchemaNode(node: any): any {
+  if (!node || typeof node !== 'object') {
+    return { type: 'STRING' };
+  }
+
+  const normalized = { ...node };
+
+  if (!normalized.type) normalized.type = 'STRING';
+
+  if (normalized.type === 'OBJECT') {
+    normalized.properties = normalized.properties && typeof normalized.properties === 'object'
+      ? { ...normalized.properties }
+      : {};
+
+    for (const [key, value] of Object.entries(normalized.properties)) {
+      normalized.properties[key] = normalizeGeminiSchemaNode(value);
+    }
+
+    if (Array.isArray(normalized.required) && normalized.required.length === 0) {
+      delete normalized.required;
+    }
+  }
+
+  if (normalized.type === 'ARRAY') {
+    normalized.items = normalizeGeminiSchemaNode(normalized.items || { type: 'STRING' });
+  }
+
+  return normalized;
+}
+
+function normalizeDeclaration<T extends { parameters?: any }>(decl: T): T {
+  const copy = { ...decl };
+  copy.parameters = normalizeGeminiSchemaNode(copy.parameters || { type: 'OBJECT', properties: {} });
+  return copy;
+}
+
 // ─── Tool Masking (Manus Pattern) ─────────────
 // Returns ONLY context-relevant tools, reducing confusion and improving accuracy.
 // HelmAI: state-aware masking via XState meta. Baaton: intent-based masking.
 
 export function getToolsForContext(context: SkillContext = 'default') {
   const allowedNames = SKILL_GROUPS[context] || SKILL_GROUPS.default;
-  const filtered = ALL_SKILL_DECLARATIONS.filter((d) => allowedNames.includes(d.name));
+  const filtered = ALL_SKILL_DECLARATIONS
+    .filter((d) => allowedNames.includes(d.name))
+    .map((d) => normalizeDeclaration(d));
   return [{ functionDeclarations: filtered }];
 }
 
@@ -344,7 +382,7 @@ export function detectSkillContext(message: string, recentSkills: string[] = [])
 }
 
 // Legacy: full tool set (for backwards compat)
-export const SKILL_TOOLS = [{ functionDeclarations: ALL_SKILL_DECLARATIONS }];
+export const SKILL_TOOLS = [{ functionDeclarations: ALL_SKILL_DECLARATIONS.map((d) => normalizeDeclaration(d)) }];
 
 // ─── Skill Result Types ───────────────────────
 export interface SkillResult {

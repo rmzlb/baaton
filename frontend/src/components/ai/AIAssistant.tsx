@@ -420,12 +420,10 @@ export function AIAssistant() {
           setLastFailedMessage(msg);
           addMessage('assistant', `⚠️ ${t('ai.errorNetwork') || 'Connection lost — check your internet'}`);
         } else {
-          setLastError(errorMsg);
+          const safeMessage = t('ai.errorGeneric') || 'AI request failed. Please try again.';
+          setLastError(safeMessage);
           setLastFailedMessage(msg);
-          addMessage(
-            'assistant',
-            `⚠️ ${t('ai.error', { message: errorMsg })}`,
-          );
+          addMessage('assistant', `⚠️ ${safeMessage}`);
         }
       } finally {
         setLoading(false);

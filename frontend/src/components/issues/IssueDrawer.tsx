@@ -17,6 +17,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useFileUpload, validateFiles } from '@/hooks/useFileUpload';
 import type { PendingFile } from '@/hooks/useFileUpload';
 import { cn, timeAgo } from '@/lib/utils';
+import { evaluateIssueSla } from '@/lib/sla';
 import { NotionEditor } from '@/components/shared/NotionEditor';
 import { GitHubSection } from '@/components/github/GitHubSection';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
@@ -1074,6 +1075,7 @@ function MetadataSidebar({
   const [showEstimatePicker, setShowEstimatePicker] = useState(false);
   const TypeIcon = TYPE_CONFIG[issue.type]?.icon || FileText;
   const typeColor = TYPE_CONFIG[issue.type]?.color || 'text-secondary';
+  const sla = evaluateIssueSla(issue);
 
   return (
     <>
@@ -1142,6 +1144,19 @@ function MetadataSidebar({
       {/* Source */}
       <SidebarField label={t('issueDrawer.source')}>
         <span className="text-xs text-secondary capitalize px-1.5 py-0.5">{issue.source}</span>
+      </SidebarField>
+
+      {/* SLA */}
+      <SidebarField label={t('sla.label')}>
+        <div className={cn(
+          'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium',
+          sla.status === 'breached' && 'bg-red-500/15 text-red-400',
+          sla.status === 'at_risk' && 'bg-amber-500/15 text-amber-400',
+          sla.status === 'ok' && 'bg-blue-500/15 text-blue-300',
+          sla.status === 'completed' && 'bg-emerald-500/15 text-emerald-400',
+        )}>
+          {t(`sla.status.${sla.status}`)} · {t(sla.policy.labelKey)}
+        </div>
       </SidebarField>
 
       {/* Milestone */}
