@@ -63,12 +63,6 @@ async fn resolve_auto_assign_assignees(
                 r#"
                 SELECT DISTINCT member_id
                 FROM (
-                    SELECT al.user_id AS member_id
-                    FROM activity_log al
-                    WHERE al.project_id = $1
-                      AND al.user_id IS NOT NULL
-                      AND al.created_at >= NOW() - INTERVAL '90 days'
-                    UNION
                     SELECT i.created_by_id AS member_id
                     FROM issues i
                     WHERE i.project_id = $1
