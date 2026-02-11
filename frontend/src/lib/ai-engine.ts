@@ -448,6 +448,72 @@ export async function generateAIResponse(
   const skillContext = stateToSkillContext(state);
   const skillsExecuted: SkillResult[] = [];
 
+  // Deterministic PM full-review mode (no Gemini tool-calling)
+  // Trigger for milestone/sprint planning prompts to bypass current provider schema instability.
+  const lowerPrompt = userMessage.toLowerCase();
+  const wantsPmFullReview =
+    (lowerPrompt.includes('plan') || lowerPrompt.includes('analyze') || lowerPrompt.includes('analyse')) &&
+    (lowerPrompt.includes('milestone') || lowerPrompt.includes('jalon')) &&
+    lowerPrompt.includes('sprint');
+
+  if (wantsPmFullReview) {
+    const allIssues = Object.values(allIssuesByProject).flat();
+    const openIssues = allIssues.filter((i: any) => !['done', 'cancelled'].includes(i.status));
+    const now = new Date();
+
+    const urgent = openIssues.filter((i: any) => i.priority === 'urgent');
+    const inProgress = openIssues.filter((i: any) => i.status === 'in_progress');
+    const review = openIssues.filter((i: any) => i.status === 'in_review');
+    const backlog = openIssues.filter((i: any) => ['backlog', 'todo'].includes(i.status));
+
+    const next = (d: number) => {
+      const x = new Date(now);
+      x.setDate(x.getDate() + d);
+      return x.toISOString().slice(0, 10);
+    };
+
+    const lines: string[] = [
+      '## PM Full Review (deterministic fallback)',
+      `- Projects: ${projects.length}`,
+      `- Open tickets: ${openIssues.length}`,
+      `- Urgent: ${urgent.length} | In progress: ${inProgress.length} | In review: ${review.length} | Backlog/Todo: ${backlog.length}`,
+      '',
+      '## Proposed Milestones',
+      `1) Stabilization & Hotfixes (target ${next(7)}) — focus urgent + blockers`,
+      `2) Active Delivery (target ${next(21)}) — close in_progress + in_review`,
+      `3) Backlog Acceleration (target ${next(42)}) — top priority backlog/todo`,
+      '',
+      '## Suggested Sprint Allocation',
+      `- Sprint 1 (now → ${next(14)}): urgent + oldest in_progress`,
+      `- Sprint 2 (${next(14)} → ${next(28)}): remaining active + critical backlog`,
+      `- Sprint 3 (${next(28)} → ${next(42)}): feature backlog + polish`,
+      '',
+      '## Priority Recommendations',
+      '- Keep all production-impact bugs as urgent/high until resolved',
+      '- Promote stale in_progress (>7 days) to high and assign explicit owner',
+      '- Split oversized backlog items into sub-issues before sprint planning',
+      '',
+      'If you want, I can now generate a project-by-project mapping (issue IDs grouped under each milestone).',
+    ];
+
+    const text = lines.join('\n');
+    const outputTokens = estimateTokens(text);
+    const inputTokens = estimateTokens(userMessage);
+    state = transition(state, { type: 'AI_RESPONSE', tokens: outputTokens });
+
+    return {
+      text,
+      skillsExecuted,
+      usage: {
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        turnCount: state.usage.turnCount,
+      },
+      stateContext: state,
+    };
+  }
+
   // ── Build tools with executor bridge ──
   const executor = async (name: string, args: Record<string, unknown>) => {
     state = transition(state, { type: 'SKILL_STARTED', name });
