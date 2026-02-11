@@ -161,6 +161,13 @@ export function useApi() {
 
     // ─── Issues ────────────────────────────────
     issues: {
+      listAll: async (params?: { limit?: number }): Promise<Issue[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          const qs = params?.limit ? `?limit=${params.limit}` : '';
+          return api.get<Issue[]>(`/issues${qs}`, token);
+        }),
+
       listByProject: async (
         projectId: string,
         params?: {

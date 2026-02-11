@@ -241,20 +241,10 @@ export function AllIssues() {
   });
 
   const { data: allIssuesRaw = [], isLoading } = useQuery({
-    queryKey: ['all-issues', projects.map((p) => p.id).join(',')],
+    queryKey: ['all-issues'],
     queryFn: async () => {
-      const results = await Promise.all(
-        projects.map(async (p) => {
-          try {
-            return await apiClient.issues.listByProject(p.id, { limit: 500 });
-          } catch {
-            return [] as Issue[];
-          }
-        }),
-      );
-      return results.flat();
+      return await apiClient.issues.listAll({ limit: 2000 });
     },
-    enabled: projects.length > 0,
     staleTime: 60_000,
   });
 
@@ -392,8 +382,29 @@ export function AllIssues() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-secondary">
-        {t('allIssues.loading')}
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between border-b border-border px-3 md:px-6 py-3">
+          <div>
+            <div className="h-5 w-32 rounded bg-surface-hover animate-pulse" />
+            <div className="mt-1.5 h-3 w-48 rounded bg-surface-hover animate-pulse" />
+          </div>
+          <div className="flex gap-2">
+            <div className="h-8 w-24 rounded-lg bg-surface-hover animate-pulse" />
+            <div className="h-8 w-20 rounded-lg bg-surface-hover animate-pulse" />
+          </div>
+        </div>
+        <div className="border-b border-border px-3 md:px-6 py-2">
+          <div className="flex gap-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-7 w-16 rounded-full bg-surface-hover animate-pulse" />
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 p-4 space-y-2">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="h-12 rounded-lg bg-surface-hover animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }

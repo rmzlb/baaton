@@ -27,7 +27,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Sprints
         .route("/projects/{id}/sprints", get(sprints::list_by_project).post(sprints::create))
         // Issues
-        .route("/issues", post(issues::create))
+        .route("/issues", get(issues::list_all).post(issues::create))
         .route("/issues/mine", get(issues::list_mine))
         .route("/issues/{id}", get(issues::get_one).patch(issues::update).delete(issues::remove))
         .route("/issues/{id}/position", patch(issues::update_position))

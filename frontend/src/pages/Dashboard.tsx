@@ -256,14 +256,7 @@ export function Dashboard() {
             if (!token) return { org, projects: [] as Project[], issues: [] as Issue[] };
 
             const projects = await api.get<Project[]>('/projects', token);
-            const issues = (
-              await Promise.all(
-                projects.map(async (p) => {
-                  try { return await api.get<Issue[]>(`/projects/${p.id}/issues?limit=500`, token); }
-                  catch { return [] as Issue[]; }
-                }),
-              )
-            ).flat();
+            const issues = await api.get<Issue[]>('/issues?limit=2000', token);
 
             return { org, projects, issues };
           } catch {
@@ -366,8 +359,28 @@ export function Dashboard() {
           </div>
 
           {isLoading ? (
-            <div className="flex items-center justify-center py-12 text-sm text-secondary rounded-xl border border-border bg-surface">
-              {t('dashboard.loadingProjects')}
+            <div className="space-y-4">
+              {[...Array(2)].map((_, i) => (
+                <div key={i} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {[...Array(2)].map((_, j) => (
+                    <div key={j} className="rounded-xl border border-border bg-surface p-4 space-y-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 rounded-lg bg-surface-hover animate-pulse" />
+                        <div className="space-y-1.5 flex-1">
+                          <div className="h-4 w-32 rounded bg-surface-hover animate-pulse" />
+                          <div className="h-2.5 w-20 rounded bg-surface-hover animate-pulse" />
+                        </div>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-surface-hover animate-pulse" />
+                      <div className="grid grid-cols-4 gap-2">
+                        {[...Array(4)].map((_, k) => (
+                          <div key={k} className="h-8 rounded bg-surface-hover animate-pulse" />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
           ) : sortedOrgData.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 rounded-xl border border-border bg-surface">

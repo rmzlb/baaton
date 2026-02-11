@@ -18,6 +18,35 @@ pub struct ListParams {
     pub offset: Option<i64>,
 }
 
+pub async fn list_all(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Query(params): Query<ListParams>,
+) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let limit = params.limit.unwrap_or(1000).min(2000);
+
+    let issues = sqlx::query_as::<_, Issue>(
+        r#"
+        SELECT i.*
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        WHERE p.org_id = $1
+        ORDER BY i.created_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(org_id)
+    .bind(limit)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    Ok(Json(ApiResponse::new(issues)))
+}
+
 pub async fn list_by_project(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
