@@ -552,15 +552,15 @@ export async function generateAIResponse(
       });
 
       try {
-        const [metrics, priorities] = await Promise.all([
-          skillExecutors.get_project_metrics({}),
-          skillExecutors.suggest_priorities({}),
+        const [metricsResult, prioritiesResult] = await Promise.all([
+          executeSkill('get_project_metrics', {}, apiClient, allIssuesByProject, projects),
+          executeSkill('suggest_priorities', {}, apiClient, allIssuesByProject, projects),
         ]);
 
         // Hard fallback: DO NOT call Gemini again.
         // Build a deterministic PM review from live metrics so user always gets output.
-        const m: any = metrics || {};
-        const p: any = priorities || {};
+        const m: any = metricsResult?.data || {};
+        const p: any = prioritiesResult?.data || {};
         const projectCount = Array.isArray(m.projects) ? m.projects.length : (m.project_count ?? 0);
         const openCount = m.open_issues ?? m.openCount ?? 0;
         const doneCount = m.done_issues ?? m.doneCount ?? 0;
