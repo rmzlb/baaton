@@ -81,6 +81,8 @@ pub struct Issue {
     pub due_date: Option<NaiveDate>,
     pub qualified_at: Option<DateTime<Utc>>,
     pub qualified_by: Option<String>,
+    pub estimate: Option<i32>,
+    pub sprint_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -100,6 +102,8 @@ pub struct CreateIssue {
     pub category: Option<Vec<String>>,
     pub assignee_ids: Option<Vec<String>>,
     pub due_date: Option<NaiveDate>,
+    pub estimate: Option<i32>,
+    pub sprint_id: Option<Uuid>,
 }
 
 #[allow(dead_code)]
@@ -118,6 +122,8 @@ pub struct UpdateIssue {
     pub position: Option<f64>,
     pub due_date: Option<Option<NaiveDate>>,
     pub attachments: Option<serde_json::Value>,
+    pub estimate: Option<Option<i32>>,
+    pub sprint_id: Option<Option<Uuid>>,
 }
 
 // ─── TLDR ─────────────────────────────────────────────

@@ -333,23 +333,24 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                   <PaletteItem
                     key={issue.id}
                     icon={<FileText size={14} className="text-secondary" />}
-                    onSelect={() => {
-                      const project = projectMap[issue.project_id];
-                      if (project) {
-                        runAction(`/projects/${project.slug}`);
-                      }
-                    }}
+                    onSelect={() => runAction(`/all-issues?issue=${issue.display_id}`)}
                     subtitle={
                       <span className="flex items-center gap-1.5">
                         <span className="font-mono text-[10px] text-secondary">{issue.display_id}</span>
+                        <span className={cn(
+                          'rounded-full px-1.5 py-0.5 text-[9px] font-medium',
+                          issue.status === 'done' ? 'bg-green-500/15 text-green-400' :
+                          issue.status === 'in_progress' ? 'bg-amber-500/15 text-amber-400' :
+                          issue.status === 'in_review' ? 'bg-violet-500/15 text-violet-400' :
+                          issue.status === 'todo' ? 'bg-blue-500/15 text-blue-400' :
+                          issue.status === 'cancelled' ? 'bg-red-500/15 text-red-400' :
+                          'bg-surface-hover text-muted'
+                        )}>
+                          {issue.status.replace('_', ' ')}
+                        </span>
                         {projectMap[issue.project_id] && (
                           <span className="text-[10px] text-muted">· {projectMap[issue.project_id].name}</span>
                         )}
-                        {issue.tags.slice(0, 2).map((tg) => (
-                          <span key={tg} className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[9px] text-secondary">
-                            <Hash size={8} className="inline mr-0.5" />{tg}
-                          </span>
-                        ))}
                       </span>
                     }
                   >

@@ -66,7 +66,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
   const [sortField, setSortField] = useState<SortField>('status');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [groupByProject, setGroupByProject] = useState(false);
+  const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'project' | 'assignee'>('status');
 
   // Filters
   const [selectedPriorities, setSelectedPriorities] = useState<IssuePriority[]>([]);
@@ -151,17 +151,60 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
     return sorted;
   }, [filteredIssues, sortField, sortDir, statuses]);
 
-  // Group by status
-  const groupedByStatus = useMemo(() => {
-    const groups: { status: ProjectStatus; issues: Issue[] }[] = [];
-    for (const s of statuses) {
-      const statusIssues = sortedIssues.filter((i) => i.status === s.key);
-      if (statusIssues.length > 0) {
-        groups.push({ status: s, issues: statusIssues });
-      }
+  // Generic grouping
+  const groupedIssues = useMemo(() => {
+    if (groupBy === 'none') {
+      return [{ key: '__all__', label: 'All Issues', color: undefined as string | undefined, issues: sortedIssues }];
     }
-    return groups;
-  }, [sortedIssues, statuses]);
+    if (groupBy === 'status') {
+      return statuses
+        .map((s) => ({
+          key: s.key,
+          label: s.label,
+          color: s.color,
+          issues: sortedIssues.filter((i) => i.status === s.key),
+        }))
+        .filter((g) => g.issues.length > 0);
+    }
+    if (groupBy === 'priority') {
+      const order = ['urgent', 'high', 'medium', 'low', '__none__'];
+      const labels: Record<string, string> = { urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low', __none__: 'No Priority' };
+      const colors: Record<string, string> = { urgent: '#ef4444', high: '#f97316', medium: '#eab308', low: '#6b7280', __none__: '#4b5563' };
+      return order
+        .map((key) => ({
+          key,
+          label: labels[key],
+          color: colors[key],
+          issues: sortedIssues.filter((i) => key === '__none__' ? !i.priority : i.priority === key),
+        }))
+        .filter((g) => g.issues.length > 0);
+    }
+    if (groupBy === 'project') {
+      return projects
+        .map((p) => ({
+          key: p.id,
+          label: `${p.prefix} — ${p.name}`,
+          color: undefined as string | undefined,
+          issues: sortedIssues.filter((i) => i.project_id === p.id),
+        }))
+        .filter((g) => g.issues.length > 0);
+    }
+    if (groupBy === 'assignee') {
+      const assigneeMap = new Map<string, Issue[]>();
+      for (const issue of sortedIssues) {
+        const key = issue.assignee_ids[0] || '__unassigned__';
+        if (!assigneeMap.has(key)) assigneeMap.set(key, []);
+        assigneeMap.get(key)!.push(issue);
+      }
+      return Array.from(assigneeMap.entries()).map(([key, issues]) => ({
+        key,
+        label: key === '__unassigned__' ? 'Unassigned' : key.slice(0, 12),
+        color: undefined as string | undefined,
+        issues,
+      }));
+    }
+    return [{ key: '__all__', label: 'All', color: undefined as string | undefined, issues: sortedIssues }];
+  }, [sortedIssues, statuses, projects, groupBy]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -349,21 +392,22 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
           </button>
         )}
 
-        {/* Group by Project toggle */}
-        {projects.length > 1 && (
-          <button
-            onClick={() => setGroupByProject(!groupByProject)}
-            className={cn(
-              'ml-auto flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition-colors min-h-[32px]',
-              groupByProject
-                ? 'border-accent/30 bg-accent/10 text-accent'
-                : 'border-border bg-surface text-secondary hover:text-primary',
-            )}
-          >
-            <Layers size={12} />
-            {t('list.groupByProject') || 'Group by project'}
-          </button>
-        )}
+        {/* Group By dropdown */}
+        <FilterDropdown icon={<Layers size={12} />} label={`Group: ${groupBy === 'none' ? 'None' : groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}`} count={groupBy !== 'status' ? 1 : 0}>
+          {(['none', 'status', 'priority', 'project', 'assignee'] as const).map((opt) => (
+            <button
+              key={opt}
+              onClick={() => setGroupBy(opt)}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors',
+                groupBy === opt ? 'text-primary bg-surface-hover' : 'text-secondary hover:bg-surface-hover',
+              )}
+            >
+              {opt.charAt(0).toUpperCase() + opt.slice(1)}
+              {groupBy === opt && <span className="ml-auto text-accent">✓</span>}
+            </button>
+          ))}
+        </FilterDropdown>
       </div>}
 
       {/* Table */}
@@ -410,82 +454,38 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
         </div>
 
         {/* Grouped rows */}
-        {groupedByStatus.map(({ status, issues: groupIssues }) => {
-          const isCollapsed = collapsedGroups.has(status.key);
-
-          // Sub-group by project if enabled
-          const projectGroups = groupByProject && projects.length > 1
-            ? projects.filter((p) => groupIssues.some((i) => i.project_id === p.id)).map((p) => ({
-                project: p,
-                issues: groupIssues.filter((i) => i.project_id === p.id),
-              }))
-            : null;
+        {groupedIssues.map((group) => {
+          const isCollapsed = collapsedGroups.has(group.key);
 
           return (
-            <div key={status.key}>
-              {/* Status group header */}
-              <button
-                onClick={() => toggleGroup(status.key)}
-                className="sticky top-0 md:top-[33px] z-[5] flex w-full items-center gap-2 border-b border-border/50 bg-surface px-3 md:px-6 py-2 text-xs font-medium text-secondary hover:bg-surface transition-colors"
-              >
-                {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: status.color }} />
-                {status.label}
-                <span className="rounded-full bg-surface-hover px-2 py-0.5 text-[10px] text-muted font-mono">
-                  {groupIssues.length}
-                </span>
-              </button>
-
-              {!isCollapsed && (
-                projectGroups ? (
-                  // Render with project sub-groups
-                  projectGroups.map(({ project, issues: projIssues }) => {
-                    const subKey = `${status.key}:${project.id}`;
-                    const isSubCollapsed = collapsedGroups.has(subKey);
-                    return (
-                      <div key={subKey}>
-                        <button
-                          onClick={() => toggleGroup(subKey)}
-                          className="flex w-full items-center gap-2 border-b border-border/30 bg-surface/50 px-6 md:px-10 py-1.5 text-[11px] font-medium text-muted hover:text-secondary transition-colors"
-                        >
-                          {isSubCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                          <span className="font-mono text-accent text-[10px]">{project.prefix}</span>
-                          <span className="text-secondary">{project.name}</span>
-                          <span className="rounded-full bg-surface-hover px-1.5 py-0 text-[9px] text-muted font-mono">
-                            {projIssues.length}
-                          </span>
-                        </button>
-                        {!isSubCollapsed && projIssues.map((issue) => (
-                          <ListRow
-                            key={issue.id}
-                            issue={issue}
-                            statuses={statuses}
-                            projectTags={projectTags}
-                            onClick={() => onIssueClick(issue)}
-                            onContextMenu={handleContextMenu}
-                            selected={selectedIds.has(issue.id)}
-                            onSelect={(id, shift) => toggleSelect(id, shift, allIssueIds)}
-                          />
-                        ))}
-                      </div>
-                    );
-                  })
-                ) : (
-                  // Render flat
-                  groupIssues.map((issue) => (
-                    <ListRow
-                      key={issue.id}
-                      issue={issue}
-                      statuses={statuses}
-                      projectTags={projectTags}
-                      onClick={() => onIssueClick(issue)}
-                            onContextMenu={handleContextMenu}
-                            selected={selectedIds.has(issue.id)}
-                            onSelect={(id, shift) => toggleSelect(id, shift, allIssueIds)}
-                    />
-                  ))
-                )
+            <div key={group.key}>
+              {/* Group header (hidden for 'none' with single group) */}
+              {groupBy !== 'none' && (
+                <button
+                  onClick={() => toggleGroup(group.key)}
+                  className="sticky top-0 md:top-[33px] z-[5] flex w-full items-center gap-2 border-b border-border/50 bg-surface px-3 md:px-6 py-2 text-xs font-medium text-secondary hover:bg-surface transition-colors"
+                >
+                  {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                  {group.color && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />}
+                  {group.label}
+                  <span className="rounded-full bg-surface-hover px-2 py-0.5 text-[10px] text-muted font-mono">
+                    {group.issues.length}
+                  </span>
+                </button>
               )}
+
+              {!isCollapsed && group.issues.map((issue) => (
+                <ListRow
+                  key={issue.id}
+                  issue={issue}
+                  statuses={statuses}
+                  projectTags={projectTags}
+                  onClick={() => onIssueClick(issue)}
+                  onContextMenu={handleContextMenu}
+                  selected={selectedIds.has(issue.id)}
+                  onSelect={(id, shift) => toggleSelect(id, shift, allIssueIds)}
+                />
+              ))}
             </div>
           );
         })}

@@ -146,9 +146,9 @@ pub async fn create(
         INSERT INTO issues (
             project_id, display_id, title, description, type, status, priority,
             milestone_id, parent_id, tags, category, assignee_ids, position, source,
-            created_by_id, created_by_name, due_date
+            created_by_id, created_by_name, due_date, estimate, sprint_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'web', $14, $15, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'web', $14, $15, $16, $17, $18)
         RETURNING *
         "#,
     )
@@ -168,6 +168,8 @@ pub async fn create(
     .bind(&auth.user_id)
     .bind(None::<String>)
     .bind(body.due_date)
+    .bind(body.estimate)
+    .bind(body.sprint_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -189,7 +191,7 @@ pub async fn get_one(
                i.description, i.type, i.status, i.priority, i.source, i.reporter_name,
                i.reporter_email, i.assignee_ids, i.tags, i.attachments, i.category,
                i.position, i.created_by_id, i.created_by_name, i.due_date,
-               i.qualified_at, i.qualified_by, i.created_at, i.updated_at
+               i.qualified_at, i.qualified_by, i.estimate, i.sprint_id, i.created_at, i.updated_at
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE i.id = $1 AND p.org_id = $2
@@ -253,6 +255,10 @@ pub async fn update(
     let milestone_value = body.milestone_id.flatten();
     let due_date_provided = body.due_date.is_some();
     let due_date_value = body.due_date.flatten();
+    let estimate_provided = body.estimate.is_some();
+    let estimate_value = body.estimate.flatten();
+    let sprint_id_provided = body.sprint_id.is_some();
+    let sprint_id_value = body.sprint_id.flatten();
 
     let issue = sqlx::query_as::<_, Issue>(
         r#"
@@ -268,6 +274,8 @@ pub async fn update(
             category = COALESCE($12, category),
             due_date = CASE WHEN $13::boolean THEN $14 ELSE due_date END,
             attachments = COALESCE($15, attachments),
+            estimate = CASE WHEN $16::boolean THEN $17 ELSE estimate END,
+            sprint_id = CASE WHEN $18::boolean THEN $19 ELSE sprint_id END,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -288,6 +296,10 @@ pub async fn update(
     .bind(due_date_provided)
     .bind(due_date_value)
     .bind(&body.attachments)
+    .bind(estimate_provided)
+    .bind(estimate_value)
+    .bind(sprint_id_provided)
+    .bind(sprint_id_value)
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -357,7 +369,7 @@ pub async fn list_mine(
                i.description, i.type, i.status, i.priority, i.source, i.reporter_name,
                i.reporter_email, i.assignee_ids, i.tags, i.attachments, i.category,
                i.position, i.created_by_id, i.created_by_name, i.due_date,
-               i.qualified_at, i.qualified_by, i.created_at, i.updated_at
+               i.qualified_at, i.qualified_by, i.estimate, i.sprint_id, i.created_at, i.updated_at
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE $1 = ANY(i.assignee_ids) AND p.org_id = $2

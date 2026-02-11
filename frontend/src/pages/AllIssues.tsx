@@ -13,11 +13,12 @@ import {
   ChevronDown, X, Search, SlidersHorizontal,
   ArrowUp, ArrowDown, Minus, OctagonAlert,
   Circle, Clock, Eye, CheckCircle2, XCircle, Archive,
-  FolderOpen,
+  FolderOpen, User, Tag,
 } from 'lucide-react';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
+import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { cn } from '@/lib/utils';
-import type { Issue, IssueStatus, ProjectStatus, ProjectTag } from '@/lib/types';
+import type { IssueStatus, ProjectStatus, ProjectTag } from '@/lib/types';
 
 // ─── Statuses (global) ───────────────────────
 const STATUSES: ProjectStatus[] = [
@@ -209,8 +210,9 @@ export function AllIssues() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
-  const [, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
+  const viewParam = searchParams.get('view');
 
   // View mode (persisted)
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -221,10 +223,14 @@ export function AllIssues() {
     localStorage.setItem('baaton-view-all-issues', viewMode);
   }, [viewMode]);
 
+  const { resolveUserName, resolveUserAvatar } = useClerkMembers();
+
   // Filters
   const [projectFilter, setProjectFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMode, setSortMode] = useState<'manual' | 'priority' | 'created' | 'updated'>('created');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -267,6 +273,51 @@ export function AllIssues() {
     staleTime: 60_000,
   });
 
+  // ─── Saved Views ───────────────────────────
+  const { data: savedViews = [] } = useQuery({
+    queryKey: ['saved-views'],
+    queryFn: () => apiClient.views.list(),
+    staleTime: 60_000,
+  });
+
+  const saveViewMutation = useMutation({
+    mutationFn: (body: { name: string; filters: Record<string, unknown>; sort?: string }) =>
+      apiClient.views.create(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['saved-views'] });
+      setSaveViewOpen(false);
+      setSaveViewName('');
+    },
+  });
+
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [saveViewName, setSaveViewName] = useState('');
+
+  // Load view from URL param
+  useEffect(() => {
+    if (!viewParam || savedViews.length === 0) return;
+    const view = savedViews.find((v: SavedView) => v.id === viewParam);
+    if (!view) return;
+    if (view.filters.projects) setProjectFilter(view.filters.projects);
+    if (view.filters.statuses) setStatusFilter(view.filters.statuses);
+    if (view.filters.priorities) setPriorityFilter(view.filters.priorities);
+    if (view.filters.search) setSearchQuery(view.filters.search);
+  }, [viewParam, savedViews]);
+
+  const handleSaveView = () => {
+    if (!saveViewName.trim()) return;
+    saveViewMutation.mutate({
+      name: saveViewName.trim(),
+      filters: {
+        projects: projectFilter,
+        statuses: statusFilter,
+        priorities: priorityFilter,
+        search: searchQuery || undefined,
+      },
+      sort: sortMode,
+    });
+  };
+
   // ─── Issue counts per project (for chips) ──
   const issueCountByProject = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -287,6 +338,19 @@ export function AllIssues() {
     return counts;
   }, [allIssuesRaw, projectFilter]);
 
+  // ─── Unique tags + assignees for filters ────
+  const uniqueTags = useMemo(() => {
+    const tags = new Set<string>();
+    allIssuesRaw.forEach((i) => i.tags.forEach((t) => tags.add(t)));
+    return Array.from(tags).sort();
+  }, [allIssuesRaw]);
+
+  const uniqueAssigneeIds = useMemo(() => {
+    const ids = new Set<string>();
+    allIssuesRaw.forEach((i) => i.assignee_ids.forEach((a) => ids.add(a)));
+    return Array.from(ids);
+  }, [allIssuesRaw]);
+
   // ─── Apply filters ─────────────────────────
   const filteredIssues = useMemo(() => {
     let result = allIssuesRaw;
@@ -299,6 +363,12 @@ export function AllIssues() {
     }
     if (priorityFilter.length > 0) {
       result = result.filter((i) => i.priority && priorityFilter.includes(i.priority));
+    }
+    if (assigneeFilter.length > 0) {
+      result = result.filter((i) => i.assignee_ids.some((a) => assigneeFilter.includes(a)));
+    }
+    if (tagFilter.length > 0) {
+      result = result.filter((i) => i.tags.some((t) => tagFilter.includes(t)));
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -323,14 +393,16 @@ export function AllIssues() {
       default:
         return sorted;
     }
-  }, [allIssuesRaw, projectFilter, statusFilter, priorityFilter, searchQuery, sortMode]);
+  }, [allIssuesRaw, projectFilter, statusFilter, priorityFilter, assigneeFilter, tagFilter, searchQuery, sortMode]);
 
-  const hasFilters = projectFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || searchQuery.length > 0;
+  const hasFilters = projectFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || assigneeFilter.length > 0 || tagFilter.length > 0 || searchQuery.length > 0;
 
   const clearAllFilters = () => {
     setProjectFilter([]);
     setStatusFilter([]);
     setPriorityFilter([]);
+    setAssigneeFilter([]);
+    setTagFilter([]);
     setSearchQuery('');
   };
 
@@ -590,15 +662,130 @@ export function AllIssues() {
             ))}
           </FilterDropdown>
 
+          {/* Assignee dropdown */}
+          {uniqueAssigneeIds.length > 0 && (
+            <FilterDropdown
+              trigger={
+                <button className={cn(
+                  'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium border transition-all whitespace-nowrap',
+                  assigneeFilter.length > 0
+                    ? 'border-accent/40 bg-accent/10 text-accent'
+                    : 'border-transparent bg-surface-hover/60 text-secondary hover:bg-surface-hover hover:text-primary',
+                )}>
+                  <User size={12} />
+                  Assignee
+                  {assigneeFilter.length > 0 && (
+                    <span className="rounded-full bg-accent/20 px-1.5 text-[9px] font-bold text-accent">
+                      {assigneeFilter.length}
+                    </span>
+                  )}
+                  <ChevronDown size={10} />
+                </button>
+              }
+            >
+              <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted">Assignee</div>
+              {uniqueAssigneeIds.map((uid) => {
+                const avatar = resolveUserAvatar(uid);
+                return (
+                  <DropdownItem
+                    key={uid}
+                    label={resolveUserName(uid)}
+                    selected={assigneeFilter.includes(uid)}
+                    onClick={() => toggleFilter(assigneeFilter, uid, setAssigneeFilter)}
+                    icon={avatar ? undefined : User}
+                  />
+                );
+              })}
+            </FilterDropdown>
+          )}
+
+          {/* Tag dropdown */}
+          {uniqueTags.length > 0 && (
+            <FilterDropdown
+              trigger={
+                <button className={cn(
+                  'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium border transition-all whitespace-nowrap',
+                  tagFilter.length > 0
+                    ? 'border-accent/40 bg-accent/10 text-accent'
+                    : 'border-transparent bg-surface-hover/60 text-secondary hover:bg-surface-hover hover:text-primary',
+                )}>
+                  <Tag size={12} />
+                  Tags
+                  {tagFilter.length > 0 && (
+                    <span className="rounded-full bg-accent/20 px-1.5 text-[9px] font-bold text-accent">
+                      {tagFilter.length}
+                    </span>
+                  )}
+                  <ChevronDown size={10} />
+                </button>
+              }
+            >
+              <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted">Tags</div>
+              {uniqueTags.map((tag) => {
+                const tagObj = allTags.find((t) => t.name === tag);
+                return (
+                  <DropdownItem
+                    key={tag}
+                    label={tag}
+                    selected={tagFilter.includes(tag)}
+                    onClick={() => toggleFilter(tagFilter, tag, setTagFilter)}
+                    color={tagObj?.color || '#6b7280'}
+                  />
+                );
+              })}
+            </FilterDropdown>
+          )}
+
           {/* Clear all button */}
           {hasFilters && (
-            <button
-              onClick={clearAllFilters}
-              className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent transition-all whitespace-nowrap"
-            >
-              <X size={12} />
-              Clear all
-            </button>
+            <>
+              <button
+                onClick={clearAllFilters}
+                className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent transition-all whitespace-nowrap"
+              >
+                <X size={12} />
+                {t('allIssues.clearAll')}
+              </button>
+
+              {/* Save view */}
+              <div className="relative">
+                <button
+                  onClick={() => setSaveViewOpen(!saveViewOpen)}
+                  className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-accent hover:bg-accent/10 border border-transparent transition-all whitespace-nowrap"
+                >
+                  <Bookmark size={12} />
+                  {t('allIssues.saveView')}
+                </button>
+                {saveViewOpen && (
+                  <div className="absolute top-full mt-1.5 left-0 z-50 rounded-xl border border-border bg-surface shadow-2xl p-3 min-w-[220px]">
+                    <input
+                      type="text"
+                      value={saveViewName}
+                      onChange={(e) => setSaveViewName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveView()}
+                      placeholder={t('allIssues.viewNamePlaceholder')}
+                      autoFocus
+                      className="h-8 w-full rounded-lg border border-border bg-bg px-3 text-xs text-primary placeholder-muted outline-none focus:border-accent"
+                    />
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => setSaveViewOpen(false)}
+                        className="flex-1 rounded-lg px-3 py-1.5 text-xs text-secondary hover:bg-surface-hover"
+                      >
+                        {t('createIssue.cancel')}
+                      </button>
+                      <button
+                        onClick={handleSaveView}
+                        disabled={!saveViewName.trim()}
+                        className="flex-1 rounded-lg bg-accent px-3 py-1.5 text-xs text-black font-medium hover:bg-accent/90 disabled:opacity-50"
+                      >
+                        {t('allIssues.save')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>

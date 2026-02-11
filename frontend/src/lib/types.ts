@@ -166,6 +166,22 @@ export interface SSEEvent {
   author_name?: string;
 }
 
+export interface SavedView {
+  id: string;
+  name: string;
+  filters: {
+    projects?: string[];
+    statuses?: string[];
+    priorities?: string[];
+    assignees?: string[];
+    tags?: string[];
+    search?: string;
+  };
+  sort?: string;
+  is_shared: boolean;
+  created_at: string;
+}
+
 // ─── API Request Types ────────────────────────────────
 
 export interface CreateIssueRequest {

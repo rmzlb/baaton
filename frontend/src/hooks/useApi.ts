@@ -22,6 +22,7 @@ import type {
   OpenClawConnection,
   Milestone,
   Sprint,
+  SavedView,
 } from '@/lib/types';
 
 /**
@@ -504,6 +505,33 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.delete(`/sprints/${id}`, token);
+        }),
+    },
+
+    // ─── Views ─────────────────────────────────
+    views: {
+      list: async (): Promise<SavedView[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<SavedView[]>('/views', token);
+        }),
+
+      create: async (body: { name: string; filters: Record<string, unknown>; sort?: string; is_shared?: boolean }): Promise<SavedView> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<SavedView>('/views', body, token);
+        }),
+
+      update: async (id: string, body: { name?: string; filters?: Record<string, unknown>; sort?: string; is_shared?: boolean }): Promise<SavedView> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<SavedView>(`/views/${id}`, body, token);
+        }),
+
+      delete: async (id: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/views/${id}`, token);
         }),
     },
 

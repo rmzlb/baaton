@@ -53,6 +53,8 @@ async fn main() -> anyhow::Result<()> {
         (8, include_str!("../migrations/008_activity_log.sql")),
         (9, include_str!("../migrations/009_openclaw_integration.sql")),
         (10, include_str!("../migrations/010_milestone_enhancements.sql")),
+        (11, include_str!("../migrations/011_saved_views.sql")),
+        (12, include_str!("../migrations/012_templates_estimates.sql")),
     ];
 
     for &(version, sql) in migrations {

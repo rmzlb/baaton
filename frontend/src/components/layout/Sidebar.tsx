@@ -1,14 +1,17 @@
 import { useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
+import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Kanban, Settings, ChevronLeft, ChevronRight, Users, X,
-  Sun, Moon, CheckSquare, Layers, Globe, Target,
+  Sun, Moon, CheckSquare, Layers, Globe, Target, Eye, Inbox,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useApi } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
+import type { Issue } from '@/lib/types';
 
 export function Sidebar() {
   const { t, i18n } = useTranslation();
@@ -24,10 +27,31 @@ export function Sidebar() {
   const projectSlugMatch = location.pathname.match(/^\/projects\/([^/]+)/);
   const currentProjectSlug = projectSlugMatch ? projectSlugMatch[1] : null;
 
+  const apiClient = useApi();
+
+  // Fetch saved views
+  const { data: savedViews = [] } = useQuery({
+    queryKey: ['saved-views'],
+    queryFn: () => apiClient.views.list(),
+    staleTime: 60_000,
+  });
+
+  // Fetch triage count (unassigned backlog + public source)
+  const { data: allIssues = [] } = useQuery({
+    queryKey: ['all-issues'],
+    queryFn: () => apiClient.issues.listAll({ limit: 2000 }),
+    staleTime: 60_000,
+  });
+
+  const triageCount = allIssues.filter(
+    (i: Issue) => i.source === 'form' || (i.assignee_ids.length === 0 && i.status === 'backlog')
+  ).length;
+
   const navItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: t('sidebar.dashboard'), tourId: undefined },
     { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks'), tourId: 'my-tasks' as const },
     { to: '/all-issues', icon: Layers, label: t('sidebar.allIssues'), tourId: undefined },
+    { to: '/triage', icon: Inbox, label: t('sidebar.triage'), tourId: undefined, badge: triageCount > 0 ? triageCount : undefined },
     { to: '/projects', icon: Kanban, label: t('sidebar.projects'), tourId: 'projects-list' as const },
     {
       to: currentProjectSlug ? `/projects/${currentProjectSlug}/milestones` : '/milestones',
@@ -123,8 +147,8 @@ export function Sidebar() {
         </div>
 
         {/* Nav */}
-        <nav aria-label={t('sidebar.mainNavigation') || 'Main navigation'} className="flex-1 space-y-1 p-2">
-          {navItems.map(({ to, icon: Icon, label, tourId }) => (
+        <nav aria-label={t('sidebar.mainNavigation') || 'Main navigation'} className="flex-1 space-y-1 p-2 overflow-y-auto">
+          {navItems.map(({ to, icon: Icon, label, tourId, badge }: any) => (
             <NavLink
               key={to}
               to={to}
@@ -144,12 +168,44 @@ export function Sidebar() {
               {({ isActive }) => (
                 <>
                   <Icon size={20} aria-hidden="true" />
-                  {(!collapsed || mobileOpen) && <span>{label}</span>}
+                  {(!collapsed || mobileOpen) && <span className="flex-1">{label}</span>}
+                  {(!collapsed || mobileOpen) && badge !== undefined && (
+                    <span className="rounded-full bg-accent/20 text-accent px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+                      {badge}
+                    </span>
+                  )}
                   {isActive && <span className="sr-only">(current page)</span>}
                 </>
               )}
             </NavLink>
           ))}
+
+          {/* Saved Views */}
+          {savedViews.length > 0 && (!collapsed || mobileOpen) && (
+            <div className="pt-3 mt-2 border-t border-border">
+              <span className="px-3 text-[10px] font-semibold uppercase tracking-wider text-muted">
+                {t('sidebar.views')}
+              </span>
+              {savedViews.map((view) => (
+                <NavLink
+                  key={view.id}
+                  to={`/all-issues?view=${view.id}`}
+                  onClick={closeMobile}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors min-h-[36px]',
+                      isActive
+                        ? 'bg-surface-hover text-primary'
+                        : 'text-secondary hover:bg-surface hover:text-primary',
+                    )
+                  }
+                >
+                  <Eye size={16} aria-hidden="true" />
+                  <span className="truncate">{view.name}</span>
+                </NavLink>
+              ))}
+            </div>
+          )}
         </nav>
 
         {/* Footer */}

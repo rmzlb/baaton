@@ -11,9 +11,11 @@ mod tags;
 mod invites;
 mod milestones;
 mod sprints;
+mod templates;
 mod ai;
 pub mod activity;
 pub mod github;
+mod views;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -52,8 +54,14 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/tags/{id}", delete(tags::remove))
         // Milestones by ID
         .route("/milestones/{id}", get(milestones::get_one).put(milestones::update).delete(milestones::remove))
+        // Templates
+        .route("/projects/{id}/templates", get(templates::list_by_project).post(templates::create))
+        .route("/templates/{id}", delete(templates::remove))
         // Sprints by ID
         .route("/sprints/{id}", put(sprints::update).delete(sprints::remove))
+        // Views
+        .route("/views", get(views::list).post(views::create))
+        .route("/views/{id}", patch(views::update).delete(views::remove))
         .route("/invites", get(invites::list).post(invites::create))
         // Public routes (auth skipped in middleware)
         .route("/invite/{code}", get(invites::redirect_invite))
