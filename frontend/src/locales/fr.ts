@@ -36,6 +36,7 @@ const fr = {
   'dashboard.noActivity': 'Aucune activité. Créez votre premier projet pour commencer.',
   'dashboard.issue': 'issue',
   'dashboard.issues': 'issues',
+  'dashboard.switchOrg': 'Basculer',
 
   // ─── ProjectBoard ──────────────────────────
   'projectBoard.newIssue': 'Nouvelle Issue',

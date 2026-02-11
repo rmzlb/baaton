@@ -36,6 +36,7 @@ const en = {
   'dashboard.noActivity': 'No activity yet. Create your first project to get started.',
   'dashboard.issue': 'issue',
   'dashboard.issues': 'issues',
+  'dashboard.switchOrg': 'Switch',
 
   // ─── ProjectBoard ──────────────────────────
   'projectBoard.newIssue': 'New Issue',
