@@ -13,12 +13,12 @@ import {
   ChevronDown, X, Search, SlidersHorizontal,
   ArrowUp, ArrowDown, Minus, OctagonAlert,
   Circle, Clock, Eye, CheckCircle2, XCircle, Archive,
-  FolderOpen, User, Tag,
+  FolderOpen, User, Tag, Bookmark,
 } from 'lucide-react';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { cn } from '@/lib/utils';
-import type { IssueStatus, ProjectStatus, ProjectTag } from '@/lib/types';
+import type { Issue, IssueStatus, ProjectStatus, ProjectTag, SavedView } from '@/lib/types';
 
 // ─── Statuses (global) ───────────────────────
 const STATUSES: ProjectStatus[] = [

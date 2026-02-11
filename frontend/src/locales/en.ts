@@ -939,6 +939,70 @@ As a [user], I want to [action] so that [benefit].
 'contextMenu.statusChanged': 'Status updated',
 'contextMenu.priorityChanged': 'Priority updated',
 
+
+// ─── Sidebar (additional) ─────────────────────
+'sidebar.triage': 'Triage',
+'sidebar.views': 'Views',
+
+// ─── All Issues (additional) ──────────────────
+'allIssues.saveView': 'Save view',
+'allIssues.viewNamePlaceholder': 'View name…',
+'allIssues.save': 'Save',
+'allIssues.clearAll': 'Clear all',
+
+// ─── Triage ───────────────────────────────────
+'triage.title': 'Triage',
+'triage.issuesNeedAttention': 'issues need attention',
+'triage.accept': 'Accept',
+'triage.assign': 'Assign',
+'triage.decline': 'Decline',
+'triage.empty': 'All caught up!',
+'triage.emptyDesc': 'No issues need triage right now.',
+'triage.public': 'Public',
+'triage.publicSubmission': 'Public submission',
+'triage.submittedBy': 'Submitted by',
+'triage.noDescription': 'No description provided.',
+'triage.anonymous': 'Anonymous',
+
+  // Sprints
+  'sprints.title': 'Sprints',
+  'sprints.create': 'New Sprint',
+  'sprints.newSprint': 'New Sprint',
+  'sprints.namePlaceholder': 'Sprint name...',
+  'sprints.goalPlaceholder': 'Sprint goal (optional)...',
+  'sprints.startDate': 'Start date',
+  'sprints.endDate': 'End date',
+  'sprints.creating': 'Creating...',
+  'sprints.empty': 'No sprints yet. Create one to start planning.',
+  'sprints.active': 'Active',
+  'sprints.issues': 'issues',
+  'sprints.noIssues': 'No issues in this sprint',
+  'sprints.completed': 'completed',
+  'sprints.velocity': 'Velocity',
+  'sprints.points': 'pts',
+  'sprints.start': 'Start sprint',
+  'sprints.complete': 'Complete sprint',
+  'sprints.delete': 'Delete sprint',
+  'sprints.status.planning': 'Planning',
+  'sprints.status.active': 'Active',
+  'sprints.status.completed': 'Completed',
+
+  // Sidebar
+  'sidebar.sprints': 'Sprints',
+
+  // Issue Drawer extras
+  'issueDrawer.sprint': 'Sprint',
+  'issueDrawer.noSprint': 'No sprint',
+  'issueDrawer.unknownSprint': 'Unknown sprint',
+  'issueDrawer.estimate': 'Estimate',
+  'issueDrawer.noEstimate': 'No estimate',
+  'issueDrawer.subIssues': 'Sub-issues',
+  'issueDrawer.subIssuePlaceholder': 'Sub-issue title...',
+  'issueDrawer.addSubIssue': 'Add',
+
+  // Create Issue extras
+  'createIssue.estimateLabel': 'Estimate',
+
 } as const;
 
 export default en;

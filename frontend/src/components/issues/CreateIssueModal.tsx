@@ -87,6 +87,7 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
   const [useTemplate, setUseTemplate] = useState(true);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState('');
+  const [estimate, setEstimate] = useState<number | null>(null);
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
   const [error, setError] = useState('');
   const { memberships } = useOrganization({ memberships: { infinite: true } });
@@ -162,6 +163,7 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
         category: selectedCategories.length > 0 ? selectedCategories : undefined,
         assignee_ids: assigneeIds.length > 0 ? assigneeIds : undefined,
         due_date: dueDate || undefined,
+        estimate: estimate || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issues', project.id] });
@@ -260,6 +262,8 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
               setAssigneeIds={setAssigneeIds}
               dueDate={dueDate}
               setDueDate={setDueDate}
+              estimate={estimate}
+              setEstimate={setEstimate}
               orgMembers={orgMembers}
               showAssigneePicker={showAssigneePicker}
               setShowAssigneePicker={setShowAssigneePicker}
@@ -405,6 +409,8 @@ function StepDetails({
   setAssigneeIds,
   dueDate,
   setDueDate,
+  estimate,
+  setEstimate,
   orgMembers,
   showAssigneePicker,
   setShowAssigneePicker,
@@ -425,6 +431,8 @@ function StepDetails({
   setAssigneeIds: (v: string[]) => void;
   dueDate: string;
   setDueDate: (v: string) => void;
+  estimate: number | null;
+  setEstimate: (v: number | null) => void;
   orgMembers: { publicUserData?: { userId?: string; firstName?: string | null; lastName?: string | null } }[];
   showAssigneePicker: boolean;
   setShowAssigneePicker: (v: boolean) => void;
@@ -555,6 +563,26 @@ function StepDetails({
           </div>
         </div>
       )}
+
+      {/* Estimate */}
+      <div>
+        <label className="block text-xs text-secondary mb-1.5">{t('createIssue.estimateLabel')}</label>
+        <div className="flex flex-wrap gap-1.5">
+          {[{ v: null as number | null, l: '—' }, { v: 1, l: 'XS' }, { v: 2, l: 'S' }, { v: 3, l: 'M' }, { v: 5, l: 'L' }, { v: 8, l: 'XL' }].map(e => (
+            <button
+              key={e.l}
+              type="button"
+              onClick={() => setEstimate(e.v)}
+              className={cn(
+                'rounded-lg border px-3 py-1.5 text-xs font-medium font-mono transition-all',
+                estimate === e.v ? 'ring-2 ring-accent/40 bg-surface-hover border-accent/40 text-primary' : 'border-border text-secondary hover:bg-surface-hover',
+              )}
+            >
+              {e.l}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Assignees + Due Date — compact row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

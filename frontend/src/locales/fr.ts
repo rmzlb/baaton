@@ -939,6 +939,70 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'contextMenu.statusChanged': 'Statut mis à jour',
 'contextMenu.priorityChanged': 'Priorité mise à jour',
 
+
+// ─── Sidebar (additional) ─────────────────────
+'sidebar.triage': 'Triage',
+'sidebar.views': 'Vues',
+
+// ─── All Issues (additional) ──────────────────
+'allIssues.saveView': 'Sauvegarder la vue',
+'allIssues.viewNamePlaceholder': 'Nom de la vue…',
+'allIssues.save': 'Sauvegarder',
+'allIssues.clearAll': 'Tout effacer',
+
+// ─── Triage ───────────────────────────────────
+'triage.title': 'Triage',
+'triage.issuesNeedAttention': 'issues à traiter',
+'triage.accept': 'Accepter',
+'triage.assign': 'Assigner',
+'triage.decline': 'Refuser',
+'triage.empty': 'Tout est à jour !',
+'triage.emptyDesc': 'Aucune issue à trier pour le moment.',
+'triage.public': 'Public',
+'triage.publicSubmission': 'Soumission publique',
+'triage.submittedBy': 'Soumis par',
+'triage.noDescription': 'Aucune description fournie.',
+'triage.anonymous': 'Anonyme',
+
+  // Sprints
+  'sprints.title': 'Sprints',
+  'sprints.create': 'Nouveau Sprint',
+  'sprints.newSprint': 'Nouveau Sprint',
+  'sprints.namePlaceholder': 'Nom du sprint...',
+  'sprints.goalPlaceholder': 'Objectif du sprint (optionnel)...',
+  'sprints.startDate': 'Date de début',
+  'sprints.endDate': 'Date de fin',
+  'sprints.creating': 'Création...',
+  'sprints.empty': 'Aucun sprint. Créez-en un pour commencer la planification.',
+  'sprints.active': 'Actif',
+  'sprints.issues': 'tickets',
+  'sprints.noIssues': 'Aucun ticket dans ce sprint',
+  'sprints.completed': 'terminé(s)',
+  'sprints.velocity': 'Vélocité',
+  'sprints.points': 'pts',
+  'sprints.start': 'Démarrer le sprint',
+  'sprints.complete': 'Terminer le sprint',
+  'sprints.delete': 'Supprimer le sprint',
+  'sprints.status.planning': 'Planification',
+  'sprints.status.active': 'Actif',
+  'sprints.status.completed': 'Terminé',
+
+  // Sidebar
+  'sidebar.sprints': 'Sprints',
+
+  // Issue Drawer extras
+  'issueDrawer.sprint': 'Sprint',
+  'issueDrawer.noSprint': 'Aucun sprint',
+  'issueDrawer.unknownSprint': 'Sprint inconnu',
+  'issueDrawer.estimate': 'Estimation',
+  'issueDrawer.noEstimate': 'Aucune estimation',
+  'issueDrawer.subIssues': 'Sous-tickets',
+  'issueDrawer.subIssuePlaceholder': 'Titre du sous-ticket...',
+  'issueDrawer.addSubIssue': 'Ajouter',
+
+  // Create Issue extras
+  'createIssue.estimateLabel': 'Estimation',
+
 } as const;
 
 export default fr;

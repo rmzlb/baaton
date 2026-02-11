@@ -5,7 +5,7 @@ import { useOrganizationList, useOrganization } from '@clerk/clerk-react';
 import { Command } from 'cmdk';
 import {
   Search, ChevronRight, Menu,
-  LayoutDashboard, Kanban, Settings, FileText, Hash,
+  LayoutDashboard, Kanban, Settings, FileText,
   Building2, CheckCircle, ArrowRight, Plus, ListTodo,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
@@ -116,6 +116,9 @@ function buildBreadcrumbs(pathname: string, t: (key: string) => string): string[
         break;
       case 'all-issues':
         crumbs.push(t('sidebar.allIssues'));
+        break;
+      case 'triage':
+        crumbs.push(t('sidebar.triage'));
         break;
       default:
         // Project slug or other

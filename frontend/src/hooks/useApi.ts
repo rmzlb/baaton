@@ -22,6 +22,7 @@ import type {
   OpenClawConnection,
   Milestone,
   Sprint,
+  IssueTemplate,
   SavedView,
 } from '@/lib/types';
 
@@ -532,6 +533,34 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.delete(`/views/${id}`, token);
+        }),
+    },
+
+    // ─── Templates ─────────────────────────────
+    templates: {
+      listByProject: async (projectId: string): Promise<IssueTemplate[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<IssueTemplate[]>(`/projects/${projectId}/templates`, token);
+        }),
+
+      create: async (projectId: string, body: {
+        name: string;
+        title_template?: string;
+        description_template?: string;
+        type?: string;
+        priority?: string;
+        tags?: string[];
+      }): Promise<IssueTemplate> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<IssueTemplate>(`/projects/${projectId}/templates`, body, token);
+        }),
+
+      delete: async (id: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/templates/${id}`, token);
         }),
     },
 

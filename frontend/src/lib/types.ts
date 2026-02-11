@@ -93,6 +93,7 @@ export interface Issue {
   due_date: string | null;
   qualified_at: string | null;
   qualified_by: string | null;
+  estimate: number | null;
   created_at: string;
   updated_at: string;
   // Relations (optional, loaded on detail)
@@ -182,6 +183,18 @@ export interface SavedView {
   created_at: string;
 }
 
+export interface IssueTemplate {
+  id: string;
+  project_id: string;
+  name: string;
+  title_template: string | null;
+  description_template: string | null;
+  type: IssueType;
+  priority: IssuePriority | null;
+  tags: string[];
+  created_at: string;
+}
+
 // ─── API Request Types ────────────────────────────────
 
 export interface CreateIssueRequest {
@@ -196,6 +209,8 @@ export interface CreateIssueRequest {
   category?: string[];
   assignee_ids?: string[];
   due_date?: string;
+  estimate?: number;
+  sprint_id?: string;
 }
 
 export interface UpdateIssueRequest {
@@ -210,6 +225,8 @@ export interface UpdateIssueRequest {
   category?: string[];
   due_date?: string | null;
   position?: number;
+  estimate?: number | null;
+  sprint_id?: string | null;
 }
 
 export interface CreateTLDRRequest {

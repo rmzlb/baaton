@@ -23,7 +23,7 @@ import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
 import { IssueDrawerSkeleton } from '@/components/shared/Skeleton';
 import { CopyableId } from '@/components/shared/CopyableId';
-import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment, Milestone } from '@/lib/types';
+import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment, Milestone, Sprint } from '@/lib/types';
 
 /* ── Constants ─────────────────────────────────── */
 
@@ -122,6 +122,24 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     queryFn: () => apiClient.milestones.listByProject(resolvedProjectId!),
     enabled: !!resolvedProjectId,
   });
+
+  const { data: projectSprints = [] } = useQuery({
+    queryKey: ['sprints', resolvedProjectId],
+    queryFn: () => apiClient.sprints.listByProject(resolvedProjectId!),
+    enabled: !!resolvedProjectId,
+  });
+
+  // Fetch child issues (sub-issues)
+  const { data: allProjectIssues = [] } = useQuery({
+    queryKey: ['issues', resolvedProjectId],
+    queryFn: () => apiClient.issues.listByProject(resolvedProjectId!),
+    enabled: !!resolvedProjectId,
+  });
+
+  const childIssues = useMemo(
+    () => allProjectIssues.filter(i => i.parent_id === issueId),
+    [allProjectIssues, issueId],
+  );
 
   // ── Mutations ── (with optimistic updates for instant UI feedback)
   const updateMutation = useMutation({
@@ -722,6 +740,14 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     </div>
                   )}
                 </div>
+                {/* Sub-issues section */}
+                <SubIssuesSection
+                  parentIssue={issue}
+                  childIssues={childIssues}
+                  projectId={resolvedProjectId!}
+                  t={t}
+                />
+
                 {/* Activity log timeline */}
                 <ActivityFeed issueId={issueId} limit={15} compact />
               </div>
@@ -737,6 +763,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                 orgMembers={orgMembers}
                 projectTags={projectTags}
                 projectMilestones={projectMilestones}
+                projectSprints={projectSprints}
                 showTagPicker={showTagPicker}
                 setShowTagPicker={setShowTagPicker}
                 newTagName={newTagName}
@@ -1005,6 +1032,7 @@ interface MetadataSidebarProps {
   orgMembers: any[];
   projectTags: ProjectTag[];
   projectMilestones: Milestone[];
+  projectSprints: Sprint[];
   showTagPicker: boolean;
   setShowTagPicker: (v: boolean) => void;
   newTagName: string;
@@ -1027,6 +1055,7 @@ function MetadataSidebar({
   orgMembers,
   projectTags,
   projectMilestones,
+  projectSprints,
   showTagPicker,
   setShowTagPicker,
   newTagName,
@@ -1041,6 +1070,8 @@ function MetadataSidebar({
   t,
 }: MetadataSidebarProps) {
   const [showMilestonePicker, setShowMilestonePicker] = useState(false);
+  const [showSprintPicker, setShowSprintPicker] = useState(false);
+  const [showEstimatePicker, setShowEstimatePicker] = useState(false);
   const TypeIcon = TYPE_CONFIG[issue.type]?.icon || FileText;
   const typeColor = TYPE_CONFIG[issue.type]?.color || 'text-secondary';
 
@@ -1122,6 +1153,92 @@ function MetadataSidebar({
         onFieldUpdate={onFieldUpdate}
         t={t}
       />
+
+      {/* Sprint */}
+      <SidebarField label={t('issueDrawer.sprint')}>
+        <div className="relative">
+          <button
+            onClick={() => setShowSprintPicker(!showSprintPicker)}
+            className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-surface-hover w-full text-left"
+          >
+            {issue.sprint_id ? (
+              <span className="text-primary truncate">
+                {projectSprints.find(s => s.id === issue.sprint_id)?.name || t('issueDrawer.unknownSprint')}
+              </span>
+            ) : (
+              <span className="text-muted">{t('issueDrawer.noSprint')}</span>
+            )}
+          </button>
+          {showSprintPicker && (
+            <div className="absolute right-0 top-full z-20 mt-1 w-48 rounded-lg border border-border bg-surface py-1 shadow-xl max-h-40 overflow-y-auto">
+              <button
+                onClick={() => { onFieldUpdate('sprint_id', null); setShowSprintPicker(false); }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-secondary hover:bg-surface-hover"
+              >
+                {t('issueDrawer.noSprint')}
+              </button>
+              {projectSprints.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => { onFieldUpdate('sprint_id', s.id); setShowSprintPicker(false); }}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors',
+                    issue.sprint_id === s.id ? 'text-primary bg-surface-hover' : 'text-secondary hover:bg-surface-hover',
+                  )}
+                >
+                  <span className={cn('h-2 w-2 rounded-full shrink-0',
+                    s.status === 'active' ? 'bg-blue-500' : s.status === 'completed' ? 'bg-emerald-500' : 'bg-gray-400',
+                  )} />
+                  {s.name}
+                  {issue.sprint_id === s.id && <span className="ml-auto text-accent">✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </SidebarField>
+
+      {/* Estimate */}
+      <SidebarField label={t('issueDrawer.estimate')}>
+        <div className="relative">
+          <button
+            onClick={() => setShowEstimatePicker(!showEstimatePicker)}
+            className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-surface-hover w-full text-left"
+          >
+            {issue.estimate ? (
+              <span className="text-primary font-mono">
+                {{ 1: 'XS', 2: 'S', 3: 'M', 5: 'L', 8: 'XL' }[issue.estimate] || `${issue.estimate}pt`}
+              </span>
+            ) : (
+              <span className="text-muted">{t('issueDrawer.noEstimate')}</span>
+            )}
+          </button>
+          {showEstimatePicker && (
+            <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-lg border border-border bg-surface py-1 shadow-xl">
+              <button
+                onClick={() => { onFieldUpdate('estimate', null); setShowEstimatePicker(false); }}
+                className="flex w-full items-center px-3 py-1.5 text-xs text-secondary hover:bg-surface-hover"
+              >
+                {t('issueDrawer.noEstimate')}
+              </button>
+              {[{ v: 1, l: 'XS' }, { v: 2, l: 'S' }, { v: 3, l: 'M' }, { v: 5, l: 'L' }, { v: 8, l: 'XL' }].map(e => (
+                <button
+                  key={e.v}
+                  onClick={() => { onFieldUpdate('estimate', e.v); setShowEstimatePicker(false); }}
+                  className={cn(
+                    'flex w-full items-center justify-between px-3 py-1.5 text-xs transition-colors',
+                    issue.estimate === e.v ? 'text-primary bg-surface-hover' : 'text-secondary hover:bg-surface-hover',
+                  )}
+                >
+                  <span className="font-mono">{e.l}</span>
+                  <span className="text-muted">{e.v}pt</span>
+                  {issue.estimate === e.v && <span className="text-accent">✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </SidebarField>
 
       {/* Divider */}
       <div className="border-t border-border" />
@@ -2051,6 +2168,113 @@ function ImageLightbox({
           ↓ Download
         </a>
       </div>
+    </div>
+  );
+}
+
+/* ── Sub-Issues Section ────────────────────────── */
+
+function SubIssuesSection({
+  parentIssue,
+  childIssues,
+  projectId,
+  t,
+}: {
+  parentIssue: Issue;
+  childIssues: Issue[];
+  projectId: string;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+}) {
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const apiClient = useApi();
+  const queryClient = useQueryClient();
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      apiClient.issues.create({
+        project_id: projectId,
+        title: newTitle,
+        parent_id: parentIssue.id,
+        type: parentIssue.type,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['issues', projectId] });
+      setNewTitle('');
+      setShowAddForm(false);
+    },
+  });
+
+  const doneCount = childIssues.filter(i => i.status === 'done').length;
+  const total = childIssues.length;
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-xs font-semibold text-secondary uppercase tracking-wider">
+          {t('issueDrawer.subIssues')}
+          {total > 0 && (
+            <span className="ml-1.5 text-muted font-normal">
+              {doneCount}/{total}
+            </span>
+          )}
+        </h4>
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="rounded p-1 text-secondary hover:text-primary hover:bg-surface-hover transition-colors"
+        >
+          <Plus size={14} />
+        </button>
+      </div>
+
+      {total > 0 && (
+        <div className="h-1.5 rounded-full bg-surface-hover overflow-hidden mb-2">
+          <div
+            className="h-full bg-emerald-500 transition-all"
+            style={{ width: `${total > 0 ? (doneCount / total) * 100 : 0}%` }}
+          />
+        </div>
+      )}
+
+      {childIssues.length > 0 && (
+        <div className="space-y-0.5 mb-2">
+          {childIssues.map(child => (
+            <div key={child.id} className="flex items-center gap-2 rounded-lg px-2 py-1 text-xs hover:bg-surface-hover">
+              <span className={cn('h-2 w-2 rounded-full shrink-0',
+                child.status === 'done' ? 'bg-emerald-500' :
+                child.status === 'in_progress' ? 'bg-amber-500' :
+                child.status === 'cancelled' ? 'bg-red-500' : 'bg-gray-400'
+              )} />
+              <span className="text-muted font-mono text-[10px]">{child.display_id}</span>
+              <span className="text-primary truncate flex-1">{child.title}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showAddForm && (
+        <div className="flex items-center gap-2 mt-1">
+          <input
+            type="text"
+            value={newTitle}
+            onChange={e => setNewTitle(e.target.value)}
+            placeholder={t('issueDrawer.subIssuePlaceholder')}
+            className="flex-1 rounded-lg border border-border bg-bg px-2 py-1.5 text-xs text-primary placeholder-secondary focus:border-accent focus:outline-none"
+            autoFocus
+            onKeyDown={e => {
+              if (e.key === 'Enter' && newTitle.trim()) createMutation.mutate();
+              if (e.key === 'Escape') setShowAddForm(false);
+            }}
+          />
+          <button
+            onClick={() => newTitle.trim() && createMutation.mutate()}
+            disabled={!newTitle.trim() || createMutation.isPending}
+            className="rounded-lg bg-accent px-2 py-1.5 text-xs font-medium text-black hover:bg-accent-hover disabled:opacity-40"
+          >
+            {t('issueDrawer.addSubIssue')}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
