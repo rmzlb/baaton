@@ -51,6 +51,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // AI
         .route("/ai/chat", post(ai::chat))
         .route("/ai/key", get(ai::get_key))
+        .route("/ai/pm-full-review", post(ai::pm_full_review))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
         // Milestones by ID

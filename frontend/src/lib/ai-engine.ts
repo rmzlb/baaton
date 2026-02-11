@@ -373,7 +373,84 @@ export interface AIResponse {
   stateContext: AIStateContext;
 }
 
+interface PmFullReviewIssue {
+  id: string;
+  display_id: string;
+  title: string;
+  project_id: string;
+  project_name: string;
+  project_prefix: string;
+  status: string;
+  priority: string | null;
+  created_at: string;
+  updated_at: string;
+  assignee_ids: string[];
+  category: string[];
+  tags: string[];
+}
+
+interface PmFullReviewBucket {
+  key: string;
+  name: string;
+  issue_ids: string[];
+  issues: PmFullReviewIssue[];
+}
+
+interface PmFullReviewSprint {
+  key: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  issue_ids: string[];
+  issues: PmFullReviewIssue[];
+}
+
+interface PmFullReviewProject {
+  project_id: string;
+  project_name: string;
+  project_prefix: string;
+  open_issue_count: number;
+  milestones: PmFullReviewBucket[];
+  sprints: PmFullReviewSprint[];
+}
+
+interface PmFullReviewSuggestion {
+  rank: number;
+  reason: string;
+  issue: PmFullReviewIssue;
+}
+
+interface PmFullReviewData {
+  generated_at: string;
+  horizon_days: number;
+  sprint_length_days: number;
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  sprint_windows: Array<{
+    key: string;
+    name: string;
+    start_date: string;
+    end_date: string;
+  }>;
+  summary: {
+    project_count: number;
+    open_issue_count: number;
+    milestone_a_count: number;
+    milestone_b_count: number;
+    milestone_c_count: number;
+    sprint1_count: number;
+    sprint2_count: number;
+    sprint3_count: number;
+    priority_suggestions_count: number;
+  };
+  projects: PmFullReviewProject[];
+  priority_suggestions: PmFullReviewSuggestion[];
+}
+
 type ApiClientType = {
+  post: <T>(path: string, body: unknown) => Promise<T>;
   issues: {
     listByProject: (id: string, params?: Record<string, unknown>) => Promise<Issue[]>;
     create: (body: Record<string, unknown>) => Promise<Issue>;
@@ -393,6 +470,120 @@ type ApiClientType = {
     delete: (id: string) => Promise<void>;
   };
 };
+
+function isPmFullReviewPrompt(message: string): boolean {
+  const text = message.toLowerCase();
+  const planningWord = text.includes('plan') || text.includes('planning') || text.includes('analy') || text.includes('analyse');
+  const milestoneWord = text.includes('milestone') || text.includes('jalon');
+  const sprintWord = text.includes('sprint');
+  return planningWord && milestoneWord && sprintWord;
+}
+
+function renderIssueLine(issue: PmFullReviewIssue): string {
+  const prio = issue.priority ? ` [${issue.priority}]` : '';
+  const tags = issue.tags?.length ? ` #${issue.tags.join(' #')}` : '';
+  const category = issue.category?.length ? ` {${issue.category.join(', ')}}` : '';
+  return `- \`${issue.display_id}\` (${issue.id}) — ${issue.status}${prio}${category}${tags} — ${issue.title}`;
+}
+
+function renderPmFullReviewMarkdown(plan: PmFullReviewData): string {
+  const lines: string[] = [
+    '## PM Full Review (deterministic planner)',
+    `- Generated: ${plan.generated_at}`,
+    `- Horizon: ${plan.period.start_date} → ${plan.period.end_date} (${plan.horizon_days} days)`,
+    `- Sprint length: ${plan.sprint_length_days} days`,
+    `- Projects: ${plan.summary.project_count} | Open issues: ${plan.summary.open_issue_count}`,
+    `- Milestones → A:${plan.summary.milestone_a_count} | B:${plan.summary.milestone_b_count} | C:${plan.summary.milestone_c_count}`,
+    `- Sprints → S1:${plan.summary.sprint1_count} | S2:${plan.summary.sprint2_count} | S3:${plan.summary.sprint3_count}`,
+    '',
+  ];
+
+  for (const project of plan.projects) {
+    lines.push(`### ${project.project_prefix} — ${project.project_name} (${project.project_id})`);
+    lines.push(`Open issues: **${project.open_issue_count}**`);
+    lines.push('');
+
+    lines.push('#### Milestones');
+    for (const milestone of project.milestones) {
+      lines.push(`- **${milestone.name}** (${milestone.issue_ids.length})`);
+      if (milestone.issue_ids.length > 0) {
+        lines.push(`  - IDs: ${milestone.issue_ids.map((id) => `\`${id}\``).join(', ')}`);
+        milestone.issues.forEach((issue) => lines.push(`  ${renderIssueLine(issue)}`));
+      } else {
+        lines.push('  - _No issue in this bucket_');
+      }
+    }
+
+    lines.push('');
+    lines.push('#### Sprints');
+    for (const sprint of project.sprints) {
+      lines.push(`- **${sprint.name}** (${sprint.start_date} → ${sprint.end_date}) — ${sprint.issue_ids.length} issues`);
+      if (sprint.issue_ids.length > 0) {
+        lines.push(`  - IDs: ${sprint.issue_ids.map((id) => `\`${id}\``).join(', ')}`);
+        sprint.issues.forEach((issue) => lines.push(`  ${renderIssueLine(issue)}`));
+      } else {
+        lines.push('  - _No issue in this sprint_');
+      }
+    }
+
+    lines.push('');
+  }
+
+  lines.push('### Top 10 Priority Suggestions');
+  if (!plan.priority_suggestions.length) {
+    lines.push('- No priority suggestion available.');
+  } else {
+    for (const suggestion of plan.priority_suggestions.slice(0, 10)) {
+      lines.push(
+        `${suggestion.rank}. \`${suggestion.issue.display_id}\` (${suggestion.issue.id}) — **${suggestion.issue.title}**`,
+      );
+      lines.push(`   - Reason: ${suggestion.reason}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function buildLegacyPmFallback(projects: Project[], allIssuesByProject: Record<string, Issue[]>): string {
+  const allIssues = Object.values(allIssuesByProject).flat();
+  const openIssues = allIssues.filter((i: any) => !['done', 'cancelled'].includes(i.status));
+  const now = new Date();
+
+  const urgent = openIssues.filter((i: any) => i.priority === 'urgent');
+  const inProgress = openIssues.filter((i: any) => i.status === 'in_progress');
+  const review = openIssues.filter((i: any) => i.status === 'in_review');
+  const backlog = openIssues.filter((i: any) => ['backlog', 'todo'].includes(i.status));
+
+  const next = (d: number) => {
+    const x = new Date(now);
+    x.setDate(x.getDate() + d);
+    return x.toISOString().slice(0, 10);
+  };
+
+  return [
+    '## PM Full Review (deterministic fallback)',
+    `- Projects: ${projects.length}`,
+    `- Open tickets: ${openIssues.length}`,
+    `- Urgent: ${urgent.length} | In progress: ${inProgress.length} | In review: ${review.length} | Backlog/Todo: ${backlog.length}`,
+    '',
+    '## Proposed Milestones',
+    `1) Stabilization & Hotfixes (target ${next(7)}) — focus urgent + blockers`,
+    `2) Active Delivery (target ${next(21)}) — close in_progress + in_review`,
+    `3) Backlog Acceleration (target ${next(42)}) — top priority backlog/todo`,
+    '',
+    '## Suggested Sprint Allocation',
+    `- Sprint 1 (now → ${next(14)}): urgent + oldest in_progress`,
+    `- Sprint 2 (${next(14)} → ${next(28)}): remaining active + critical backlog`,
+    `- Sprint 3 (${next(28)} → ${next(42)}): feature backlog + polish`,
+    '',
+    '## Priority Recommendations',
+    '- Keep all production-impact bugs as urgent/high until resolved',
+    '- Promote stale in_progress (>7 days) to high and assign explicit owner',
+    '- Split oversized backlog items into sub-issues before sprint planning',
+    '',
+    'If you want, I can now generate a project-by-project mapping (issue IDs grouped under each milestone).',
+  ].join('\n');
+}
 
 // ─── Main Generate Function (Vercel AI SDK) ───
 
@@ -426,10 +617,6 @@ export async function generateAIResponse(
     };
   }
 
-  // ── Get API key & create provider ──
-  const apiKey = await getGeminiApiKey(authToken);
-  const google = createGoogleGenerativeAI({ apiKey });
-
   // ── Build context & prompt ──
   const context = buildProjectContext(projects, allIssuesByProject);
   const systemPrompt = buildSystemPrompt(context);
@@ -448,55 +635,27 @@ export async function generateAIResponse(
   const skillContext = stateToSkillContext(state);
   const skillsExecuted: SkillResult[] = [];
 
-  // Deterministic PM full-review mode (no Gemini tool-calling)
-  // Trigger for milestone/sprint planning prompts to bypass current provider schema instability.
-  const lowerPrompt = userMessage.toLowerCase();
-  const wantsPmFullReview =
-    (lowerPrompt.includes('plan') || lowerPrompt.includes('analyze') || lowerPrompt.includes('analyse')) &&
-    (lowerPrompt.includes('milestone') || lowerPrompt.includes('jalon')) &&
-    lowerPrompt.includes('sprint');
+  // Deterministic PM full-review mode (backend endpoint, zero Gemini tool-calling)
+  if (isPmFullReviewPrompt(userMessage)) {
+    let text: string;
 
-  if (wantsPmFullReview) {
-    const allIssues = Object.values(allIssuesByProject).flat();
-    const openIssues = allIssues.filter((i: any) => !['done', 'cancelled'].includes(i.status));
-    const now = new Date();
+    try {
+      const plan = await apiClient.post<PmFullReviewData>('/ai/pm-full-review', {
+        project_ids: projects.length ? projects.map((p) => p.id) : undefined,
+        horizon_days: 42,
+        sprint_length_days: 14,
+      });
 
-    const urgent = openIssues.filter((i: any) => i.priority === 'urgent');
-    const inProgress = openIssues.filter((i: any) => i.status === 'in_progress');
-    const review = openIssues.filter((i: any) => i.status === 'in_review');
-    const backlog = openIssues.filter((i: any) => ['backlog', 'todo'].includes(i.status));
+      text = renderPmFullReviewMarkdown(plan);
+    } catch (error) {
+      console.warn('[AI][PmFullReviewEndpointFallback]', {
+        error: error instanceof Error ? error.message : String(error),
+      });
 
-    const next = (d: number) => {
-      const x = new Date(now);
-      x.setDate(x.getDate() + d);
-      return x.toISOString().slice(0, 10);
-    };
+      // Safety net: keep local deterministic fallback if backend endpoint fails.
+      text = buildLegacyPmFallback(projects, allIssuesByProject);
+    }
 
-    const lines: string[] = [
-      '## PM Full Review (deterministic fallback)',
-      `- Projects: ${projects.length}`,
-      `- Open tickets: ${openIssues.length}`,
-      `- Urgent: ${urgent.length} | In progress: ${inProgress.length} | In review: ${review.length} | Backlog/Todo: ${backlog.length}`,
-      '',
-      '## Proposed Milestones',
-      `1) Stabilization & Hotfixes (target ${next(7)}) — focus urgent + blockers`,
-      `2) Active Delivery (target ${next(21)}) — close in_progress + in_review`,
-      `3) Backlog Acceleration (target ${next(42)}) — top priority backlog/todo`,
-      '',
-      '## Suggested Sprint Allocation',
-      `- Sprint 1 (now → ${next(14)}): urgent + oldest in_progress`,
-      `- Sprint 2 (${next(14)} → ${next(28)}): remaining active + critical backlog`,
-      `- Sprint 3 (${next(28)} → ${next(42)}): feature backlog + polish`,
-      '',
-      '## Priority Recommendations',
-      '- Keep all production-impact bugs as urgent/high until resolved',
-      '- Promote stale in_progress (>7 days) to high and assign explicit owner',
-      '- Split oversized backlog items into sub-issues before sprint planning',
-      '',
-      'If you want, I can now generate a project-by-project mapping (issue IDs grouped under each milestone).',
-    ];
-
-    const text = lines.join('\n');
     const outputTokens = estimateTokens(text);
     const inputTokens = estimateTokens(userMessage);
     state = transition(state, { type: 'AI_RESPONSE', tokens: outputTokens });
@@ -513,6 +672,10 @@ export async function generateAIResponse(
       stateContext: state,
     };
   }
+
+  // ── Get API key & create provider ──
+  const apiKey = await getGeminiApiKey(authToken);
+  const google = createGoogleGenerativeAI({ apiKey });
 
   // ── Build tools with executor bridge ──
   const executor = async (name: string, args: Record<string, unknown>) => {
