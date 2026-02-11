@@ -102,6 +102,14 @@ pub struct ClerkClaims {
     pub org_slug: Option<String>,
     #[serde(default)]
     pub org_role: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub first_name: Option<String>,
+    #[serde(default)]
+    pub last_name: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
     /// Authorized party (frontend origin)
     #[serde(default)]
     pub azp: Option<String>,
@@ -118,6 +126,20 @@ pub struct AuthUser {
     pub org_id: Option<String>,
     pub org_slug: Option<String>,
     pub org_role: Option<String>,
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+}
+
+impl AuthUser {
+    pub fn created_by_label(&self) -> Option<String> {
+        if let Some(name) = self.display_name.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            return Some(name.to_string());
+        }
+        if let Some(email) = self.email.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            return Some(email.to_string());
+        }
+        Some(self.user_id.clone())
+    }
 }
 
 /// Verify JWT signature + standard claims, return decoded claims
@@ -253,11 +275,24 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         (claims.org_id.clone(), claims.org_slug.clone(), claims.org_role.clone())
     };
 
+    let display_name = {
+        let first = claims.first_name.as_deref().unwrap_or("").trim();
+        let last = claims.last_name.as_deref().unwrap_or("").trim();
+        let full = format!("{} {}", first, last).trim().to_string();
+        if !full.is_empty() {
+            Some(full)
+        } else {
+            claims.username.clone()
+        }
+    };
+
     let auth_user = AuthUser {
         user_id: claims.sub,
         org_id,
         org_slug,
         org_role,
+        email: claims.email,
+        display_name,
     };
 
     tracing::debug!(

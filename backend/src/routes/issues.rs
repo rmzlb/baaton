@@ -233,6 +233,19 @@ pub async fn create(
     let position = max_pos.and_then(|p| p.0).map(|p| p + 1000.0).unwrap_or(1000.0);
 
     let status = body.status.as_deref().unwrap_or("backlog");
+    let created_by_name = auth.created_by_label();
+
+    tracing::info!(
+        user_id = %auth.user_id,
+        org_id = %org_id,
+        project_id = %body.project_id,
+        status = %status,
+        assignee_count = resolved_assignees.len(),
+        has_due_date = body.due_date.is_some(),
+        has_estimate = body.estimate.is_some(),
+        "issues.create.attempt"
+    );
+
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         INSERT INTO issues (
@@ -258,13 +271,32 @@ pub async fn create(
     .bind(&resolved_assignees)
     .bind(position)
     .bind(&auth.user_id)
-    .bind(None::<String>)
+    .bind(created_by_name)
     .bind(body.due_date)
     .bind(body.estimate)
     .bind(body.sprint_id)
     .fetch_one(tx.as_mut())
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| {
+        tracing::error!(
+            user_id = %auth.user_id,
+            org_id = %org_id,
+            project_id = %body.project_id,
+            error = %e,
+            "issues.create.failed"
+        );
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()})))
+    })?;
+
+    tracing::info!(
+        user_id = %auth.user_id,
+        org_id = %org_id,
+        issue_id = %issue.id,
+        display_id = %issue.display_id,
+        assignee_count = issue.assignee_ids.len(),
+        created_by_name = ?issue.created_by_name,
+        "issues.create.success"
+    );
 
     tx.commit()
         .await
