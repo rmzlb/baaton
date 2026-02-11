@@ -50,6 +50,21 @@ function validateSkillResult(result: SkillResult): SkillResult {
 }
 
 // ─── Executors ────────────────────────────────
+function normalizeStringArray(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v)).filter((v) => v.trim().length > 0);
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map((v) => v.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeOptionalStringArray(value: unknown): string[] | undefined {
+  const arr = normalizeStringArray(value);
+  return arr.length > 0 ? arr : undefined;
+}
 
 async function executeSearchIssues(
   args: Record<string, unknown>,
@@ -154,8 +169,8 @@ async function executeCreateIssue(
       type: args.type as string || 'feature',
       priority: args.priority as string || 'medium',
       status: args.status as string || 'todo',
-      tags: args.tags as string[] || [],
-      category: args.category as string[] || [],
+      tags: normalizeStringArray(args.tags),
+      category: normalizeStringArray(args.category),
     });
 
     return {
@@ -200,8 +215,8 @@ async function executeUpdateIssue(
     if (args.status) body.status = args.status;
     if (args.priority) body.priority = args.priority;
     if (args.type) body.type = args.type;
-    if (args.tags) body.tags = args.tags;
-    if (args.category) body.category = args.category;
+    if (args.tags !== undefined) body.tags = normalizeStringArray(args.tags);
+    if (args.category !== undefined) body.category = normalizeStringArray(args.category);
 
     const updated = await api.issues.update(issueId, body);
 
@@ -231,6 +246,12 @@ async function executeBulkUpdateIssues(
     for (const update of updates) {
       try {
         const { issue_id, ...body } = update;
+        if ((body as any).tags !== undefined) {
+          (body as any).tags = normalizeStringArray((body as any).tags);
+        }
+        if ((body as any).category !== undefined) {
+          (body as any).category = normalizeStringArray((body as any).category);
+        }
         const updated = await api.issues.update(issue_id, body);
         results.push(`✅ ${updated.display_id}`);
         successCount++;
