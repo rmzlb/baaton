@@ -762,6 +762,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                 currentStatus={currentStatus}
                 currentPriority={currentPriority}
                 orgMembers={orgMembers}
+                resolveUserName={resolveUserName}
                 projectTags={projectTags}
                 projectMilestones={projectMilestones}
                 projectSprints={projectSprints}
@@ -1031,6 +1032,7 @@ interface MetadataSidebarProps {
   currentStatus: ProjectStatus | { key: string; label: string; color: string } | undefined;
   currentPriority: (typeof PRIORITY_OPTIONS)[number] | undefined;
   orgMembers: any[];
+  resolveUserName: (userId?: string | null, fallbackName?: string | null) => string;
   projectTags: ProjectTag[];
   projectMilestones: Milestone[];
   projectSprints: Sprint[];
@@ -1054,6 +1056,7 @@ function MetadataSidebar({
   currentStatus,
   currentPriority,
   orgMembers,
+  resolveUserName,
   projectTags,
   projectMilestones,
   projectSprints,
@@ -1275,12 +1278,7 @@ function MetadataSidebar({
         {issue.assignee_ids.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {issue.assignee_ids.map((id) => {
-              const member = orgMembers.find(
-                (m: any) => m.publicUserData?.userId === id,
-              );
-              const name = member
-                ? `${member.publicUserData?.firstName || ''} ${member.publicUserData?.lastName || ''}`.trim()
-                : id.slice(0, 12);
+              const name = resolveUserName(id);
               return (
                 <span
                   key={id}
@@ -1317,7 +1315,7 @@ function MetadataSidebar({
               const userId = m.publicUserData?.userId;
               if (!userId) return null;
               const isAssigned = issue.assignee_ids.includes(userId);
-              const name = `${m.publicUserData?.firstName || ''} ${m.publicUserData?.lastName || ''}`.trim() || userId.slice(0, 12);
+              const name = resolveUserName(userId);
               return (
                 <button
                   key={userId}

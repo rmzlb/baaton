@@ -433,7 +433,7 @@ function StepDetails({
   setDueDate: (v: string) => void;
   estimate: number | null;
   setEstimate: (v: number | null) => void;
-  orgMembers: { publicUserData?: { userId?: string; firstName?: string | null; lastName?: string | null } }[];
+  orgMembers: { publicUserData?: { userId?: string; firstName?: string | null; lastName?: string | null; identifier?: string | null } }[];
   showAssigneePicker: boolean;
   setShowAssigneePicker: (v: boolean) => void;
   t: (key: string) => string;
@@ -608,7 +608,12 @@ function StepDetails({
                 const userId = m.publicUserData?.userId;
                 if (!userId) return null;
                 const isSelected = assigneeIds.includes(userId);
-                const name = `${m.publicUserData?.firstName || ''} ${m.publicUserData?.lastName || ''}`.trim() || userId.slice(0, 12);
+                const fullName = `${m.publicUserData?.firstName || ''} ${m.publicUserData?.lastName || ''}`.trim();
+                const identifierLocal = m.publicUserData?.identifier?.split('@')[0]?.replace(/[._-]+/g, ' ').trim();
+                const formattedIdentifier = identifierLocal
+                  ? identifierLocal.split(' ').filter(Boolean).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+                  : '';
+                const name = fullName || formattedIdentifier || userId.slice(0, 12);
                 return (
                   <button
                     key={userId}
