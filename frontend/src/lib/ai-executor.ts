@@ -124,10 +124,27 @@ async function executeCreateIssue(
   projects: Project[],
 ): Promise<SkillResult> {
   try {
-    const projectId = args.project_id as string;
-    if (!projectId) return { skill: 'create_issue', success: false, error: 'Missing project_id', summary: 'No project specified' };
+    const rawProjectId = (args.project_id as string | undefined)?.trim();
+    const hintText = `${String(args.title || '')} ${String(args.description || '')}`.toLowerCase();
 
-    const project = projects.find((p) => p.id === projectId || p.prefix === projectId || p.name === projectId);
+    const inferredProject = projects.find((p) =>
+      hintText.includes((p.prefix || '').toLowerCase()) ||
+      hintText.includes((p.name || '').toLowerCase()) ||
+      hintText.includes((p.slug || '').toLowerCase()),
+    );
+
+    const projectId = rawProjectId || inferredProject?.id;
+    if (!projectId) {
+      const choices = projects.slice(0, 8).map((p) => `${p.prefix} (${p.name})`).join(', ');
+      return {
+        skill: 'create_issue',
+        success: false,
+        error: 'Missing project_id',
+        summary: `Project manquant. Précise le projet (ex: ${choices}).`,
+      };
+    }
+
+    const project = projects.find((p) => p.id === projectId || p.prefix === projectId || p.name === projectId || p.slug === projectId);
     const targetProjectId = project?.id || projectId;
 
     const issue = await api.issues.create({
@@ -148,7 +165,24 @@ async function executeCreateIssue(
       summary: `Created **${issue.display_id}** — ${issue.title}`,
     };
   } catch (err) {
-    return { skill: 'create_issue', success: false, error: String(err), summary: 'Failed to create issue' };
+    const raw = String(err);
+    const match = raw.match(/\{.*\}/s);
+    let apiMessage = raw;
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[0]);
+        apiMessage = parsed?.error?.message || parsed?.error || raw;
+      } catch {
+        apiMessage = raw;
+      }
+    }
+
+    return {
+      skill: 'create_issue',
+      success: false,
+      error: apiMessage,
+      summary: `Failed to create issue: ${apiMessage}`,
+    };
   }
 }
 

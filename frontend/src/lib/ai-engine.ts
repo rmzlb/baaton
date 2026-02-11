@@ -757,8 +757,14 @@ export async function generateAIResponse(
 
     state = transition(state, { type: 'AI_RESPONSE', tokens: outputTokens });
 
+    const fallbackSkillText = skillsExecuted.length > 0
+      ? skillsExecuted
+          .map((s) => `• ${s.summary}${s.success ? '' : s.error ? ` (${s.error})` : ''}`)
+          .join('\n')
+      : "Je n'ai pas pu générer de réponse. Réessaie avec plus de détails.";
+
     return {
-      text: result.text || "Je n'ai pas pu générer de réponse. Réessaie avec plus de détails.",
+      text: result.text?.trim() ? result.text : fallbackSkillText,
       skillsExecuted,
       usage: {
         inputTokens,
