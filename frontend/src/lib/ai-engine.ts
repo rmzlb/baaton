@@ -141,6 +141,14 @@ function buildAISDKTools(
       schema.additionalProperties = true;
     }
 
+    // CRITICAL FIX for Gemini "parameters schema should be of type OBJECT" error:
+    // The @ai-sdk/google SDK converts jsonSchema back to Gemini format, but can
+    // lose the OBJECT type. Ensure schema always has non-empty properties and
+    // a _dummy field to prevent the SDK from treating it as an empty schema.
+    if (Object.keys(schema.properties || {}).length === 0) {
+      schema.properties = { _context: { type: 'string', description: 'Optional context' } };
+    }
+    
     tools[decl.name] = {
       description: decl.description,
       parameters: jsonSchema(schema),
