@@ -115,7 +115,7 @@ pub async fn chat(
         }
     };
 
-    let model = body.model.as_deref().unwrap_or("gemini-2.0-flash");
+    let model = body.model.as_deref().unwrap_or("gemini-3-flash-preview");
 
     // Convert messages to Gemini format
     let contents: Vec<GeminiContent> = body

@@ -562,7 +562,7 @@ export async function generateAIResponse(
     // maxSteps = 5 → agentic loop (same as our old 5-round loop)
     // The SDK handles: tool call → execute → feed result → get next response
     const result = await generateText({
-      model: google('gemini-2.0-flash', {
+      model: google('gemini-3-flash-preview', {
         // Disable structuredOutputs to avoid strict schema validation issues
         // with Gemini API's OBJECT type requirements
         structuredOutputs: false,
