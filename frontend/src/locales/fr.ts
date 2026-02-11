@@ -114,6 +114,12 @@ const fr = {
   'projectList.createProject': 'Créer un Projet',
   'projectList.failedLoad': 'Échec du chargement des projets : {{message}}',
   'projectList.deleteConfirm': 'Supprimer le projet "{{name}}" ? Cette action est irréversible.',
+  'projectList.deleteTitle': 'Supprimer le projet',
+  'projectList.deleteWarning': 'Cette action est irréversible. Cela supprimera définitivement le projet **{{name}}**, toutes ses issues, jalons et sprints.',
+  'projectList.deleteTypeToConfirm': 'Tapez {{name}} pour confirmer',
+  'projectList.deleteButton': 'Je comprends, supprimer ce projet',
+  'projectList.clickToCopy': 'Cliquer pour copier',
+  'projectList.copied': 'Copié !',
   'projectList.projectName': 'Nom du Projet *',
   'projectList.projectNamePlaceholder': 'Mon Projet',
   'projectList.prefix': 'Préfixe',
@@ -850,6 +856,8 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'global.cancel': 'Annuler',
 
   // ─── Jalons ─────────────────────────────────
+  'milestones.allTitle': 'Tous les jalons',
+  'milestones.noMilestones': 'Aucun jalon',
   'milestones.title': 'Jalons',
   'milestones.new': 'Nouveau jalon',
   'milestones.empty': 'Aucun jalon',

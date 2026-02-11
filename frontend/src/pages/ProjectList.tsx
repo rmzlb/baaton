@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Kanban, ArrowRight, Trash2, X, Github, ArrowUpDown } from 'lucide-react';
+import { Plus, Kanban, ArrowRight, Trash2, X, Github, ArrowUpDown, AlertTriangle, Copy, Check } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
@@ -13,6 +13,7 @@ export function ProjectList() {
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [sort, setSort] = useState<ProjectSort>('newest');
 
   const { data: projects = [], isLoading, error } = useQuery({
@@ -115,9 +116,7 @@ export function ProjectList() {
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (confirm(t('projectList.deleteConfirm', { name: project.name }))) {
-                        deleteMutation.mutate(project.id);
-                      }
+                      setDeleteTarget({ id: project.id, name: project.name });
                     }}
                     className="rounded-md p-1.5 text-secondary opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400 transition-all"
                   >
@@ -147,6 +146,103 @@ export function ProjectList() {
       {showCreate && (
         <CreateProjectModal onClose={() => setShowCreate(false)} />
       )}
+
+      {/* Delete Project Modal */}
+      {deleteTarget && (
+        <DeleteProjectModal
+          projectName={deleteTarget.name}
+          onConfirm={() => {
+            deleteMutation.mutate(deleteTarget.id);
+            setDeleteTarget(null);
+          }}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeleteProjectModal({
+  projectName,
+  onConfirm,
+  onClose,
+}: {
+  projectName: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const [confirmText, setConfirmText] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const canDelete = confirmText === projectName;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(projectName);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10">
+            <AlertTriangle size={20} className="text-red-500" />
+          </div>
+          <h2 className="text-lg font-semibold text-primary">{t('projectList.deleteTitle')}</h2>
+        </div>
+
+        <p className="text-sm text-secondary mb-4">
+          {t('projectList.deleteWarning', { name: projectName })}
+        </p>
+
+        <button
+          onClick={handleCopy}
+          className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2 font-mono text-sm text-primary hover:bg-surface-hover transition-colors w-full group"
+          title={t('projectList.clickToCopy')}
+        >
+          <span className="flex-1 text-left">{projectName}</span>
+          {copied ? (
+            <span className="flex items-center gap-1 text-xs text-emerald-500">
+              <Check size={12} /> {t('projectList.copied')}
+            </span>
+          ) : (
+            <Copy size={14} className="text-secondary opacity-0 group-hover:opacity-100 transition-opacity" />
+          )}
+        </button>
+
+        <div className="mb-4">
+          <label className="block text-xs text-secondary mb-1.5">
+            {t('projectList.deleteTypeToConfirm', { name: projectName })}
+          </label>
+          <input
+            type="text"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            className="w-full rounded-lg border border-border bg-bg px-3 py-2.5 text-sm text-primary placeholder-secondary focus:border-red-500 focus:outline-none transition-colors font-mono"
+            autoFocus
+            spellCheck={false}
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-sm text-secondary hover:text-primary transition-colors"
+          >
+            {t('projectList.cancel')}
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!canDelete}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {t('projectList.deleteButton')}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -114,6 +114,12 @@ const en = {
   'projectList.createProject': 'Create Project',
   'projectList.failedLoad': 'Failed to load projects: {{message}}',
   'projectList.deleteConfirm': 'Delete project "{{name}}"? This cannot be undone.',
+  'projectList.deleteTitle': 'Delete project',
+  'projectList.deleteWarning': 'This action cannot be undone. This will permanently delete the **{{name}}** project, all its issues, milestones, and sprints.',
+  'projectList.deleteTypeToConfirm': 'Type {{name}} to confirm',
+  'projectList.deleteButton': 'I understand, delete this project',
+  'projectList.clickToCopy': 'Click to copy',
+  'projectList.copied': 'Copied!',
   'projectList.projectName': 'Project Name *',
   'projectList.projectNamePlaceholder': 'My Project',
   'projectList.prefix': 'Prefix',
@@ -850,6 +856,8 @@ As a [user], I want to [action] so that [benefit].
   'global.cancel': 'Cancel',
 
   // ─── Milestones ──────────────────────────────
+  'milestones.allTitle': 'All Milestones',
+  'milestones.noMilestones': 'No milestones yet',
   'milestones.title': 'Milestones',
   'milestones.new': 'New Milestone',
   'milestones.empty': 'No milestones yet',

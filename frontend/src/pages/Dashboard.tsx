@@ -57,7 +57,7 @@ function ProjectCard({
   const done = counts['done'] || 0;
   const total = issues.length;
   const active = backlog + todo + inProgress + inReview;
-  const urgent = issues.filter((i) => i.priority === 'urgent' || i.priority === 'high').length;
+  const urgent = issues.filter((i) => (i.priority === 'urgent' || i.priority === 'high') && !['done', 'cancelled'].includes(i.status)).length;
 
   const Wrapper = isCurrentOrg ? Link : 'div';
   const wrapperProps = isCurrentOrg
