@@ -537,10 +537,18 @@ export async function generateAIResponse(
 
     // Gemini function-calling can fail on schema validation in some deployments.
     // Fail soft with a NO-TOOLS fallback that still produces actionable PM output.
-    if (msg.toLowerCase().includes('parameters schema should be of type object')) {
+    const lowerMsg = msg.toLowerCase();
+    const isToolSchemaError =
+      (lowerMsg.includes('schema') && lowerMsg.includes('function')) ||
+      lowerMsg.includes('functiondeclaration') ||
+      lowerMsg.includes('parameters schema should be of type object') ||
+      lowerMsg.includes('tool schema mismatch');
+
+    if (isToolSchemaError) {
       console.warn('[AI][GenerateTextFallbackNoTools]', {
         reason: 'tool schema mismatch',
         skillContext,
+        message: msg,
       });
 
       try {
