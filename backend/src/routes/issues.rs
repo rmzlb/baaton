@@ -205,15 +205,21 @@ pub async fn create(
     )
     .await?;
 
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COALESCE(COUNT(*), 0) FROM issues WHERE project_id = $1"
+    let next_number: (i64,) = sqlx::query_as(
+        r#"
+        SELECT COALESCE(MAX((SPLIT_PART(display_id, '-', 2))::bigint), 0) + 1
+        FROM issues
+        WHERE project_id = $1
+          AND display_id ~ ('^' || $2 || '-[0-9]+$')
+        "#,
     )
     .bind(body.project_id)
+    .bind(&project_prefix)
     .fetch_one(tx.as_mut())
     .await
-    .unwrap_or((0i64,));
+    .unwrap_or((1i64,));
 
-    let display_id = format!("{}-{}", project_prefix, count.0 + 1);
+    let display_id = format!("{}-{}", project_prefix, next_number.0);
 
     let max_pos: Option<(Option<f64>,)> = sqlx::query_as(
         "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status = $2"
@@ -602,15 +608,21 @@ pub async fn public_submit(
     )
     .await?;
 
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COALESCE(COUNT(*), 0) FROM issues WHERE project_id = $1"
+    let next_number: (i64,) = sqlx::query_as(
+        r#"
+        SELECT COALESCE(MAX((SPLIT_PART(display_id, '-', 2))::bigint), 0) + 1
+        FROM issues
+        WHERE project_id = $1
+          AND display_id ~ ('^' || $2 || '-[0-9]+$')
+        "#,
     )
     .bind(project.0)
+    .bind(&project.1)
     .fetch_one(tx.as_mut())
     .await
-    .unwrap_or((0i64,));
+    .unwrap_or((1i64,));
 
-    let display_id = format!("{}-{}", project.1, count.0 + 1);
+    let display_id = format!("{}-{}", project.1, next_number.0);
 
     let issue = sqlx::query_as::<_, Issue>(
         r#"
