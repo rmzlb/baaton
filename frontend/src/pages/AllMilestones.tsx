@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Target, Calendar } from 'lucide-react';
+import { Target, Calendar, Bot } from 'lucide-react';
+import { useAIAssistantStore } from '@/stores/ai-assistant';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
@@ -59,8 +60,19 @@ export function AllMilestones() {
 
   return (
     <div className="p-4 md:p-6">
-      <div className="mb-6">
+      <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-bold text-primary">{t('milestones.allTitle')}</h1>
+        <button
+          onClick={() => {
+            const store = useAIAssistantStore.getState();
+            store.setInput('Plan milestones and sprints for all projects. Analyze all open tickets across projects, group them into logical milestones with target dates, assign sprints, and suggest priorities. Act as a project manager doing a full review.');
+            store.setOpen(true);
+          }}
+          className="flex items-center gap-1.5 rounded-lg border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 px-3.5 py-2 text-sm font-medium text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
+        >
+          <Bot size={16} />
+          {t('milestones.aiPlan') || 'AI Plan'}
+        </button>
       </div>
 
       {/* Project filter chips */}
