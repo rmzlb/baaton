@@ -1,4 +1,19 @@
-const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api/v1`;
+function resolveApiOrigin(): string {
+  const configured = (import.meta.env.VITE_API_URL || '').trim();
+  if (configured) return configured.replace(/\/$/, '');
+
+  if (typeof window !== 'undefined') {
+    const { hostname, origin } = window.location;
+    if (hostname === 'app.baaton.dev' || hostname.endsWith('.baaton.dev')) {
+      return 'https://api.baaton.dev';
+    }
+    return origin;
+  }
+
+  return '';
+}
+
+const API_BASE = `${resolveApiOrigin()}/api/v1`;
 
 type RequestOptions = {
   method?: string;
@@ -54,7 +69,12 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   try {
     json = JSON.parse(text);
   } catch {
-    throw new ApiError(res.status, 'PARSE_ERROR', 'Invalid JSON response from server');
+    const preview = text.replace(/\s+/g, ' ').slice(0, 120);
+    throw new ApiError(
+      res.status,
+      'PARSE_ERROR',
+      `Invalid JSON response from server (${res.status}) — preview: ${preview}`,
+    );
   }
 
   if (!res.ok) {
