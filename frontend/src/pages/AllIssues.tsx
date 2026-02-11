@@ -226,7 +226,7 @@ export function AllIssues() {
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortMode, setSortMode] = useState<'manual' | 'priority' | 'created' | 'updated'>('manual');
+  const [sortMode, setSortMode] = useState<'manual' | 'priority' | 'created' | 'updated'>('created');
   const [searchFocused, setSearchFocused] = useState(false);
 
   // Toggle helpers

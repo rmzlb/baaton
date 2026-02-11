@@ -109,6 +109,10 @@ function TypeBadge({ type, size = 'sm' }: { type: IssueType; size?: 'sm' | 'xs' 
   );
 }
 
+function isNew(created_at: string): boolean {
+  return Date.now() - new Date(created_at).getTime() < 48 * 60 * 60 * 1000;
+}
+
 export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, selected = false, onSelect, projectTags = [], githubPrs = [] }: KanbanCardProps) {
   const handleContextMenu = (e: React.MouseEvent) => {
     if (onContextMenu) {
@@ -170,6 +174,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
             <PriorityConfig.icon size={12} className={PriorityConfig.color} />
           ) : null}
           <CopyableId id={issue.display_id} className="text-[10px] text-gray-400 dark:text-muted shrink-0" iconSize={8} />
+          {isNew(issue.created_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
           <span className={cn(
             'text-xs font-medium truncate flex-1',
             isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
@@ -218,7 +223,10 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         {/* Header: ID + menu */}
         {SelectCheckbox}
         <div className="flex justify-between items-start mb-2">
-          <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
+          <div className="flex items-center gap-1.5">
+            <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
+            {isNew(issue.created_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase">NEW</span>}
+          </div>
           <div className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
             <MoreHorizontal className="w-3.5 h-3.5" />
           </div>
@@ -317,7 +325,10 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
       {SelectCheckbox}
       {/* Top row: ID + three-dot menu */}
       <div className="flex justify-between items-start mb-2">
-        <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
+        <div className="flex items-center gap-1.5">
+          <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
+          {isNew(issue.created_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase">NEW</span>}
+        </div>
         <div
           className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 dark:text-muted opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={(e) => e.stopPropagation()}

@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 // ─── Organization ─────────────────────────────────────
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Organization {
     pub id: String,
@@ -39,6 +40,7 @@ pub struct CreateProject {
 
 // ─── Milestone ────────────────────────────────────────
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Milestone {
     pub id: Uuid,
@@ -52,6 +54,7 @@ pub struct Milestone {
 
 // ─── Issue ────────────────────────────────────────────
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Issue {
     pub id: Uuid,
@@ -181,6 +184,7 @@ pub struct CreateProjectTag {
 
 // ─── API Key ──────────────────────────────────────────
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct ApiKey {
     pub id: Uuid,
@@ -219,11 +223,13 @@ pub struct ApiResponse<T: Serialize> {
     pub data: T,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct ApiError {
     pub error: ApiErrorBody,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 pub struct ApiErrorBody {
     pub code: String,

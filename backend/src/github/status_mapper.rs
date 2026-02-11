@@ -13,7 +13,7 @@ pub async fn apply_status_mapping(
     issue_id: Uuid,
     status_mapping: &serde_json::Value,
     mapping_key: &str,
-    actor_name: &str,
+    _actor_name: &str,
 ) -> Result<(), anyhow::Error> {
     let new_status = match status_mapping.get(mapping_key) {
         Some(serde_json::Value::String(s)) => s.clone(),

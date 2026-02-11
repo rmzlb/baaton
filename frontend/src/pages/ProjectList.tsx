@@ -1,16 +1,19 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Kanban, ArrowRight, Trash2, X, Github } from 'lucide-react';
+import { Plus, Kanban, ArrowRight, Trash2, X, Github, ArrowUpDown } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
+
+type ProjectSort = 'newest' | 'oldest' | 'name-az' | 'name-za';
 
 export function ProjectList() {
   const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [sort, setSort] = useState<ProjectSort>('newest');
 
   const { data: projects = [], isLoading, error } = useQuery({
     queryKey: ['projects'],
@@ -24,6 +27,24 @@ export function ProjectList() {
     },
   });
 
+  const sortedProjects = useMemo(() => {
+    const sorted = [...projects];
+    switch (sort) {
+      case 'newest': return sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      case 'oldest': return sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      case 'name-az': return sorted.sort((a, b) => a.name.localeCompare(b.name));
+      case 'name-za': return sorted.sort((a, b) => b.name.localeCompare(a.name));
+      default: return sorted;
+    }
+  }, [projects, sort]);
+
+  const SORT_OPTIONS: { key: ProjectSort; label: string }[] = [
+    { key: 'newest', label: 'Newest' },
+    { key: 'oldest', label: 'Oldest' },
+    { key: 'name-az', label: 'Name A-Z' },
+    { key: 'name-za', label: 'Name Z-A' },
+  ];
+
   return (
     <div className="p-4 md:p-6">
       <div className="mb-8 flex items-center justify-between">
@@ -33,6 +54,15 @@ export function ProjectList() {
             {t('projectList.description')}
           </p>
         </div>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as ProjectSort)}
+          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-secondary hover:text-primary transition-colors min-h-[40px] cursor-pointer outline-none"
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>{o.label}</option>
+          ))}
+        </select>
         <button
           data-tour="create-project"
           onClick={() => setShowCreate(true)}
@@ -70,7 +100,7 @@ export function ProjectList() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
+          {sortedProjects.map((project) => (
             <Link
               key={project.id}
               to={`/projects/${project.slug}`}

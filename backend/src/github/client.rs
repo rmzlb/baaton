@@ -151,6 +151,7 @@ impl GitHubClient {
     }
 
     /// The GitHub App ID.
+    #[allow(dead_code)]
     pub fn app_id(&self) -> u64 {
         self.app_id
     }

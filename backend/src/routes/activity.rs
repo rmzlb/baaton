@@ -66,6 +66,7 @@ pub async fn list_recent(
 }
 
 /// Helper: log an activity entry (used from issues.rs, comments.rs, etc.)
+#[allow(dead_code)]
 pub async fn log_activity(
     pool: &PgPool,
     org_id: &str,

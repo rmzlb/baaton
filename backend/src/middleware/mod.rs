@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Raw JWK from Clerk JWKS endpoint
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct JwkKey {
     pub kid: String,
@@ -74,6 +75,7 @@ pub async fn jwks_refresh_task(keys: JwksKeys, issuer: String) {
 }
 
 /// Clerk JWT v2 Organization claim
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct OrgClaim {
     pub id: String,
@@ -86,6 +88,7 @@ pub struct OrgClaim {
 }
 
 /// Claims extracted from a Clerk JWT
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ClerkClaims {
     pub sub: String,

@@ -135,6 +135,7 @@ pub struct GitHubWebhookEvent {
 
 // ─── GitHub Sync Job ──────────────────────────────────
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct GitHubSyncJob {
     pub id: Uuid,

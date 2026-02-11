@@ -31,6 +31,7 @@ pub async fn install_redirect(
 
 // ─── OAuth Callback ───────────────────────────────────
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct CallbackParams {
     pub installation_id: Option<i64>,
