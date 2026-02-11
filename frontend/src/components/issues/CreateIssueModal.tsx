@@ -609,11 +609,11 @@ function StepDetails({
                 if (!userId) return null;
                 const isSelected = assigneeIds.includes(userId);
                 const fullName = `${m.publicUserData?.firstName || ''} ${m.publicUserData?.lastName || ''}`.trim();
-                const identifierLocal = m.publicUserData?.identifier?.split('@')[0]?.replace(/[._-]+/g, ' ').trim();
-                const formattedIdentifier = identifierLocal
-                  ? identifierLocal.split(' ').filter(Boolean).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+                const identifier = m.publicUserData?.identifier || '';
+                const emailFallback = identifier
+                  ? (identifier.length > 24 ? `${identifier.slice(0, 23)}…` : identifier)
                   : '';
-                const name = fullName || formattedIdentifier || userId.slice(0, 12);
+                const name = fullName || emailFallback || userId.slice(0, 12);
                 return (
                   <button
                     key={userId}

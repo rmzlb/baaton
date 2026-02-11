@@ -1,17 +1,9 @@
 import { useCallback } from 'react';
 import { useOrganization } from '@clerk/clerk-react';
 
-function extractNameFromIdentifier(identifier?: string | null): string | null {
-  if (!identifier) return null;
-  const local = identifier.split('@')[0]?.trim();
-  if (!local) return null;
-
-  // yacine.laieb -> "Yacine Laieb"
-  return local
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+function truncateEmail(email: string, max = 24): string {
+  if (email.length <= max) return email;
+  return `${email.slice(0, max - 1)}…`;
 }
 
 function memberDisplayName(member: any, fallbackUserId?: string | null): string {
@@ -20,8 +12,10 @@ function memberDisplayName(member: any, fallbackUserId?: string | null): string 
   const fullName = `${first} ${last}`.trim();
   if (fullName) return fullName;
 
-  const fromIdentifier = extractNameFromIdentifier(member?.publicUserData?.identifier);
-  if (fromIdentifier) return fromIdentifier;
+  const identifier = member?.publicUserData?.identifier;
+  if (identifier && typeof identifier === 'string') {
+    return truncateEmail(identifier);
+  }
 
   const username = member?.username || member?.publicUserData?.username;
   if (username) return username;
