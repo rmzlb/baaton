@@ -38,6 +38,10 @@ interface UpdateVars {
   patch: Partial<Issue>;
 }
 
+function isDoneStatus(status: IssueStatus | undefined): boolean {
+  return status === 'done' || status === 'cancelled';
+}
+
 interface BulkUpdateVars {
   ids: string[];
   patch: Partial<Issue>;
@@ -59,6 +63,42 @@ export function useIssueMutations() {
   const updateIssueOptimistic = useIssuesStore((s) => s.updateIssueOptimistic);
   const removeIssue = useIssuesStore((s) => s.removeIssue);
   const addNotification = useNotificationStore((s) => s.addNotification);
+
+  const findIssueInCache = useCallback((issueId: string): Issue | undefined => {
+    const all = queryClient.getQueryData<Issue[]>(['all-issues']);
+    const foundAll = all?.find((i) => i.id === issueId);
+    if (foundAll) return foundAll;
+
+    const issueLists = queryClient.getQueriesData<Issue[]>({ queryKey: ['issues'] });
+    for (const [, list] of issueLists) {
+      const found = list?.find((i) => i.id === issueId);
+      if (found) return found;
+    }
+
+    return undefined;
+  }, [queryClient]);
+
+  const withAutomationPatch = useCallback((issueId: string, patch: Partial<Issue>): Partial<Issue> => {
+    const previous = findIssueInCache(issueId);
+    const statusPatch = patch.status as IssueStatus | undefined;
+
+    if (!statusPatch || !previous) return patch;
+
+    const movedToDone = !isDoneStatus(previous.status) && statusPatch === 'done';
+    if (!movedToDone) return patch;
+
+    const nextPatch: Partial<Issue> = {
+      ...patch,
+    };
+
+    const dueDate = previous.due_date ? new Date(previous.due_date) : null;
+    if (dueDate && dueDate.getTime() < Date.now()) {
+      // Minimal SLA automation: clear overdue due-date marker once issue is completed
+      nextPatch.due_date = null;
+    }
+
+    return nextPatch;
+  }, [findIssueInCache]);
 
   // ── Helper: optimistically update all issue query caches ──
   const optimisticUpdate = useCallback(
@@ -128,15 +168,17 @@ export function useIssueMutations() {
   // ═══════════════════════════════════════════════
   const updateMutation = useMutation({
     mutationFn: async ({ issueId, patch }: UpdateVars) => {
-      return apiClient.issues.update(issueId, patch);
+      const automatedPatch = withAutomationPatch(issueId, patch);
+      return apiClient.issues.update(issueId, automatedPatch);
     },
     onMutate: async ({ issueId, patch }) => {
+      const automatedPatch = withAutomationPatch(issueId, patch);
       // 1. Cancel outgoing refetches to avoid overwriting optimistic update
       await queryClient.cancelQueries({ queryKey: ['all-issues'] });
       await queryClient.cancelQueries({ queryKey: ['issues'] });
 
       // 2. Optimistic update + snapshot for rollback
-      const snapshots = optimisticUpdate(issueId, patch);
+      const snapshots = optimisticUpdate(issueId, automatedPatch);
       return { snapshots };
     },
     onError: (_err, _vars, context) => {
@@ -188,7 +230,7 @@ export function useIssueMutations() {
   const bulkUpdateMutation = useMutation({
     mutationFn: async ({ ids, patch }: BulkUpdateVars) => {
       const results = await Promise.allSettled(
-        ids.map((id) => apiClient.issues.update(id, patch)),
+        ids.map((id) => apiClient.issues.update(id, withAutomationPatch(id, patch))),
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed > 0) throw new Error(`${failed}/${ids.length} failed`);
@@ -201,7 +243,7 @@ export function useIssueMutations() {
       // Snapshot + optimistic update each issue
       const allSnapshots: { queryKey: readonly unknown[]; data: IssueQueryData }[] = [];
       ids.forEach((id) => {
-        const snapshots = optimisticUpdate(id, patch);
+        const snapshots = optimisticUpdate(id, withAutomationPatch(id, patch));
         allSnapshots.push(...snapshots);
       });
 

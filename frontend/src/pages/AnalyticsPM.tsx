@@ -54,6 +54,11 @@ export default function AnalyticsPM() {
     const remaining = Math.max(0, total - done);
 
     const burnup = buildBurnup(activeSprint, sprintIssues);
+    const burndown = burnup.map((point) => ({
+      ...point,
+      idealRemaining: Math.max(0, 100 - point.ideal),
+      actualRemaining: Math.max(0, 100 - point.actual),
+    }));
 
     return {
       avgCycleTime,
@@ -64,6 +69,7 @@ export default function AnalyticsPM() {
       done,
       remaining,
       burnup,
+      burndown,
     };
   }, [dataset]);
 
@@ -81,13 +87,18 @@ export default function AnalyticsPM() {
         <div className="text-sm text-secondary text-center py-16">{t('common.loading')}</div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <Card title={t('analytics.cycleTime')} value={`${metrics.avgCycleTime}d`} subtitle={t('analytics.cycleTimeDesc')} />
             <Card title={t('analytics.completedIssues')} value={String(metrics.completedCount)} subtitle={t('analytics.completedDesc')} />
             <Card
               title={t('analytics.activeSprintProgress')}
               value={metrics.activeSprint ? `${metrics.done}/${metrics.total}` : t('analytics.noActiveSprint')}
               subtitle={metrics.activeSprint?.name || t('analytics.startSprintHint')}
+            />
+            <Card
+              title={t('analytics.remaining')}
+              value={metrics.activeSprint ? String(metrics.remaining) : '0'}
+              subtitle={t('analytics.remainingDesc')}
             />
           </div>
 
@@ -131,6 +142,31 @@ export default function AnalyticsPM() {
                 <div className="text-[10px] text-secondary pt-1">
                   <span className="mr-3">{t('analytics.idealLine')}</span>
                   <span>{t('analytics.actualLine')}</span>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-border bg-surface p-4">
+            <h2 className="text-sm font-semibold text-primary mb-3">{t('analytics.burndown')}</h2>
+            {!metrics.activeSprint ? (
+              <p className="text-xs text-secondary">{t('analytics.noActiveSprint')}</p>
+            ) : (
+              <div className="space-y-2">
+                {metrics.burndown.map((point, idx) => (
+                  <div key={`${point.label}-${idx}`} className="grid grid-cols-[68px_1fr_1fr] gap-2 items-center">
+                    <div className="text-[10px] text-muted">{point.label}</div>
+                    <div className="h-2 rounded-full bg-surface-hover overflow-hidden">
+                      <div className="h-full bg-blue-500" style={{ width: `${point.idealRemaining}%` }} />
+                    </div>
+                    <div className="h-2 rounded-full bg-surface-hover overflow-hidden">
+                      <div className="h-full bg-rose-500" style={{ width: `${point.actualRemaining}%` }} />
+                    </div>
+                  </div>
+                ))}
+                <div className="text-[10px] text-secondary pt-1">
+                  <span className="mr-3">{t('analytics.idealRemaining')}</span>
+                  <span>{t('analytics.actualRemaining')}</span>
                 </div>
               </div>
             )}

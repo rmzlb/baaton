@@ -1027,8 +1027,13 @@ As a [user], I want to [action] so that [benefit].
   'analytics.velocity': 'Velocity by sprint',
   'analytics.noVelocityData': 'Not enough sprint data yet.',
   'analytics.burnup': 'Active sprint burnup',
+  'analytics.burndown': 'Active sprint burndown',
+  'analytics.remaining': 'Remaining issues',
+  'analytics.remainingDesc': 'Open issues left in active sprint',
   'analytics.idealLine': 'Blue = ideal',
   'analytics.actualLine': 'Green = actual done',
+  'analytics.idealRemaining': 'Blue = ideal remaining',
+  'analytics.actualRemaining': 'Red = actual remaining',
 
   // SLA
   'sla.label': 'SLA',

@@ -119,8 +119,15 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
             <PriorityIcon size={11} className={priority?.color} />
           ) : null}
           <span className="text-gray-500 dark:text-secondary text-[11px]">{isDone ? 'Done' : priority?.label || '—'}</span>
-          {sla.status === 'breached' && (
-            <span className="rounded-full bg-red-500/15 px-1.5 py-0 text-[9px] font-medium text-red-400">SLA</span>
+          {(issue.priority === 'urgent' || issue.priority === 'high') && sla.status !== 'ok' && sla.status !== 'completed' && (
+            <span
+              className={cn(
+                'rounded-full px-1.5 py-0 text-[9px] font-medium uppercase',
+                sla.status === 'breached' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400',
+              )}
+            >
+              SLA
+            </span>
           )}
         </span>
 

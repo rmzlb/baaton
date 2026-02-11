@@ -1027,8 +1027,13 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'analytics.velocity': 'Vélocité par sprint',
   'analytics.noVelocityData': 'Pas encore assez de données sprint.',
   'analytics.burnup': 'Burnup du sprint actif',
+  'analytics.burndown': 'Burndown du sprint actif',
+  'analytics.remaining': 'Tickets restants',
+  'analytics.remainingDesc': 'Tickets ouverts restants sur le sprint actif',
   'analytics.idealLine': 'Bleu = idéal',
   'analytics.actualLine': 'Vert = réel',
+  'analytics.idealRemaining': 'Bleu = restant idéal',
+  'analytics.actualRemaining': 'Rouge = restant réel',
 
   // SLA
   'sla.label': 'SLA',

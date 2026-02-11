@@ -9,6 +9,7 @@ import { useUIStore } from '@/stores/ui';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { GitHubPrBadge } from '@/components/github/GitHubPrBadge';
 import { CopyableId } from '@/components/shared/CopyableId';
+import { evaluateIssueSla } from '@/lib/sla';
 import type { Issue, IssuePriority, IssueType, ProjectTag, GitHubPrLink } from '@/lib/types';
 
 /** Strip HTML tags and collapse whitespace for clean text preview */
@@ -109,6 +110,26 @@ function TypeBadge({ type, size = 'sm' }: { type: IssueType; size?: 'sm' | 'xs' 
   );
 }
 
+function SlaBadge({ issue }: { issue: Issue }) {
+  const sla = evaluateIssueSla(issue);
+  if ((issue.priority !== 'urgent' && issue.priority !== 'high') || sla.status === 'completed' || sla.status === 'ok') {
+    return null;
+  }
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wide',
+        sla.status === 'breached' && 'bg-red-500/15 text-red-400',
+        sla.status === 'at_risk' && 'bg-amber-500/15 text-amber-400',
+      )}
+      title={`SLA ${sla.status}`}
+    >
+      SLA
+    </span>
+  );
+}
+
 function isNew(created_at: string, updated_at?: string): boolean {
   const age = Date.now() - new Date(created_at).getTime();
   if (age > 24 * 60 * 60 * 1000) return false;
@@ -181,6 +202,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
           ) : null}
           <CopyableId id={issue.display_id} className="text-[10px] text-gray-400 dark:text-muted shrink-0" iconSize={8} />
           {isNew(issue.created_at, issue.updated_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
+          <SlaBadge issue={issue} />
           <span className={cn(
             'text-xs font-medium truncate flex-1',
             isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
@@ -261,6 +283,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
           {/* Left: type badge + tags */}
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <TypeBadge type={issue.type} />
+            <SlaBadge issue={issue} />
             {issue.tags.slice(0, 2).map((tag) => {
               const style = getTagStyle(getTagColor(tag));
               return <span key={tag} className={cn('inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border', style.bg, style.text, style.border)}>{tag}</span>;
@@ -356,6 +379,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         {/* Left: type badge + tags */}
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           <TypeBadge type={issue.type} size="xs" />
+          <SlaBadge issue={issue} />
           {issue.tags.slice(0, 2).map((tag) => {
             const style = getTagStyle(getTagColor(tag));
             return (
