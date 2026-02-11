@@ -5,7 +5,7 @@ import { useClerkMembers } from '@/hooks/useClerkMembers';
 import DOMPurify from 'dompurify';
 import {
   X, ChevronDown, Tag, User, Calendar,
-  MessageSquare, Activity, Bot, CheckCircle2, AlertTriangle,
+  MessageSquare, Activity, Bot, CheckCircle2, AlertTriangle, OctagonAlert,
   Minus, ArrowUp, ArrowDown, Bug, Sparkles, Zap, HelpCircle,
   FileText, GitPullRequest, TestTube2, Paperclip, Upload, Image,
   Send, Plus, RotateCw, AlertCircle,
@@ -43,7 +43,7 @@ const STATUS_OPTIONS: { key: IssueStatus; label: string; color: string }[] = [
 ];
 
 const PRIORITY_OPTIONS: { key: IssuePriority; label: string; color: string; icon: typeof ArrowUp }[] = [
-  { key: 'urgent', label: 'Urgent', color: '#ef4444', icon: AlertTriangle },
+  { key: 'urgent', label: 'Urgent', color: '#ef4444', icon: OctagonAlert },
   { key: 'high', label: 'High', color: '#f97316', icon: ArrowUp },
   { key: 'medium', label: 'Medium', color: '#eab308', icon: Minus },
   { key: 'low', label: 'Low', color: '#6b7280', icon: ArrowDown },

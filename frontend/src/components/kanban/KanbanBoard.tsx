@@ -5,7 +5,7 @@ import {
   type DropResult,
 } from '@hello-pangea/dnd';
 import {
-  Search, SlidersHorizontal, X, ArrowUp, ArrowDown, Minus, AlertTriangle,
+  Search, SlidersHorizontal, X, ArrowUp, ArrowDown, Minus, OctagonAlert,
   Tag, User, ChevronDown, Layers, Inbox, SearchX,
 } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
@@ -31,7 +31,7 @@ const PRIORITY_ORDER: Record<string, number> = {
 };
 
 const PRIORITY_CONFIG: { key: IssuePriority; label: string; color: string; icon: typeof ArrowUp }[] = [
-  { key: 'urgent', label: 'Urgent', color: '#ef4444', icon: AlertTriangle },
+  { key: 'urgent', label: 'Urgent', color: '#ef4444', icon: OctagonAlert },
   { key: 'high', label: 'High', color: '#f97316', icon: ArrowUp },
   { key: 'medium', label: 'Medium', color: '#eab308', icon: Minus },
   { key: 'low', label: 'Low', color: '#6b7280', icon: ArrowDown },
@@ -354,7 +354,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
 
         {/* Priority Filter Dropdown */}
         <FilterDropdown
-          icon={<AlertTriangle size={12} />}
+          icon={<OctagonAlert size={12} />}
           label={t('kanban.priority')}
           count={selectedPriorities.length}
         >

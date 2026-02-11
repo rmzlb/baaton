@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import {
   CheckCircle2, XCircle, Trash2, X,
-  ArrowRight, Flame, ArrowUp, ArrowDown, Minus,
+  ArrowRight, OctagonAlert, ArrowUp, ArrowDown, Minus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -159,8 +159,8 @@ function PriorityDropdown({ onSelect }: { onSelect: (p: IssuePriority | null) =>
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const opts: { key: IssuePriority | ''; label: string; icon: typeof Flame; color: string }[] = [
-    { key: 'urgent', label: 'Urgent', icon: Flame, color: 'text-red-500' },
+  const opts: { key: IssuePriority | ''; label: string; icon: typeof OctagonAlert; color: string }[] = [
+    { key: 'urgent', label: 'Urgent', icon: OctagonAlert, color: 'text-red-500' },
     { key: 'high', label: 'High', icon: ArrowUp, color: 'text-orange-500' },
     { key: 'medium', label: 'Medium', icon: Minus, color: 'text-yellow-500' },
     { key: 'low', label: 'Low', icon: ArrowDown, color: 'text-gray-400' },
@@ -181,7 +181,7 @@ function PriorityDropdown({ onSelect }: { onSelect: (p: IssuePriority | null) =>
         className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-secondary hover:bg-surface-hover transition-colors"
         title="Set priority"
       >
-        <Flame size={13} />
+        <OctagonAlert size={13} />
         <span className="hidden sm:inline">Priority</span>
       </button>
       {open && (

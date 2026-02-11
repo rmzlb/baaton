@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/clerk-react';
 import {
   X, Bug, Sparkles, Zap, HelpCircle,
-  AlertTriangle, ArrowUp, Minus, ArrowDown,
+  OctagonAlert, ArrowUp, Minus, ArrowDown,
   ChevronLeft, ChevronRight, User, Calendar, CheckCircle2,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -42,7 +42,7 @@ const TYPE_CARDS: {
 
 const PRIORITY_BUTTONS: { key: IssuePriority | ''; labelKey: string; color: string; icon?: typeof ArrowUp }[] = [
   { key: '', labelKey: 'createIssue.priorityNone', color: 'border-border text-secondary hover:bg-surface-hover' },
-  { key: 'urgent', labelKey: 'createIssue.priorityUrgent', color: 'border-red-400/40 text-red-400 hover:bg-red-500/10', icon: AlertTriangle },
+  { key: 'urgent', labelKey: 'createIssue.priorityUrgent', color: 'border-red-400/40 text-red-400 hover:bg-red-500/10', icon: OctagonAlert },
   { key: 'high', labelKey: 'createIssue.priorityHigh', color: 'border-orange-400/40 text-orange-400 hover:bg-orange-500/10', icon: ArrowUp },
   { key: 'medium', labelKey: 'createIssue.priorityMedium', color: 'border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/10', icon: Minus },
   { key: 'low', labelKey: 'createIssue.priorityLow', color: 'border-gray-400/40 text-gray-400 hover:bg-gray-500/10', icon: ArrowDown },

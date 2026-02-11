@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Trash2, ArrowRight, Copy, ExternalLink,
   Bug, Sparkles, Zap, HelpCircle,
-  ArrowUp, ArrowDown, Minus, Flame, AlertTriangle,
+  ArrowUp, ArrowDown, Minus, OctagonAlert,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -20,7 +20,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 /* ── Priority config ── */
 const PRIORITY_OPTIONS: { key: IssuePriority | ''; label: string; icon: typeof ArrowUp; color: string }[] = [
-  { key: 'urgent', label: 'Urgent', icon: Flame, color: 'text-red-500' },
+  { key: 'urgent', label: 'Urgent', icon: OctagonAlert, color: 'text-red-500' },
   { key: 'high', label: 'High', icon: ArrowUp, color: 'text-orange-500' },
   { key: 'medium', label: 'Medium', icon: Minus, color: 'text-yellow-500' },
   { key: 'low', label: 'Low', icon: ArrowDown, color: 'text-gray-400' },
@@ -161,7 +161,7 @@ export function KanbanContextMenu({
       >
         <button className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs text-primary hover:bg-surface-hover transition-colors">
           <span className="flex items-center gap-2">
-            <Flame size={12} className="text-secondary" />
+            <OctagonAlert size={12} className="text-secondary" />
             {t('contextMenu.priority') || 'Priority'}
           </span>
           <span className="text-muted text-[10px]">▸</span>

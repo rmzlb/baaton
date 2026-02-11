@@ -5,7 +5,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { api } from '@/lib/api';
 import {
   Kanban, ArrowRight, Archive, Clock, Circle,
-  Eye, CheckCircle2, AlertTriangle, Building2, ChevronRight,
+  Eye, CheckCircle2, OctagonAlert, Building2, ChevronRight,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
@@ -125,8 +125,8 @@ function ProjectCard({
           <span className="font-semibold text-primary">{active}</span> active · <span className="text-emerald-500">{done}</span> done
         </span>
         {urgent > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-500">
-            <AlertTriangle size={10} />
+          <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold text-orange-500">
+            <OctagonAlert size={10} />
             {urgent}
           </span>
         )}

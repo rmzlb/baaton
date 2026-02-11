@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import {
   Search, ChevronDown, ChevronRight,
-  ArrowUp, ArrowDown, Minus, AlertTriangle,
+  ArrowUp, ArrowDown, Minus, OctagonAlert,
   Tag, User, X, Layers, Inbox, SearchX,
 } from 'lucide-react';
 import { ListRow } from './ListRow';
@@ -25,7 +25,7 @@ const PRIORITY_ORDER: Record<string, number> = {
 };
 
 const PRIORITY_CONFIG: { key: IssuePriority; label: string; color: string; icon: typeof ArrowUp }[] = [
-  { key: 'urgent', label: 'Urgent', color: '#ef4444', icon: AlertTriangle },
+  { key: 'urgent', label: 'Urgent', color: '#ef4444', icon: OctagonAlert },
   { key: 'high', label: 'High', color: '#f97316', icon: ArrowUp },
   { key: 'medium', label: 'Medium', color: '#eab308', icon: Minus },
   { key: 'low', label: 'Low', color: '#6b7280', icon: ArrowDown },
@@ -256,7 +256,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
 
         {/* Priority Filter */}
         <FilterDropdown
-          icon={<AlertTriangle size={12} />}
+          icon={<OctagonAlert size={12} />}
           label={t('kanban.priority')}
           count={selectedPriorities.length}
         >

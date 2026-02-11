@@ -11,7 +11,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import {
   Layers, Kanban, List, Rows3, Rows4, StretchHorizontal,
   ChevronDown, X, Search, SlidersHorizontal,
-  ArrowUp, ArrowDown, Minus, Flame,
+  ArrowUp, ArrowDown, Minus, OctagonAlert,
   Circle, Clock, Eye, CheckCircle2, XCircle, Archive,
   FolderOpen,
 } from 'lucide-react';
@@ -39,7 +39,7 @@ const STATUS_ICONS: Record<string, typeof Circle> = {
 };
 
 const PRIORITY_CONFIG = [
-  { key: 'urgent', label: 'Urgent', icon: Flame, color: '#ef4444', textColor: 'text-red-500' },
+  { key: 'urgent', label: 'Urgent', icon: OctagonAlert, color: '#ef4444', textColor: 'text-red-500' },
   { key: 'high', label: 'High', icon: ArrowUp, color: '#f97316', textColor: 'text-orange-500' },
   { key: 'medium', label: 'Medium', icon: Minus, color: '#eab308', textColor: 'text-yellow-500' },
   { key: 'low', label: 'Low', icon: ArrowDown, color: '#6b7280', textColor: 'text-gray-400' },
@@ -555,7 +555,7 @@ export function AllIssues() {
                   ? 'border-accent/40 bg-accent/10 text-accent'
                   : 'border-transparent bg-surface-hover/60 text-secondary hover:bg-surface-hover hover:text-primary',
               )}>
-                <Flame size={12} />
+                <OctagonAlert size={12} />
                 Priority
                 {priorityFilter.length > 0 && (
                   <span className="rounded-full bg-accent/20 px-1.5 text-[9px] font-bold text-accent">

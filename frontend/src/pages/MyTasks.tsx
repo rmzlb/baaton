@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useUser } from '@clerk/clerk-react';
 import {
   CheckSquare, Bug, Sparkles, Zap, HelpCircle,
-  ArrowUp, ArrowDown, Minus, AlertTriangle,
+  ArrowUp, ArrowDown, Minus, OctagonAlert,
 } from 'lucide-react';
 import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { useApi } from '@/hooks/useApi';
@@ -28,7 +28,7 @@ const typeColors: Record<IssueType, string> = {
 };
 
 const priorityConfig: Record<IssuePriority, { icon: typeof ArrowUp; color: string }> = {
-  urgent: { icon: AlertTriangle, color: '#ef4444' },
+  urgent: { icon: OctagonAlert, color: '#ef4444' },
   high: { icon: ArrowUp, color: '#f97316' },
   medium: { icon: Minus, color: '#eab308' },
   low: { icon: ArrowDown, color: '#6b7280' },
