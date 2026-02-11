@@ -109,8 +109,14 @@ function TypeBadge({ type, size = 'sm' }: { type: IssueType; size?: 'sm' | 'xs' 
   );
 }
 
-function isNew(created_at: string): boolean {
-  return Date.now() - new Date(created_at).getTime() < 48 * 60 * 60 * 1000;
+function isNew(created_at: string, updated_at?: string): boolean {
+  const age = Date.now() - new Date(created_at).getTime();
+  if (age > 24 * 60 * 60 * 1000) return false;
+  if (updated_at) {
+    const gap = Math.abs(new Date(updated_at).getTime() - new Date(created_at).getTime());
+    if (gap > 60 * 60 * 1000) return false;
+  }
+  return true;
 }
 
 export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, selected = false, onSelect, projectTags = [], githubPrs = [] }: KanbanCardProps) {
@@ -174,7 +180,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
             <PriorityConfig.icon size={12} className={PriorityConfig.color} />
           ) : null}
           <CopyableId id={issue.display_id} className="text-[10px] text-gray-400 dark:text-muted shrink-0" iconSize={8} />
-          {isNew(issue.created_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
+          {isNew(issue.created_at, issue.updated_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
           <span className={cn(
             'text-xs font-medium truncate flex-1',
             isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
@@ -225,7 +231,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         <div className="flex justify-between items-start mb-2">
           <div className="flex items-center gap-1.5">
             <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
-            {isNew(issue.created_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase">NEW</span>}
+            {isNew(issue.created_at, issue.updated_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase">NEW</span>}
           </div>
           <div className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
             <MoreHorizontal className="w-3.5 h-3.5" />
@@ -327,7 +333,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
       <div className="flex justify-between items-start mb-2">
         <div className="flex items-center gap-1.5">
           <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
-          {isNew(issue.created_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase">NEW</span>}
+          {isNew(issue.created_at, issue.updated_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase">NEW</span>}
         </div>
         <div
           className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 dark:text-muted opacity-0 group-hover:opacity-100 transition-opacity"

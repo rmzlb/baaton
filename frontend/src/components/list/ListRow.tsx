@@ -39,8 +39,15 @@ interface ListRowProps {
   onSelect?: (id: string, shiftKey: boolean) => void;
 }
 
-function isNew(created_at: string): boolean {
-  return Date.now() - new Date(created_at).getTime() < 48 * 60 * 60 * 1000;
+function isNew(created_at: string, updated_at?: string): boolean {
+  const age = Date.now() - new Date(created_at).getTime();
+  if (age > 24 * 60 * 60 * 1000) return false; // older than 24h
+  // If updated_at is very close to created_at, it's genuinely new (not an old import)
+  if (updated_at) {
+    const gap = Math.abs(new Date(updated_at).getTime() - new Date(created_at).getTime());
+    if (gap > 60 * 60 * 1000) return false; // updated >1h after creation = likely import
+  }
+  return true;
 }
 
 export function ListRow({ issue, statuses, projectTags = [], onClick, onContextMenu, selected = false, onSelect }: ListRowProps) {
@@ -88,7 +95,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
         {/* ID — compact, no subtitle */}
         <span className="flex items-center gap-1">
           <CopyableId id={issue.display_id} className="text-gray-400 dark:text-secondary text-[11px] truncate" iconSize={9} />
-          {isNew(issue.created_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
+          {isNew(issue.created_at, issue.updated_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
         </span>
 
         {/* Title — truncated, takes remaining space */}
@@ -183,7 +190,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
         {/* Top row: ID + status + priority */}
         <div className="flex items-center gap-2">
           <CopyableId id={issue.display_id} className="text-secondary text-[11px]" iconSize={9} />
-          {isNew(issue.created_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase">NEW</span>}
+          {isNew(issue.created_at, issue.updated_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase">NEW</span>}
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: status?.color }} />
             <span className="text-[10px] text-secondary">{status?.label || issue.status}</span>
