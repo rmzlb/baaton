@@ -102,6 +102,7 @@ pub struct CreateIssue {
     pub due_date: Option<NaiveDate>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct UpdateIssue {
     pub title: Option<String>,
