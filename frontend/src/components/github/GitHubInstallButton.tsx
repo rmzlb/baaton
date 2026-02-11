@@ -1,7 +1,9 @@
 import { Github } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 
-const API_BASE = `${import.meta.env.VITE_API_URL || ''}/api/v1`;
+import { resolveApiOrigin } from '@/lib/api-origin';
+
+const API_BASE = `${resolveApiOrigin()}/api/v1`;
 
 export function GitHubInstallButton() {
   const { t } = useTranslation();

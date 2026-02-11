@@ -1,23 +1,4 @@
-function resolveApiOrigin(): string {
-  const configured = (import.meta.env.VITE_API_URL || '').trim();
-  if (configured) return configured.replace(/\/$/, '');
-
-  if (typeof window !== 'undefined') {
-    const { hostname, origin } = window.location;
-    const isBaatonProdHost =
-      hostname === 'baaton.dev'
-      || hostname === 'www.baaton.dev'
-      || hostname === 'app.baaton.dev'
-      || hostname.endsWith('.baaton.dev');
-
-    if (isBaatonProdHost) {
-      return 'https://api.baaton.dev';
-    }
-    return origin;
-  }
-
-  return '';
-}
+import { resolveApiOrigin } from './api-origin';
 
 const API_BASE = `${resolveApiOrigin()}/api/v1`;
 
@@ -59,6 +40,15 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   // Handle 204 No Content
   if (res.status === 204) {
     return undefined as T;
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) {
+    throw new ApiError(
+      res.status,
+      'HTML_RESPONSE',
+      'Unexpected HTML response from API (likely wrong base URL or cached frontend bundle).',
+    );
   }
 
   const text = await res.text();

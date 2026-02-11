@@ -34,8 +34,9 @@ import {
 } from './ai-state';
 
 // ─── API Key (fetched from backend) ───────────
+import { resolveApiOrigin } from './api-origin';
 let _cachedApiKey: string | null = null;
-const API_URL = import.meta.env.VITE_API_URL || '';
+const API_URL = resolveApiOrigin();
 
 async function getGeminiApiKey(authToken?: string): Promise<string> {
   if (_cachedApiKey) return _cachedApiKey;
@@ -305,7 +306,7 @@ Tu es le PM assistant de l'équipe. Tu ne codes pas, mais tu :
 
 ## Règles d'Exécution
 1. **TOUJOURS utiliser tes skills** pour accéder aux données — jamais d'hallucination
-2. **Actions directes** : créer, modifier, commenter → exécute immédiatement sans demander confirmation
+2. **Actions d'écriture (create/update/bulk/comment/milestone)** → **PROPOSER puis demander confirmation** avant d'exécuter
 3. **Actions destructives** (suppression) → demande confirmation avant
 4. **Bulk updates** → liste les changements AVANT d'exécuter
 5. **Cite les display_id** (ex: HLM-42) quand tu mentionnes des issues
@@ -372,6 +373,14 @@ export interface AIResponse {
   };
   stateContext: AIStateContext;
 }
+
+const APPROVAL_REQUIRED_SKILLS = new Set([
+  'create_issue',
+  'update_issue',
+  'bulk_update_issues',
+  'add_comment',
+  'create_milestones_batch',
+]);
 
 interface PmFullReviewIssue {
   id: string;
@@ -595,12 +604,15 @@ export async function generateAIResponse(
   apiClient: ApiClientType,
   stateContext?: AIStateContext,
   authToken?: string,
+  options?: { requireApproval?: boolean },
 ): Promise<AIResponse> {
   // ── Rate Limiting ──
   const rateCheck = checkRateLimit();
   if (!rateCheck.allowed) {
     throw new RateLimitError();
   }
+
+  const requireApproval = options?.requireApproval ?? false;
 
   // ── State Machine: init or use provided ──
   let state = stateContext ? { ...stateContext } : createInitialState();
@@ -694,6 +706,20 @@ export async function generateAIResponse(
     state = transition(state, { type: 'SKILL_STARTED', name });
     const startTime = performance.now();
 
+    if (requireApproval && APPROVAL_REQUIRED_SKILLS.has(name)) {
+      const pendingData = { pending: true, args } as Record<string, unknown>;
+      const executionTime = Math.round(performance.now() - startTime);
+      const pendingResult: SkillResult = {
+        skill: name,
+        success: true,
+        summary: 'Pending approval',
+        data: pendingData,
+      };
+      skillsExecuted.push({ ...pendingResult, executionTimeMs: executionTime } as any);
+      state = transition(state, { type: 'SKILL_COMPLETED', name, data: pendingData });
+      return pendingData;
+    }
+
     try {
       const result = await executeSkill(name, args, apiClient, allIssuesByProject, projects);
       const executionTime = Math.round(performance.now() - startTime);
@@ -756,6 +782,22 @@ export async function generateAIResponse(
     const outputTokens = usage.completionTokens || estimateTokens(result.text || '');
 
     state = transition(state, { type: 'AI_RESPONSE', tokens: outputTokens });
+
+    const pendingSkills = skillsExecuted.filter((s) => (s.data as any)?.pending);
+    if (pendingSkills.length > 0) {
+      const pendingList = pendingSkills.map((s) => s.skill).join(', ');
+      return {
+        text: `⚠️ Validation requise avant d'exécuter: ${pendingList}.`,
+        skillsExecuted,
+        usage: {
+          inputTokens,
+          outputTokens,
+          totalTokens: inputTokens + outputTokens,
+          turnCount: state.usage.turnCount,
+        },
+        stateContext: state,
+      };
+    }
 
     const fallbackSkillText = skillsExecuted.length > 0
       ? skillsExecuted

@@ -4,7 +4,8 @@ import { useAuth, useUser } from '@clerk/clerk-react';
 import { useNotificationStore } from '@/stores/notifications';
 import type { SSEEvent } from '@/lib/types';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+import { resolveApiOrigin } from '@/lib/api-origin';
+const API_URL = resolveApiOrigin();
 
 /**
  * Global SSE hook — connects to the backend event stream and:

@@ -11,6 +11,7 @@ import { useNotificationStore } from '@/stores/notifications';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { generateAIResponse, RateLimitError } from '@/lib/ai-engine';
+import { executeSkill } from '@/lib/ai-executor';
 import {
   getOpenClawConfig,
   sendToOpenClaw,
@@ -24,7 +25,7 @@ import {
   type PmPlanUiState,
   type PmReviewPlanData,
 } from '@/components/ai/PmPlanResultPanel';
-import type { Issue, Milestone, Sprint } from '@/lib/types';
+import type { Issue, Milestone, Sprint, Project } from '@/lib/types';
 import type { SkillResult } from '@/lib/ai-skills';
 import { SKILL_TOOLS } from '@/lib/ai-skills';
 import { type AIStateContext, createInitialState } from '@/lib/ai-state';
@@ -51,6 +52,11 @@ interface PmPlanApplyPayload {
     }>;
   }>;
 }
+
+type PendingActionState = {
+  status: 'pending' | 'processing' | 'approved' | 'cancelled' | 'error';
+  error?: string;
+};
 
 function isPmReviewPlanData(value: unknown): value is PmReviewPlanData {
   if (!value || typeof value !== 'object') return false;
@@ -230,6 +236,91 @@ function ErrorMessage({ error, onRetry }: { error: string; onRetry?: () => void 
   );
 }
 
+function resolveProjectLabel(projectId?: string, projects?: Project[]): string {
+  if (!projectId) return 'Unknown project';
+  if (!projects?.length) return projectId;
+  const match = projects.find((p) =>
+    p.id === projectId || p.prefix === projectId || p.slug === projectId || p.name === projectId,
+  );
+  return match ? `${match.name} (${match.prefix})` : projectId;
+}
+
+function PendingActionPanel({
+  messageId,
+  skill,
+  args,
+  state,
+  projects,
+  onApprove,
+  onCancel,
+}: {
+  messageId: string;
+  skill: string;
+  args: Record<string, unknown>;
+  state: PendingActionState;
+  projects?: Project[];
+  onApprove?: (messageId: string, skill: string, args: Record<string, unknown>) => void;
+  onCancel?: (messageId: string, skill: string) => void;
+}) {
+  const { t } = useTranslation();
+  const projectLabel = resolveProjectLabel(String(args.project_id || args.project || ''), projects);
+  const title = String(args.title || args.name || '');
+  const summary = skill === 'create_issue'
+    ? `Créer issue: ${title || 'Sans titre'} • ${projectLabel}`
+    : `Action: ${skill}`;
+
+  const statusLabel = {
+    pending: t('common.pending') || 'En attente',
+    processing: t('common.processing') || 'En cours',
+    approved: t('common.approved') || 'Approuvé',
+    cancelled: t('common.cancelled') || 'Annulé',
+    error: t('common.error') || 'Erreur',
+  }[state.status];
+
+  return (
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 mt-2">
+      <div className="flex items-center justify-between text-[11px] text-amber-200/90 mb-1">
+        <span>Validation requise</span>
+        <span className="text-[10px] text-amber-200/70">{statusLabel}</span>
+      </div>
+      <div className="text-[12px] text-secondary mb-2">{summary}</div>
+      <details className="text-[10px] text-muted">
+        <summary className="cursor-pointer">Voir les détails</summary>
+        <pre className="mt-2 whitespace-pre-wrap break-all rounded-md bg-surface/70 border border-border/60 p-2 text-[10px] text-muted">
+          {JSON.stringify(args, null, 2)}
+        </pre>
+      </details>
+      {state.status === 'error' && state.error && (
+        <div className="text-[10px] text-red-400 mt-2">{state.error}</div>
+      )}
+      {state.status === 'pending' && (
+        <div className="flex items-center gap-2 mt-2">
+          <button
+            onClick={() => onApprove?.(messageId, skill, args)}
+            className="flex items-center gap-1.5 rounded-md bg-emerald-500 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-emerald-600 transition-colors"
+          >
+            <CheckCircle2 size={10} />
+            {t('common.confirm') || 'Confirmer'}
+          </button>
+          <button
+            onClick={() => onCancel?.(messageId, skill)}
+            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[10px] text-secondary hover:bg-surface-hover transition-colors"
+          >
+            <XCircle size={10} />
+            {t('common.cancel') || 'Annuler'}
+          </button>
+        </div>
+      )}
+      {state.status === 'processing' && (
+        <div className="flex items-center gap-1.5 mt-2 text-[10px] text-muted">
+          <Loader2 size={10} className="animate-spin" />
+          {t('common.processing') || 'Traitement en cours'}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Message Bubble ───────────────────────────
 interface MessageBubbleProps {
   message: AIMessage;
@@ -240,6 +331,10 @@ interface MessageBubbleProps {
   onPmPlanCancel?: (messageId: string) => void;
   onPmPlanDraftChange?: (messageId: string, draft: string) => void;
   getPmPlanState?: (messageId: string, initialDraft: string) => PmPlanUiState;
+  projects?: Project[];
+  onApprovePendingAction?: (messageId: string, skill: string, args: Record<string, unknown>) => void;
+  onCancelPendingAction?: (messageId: string, skill: string) => void;
+  getPendingActionState?: (messageId: string, skill: string) => PendingActionState;
 }
 
 function MessageBubble({
@@ -251,6 +346,10 @@ function MessageBubble({
   onPmPlanCancel,
   onPmPlanDraftChange,
   getPmPlanState,
+  projects,
+  onApprovePendingAction,
+  onCancelPendingAction,
+  getPendingActionState,
 }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const { t } = useTranslation();
@@ -259,6 +358,9 @@ function MessageBubble({
   const isError = !isUser && message.content.startsWith('⚠️');
 
   const visibleSkills = message.skills?.filter((s) => s.skill !== 'pm_full_review');
+  const pendingSkills = !isUser
+    ? message.skills?.filter((s) => (s.data as any)?.pending)
+    : [];
 
   const pmPlanSkill = !isUser
     ? message.skills?.find((s) => s.skill === 'pm_full_review' && s.success)
@@ -309,6 +411,24 @@ function MessageBubble({
             </div>
           )}
         </div>
+
+        {/* Pending action approvals */}
+        {pendingSkills && pendingSkills.length > 0 && pendingSkills.map((pending, idx) => {
+          const args = ((pending.data as any)?.args || {}) as Record<string, unknown>;
+          const state = getPendingActionState ? getPendingActionState(message.id, pending.skill) : { status: 'pending' as const };
+          return (
+            <PendingActionPanel
+              key={`${pending.skill}-${idx}`}
+              messageId={message.id}
+              skill={pending.skill}
+              args={args}
+              state={state}
+              projects={projects}
+              onApprove={onApprovePendingAction}
+              onCancel={onCancelPendingAction}
+            />
+          );
+        })}
 
         {/* PM full-review plan action panel */}
         {pmPlan && onPmPlanAccept && onPmPlanEdit && onPmPlanApplyChanges && onPmPlanCancel && onPmPlanDraftChange && (
@@ -401,6 +521,7 @@ export function AIAssistant() {
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [aiStateContext, setAiStateContext] = useState<AIStateContext>(createInitialState);
   const [pmPlanStates, setPmPlanStates] = useState<Record<string, PmPlanUiState>>({});
+  const [pendingActionStates, setPendingActionStates] = useState<Record<string, { status: 'pending' | 'processing' | 'approved' | 'cancelled' | 'error'; error?: string }>>({});
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const addNotification = useNotificationStore((state) => state.addNotification);
@@ -421,6 +542,7 @@ export function AIAssistant() {
     setLastError(null);
     setLastFailedMessage(null);
     setPmPlanStates({});
+    setPendingActionStates({});
   }, [clearMessages]);
 
   // Fetch all projects
@@ -533,6 +655,7 @@ export function AIAssistant() {
           apiClient as unknown as Parameters<typeof generateAIResponse>[4],
           aiStateContext,
           token || undefined,
+          { requireApproval: true },
         );
 
         // Update state context for next turn
@@ -602,6 +725,22 @@ export function AIAssistant() {
       return { ...prev, [messageId]: updater(current) };
     });
   }, []);
+
+  const getPendingActionState = useCallback((messageId: string, skill: string) => {
+    const key = `${messageId}:${skill}`;
+    return pendingActionStates[key] ?? { status: 'pending' as const };
+  }, [pendingActionStates]);
+
+  const updatePendingActionState = useCallback(
+    (messageId: string, skill: string, updater: (prev: { status: 'pending' | 'processing' | 'approved' | 'cancelled' | 'error'; error?: string }) => { status: 'pending' | 'processing' | 'approved' | 'cancelled' | 'error'; error?: string }) => {
+      setPendingActionStates((prev) => {
+        const key = `${messageId}:${skill}`;
+        const current = prev[key] ?? { status: 'pending' as const };
+        return { ...prev, [key]: updater(current) };
+      });
+    },
+    [],
+  );
 
   const applyPmPlanPayload = useCallback(async (payload: PmPlanApplyPayload) => {
     const createdMilestones: Milestone[] = [];
@@ -780,7 +919,32 @@ export function AIAssistant() {
     }));
   }, [updatePmPlanState]);
 
+  const handleApprovePendingAction = useCallback(async (messageId: string, skill: string, args: Record<string, unknown>) => {
+    updatePendingActionState(messageId, skill, (prev) => ({ ...prev, status: 'processing', error: undefined }));
+    try {
+      const result = await executeSkill(skill, args, apiClient as any, allIssuesByProject, projects);
+      updatePendingActionState(messageId, skill, (prev) => ({ ...prev, status: 'approved', error: undefined }));
+      addMessage('assistant', result.summary, [result]);
+
+      if (result.success && ['create_issue', 'update_issue', 'bulk_update_issues', 'create_milestones_batch', 'add_comment'].includes(skill)) {
+        queryClient.invalidateQueries({ queryKey: ['issues'] });
+        queryClient.invalidateQueries({ queryKey: ['all-issues'] });
+        queryClient.invalidateQueries({ queryKey: ['my-issues'] });
+        queryClient.invalidateQueries({ queryKey: ['milestones'] });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('ai.errorGeneric');
+      updatePendingActionState(messageId, skill, (prev) => ({ ...prev, status: 'error', error: message }));
+      addNotification({ type: 'warning', title: t('ai.errorGeneric'), message });
+    }
+  }, [updatePendingActionState, apiClient, allIssuesByProject, projects, addMessage, queryClient, addNotification, t]);
+
+  const handleCancelPendingAction = useCallback((messageId: string, skill: string) => {
+    updatePendingActionState(messageId, skill, (prev) => ({ ...prev, status: 'cancelled', error: undefined }));
+  }, [updatePendingActionState]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -974,6 +1138,10 @@ export function AIAssistant() {
                     onPmPlanCancel={handlePmPlanCancel}
                     onPmPlanDraftChange={handlePmPlanDraftChange}
                     getPmPlanState={getPmPlanState}
+                    projects={projects}
+                    onApprovePendingAction={handleApprovePendingAction}
+                    onCancelPendingAction={handleCancelPendingAction}
+                    getPendingActionState={getPendingActionState}
                   />
                 ))}
                 {loading && <TypingIndicator />}
