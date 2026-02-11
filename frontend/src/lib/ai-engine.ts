@@ -557,27 +557,47 @@ export async function generateAIResponse(
           skillExecutors.suggest_priorities({}),
         ]);
 
-        const fallbackSystem = `${systemPrompt}\n\nTOOLING FALLBACK MODE: function-calling is temporarily unavailable. Use ONLY the provided JSON context below to answer.\n\nPROJECT_METRICS:\n${JSON.stringify(metrics)}\n\nPRIORITY_SUGGESTIONS:\n${JSON.stringify(priorities)}`;
+        // Hard fallback: DO NOT call Gemini again.
+        // Build a deterministic PM review from live metrics so user always gets output.
+        const m: any = metrics || {};
+        const p: any = priorities || {};
+        const projectCount = Array.isArray(m.projects) ? m.projects.length : (m.project_count ?? 0);
+        const openCount = m.open_issues ?? m.openCount ?? 0;
+        const doneCount = m.done_issues ?? m.doneCount ?? 0;
+        const completion = m.completion_rate ?? m.completionRate ?? null;
+        const suggestions = Array.isArray(p.suggestions) ? p.suggestions : [];
 
-        const retry = await generateText({
-          model: google('gemini-2.0-flash', {
-            structuredOutputs: false,
-          }),
-          system: fallbackSystem,
-          messages,
-          maxSteps: 1,
-          temperature: 0.4,
-          maxTokens: 2000,
-        });
+        const lines: string[] = [
+          '⚠️ AI function-calling indisponible temporairement — mode fallback activé.',
+          '',
+          '## Revue PM (fallback live data)',
+          `- Projets analysés: ${projectCount}`,
+          `- Tickets ouverts: ${openCount}`,
+          `- Tickets terminés: ${doneCount}`,
+          completion != null ? `- Taux de completion: ${completion}%` : '- Taux de completion: n/a',
+          '',
+          '## Priorités suggérées',
+        ];
 
-        const usage = retry.usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-        const inputTokens = usage.promptTokens || estimateTokens(fallbackSystem + userMessage);
-        const outputTokens = usage.completionTokens || estimateTokens(retry.text || '');
+        if (suggestions.length === 0) {
+          lines.push('- Aucune suggestion automatique disponible.');
+        } else {
+          for (const s of suggestions.slice(0, 10)) {
+            if (typeof s === 'string') lines.push(`- ${s}`);
+            else lines.push(`- ${s.title || s.issue || 'Issue'} → ${s.priority || 'review'}`);
+          }
+        }
+
+        lines.push('', '## Next', '- Rafraîchir la session puis relancer pour plan milestones/sprints détaillé.');
+
+        const text = lines.join('\n');
+        const outputTokens = estimateTokens(text);
+        const inputTokens = estimateTokens(userMessage);
 
         state = transition(state, { type: 'AI_RESPONSE', tokens: outputTokens });
 
         return {
-          text: retry.text || "Je n'ai pas pu générer de réponse. Réessaie avec plus de détails.",
+          text,
           skillsExecuted,
           usage: {
             inputTokens,
