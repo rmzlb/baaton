@@ -4,7 +4,13 @@ function resolveApiOrigin(): string {
 
   if (typeof window !== 'undefined') {
     const { hostname, origin } = window.location;
-    if (hostname === 'app.baaton.dev' || hostname.endsWith('.baaton.dev')) {
+    const isBaatonProdHost =
+      hostname === 'baaton.dev'
+      || hostname === 'www.baaton.dev'
+      || hostname === 'app.baaton.dev'
+      || hostname.endsWith('.baaton.dev');
+
+    if (isBaatonProdHost) {
       return 'https://api.baaton.dev';
     }
     return origin;
