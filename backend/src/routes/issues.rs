@@ -294,7 +294,6 @@ pub async fn create(
         issue_id = %issue.id,
         display_id = %issue.display_id,
         assignee_count = issue.assignee_ids.len(),
-        created_by_name = ?issue.created_by_name,
         "issues.create.success"
     );
 
