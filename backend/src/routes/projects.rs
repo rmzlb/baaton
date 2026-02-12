@@ -29,6 +29,13 @@ pub async fn list(
         vec![]
     };
 
+    tracing::info!(
+        user_id = %auth.user_id,
+        org_id = ?auth.org_id,
+        project_count = projects.len(),
+        "projects.list"
+    );
+
     Json(ApiResponse::new(projects))
 }
 
