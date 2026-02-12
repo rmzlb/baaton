@@ -240,7 +240,7 @@ export function AllIssues() {
     setter(arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val]);
 
   // ─── Data fetching ─────────────────────────
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [], error: projectsError } = useQuery({
     queryKey: ['projects'],
     queryFn: () => apiClient.projects.list(),
     staleTime: 60_000,
@@ -254,11 +254,36 @@ export function AllIssues() {
     staleTime: 60_000,
   });
 
+  const effectiveProjects = useMemo(() => {
+    if (projects.length > 0) return projects;
+    if (allIssuesRaw.length === 0) return [] as typeof projects;
+
+    const map = new Map<string, typeof projects[number]>();
+    allIssuesRaw.forEach((issue) => {
+      if (map.has(issue.project_id)) return;
+      const prefix = issue.display_id?.split('-')[0] || 'PRJ';
+      map.set(issue.project_id, {
+        id: issue.project_id,
+        org_id: 'unknown',
+        name: prefix,
+        slug: prefix.toLowerCase(),
+        description: null,
+        prefix,
+        statuses: STATUSES,
+        auto_assign_mode: 'off',
+        default_assignee_id: null,
+        created_at: issue.created_at,
+      });
+    });
+
+    return Array.from(map.values());
+  }, [projects, allIssuesRaw]);
+
   const { data: allTags = [] } = useQuery({
-    queryKey: ['all-project-tags', projects.map((p) => p.id).join(',')],
+    queryKey: ['all-project-tags', effectiveProjects.map((p) => p.id).join(',')],
     queryFn: async () => {
       const results = await Promise.all(
-        projects.map(async (p) => {
+        effectiveProjects.map(async (p) => {
           try { return await apiClient.tags.listByProject(p.id); }
           catch { return [] as ProjectTag[]; }
         }),
@@ -491,8 +516,11 @@ export function AllIssues() {
             {t('allIssues.title')}
           </h1>
           <p className="text-[10px] md:text-xs text-secondary font-mono uppercase tracking-wider truncate">
-            {filteredIssues.length} / {allIssuesRaw.length} issues · {projects.length} projects
+            {filteredIssues.length} / {allIssuesRaw.length} issues · {effectiveProjects.length} projects
           </p>
+          {projectsError && projects.length === 0 && allIssuesRaw.length > 0 && (
+            <p className="mt-1 text-[10px] text-amber-300">Projects list unavailable — using fallback from issues.</p>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
@@ -559,7 +587,7 @@ export function AllIssues() {
 
           {/* Project filter chips */}
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1">
-            {projects.length > 1 && (
+            {effectiveProjects.length > 1 && (
               <FilterChip
                 label="All"
                 active={projectFilter.length === 0}
@@ -568,7 +596,7 @@ export function AllIssues() {
                 count={allIssuesRaw.length}
               />
             )}
-            {projects.map((p) => (
+            {effectiveProjects.map((p) => (
               <FilterChip
                 key={p.id}
                 label={p.prefix}
@@ -807,7 +835,7 @@ export function AllIssues() {
             issues={filteredIssues}
             onIssueClick={(issue) => openDetail(issue.id)}
             projectTags={allTags}
-            projects={projects}
+            projects={effectiveProjects}
             hideFilterBar
           />
         )}
