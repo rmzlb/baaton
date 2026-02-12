@@ -61,9 +61,75 @@ function normalizeStringArray(value: unknown): string[] {
   return [];
 }
 
+const VALID_TYPES = new Set(['bug', 'feature', 'improvement', 'question']);
+const VALID_PRIORITIES = new Set(['urgent', 'high', 'medium', 'low']);
+const VALID_STATUSES = new Set(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']);
+const VALID_CATEGORIES = new Set(['FRONT', 'BACK', 'API', 'DB', 'INFRA', 'UX', 'DEVOPS']);
+
 function normalizeOptionalStringArray(value: unknown): string[] | undefined {
   const arr = normalizeStringArray(value);
   return arr.length > 0 ? arr : undefined;
+}
+
+function inferTypeFromText(text: string): string {
+  const t = text.toLowerCase();
+  if (/(\bbug\b|\bissue\b|\berror\b|\bfix\b|\bcrash\b|\bbroken\b|\bprobl[eè]me\b|\bcorrection\b|\bd[eé]calage\b|\bne fonctionne pas\b)/i.test(t)) return 'bug';
+  if (/(\bquestion\b|\bwhy\b|\bcomment\b|\bclarif\b|\?)/i.test(t)) return 'question';
+  if (/(\bperf\b|\bperformance\b|\boptim\b|\brefactor\b|\bpolish\b|\bam[eé]lior\b|\bscal\b)/i.test(t)) return 'improvement';
+  return 'feature';
+}
+
+function inferPriorityFromText(text: string): string {
+  const t = text.toLowerCase();
+  if (/(\burgent\b|\bcritique\b|\bcritical\b|\bblocker\b|\basap\b|\bimmediat\b)/i.test(t)) return 'urgent';
+  if (/(\bhigh\b|\bimportant\b|\bprioritaire\b)/i.test(t)) return 'high';
+  if (/(\blow\b|\bnice to have\b|\boptionnel\b)/i.test(t)) return 'low';
+  return 'medium';
+}
+
+function inferCategoriesFromText(text: string): string[] {
+  const t = text.toLowerCase();
+  const categories: string[] = [];
+
+  const rules: Array<{ key: string; match: RegExp }> = [
+    { key: 'FRONT', match: /(\bfront\b|\bfrontend\b|\bui\b|\bux\b|\binterface\b|\blayout\b|\bcss\b|\bstyle\b|\bimpression\b|\blabel\b|\bprint\b|\bpdf\b)/i },
+    { key: 'BACK', match: /(\bback\b|\bbackend\b|\bserver\b|\bworker\b|\bqueue\b|\bjob\b|\bauth\b|\bjwt\b|\bapi\b|\bendpoint\b)/i },
+    { key: 'API', match: /(\bapi\b|\bintegration\b|\bwebhook\b|\brest\b|\bgrpc\b)/i },
+    { key: 'DB', match: /(\bdb\b|\bdatabase\b|\bpostgres\b|\bsql\b|\bmigration\b|\bindex\b)/i },
+    { key: 'INFRA', match: /(\binfra\b|\bdevops\b|\bdocker\b|\bk8s\b|\bci\b|\bcd\b|\bdeploy\b|\bmonitor\b)/i },
+    { key: 'UX', match: /(\bux\b|\busabilit\b|\baccessib\b|\bjourney\b)/i },
+  ];
+
+  for (const rule of rules) {
+    if (rule.match.test(t)) categories.push(rule.key);
+  }
+
+  return Array.from(new Set(categories)).filter((c) => VALID_CATEGORIES.has(c));
+}
+
+function normalizeType(value: unknown, text: string): string {
+  const v = typeof value === 'string' ? value.toLowerCase().trim() : '';
+  if (v && VALID_TYPES.has(v)) return v;
+  return inferTypeFromText(text);
+}
+
+function normalizePriority(value: unknown, text: string): string {
+  const v = typeof value === 'string' ? value.toLowerCase().trim() : '';
+  if (v && VALID_PRIORITIES.has(v)) return v;
+  return inferPriorityFromText(text);
+}
+
+function normalizeStatus(value: unknown): string {
+  const v = typeof value === 'string' ? value.toLowerCase().trim() : '';
+  if (v && VALID_STATUSES.has(v)) return v;
+  return 'backlog';
+}
+
+function normalizeCategories(value: unknown, text: string): string[] {
+  const fromArgs = normalizeStringArray(value).map((v) => v.toUpperCase());
+  const filtered = fromArgs.filter((v) => VALID_CATEGORIES.has(v));
+  if (filtered.length > 0) return Array.from(new Set(filtered));
+  return inferCategoriesFromText(text);
 }
 
 async function executeSearchIssues(
@@ -162,15 +228,16 @@ async function executeCreateIssue(
     const project = projects.find((p) => p.id === projectId || p.prefix === projectId || p.name === projectId || p.slug === projectId);
     const targetProjectId = project?.id || projectId;
 
+    const text = `${String(args.title || '')} ${String(args.description || '')}`;
     const issue = await api.issues.create({
       project_id: targetProjectId,
       title: args.title as string,
       description: args.description as string || '',
-      type: args.type as string || 'feature',
-      priority: args.priority as string || 'medium',
-      status: args.status as string || 'todo',
+      type: normalizeType(args.type, text),
+      priority: normalizePriority(args.priority, text),
+      status: normalizeStatus(args.status),
       tags: normalizeStringArray(args.tags),
-      category: normalizeStringArray(args.category),
+      category: normalizeCategories(args.category, text),
     });
 
     return {
@@ -212,11 +279,11 @@ async function executeUpdateIssue(
     const body: Record<string, unknown> = {};
     if (args.title) body.title = args.title;
     if (args.description) body.description = args.description;
-    if (args.status) body.status = args.status;
-    if (args.priority) body.priority = args.priority;
-    if (args.type) body.type = args.type;
+    if (args.status) body.status = normalizeStatus(args.status);
+    if (args.priority) body.priority = normalizePriority(args.priority, `${args.title || ''} ${args.description || ''}`);
+    if (args.type) body.type = normalizeType(args.type, `${args.title || ''} ${args.description || ''}`);
     if (args.tags !== undefined) body.tags = normalizeStringArray(args.tags);
-    if (args.category !== undefined) body.category = normalizeStringArray(args.category);
+    if (args.category !== undefined) body.category = normalizeCategories(args.category, `${args.title || ''} ${args.description || ''}`);
 
     const updated = await api.issues.update(issueId, body);
 
@@ -250,7 +317,16 @@ async function executeBulkUpdateIssues(
           (body as any).tags = normalizeStringArray((body as any).tags);
         }
         if ((body as any).category !== undefined) {
-          (body as any).category = normalizeStringArray((body as any).category);
+          (body as any).category = normalizeCategories((body as any).category, `${(body as any).title || ''} ${(body as any).description || ''}`);
+        }
+        if ((body as any).priority !== undefined) {
+          (body as any).priority = normalizePriority((body as any).priority, `${(body as any).title || ''} ${(body as any).description || ''}`);
+        }
+        if ((body as any).type !== undefined) {
+          (body as any).type = normalizeType((body as any).type, `${(body as any).title || ''} ${(body as any).description || ''}`);
+        }
+        if ((body as any).status !== undefined) {
+          (body as any).status = normalizeStatus((body as any).status);
         }
         const updated = await api.issues.update(issue_id, body);
         results.push(`✅ ${updated.display_id}`);

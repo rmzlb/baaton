@@ -5,6 +5,8 @@ import {
   Wrench, CheckCircle2, XCircle, ChevronDown, Wifi, WifiOff,
   RefreshCw, Clock, AlertTriangle,
 } from 'lucide-react';
+import { Conversation, ConversationBody, ConversationFooter, ConversationHeader } from '@/components/ai/Conversation';
+import { ChainOfThought } from '@/components/ai/ChainOfThought';
 import { useAuth } from '@clerk/clerk-react';
 import { useAIAssistantStore, type AIMessage } from '@/stores/ai-assistant';
 import { useNotificationStore } from '@/stores/notifications';
@@ -268,6 +270,9 @@ function PendingActionPanel({
   const summary = skill === 'create_issue'
     ? `Créer issue: ${title || 'Sans titre'} • ${projectLabel}`
     : `Action: ${skill}`;
+  const detail = skill === 'create_issue'
+    ? `Type: ${String(args.type || 'feature')} · Priority: ${String(args.priority || 'medium')} · Category: ${Array.isArray(args.category) ? args.category.join(',') : String(args.category || '—')} · Status: ${String(args.status || 'backlog')}`
+    : undefined;
 
   const statusLabel = {
     pending: t('common.pending') || 'En attente',
@@ -284,7 +289,17 @@ function PendingActionPanel({
         <span className="text-[10px] text-amber-200/70">{statusLabel}</span>
       </div>
       <div className="text-[12px] text-secondary mb-2">{summary}</div>
-      <details className="text-[10px] text-muted">
+      {detail && (
+        <ChainOfThought
+          title="Qualification"
+          steps={[
+            { label: 'Analyse de la demande', detail: 'Extraction des champs essentiels', status: 'done' },
+            { label: 'Qualification', detail, status: 'done' },
+            { label: 'Validation', detail: 'En attente de confirmation', status: 'waiting' },
+          ]}
+        />
+      )}
+      <details className="text-[10px] text-muted mt-2">
         <summary className="cursor-pointer">Voir les détails</summary>
         <pre className="mt-2 whitespace-pre-wrap break-all rounded-md bg-surface/70 border border-border/60 p-2 text-[10px] text-muted">
           {JSON.stringify(args, null, 2)}
@@ -974,16 +989,20 @@ export function AIAssistant() {
 
       {/* Panel */}
       {open && (
-        <div
-          role="dialog"
-          aria-modal="false"
-          aria-label={t('ai.title') || 'AI Assistant'}
-          className="fixed bottom-20 right-6 z-40 flex w-[420px] max-h-[580px] flex-col rounded-xl border border-border bg-bg shadow-2xl overflow-hidden animate-slide-in-right"
-          style={{ maxHeight: 'min(580px, calc(100vh - 120px))' }}
-        >
-          {/* Header */}
+        <Conversation className="fixed bottom-20 right-6 z-40 flex w-[420px] max-h-[580px] flex-col overflow-hidden animate-slide-in-right" >
+          <ConversationHeader
+            title={t('ai.title')}
+            subtitle={aiMode === 'gemini'
+              ? (totalIssues > 0 ? `${totalIssues} issues · ${projects.length} projects · Gemini Flash` : t('ai.loading'))
+              : (openclawConnected
+                  ? `${totalIssues} issues · ${projects.length} projects · OpenClaw`
+                  : t('ai.openclawNotConnected')
+                )
+            }
+          />
+          {/* Header Actions + Mode Toggle */}
           <div className="flex flex-col border-b border-border shrink-0 bg-surface">
-            <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center justify-between px-4 py-2.5">
               <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-500">
                   <Sparkles size={14} />
@@ -1008,15 +1027,6 @@ export function AIAssistant() {
                       </span>
                     )}
                   </h3>
-                  <p className="text-[9px] text-muted">
-                    {aiMode === 'gemini'
-                      ? (totalIssues > 0 ? `${totalIssues} issues · ${projects.length} projects · Gemini Flash` : t('ai.loading'))
-                      : (openclawConnected
-                          ? `${totalIssues} issues · ${projects.length} projects · OpenClaw`
-                          : t('ai.openclawNotConnected')
-                        )
-                    }
-                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
@@ -1070,8 +1080,7 @@ export function AIAssistant() {
             </div>
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
+          <ConversationBody className="flex-1 overflow-y-auto min-h-0">
             {messages.length === 0 && !loading ? (
               <div className="flex flex-col items-center justify-center py-5 text-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500 mb-3">
@@ -1152,7 +1161,7 @@ export function AIAssistant() {
                 <div ref={messagesEndRef} />
               </>
             )}
-          </div>
+          </ConversationBody>
 
           {/* Suggestion chips when chatting */}
           {messages.length > 0 && !loading && (
@@ -1171,8 +1180,8 @@ export function AIAssistant() {
             </div>
           )}
 
-          {/* Input */}
-          <div className="border-t border-border px-3 py-2.5 shrink-0">
+          <ConversationFooter>
+            {/* Input */}
             <div className="flex items-end gap-2 rounded-lg border border-border bg-surface px-3 py-2 focus-within:border-accent transition-colors">
               <textarea
                 ref={inputRef}
@@ -1200,8 +1209,8 @@ export function AIAssistant() {
                 : `🦞 OpenClaw · ${t('ai.realTimeData')}`
               }
             </p>
-          </div>
-        </div>
+          </ConversationFooter>
+        </Conversation>
       )}
     </>
   );
