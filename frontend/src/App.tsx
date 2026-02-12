@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp, OrganizationProfile, useUser } from '@clerk/clerk-react';
 import { useOrgGuard } from '@/hooks/useOrgGuard';
+import { useVersionCheck } from '@/hooks/useVersionCheck';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { PageLoader } from '@/components/shared/PageLoader';
@@ -73,6 +74,8 @@ function AuthGate() {
 }
 
 export function App() {
+  useVersionCheck();
+
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>

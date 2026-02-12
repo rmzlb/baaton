@@ -3,8 +3,26 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
 
+const buildId = process.env.BAATON_BUILD_ID || new Date().toISOString();
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  define: {
+    __BUILD_ID__: JSON.stringify(buildId),
+  },
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: 'emit-version-json',
+      generateBundle() {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'version.json',
+          source: JSON.stringify({ version: buildId }),
+        });
+      },
+    },
+  ],
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
