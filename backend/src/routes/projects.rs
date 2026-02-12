@@ -257,6 +257,25 @@ pub async fn update_public_submit_settings(
     Ok(Json(ApiResponse::new(PublicSubmitSettings { enabled: updated.0, token: updated.1, slug: updated.2 })))
 }
 
+/// Resolve a public submit token to project info (no auth — public endpoint)
+pub async fn resolve_public_token(
+    State(pool): State<PgPool>,
+    Path(token): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let row = sqlx::query_as::<_, (String, String)>(
+        "SELECT slug, name FROM projects WHERE public_submit_token = $1 AND public_submit_enabled = true",
+    )
+    .bind(&token)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    match row {
+        Some((slug, name)) => Ok(Json(json!({ "slug": slug, "name": name, "token": token }))),
+        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Invalid or disabled public link"})))),
+    }
+}
+
 /// Delete a project — must belong to user's active org.
 pub async fn remove(
     Extension(auth): Extension<AuthUser>,

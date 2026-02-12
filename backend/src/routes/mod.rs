@@ -74,6 +74,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/invite/{code}", get(invites::redirect_invite))
         // Public routes (auth skipped in middleware based on path)
         .route("/public/{slug}/submit", post(issues::public_submit))
+        .route("/public/resolve/{token}", get(projects::resolve_public_token))
         // Webhook
         .route("/webhooks/github", post(github::webhooks::handle));
 

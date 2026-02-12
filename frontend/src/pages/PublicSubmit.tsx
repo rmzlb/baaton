@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Send, Bug, Sparkles, Zap, HelpCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Send, Bug, Sparkles, Zap, HelpCircle, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 import { PixelBaton } from '@/components/shared/PixelBaton';
 import { useTranslation } from '@/hooks/useTranslation';
 import { api, ApiError } from '@/lib/api';
@@ -24,9 +24,36 @@ const categories = ['FRONT', 'BACK', 'API', 'DB', 'INFRA', 'UX', 'DEVOPS'];
 
 export function PublicSubmit() {
   const { t } = useTranslation();
-  const { slug } = useParams<{ slug: string }>();
+  const params = useParams<{ slug?: string; token?: string }>();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token') || '';
+
+  // Support both routes: /submit/:slug?token=xxx (legacy) and /s/:token (clean)
+  const [resolvedSlug, setResolvedSlug] = useState(params.slug || '');
+  const [resolvedToken, setResolvedToken] = useState(searchParams.get('token') || '');
+  const [resolvedName, setResolvedName] = useState(params.slug || '');
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState('');
+
+  useEffect(() => {
+    // /s/:token route — resolve project from token
+    if (params.token && !params.slug) {
+      setResolving(true);
+      api.public.get<{ slug: string; name: string; token: string }>(`/public/resolve/${params.token}`)
+        .then((data) => {
+          setResolvedSlug(data.slug);
+          setResolvedToken(data.token);
+          setResolvedName(data.name);
+        })
+        .catch(() => {
+          setResolveError(t('publicSubmit.projectNotFound', { slug: params.token }));
+        })
+        .finally(() => setResolving(false));
+    }
+  }, [params.token, params.slug, t]);
+
+  const slug = resolvedSlug;
+  const token = resolvedToken;
+  const projectDisplayName = resolvedName || slug;
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -110,15 +137,30 @@ export function PublicSubmit() {
           <PixelBaton size={48} className="mx-auto mb-3" />
           <h1 className="text-xl font-bold text-primary">{t('publicSubmit.title')}</h1>
           <p className="mt-1 text-sm text-secondary">
-            for <span className="font-mono text-accent">{slug}</span>
+            {t('publicSubmit.for')} <span className="font-mono text-accent">{projectDisplayName}</span>
           </p>
         </div>
 
+        {resolving && (
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-secondary">
+            <Loader2 size={16} className="animate-spin" />
+            {t('common.loading')}
+          </div>
+        )}
+
+        {resolveError && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3">
+            <AlertTriangle size={16} className="text-red-400 mt-0.5 shrink-0" />
+            <p className="text-sm text-red-400">{resolveError}</p>
+          </div>
+        )}
+
+        {!resolving && !resolveError && (
         <form onSubmit={handleSubmit} className="space-y-5">
           {!token && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3">
               <AlertTriangle size={16} className="text-amber-400 mt-0.5 shrink-0" />
-              <p className="text-sm text-amber-200">Lien public invalide ou expiré.</p>
+              <p className="text-sm text-amber-200">{t('publicSubmit.projectNotFound', { slug: slug || '?' })}</p>
             </div>
           )}
           {/* Error */}
@@ -235,6 +277,7 @@ export function PublicSubmit() {
             {submitting ? t('publicSubmit.submitting') : t('publicSubmit.submit')}
           </button>
         </form>
+        )}
 
         <p className="mt-6 text-center text-[10px] text-secondary">
           Powered by <span className="text-accent">baaton.dev</span>

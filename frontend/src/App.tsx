@@ -79,7 +79,7 @@ export function App() {
   const host = window.location.hostname;
   const isAppHost = host === 'app.baaton.dev';
   const path = window.location.pathname;
-  const isPublicPath = path === '/' || path.startsWith('/docs') || path.startsWith('/submit/');
+  const isPublicPath = path === '/' || path.startsWith('/docs') || path.startsWith('/submit/') || path.startsWith('/s/');
 
   if (!isAppHost && !isPublicPath) {
     const target = `https://app.baaton.dev${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -105,6 +105,7 @@ export function App() {
         {/* Root: landing on baaton.dev, dashboard redirect on app.baaton.dev */}
         <Route path="/" element={<RootRoute />} />
         <Route path="/submit/:slug" element={<PublicSubmit />} />
+        <Route path="/s/:token" element={<PublicSubmit />} />
         <Route path="/docs" element={<Docs />} />
 
         {/* Auth routes */}
