@@ -76,6 +76,17 @@ function AuthGate() {
 export function App() {
   const { updateAvailable, reload } = useVersionCheck();
 
+  const host = window.location.hostname;
+  const isAppHost = host === 'app.baaton.dev';
+  const path = window.location.pathname;
+  const isPublicPath = path === '/' || path.startsWith('/docs') || path.startsWith('/submit/');
+
+  if (!isAppHost && !isPublicPath) {
+    const target = `https://app.baaton.dev${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.replace(target);
+    return null;
+  }
+
   return (
     <>
       {updateAvailable && (
