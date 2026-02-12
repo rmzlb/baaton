@@ -229,7 +229,7 @@ pub async fn update_public_submit_settings(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    let (current_enabled, current_token, slug) = match current {
+    let (current_enabled, current_token, _slug) = match current {
         Some(row) => row,
         None => return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
     };
