@@ -9,7 +9,8 @@ use axum::{
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 /// Raw JWK from Clerk JWKS endpoint
@@ -31,6 +32,21 @@ pub struct JwkSet {
 
 /// Pre-computed decoding keys indexed by kid
 pub type JwksKeys = Arc<RwLock<HashMap<String, DecodingKey>>>;
+
+const PROFILE_TTL: Duration = Duration::from_secs(3600);
+
+#[derive(Clone)]
+struct CachedProfile {
+    display_name: Option<String>,
+    email: Option<String>,
+    fetched_at: Instant,
+}
+
+static USER_PROFILE_CACHE: OnceLock<RwLock<HashMap<String, CachedProfile>>> = OnceLock::new();
+
+fn profile_cache() -> &'static RwLock<HashMap<String, CachedProfile>> {
+    USER_PROFILE_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
 
 /// Parse JWKS response into a map of kid → DecodingKey
 fn parse_jwks(jwks: &JwkSet) -> HashMap<String, DecodingKey> {
@@ -72,6 +88,90 @@ pub async fn jwks_refresh_task(keys: JwksKeys, issuer: String) {
             }
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct ClerkEmailAddress {
+    pub id: String,
+    pub email_address: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClerkUserResponse {
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub username: Option<String>,
+    pub primary_email_address_id: Option<String>,
+    pub email_addresses: Option<Vec<ClerkEmailAddress>>,
+}
+
+async fn fetch_clerk_profile(user_id: &str) -> Option<(Option<String>, Option<String>)> {
+    let secret = std::env::var("CLERK_SECRET_KEY").ok()?;
+    let url = format!("https://api.clerk.com/v1/users/{}", user_id);
+
+    let response = reqwest::Client::new()
+        .get(url)
+        .bearer_auth(secret)
+        .send()
+        .await
+        .ok()?;
+
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let data: ClerkUserResponse = response.json().await.ok()?;
+
+    let display_name = match (
+        data.first_name.as_deref().unwrap_or("").trim(),
+        data.last_name.as_deref().unwrap_or("").trim(),
+    ) {
+        ("", "") => data.username.clone(),
+        (first, last) => {
+            let name = format!("{} {}", first, last).trim().to_string();
+            if name.is_empty() { data.username.clone() } else { Some(name) }
+        }
+    };
+
+    let email = if let Some(primary_id) = data.primary_email_address_id.as_deref() {
+        data.email_addresses
+            .as_ref()
+            .and_then(|emails| emails.iter().find(|e| e.id == primary_id).map(|e| e.email_address.clone()))
+            .or_else(|| data.email_addresses.as_ref().and_then(|emails| emails.first().map(|e| e.email_address.clone())))
+    } else {
+        data.email_addresses
+            .as_ref()
+            .and_then(|emails| emails.first().map(|e| e.email_address.clone()))
+    };
+
+    Some((display_name, email))
+}
+
+async fn resolve_profile_cached(user_id: &str) -> Option<(Option<String>, Option<String>)> {
+    let cache = profile_cache();
+    {
+        let read = cache.read().await;
+        if let Some(entry) = read.get(user_id) {
+            if entry.fetched_at.elapsed() < PROFILE_TTL {
+                return Some((entry.display_name.clone(), entry.email.clone()));
+            }
+        }
+    }
+
+    let fetched = fetch_clerk_profile(user_id).await;
+    if let Some((display_name, email)) = fetched.clone() {
+        let mut write = cache.write().await;
+        write.insert(
+            user_id.to_string(),
+            CachedProfile {
+                display_name,
+                email,
+                fetched_at: Instant::now(),
+            },
+        );
+    }
+
+    fetched
 }
 
 /// Clerk JWT v2 Organization claim
@@ -275,7 +375,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         (claims.org_id.clone(), claims.org_slug.clone(), claims.org_role.clone())
     };
 
-    let display_name = {
+    let mut display_name = {
         let first = claims.first_name.as_deref().unwrap_or("").trim();
         let last = claims.last_name.as_deref().unwrap_or("").trim();
         let full = format!("{} {}", first, last).trim().to_string();
@@ -286,12 +386,21 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         }
     };
 
+    let mut email = claims.email;
+
+    if display_name.is_none() && email.is_none() {
+        if let Some((fetched_name, fetched_email)) = resolve_profile_cached(&claims.sub).await {
+            if display_name.is_none() { display_name = fetched_name; }
+            if email.is_none() { email = fetched_email; }
+        }
+    }
+
     let auth_user = AuthUser {
         user_id: claims.sub,
         org_id,
         org_slug,
         org_role,
-        email: claims.email,
+        email,
         display_name,
     };
 

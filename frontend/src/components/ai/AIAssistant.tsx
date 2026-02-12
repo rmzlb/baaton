@@ -247,6 +247,11 @@ function resolveProjectLabel(projectId?: string, projects?: Project[]): string {
   return match ? `${match.name} (${match.prefix})` : projectId;
 }
 
+const TYPE_OPTIONS = ['bug', 'feature', 'improvement', 'question'];
+const PRIORITY_OPTIONS = ['urgent', 'high', 'medium', 'low'];
+const STATUS_OPTIONS = ['backlog', 'todo', 'in_progress', 'in_review'];
+const CATEGORY_OPTIONS = ['FRONT', 'BACK', 'API', 'DB', 'INFRA', 'UX', 'DEVOPS'];
+
 function PendingActionPanel({
   messageId,
   skill,
@@ -265,13 +270,49 @@ function PendingActionPanel({
   onCancel?: (messageId: string, skill: string) => void;
 }) {
   const { t } = useTranslation();
-  const projectLabel = resolveProjectLabel(String(args.project_id || args.project || ''), projects);
-  const title = String(args.title || args.name || '');
+  const isEditable = skill === 'create_issue';
+
+  const [draft, setDraft] = useState<Record<string, unknown>>(() => {
+    const categories = Array.isArray(args.category)
+      ? args.category
+      : typeof args.category === 'string'
+        ? [args.category]
+        : [];
+
+    return {
+      ...args,
+      type: String(args.type || 'feature'),
+      priority: String(args.priority || 'medium'),
+      status: String(args.status || 'backlog'),
+      category: categories,
+    };
+  });
+
+  useEffect(() => {
+    if (!isEditable) return;
+    const categories = Array.isArray(args.category)
+      ? args.category
+      : typeof args.category === 'string'
+        ? [args.category]
+        : [];
+
+    setDraft({
+      ...args,
+      type: String(args.type || 'feature'),
+      priority: String(args.priority || 'medium'),
+      status: String(args.status || 'backlog'),
+      category: categories,
+    });
+  }, [args, isEditable, messageId]);
+
+  const displayArgs = isEditable ? draft : args;
+  const projectLabel = resolveProjectLabel(String(displayArgs.project_id || displayArgs.project || ''), projects);
+  const title = String(displayArgs.title || displayArgs.name || '');
   const summary = skill === 'create_issue'
     ? `Créer issue: ${title || 'Sans titre'} • ${projectLabel}`
     : `Action: ${skill}`;
   const detail = skill === 'create_issue'
-    ? `Type: ${String(args.type || 'feature')} · Priority: ${String(args.priority || 'medium')} · Category: ${Array.isArray(args.category) ? args.category.join(',') : String(args.category || '—')} · Status: ${String(args.status || 'backlog')}`
+    ? `Type: ${String(displayArgs.type || 'feature')} · Priority: ${String(displayArgs.priority || 'medium')} · Category: ${Array.isArray(displayArgs.category) ? displayArgs.category.join(',') : String(displayArgs.category || '—')} · Status: ${String(displayArgs.status || 'backlog')}`
     : undefined;
 
   const statusLabel = {
@@ -299,10 +340,85 @@ function PendingActionPanel({
           ]}
         />
       )}
+
+      {isEditable && (
+        <div className="mt-2 space-y-2">
+          <div className="grid grid-cols-2 gap-2 text-[10px]">
+            <label className="space-y-1">
+              <span className="text-muted">Type</span>
+              <select
+                value={String(draft.type || 'feature')}
+                onChange={(e) => setDraft((prev) => ({ ...prev, type: e.target.value }))}
+                className="w-full rounded-md border border-border bg-surface px-2 py-1 text-[10px] text-secondary"
+              >
+                {TYPE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-muted">Priority</span>
+              <select
+                value={String(draft.priority || 'medium')}
+                onChange={(e) => setDraft((prev) => ({ ...prev, priority: e.target.value }))}
+                className="w-full rounded-md border border-border bg-surface px-2 py-1 text-[10px] text-secondary"
+              >
+                {PRIORITY_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[10px]">
+            <label className="space-y-1">
+              <span className="text-muted">Status</span>
+              <select
+                value={String(draft.status || 'backlog')}
+                onChange={(e) => setDraft((prev) => ({ ...prev, status: e.target.value }))}
+                className="w-full rounded-md border border-border bg-surface px-2 py-1 text-[10px] text-secondary"
+              >
+                {STATUS_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="space-y-1">
+            <span className="text-[10px] text-muted">Category</span>
+            <div className="flex flex-wrap gap-1">
+              {CATEGORY_OPTIONS.map((cat) => {
+                const current = Array.isArray(draft.category) ? draft.category.map(String) : [];
+                const active = current.includes(cat);
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => {
+                      const next = active
+                        ? current.filter((c) => c !== cat)
+                        : [...current, cat];
+                      setDraft((prev) => ({ ...prev, category: next }));
+                    }}
+                    className={cn(
+                      'rounded-full border px-2 py-0.5 text-[9px] transition-colors',
+                      active
+                        ? 'border-accent/50 bg-accent/10 text-accent'
+                        : 'border-border text-muted hover:bg-surface-hover',
+                    )}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       <details className="text-[10px] text-muted mt-2">
         <summary className="cursor-pointer">Voir les détails</summary>
         <pre className="mt-2 whitespace-pre-wrap break-all rounded-md bg-surface/70 border border-border/60 p-2 text-[10px] text-muted">
-          {JSON.stringify(args, null, 2)}
+          {JSON.stringify(displayArgs, null, 2)}
         </pre>
       </details>
       {state.status === 'error' && state.error && (
@@ -311,7 +427,7 @@ function PendingActionPanel({
       {state.status === 'pending' && (
         <div className="flex items-center gap-2 mt-2">
           <button
-            onClick={() => onApprove?.(messageId, skill, args)}
+            onClick={() => onApprove?.(messageId, skill, displayArgs)}
             className="flex items-center gap-1.5 rounded-md bg-emerald-500 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-emerald-600 transition-colors"
           >
             <CheckCircle2 size={10} />
