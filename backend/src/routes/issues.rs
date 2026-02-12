@@ -600,8 +600,11 @@ pub struct PublicSubmission {
     pub title: String,
     pub description: Option<String>,
     pub r#type: Option<String>,
+    pub priority: Option<String>,
+    pub category: Option<Vec<String>>,
     pub reporter_name: Option<String>,
     pub reporter_email: Option<String>,
+    pub token: Option<String>,
 }
 
 pub async fn public_submit(
@@ -618,18 +621,41 @@ pub async fn public_submit(
         }
     }
 
+    if let Some(ref priority) = body.priority {
+        if !matches!(priority.as_str(), "urgent" | "high" | "medium" | "low") {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid priority"}))));
+        }
+    }
+
+    if let Some(ref category) = body.category {
+        let allowed = ["FRONT", "BACK", "API", "DB", "INFRA", "UX", "DEVOPS"];
+        if category.iter().any(|c| !allowed.contains(&c.as_str())) {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid category"}))));
+        }
+    }
+
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    let project = sqlx::query_as::<_, (Uuid, String, String)>(
-        "SELECT id, prefix, org_id FROM projects WHERE slug = $1 FOR UPDATE"
+    let project = sqlx::query_as::<_, (Uuid, String, String, bool, Option<String>)>(
+        "SELECT id, prefix, org_id, public_submit_enabled, public_submit_token FROM projects WHERE slug = $1 FOR UPDATE"
     )
     .bind(&slug)
     .fetch_one(tx.as_mut())
     .await
     .map_err(|e| (StatusCode::NOT_FOUND, Json(json!({"error": format!("Project not found: {}", e)}))))?;
+
+    if !project.3 {
+        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "Public submission disabled"}))));
+    }
+    match (&project.4, body.token.as_deref()) {
+        (Some(expected), Some(provided)) if expected == provided => {}
+        _ => {
+            return Err((StatusCode::FORBIDDEN, Json(json!({"error": "Invalid public token"}))));
+        }
+    }
 
     let (_, resolved_assignees) = resolve_auto_assign_assignees(
         &mut tx,
@@ -658,10 +684,11 @@ pub async fn public_submit(
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         INSERT INTO issues (
-            project_id, display_id, title, description, type,
+            project_id, display_id, title, description, type, status,
+            priority, category,
             reporter_name, reporter_email, source, position, assignee_ids
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'form', 99999, $8)
+        VALUES ($1, $2, $3, $4, $5, 'backlog', $6, $7, $8, $9, 'form', 99999, $10)
         RETURNING *
         "#,
     )
@@ -670,6 +697,8 @@ pub async fn public_submit(
     .bind(&body.title)
     .bind(&body.description)
     .bind(body.r#type.as_deref().unwrap_or("bug"))
+    .bind(body.priority.as_deref().unwrap_or("medium"))
+    .bind(&body.category.clone().unwrap_or_default())
     .bind(&body.reporter_name)
     .bind(&body.reporter_email)
     .bind(&resolved_assignees)

@@ -29,6 +29,8 @@ pub struct Project {
     pub statuses: serde_json::Value,
     pub auto_assign_mode: String,
     pub default_assignee_id: Option<String>,
+    pub public_submit_enabled: bool,
+    pub public_submit_token: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

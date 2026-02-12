@@ -46,6 +46,12 @@ export interface ProjectAutoAssignSettings {
   default_assignee_id: string | null;
 }
 
+export interface PublicSubmitSettings {
+  enabled: boolean;
+  token: string | null;
+  slug: string;
+}
+
 export interface OpenClawConnection {
   id: string;
   user_id: string;

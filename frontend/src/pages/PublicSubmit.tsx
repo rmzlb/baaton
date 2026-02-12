@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Send, Bug, Sparkles, Zap, HelpCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { PixelBaton } from '@/components/shared/PixelBaton';
 import { useTranslation } from '@/hooks/useTranslation';
 import { api, ApiError } from '@/lib/api';
-import type { IssueType } from '@/lib/types';
+import type { IssueType, IssuePriority } from '@/lib/types';
 
 const types: { value: IssueType; labelKey: string; icon: typeof Bug; color: string }[] = [
   { value: 'bug', labelKey: 'publicSubmit.typeBug', icon: Bug, color: 'text-red-400 border-red-400/30' },
@@ -13,13 +13,26 @@ const types: { value: IssueType; labelKey: string; icon: typeof Bug; color: stri
   { value: 'question', labelKey: 'publicSubmit.typeQuestion', icon: HelpCircle, color: 'text-purple-400 border-purple-400/30' },
 ];
 
+const priorities: { value: IssuePriority; label: string }[] = [
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
+];
+
+const categories = ['FRONT', 'BACK', 'API', 'DB', 'INFRA', 'UX', 'DEVOPS'];
+
 export function PublicSubmit() {
   const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get('token') || '';
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [selectedType, setSelectedType] = useState<IssueType>('bug');
+  const [priority, setPriority] = useState<IssuePriority>('medium');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [name, setName] = useState('');
@@ -27,7 +40,7 @@ export function PublicSubmit() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !slug) return;
+    if (!title.trim() || !slug || !token) return;
 
     setSubmitting(true);
     setError('');
@@ -37,8 +50,11 @@ export function PublicSubmit() {
         title: title.trim(),
         description: description.trim() || undefined,
         type: selectedType,
+        priority,
+        category: selectedCategories,
         reporter_name: name.trim() || undefined,
         reporter_email: email.trim() || undefined,
+        token,
       });
       setSubmitted(true);
     } catch (err) {
@@ -99,6 +115,12 @@ export function PublicSubmit() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {!token && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+              <AlertTriangle size={16} className="text-amber-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-amber-200">Lien public invalide ou expiré.</p>
+            </div>
+          )}
           {/* Error */}
           {error && (
             <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3">
@@ -124,6 +146,46 @@ export function PublicSubmit() {
                 {t(labelKey)}
               </button>
             ))}
+          </div>
+
+          {/* Priority */}
+          <div className="grid grid-cols-2 gap-2">
+            {priorities.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => setPriority(p.value)}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                  priority === p.value ? 'border-accent/50 bg-accent/10 text-accent' : 'border-border text-secondary hover:bg-surface-hover'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Category */}
+          <div className="flex flex-wrap gap-2">
+            {categories.map((cat) => {
+              const active = selectedCategories.includes(cat);
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => {
+                    const next = active
+                      ? selectedCategories.filter((c) => c !== cat)
+                      : [...selectedCategories, cat];
+                    setSelectedCategories(next);
+                  }}
+                  className={`rounded-full border px-3 py-1 text-[10px] transition-colors ${
+                    active ? 'border-accent/50 bg-accent/10 text-accent' : 'border-border text-muted hover:bg-surface-hover'
+                  }`}
+                >
+                  {cat}
+                </button>
+              );
+            })}
           </div>
 
           {/* Title */}
@@ -166,7 +228,7 @@ export function PublicSubmit() {
           {/* Submit */}
           <button
             type="submit"
-            disabled={!title.trim() || submitting}
+            disabled={!title.trim() || submitting || !token}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-black hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[44px]"
           >
             <Send size={16} />

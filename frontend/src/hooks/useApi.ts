@@ -4,6 +4,7 @@ import { api, ApiError } from '@/lib/api';
 import type {
   Project,
   ProjectAutoAssignSettings,
+  PublicSubmitSettings,
   Issue,
   IssueDetail,
   ApiKey,
@@ -174,6 +175,21 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.patch<ProjectAutoAssignSettings>(`/projects/${id}/auto-assign`, body, token);
+        }),
+
+      getPublicSubmit: async (id: string): Promise<PublicSubmitSettings> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<PublicSubmitSettings>(`/projects/${id}/public-submit`, token);
+        }),
+
+      updatePublicSubmit: async (
+        id: string,
+        body: { enabled?: boolean; rotate_token?: boolean },
+      ): Promise<PublicSubmitSettings> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<PublicSubmitSettings>(`/projects/${id}/public-submit`, body, token);
         }),
     },
 

@@ -1,4 +1,5 @@
 use axum::{extract::{Extension, Path, State}, http::StatusCode, Json};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -155,6 +156,90 @@ pub async fn update(
         Some(p) => Ok(Json(ApiResponse::new(p))),
         None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
     }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicSubmitSettings {
+    pub enabled: bool,
+    pub token: Option<String>,
+    pub slug: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdatePublicSubmitSettings {
+    pub enabled: Option<bool>,
+    pub rotate_token: Option<bool>,
+}
+
+/// Get public submit settings for a project
+pub async fn get_public_submit_settings(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<PublicSubmitSettings>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let row = sqlx::query_as::<_, (bool, Option<String>, String)>(
+        "SELECT public_submit_enabled, public_submit_token, slug FROM projects WHERE id = $1 AND org_id = $2",
+    )
+    .bind(id)
+    .bind(org_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    match row {
+        Some((enabled, token, slug)) => Ok(Json(ApiResponse::new(PublicSubmitSettings { enabled, token, slug }))),
+        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
+    }
+}
+
+/// Update public submit settings (enable/disable + rotate token)
+pub async fn update_public_submit_settings(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdatePublicSubmitSettings>,
+) -> Result<Json<ApiResponse<PublicSubmitSettings>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let current = sqlx::query_as::<_, (bool, Option<String>, String)>(
+        "SELECT public_submit_enabled, public_submit_token, slug FROM projects WHERE id = $1 AND org_id = $2 FOR UPDATE",
+    )
+    .bind(id)
+    .bind(org_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    let (current_enabled, current_token, slug) = match current {
+        Some(row) => row,
+        None => return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
+    };
+
+    let enabled = body.enabled.unwrap_or(current_enabled);
+    let rotate = body.rotate_token.unwrap_or(false);
+
+    let token = if rotate || (enabled && current_token.is_none()) {
+        Some(Uuid::new_v4().to_string())
+    } else {
+        current_token
+    };
+
+    let updated = sqlx::query_as::<_, (bool, Option<String>, String)>(
+        "UPDATE projects SET public_submit_enabled = $3, public_submit_token = $4 WHERE id = $1 AND org_id = $2 RETURNING public_submit_enabled, public_submit_token, slug",
+    )
+    .bind(id)
+    .bind(org_id)
+    .bind(enabled)
+    .bind(&token)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    Ok(Json(ApiResponse::new(PublicSubmitSettings { enabled: updated.0, token: updated.1, slug: updated.2 })))
 }
 
 /// Delete a project — must belong to user's active org.
