@@ -47,19 +47,21 @@ import type {
  * ```
  */
 export function useApi() {
-  const { getToken, signOut } = useAuth();
+  const { getToken, signOut, sessionId } = useAuth();
 
   const getAuthToken = useCallback(async () => {
     try {
-      const token = await getToken();
+      const token = await getToken({ skipCache: true });
       if (!token) {
+        console.warn('[auth] missing token', { sessionId, href: window.location.href });
         throw new ApiError(401, 'UNAUTHORIZED', 'No active session');
       }
       return token;
     } catch (err) {
+      console.warn('[auth] token fetch failed', { sessionId, href: window.location.href, error: err });
       throw new ApiError(401, 'UNAUTHORIZED', 'Failed to get auth token');
     }
-  }, [getToken]);
+  }, [getToken, sessionId]);
 
   /**
    * Wraps an async API call with error handling:

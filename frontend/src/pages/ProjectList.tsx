@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Kanban, ArrowRight, Trash2, X, Github, AlertTriangle, Copy, Check } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
+import { ApiError } from '@/lib/api';
 import { timeAgo } from '@/lib/utils';
 
 type ProjectSort = 'newest' | 'oldest' | 'name-az' | 'name-za';
@@ -19,6 +20,7 @@ export function ProjectList() {
   const { data: projects = [], isLoading, error } = useQuery({
     queryKey: ['projects'],
     queryFn: () => apiClient.projects.list(),
+    retry: 0,
   });
 
   const deleteMutation = useMutation({
@@ -77,6 +79,9 @@ export function ProjectList() {
       {error && (
         <div className="mb-6 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
           {t('projectList.failedLoad', { message: error instanceof Error ? error.message : 'Unknown error' })}
+          {error instanceof ApiError && (
+            <div className="mt-1 text-[11px] text-red-300">Debug: {error.status} · {error.code}</div>
+          )}
         </div>
       )}
 
