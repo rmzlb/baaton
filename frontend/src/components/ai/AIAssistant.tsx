@@ -343,6 +343,23 @@ function PendingActionPanel({
 
       {isEditable && (
         <div className="mt-2 space-y-2">
+          <div className="space-y-1">
+            <span className="text-[10px] text-muted">Titre</span>
+            <input
+              value={String(draft.title || '')}
+              onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
+              className="w-full rounded-md border border-border bg-surface px-2 py-1 text-[10px] text-secondary"
+            />
+          </div>
+          <div className="space-y-1">
+            <span className="text-[10px] text-muted">Description</span>
+            <textarea
+              value={String(draft.description || '')}
+              onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
+              rows={3}
+              className="w-full rounded-md border border-border bg-surface px-2 py-1 text-[10px] text-secondary"
+            />
+          </div>
           <div className="grid grid-cols-2 gap-2 text-[10px]">
             <label className="space-y-1">
               <span className="text-muted">Type</span>

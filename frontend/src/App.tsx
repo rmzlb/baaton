@@ -74,11 +74,23 @@ function AuthGate() {
 }
 
 export function App() {
-  useVersionCheck();
+  const { updateAvailable, reload } = useVersionCheck();
 
   return (
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
+    <>
+      {updateAvailable && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[100] rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-200 flex items-center gap-2 shadow-lg">
+          <span>Nouvelle version disponible</span>
+          <button
+            onClick={reload}
+            className="rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-semibold text-black hover:bg-amber-300"
+          >
+            Mettre à jour
+          </button>
+        </div>
+      )}
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
         {/* Root: landing on baaton.dev, dashboard redirect on app.baaton.dev */}
         <Route path="/" element={<RootRoute />} />
         <Route path="/submit/:slug" element={<PublicSubmit />} />
@@ -127,7 +139,8 @@ export function App() {
             />
           </Route>
         </Route>
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </>
   );
 }

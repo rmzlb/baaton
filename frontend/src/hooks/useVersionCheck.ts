@@ -1,9 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev';
 
 export function useVersionCheck() {
   const currentVersion = useRef(BUILD_ID);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  const reload = () => window.location.reload();
 
   useEffect(() => {
     if (!import.meta.env.PROD) return;
@@ -19,7 +22,7 @@ export function useVersionCheck() {
         if (!remoteVersion) return;
 
         if (!cancelled && remoteVersion !== currentVersion.current) {
-          window.location.reload();
+          setUpdateAvailable(true);
         }
       } catch {
         // ignore
@@ -33,4 +36,6 @@ export function useVersionCheck() {
       window.clearInterval(interval);
     };
   }, []);
+
+  return { updateAvailable, reload };
 }
