@@ -581,6 +581,8 @@ const en = {
   'ai.pendingAction.stepQualify': 'Qualification',
   'ai.pendingAction.stepValidate': 'Validation',
   'ai.pendingAction.stepValidateDetail': 'Waiting for confirmation',
+  'ai.pendingAction.bulkCount': '{{count}} actions pending approval',
+  'ai.pendingAction.approveAll': 'Approve all ({{count}})',
 
   // ─── Editor ─────────────────────────────────
   'editor.placeholder': 'Type / for commands…',

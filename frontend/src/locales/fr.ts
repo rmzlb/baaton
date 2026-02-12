@@ -581,6 +581,8 @@ const fr = {
   'ai.pendingAction.stepQualify': 'Qualification',
   'ai.pendingAction.stepValidate': 'Validation',
   'ai.pendingAction.stepValidateDetail': 'En attente de confirmation',
+  'ai.pendingAction.bulkCount': '{{count}} actions en attente',
+  'ai.pendingAction.approveAll': 'Tout approuver ({{count}})',
 
   // ─── Éditeur ────────────────────────────────
   'editor.placeholder': 'Tapez / pour les commandes…',

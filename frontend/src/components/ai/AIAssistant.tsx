@@ -255,6 +255,7 @@ const CATEGORY_OPTIONS = ['FRONT', 'BACK', 'API', 'DB', 'INFRA', 'UX', 'DEVOPS']
 function PendingActionPanel({
   messageId,
   skill,
+  skillKey,
   args,
   state,
   projects,
@@ -263,11 +264,12 @@ function PendingActionPanel({
 }: {
   messageId: string;
   skill: string;
+  skillKey: string;
   args: Record<string, unknown>;
   state: PendingActionState;
   projects?: Project[];
-  onApprove?: (messageId: string, skill: string, args: Record<string, unknown>) => void;
-  onCancel?: (messageId: string, skill: string) => void;
+  onApprove?: (messageId: string, skillKey: string, args: Record<string, unknown>) => void;
+  onCancel?: (messageId: string, skillKey: string) => void;
 }) {
   const { t } = useTranslation();
   const isEditable = skill === 'create_issue';
@@ -455,18 +457,18 @@ function PendingActionPanel({
       {state.status === 'pending' && (
         <div className="flex items-center gap-2 mt-2">
           <button
-            onClick={() => onApprove?.(messageId, skill, displayArgs)}
+            onClick={() => onApprove?.(messageId, skillKey, displayArgs)}
             className="flex items-center gap-1.5 rounded-md bg-emerald-500 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-emerald-600 transition-colors"
           >
             <CheckCircle2 size={10} />
-            {t('common.confirm') || 'Confirmer'}
+            {t('common.confirm')}
           </button>
           <button
-            onClick={() => onCancel?.(messageId, skill)}
+            onClick={() => onCancel?.(messageId, skillKey)}
             className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[10px] text-secondary hover:bg-surface-hover transition-colors"
           >
             <XCircle size={10} />
-            {t('common.cancel') || 'Annuler'}
+            {t('common.cancel')}
           </button>
         </div>
       )}
@@ -491,9 +493,10 @@ interface MessageBubbleProps {
   onPmPlanDraftChange?: (messageId: string, draft: string) => void;
   getPmPlanState?: (messageId: string, initialDraft: string) => PmPlanUiState;
   projects?: Project[];
-  onApprovePendingAction?: (messageId: string, skill: string, args: Record<string, unknown>) => void;
-  onCancelPendingAction?: (messageId: string, skill: string) => void;
-  getPendingActionState?: (messageId: string, skill: string) => PendingActionState;
+  onApprovePendingAction?: (messageId: string, skillKey: string, args: Record<string, unknown>) => void;
+  onCancelPendingAction?: (messageId: string, skillKey: string) => void;
+  onApproveAllPendingActions?: (messageId: string, actions: Array<{ skillKey: string; args: Record<string, unknown> }>) => void;
+  getPendingActionState?: (messageId: string, skillKey: string) => PendingActionState;
 }
 
 function MessageBubble({
@@ -508,6 +511,7 @@ function MessageBubble({
   projects,
   onApprovePendingAction,
   onCancelPendingAction,
+  onApproveAllPendingActions,
   getPendingActionState,
 }: MessageBubbleProps) {
   const isUser = message.role === 'user';
@@ -572,22 +576,55 @@ function MessageBubble({
         </div>
 
         {/* Pending action approvals */}
-        {pendingSkills && pendingSkills.length > 0 && pendingSkills.map((pending, idx) => {
-          const args = ((pending.data as any)?.args || {}) as Record<string, unknown>;
-          const state = getPendingActionState ? getPendingActionState(message.id, pending.skill) : { status: 'pending' as const };
+        {pendingSkills && pendingSkills.length > 0 && (() => {
+          const pendingItems = pendingSkills.map((pending, idx) => {
+            const skillKey = `${pending.skill}:${idx}`;
+            const args = ((pending.data as any)?.args || {}) as Record<string, unknown>;
+            const state = getPendingActionState ? getPendingActionState(message.id, skillKey) : { status: 'pending' as const };
+            return { pending, skillKey, args, state, idx };
+          });
+          const pendingCount = pendingItems.filter((item) => item.state.status === 'pending').length;
+
           return (
-            <PendingActionPanel
-              key={`${pending.skill}-${idx}`}
-              messageId={message.id}
-              skill={pending.skill}
-              args={args}
-              state={state}
-              projects={projects}
-              onApprove={onApprovePendingAction}
-              onCancel={onCancelPendingAction}
-            />
+            <>
+              {/* Approve All button — shown when 2+ pending actions */}
+              {pendingCount >= 2 && onApproveAllPendingActions && (
+                <div className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-secondary">
+                      {t('ai.pendingAction.bulkCount', { count: String(pendingCount) })}
+                    </span>
+                    <button
+                      onClick={() => onApproveAllPendingActions(
+                        message.id,
+                        pendingItems
+                          .filter((item) => item.state.status === 'pending')
+                          .map((item) => ({ skillKey: item.skillKey, args: item.args })),
+                      )}
+                      className="flex items-center gap-1.5 rounded-md bg-emerald-500 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-600 transition-colors"
+                    >
+                      <CheckCircle2 size={12} />
+                      {t('ai.pendingAction.approveAll', { count: String(pendingCount) })}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {pendingItems.map((item) => (
+                <PendingActionPanel
+                  key={item.skillKey}
+                  messageId={message.id}
+                  skill={item.pending.skill}
+                  skillKey={item.skillKey}
+                  args={item.args}
+                  state={item.state}
+                  projects={projects}
+                  onApprove={onApprovePendingAction}
+                  onCancel={onCancelPendingAction}
+                />
+              ))}
+            </>
           );
-        })}
+        })()}
 
         {/* PM full-review plan action panel */}
         {pmPlan && onPmPlanAccept && onPmPlanEdit && onPmPlanApplyChanges && onPmPlanCancel && onPmPlanDraftChange && (
@@ -1078,15 +1115,17 @@ export function AIAssistant() {
     }));
   }, [updatePmPlanState]);
 
-  const handleApprovePendingAction = useCallback(async (messageId: string, skill: string, args: Record<string, unknown>) => {
-    updatePendingActionState(messageId, skill, (prev) => ({ ...prev, status: 'processing', error: undefined }));
+  const handleApprovePendingAction = useCallback(async (messageId: string, skillKey: string, args: Record<string, unknown>) => {
+    // Extract the real skill name from the key (e.g. "create_issue:3" → "create_issue")
+    const skill = skillKey.replace(/:\d+$/, '');
+    updatePendingActionState(messageId, skillKey, (prev) => ({ ...prev, status: 'processing', error: undefined }));
     try {
       // Final sanitization guard — ensure title is clean even if user edited or draft bypassed
       const sanitizedArgs = skill === 'create_issue' && args.title
         ? { ...args, title: sanitizeTitle(String(args.title), projects) }
         : args;
       const result = await executeSkill(skill, sanitizedArgs, apiClient as any, allIssuesByProject, projects);
-      updatePendingActionState(messageId, skill, (prev) => ({ ...prev, status: 'approved', error: undefined }));
+      updatePendingActionState(messageId, skillKey, (prev) => ({ ...prev, status: 'approved', error: undefined }));
       addMessage('assistant', result.summary, [result]);
 
       if (result.success && ['create_issue', 'update_issue', 'bulk_update_issues', 'create_milestones_batch', 'add_comment'].includes(skill)) {
@@ -1097,13 +1136,19 @@ export function AIAssistant() {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : t('ai.errorGeneric');
-      updatePendingActionState(messageId, skill, (prev) => ({ ...prev, status: 'error', error: message }));
+      updatePendingActionState(messageId, skillKey, (prev) => ({ ...prev, status: 'error', error: message }));
       addNotification({ type: 'warning', title: t('ai.errorGeneric'), message });
     }
   }, [updatePendingActionState, apiClient, allIssuesByProject, projects, addMessage, queryClient, addNotification, t]);
 
-  const handleCancelPendingAction = useCallback((messageId: string, skill: string) => {
-    updatePendingActionState(messageId, skill, (prev) => ({ ...prev, status: 'cancelled', error: undefined }));
+  const handleApproveAllPendingActions = useCallback(async (messageId: string, actions: Array<{ skillKey: string; args: Record<string, unknown> }>) => {
+    for (const action of actions) {
+      await handleApprovePendingAction(messageId, action.skillKey, action.args);
+    }
+  }, [handleApprovePendingAction]);
+
+  const handleCancelPendingAction = useCallback((messageId: string, skillKey: string) => {
+    updatePendingActionState(messageId, skillKey, (prev) => ({ ...prev, status: 'cancelled', error: undefined }));
   }, [updatePendingActionState]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -1298,6 +1343,7 @@ export function AIAssistant() {
                     projects={projects}
                     onApprovePendingAction={handleApprovePendingAction}
                     onCancelPendingAction={handleCancelPendingAction}
+                    onApproveAllPendingActions={handleApproveAllPendingActions}
                     getPendingActionState={getPendingActionState}
                   />
                 ))}
