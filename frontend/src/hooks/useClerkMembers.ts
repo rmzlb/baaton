@@ -33,7 +33,14 @@ export function useClerkMembers() {
 
   const resolveUserName = useCallback(
     (userId?: string | null, fallbackName?: string | null): string => {
-      if (fallbackName) return fallbackName;
+      const cleanedFallback = (fallbackName || '').trim();
+      if (cleanedFallback) {
+        const isUserId = cleanedFallback.startsWith('user_') || (userId && cleanedFallback === userId);
+        const isEmail = cleanedFallback.includes('@');
+        if (isEmail) return truncateEmail(cleanedFallback);
+        if (!isUserId) return cleanedFallback;
+      }
+
       if (!userId) return '?';
       const member = orgMembers.find(
         (m: any) => m.publicUserData?.userId === userId,

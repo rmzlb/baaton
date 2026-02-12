@@ -138,7 +138,7 @@ impl AuthUser {
         if let Some(email) = self.email.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
             return Some(email.to_string());
         }
-        Some(self.user_id.clone())
+        None
     }
 }
 
