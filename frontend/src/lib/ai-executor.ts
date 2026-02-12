@@ -73,17 +73,17 @@ function normalizeOptionalStringArray(value: unknown): string[] | undefined {
 
 function inferTypeFromText(text: string): string {
   const t = text.toLowerCase();
-  if (/(\bbug\b|\bissue\b|\berror\b|\bfix\b|\bcrash\b|\bbroken\b|\bprobl[eè]me\b|\bcorrection\b|\bd[eé]calage\b|\bne fonctionne pas\b)/i.test(t)) return 'bug';
-  if (/(\bquestion\b|\bwhy\b|\bcomment\b|\bclarif\b|\?)/i.test(t)) return 'question';
-  if (/(\bperf\b|\bperformance\b|\boptim\b|\brefactor\b|\bpolish\b|\bam[eé]lior\b|\bscal\b)/i.test(t)) return 'improvement';
+  if (/(\bbug\b|\berror\b|\bfix\b|\bcrash\b|\bbroken\b|\bprobl[eè]me\b|\bcorrection\b|\bcorriger\b|\bd[eé]calage\b|\bne fonctionne pas\b|\bne marche pas\b|\bdysfonction\b|\br[eé]gression\b|\bmanquant\b|\babsent\b)/i.test(t)) return 'bug';
+  if (/(\bquestion\b|\bwhy\b|\bpourquoi\b|\bclarif\b|\bv[eé]rifier\b|\?\s*$)/i.test(t)) return 'question';
+  if (/(\bperf\b|\bperformance\b|\boptim\b|\brefactor\b|\bpolish\b|\bam[eé]lior\b|\bscal\b|\bagrandir\b|\bsimplifier\b|\bnettoy\b|\bsupprimer\b|\brestructur\b|\bmigration\b)/i.test(t)) return 'improvement';
   return 'feature';
 }
 
 function inferPriorityFromText(text: string): string {
   const t = text.toLowerCase();
-  if (/(\burgent\b|\bcritique\b|\bcritical\b|\bblocker\b|\basap\b|\bimmediat\b)/i.test(t)) return 'urgent';
-  if (/(\bhigh\b|\bimportant\b|\bprioritaire\b)/i.test(t)) return 'high';
-  if (/(\blow\b|\bnice to have\b|\boptionnel\b)/i.test(t)) return 'low';
+  if (/(\burgent\b|\bcritique\b|\bcritical\b|\bbloquer\b|\bbloqu[eé]\b|\bblocker\b|\basap\b|\bimm[eé]diat\b|\bbloquant\b)/i.test(t)) return 'urgent';
+  if (/(\bhigh\b|\bimportant\b|\bprioritaire\b|\bmajeur\b|\bgrave\b)/i.test(t)) return 'high';
+  if (/(\blow\b|\bnice to have\b|\boptionnel\b|\bmineur\b|\bcosmeti\b)/i.test(t)) return 'low';
   return 'medium';
 }
 
@@ -91,13 +91,14 @@ function inferCategoriesFromText(text: string): string[] {
   const t = text.toLowerCase();
   const categories: string[] = [];
 
+  // Rules ordered by specificity — more specific first to avoid over-matching
   const rules: Array<{ key: string; match: RegExp }> = [
-    { key: 'FRONT', match: /(\bfront\b|\bfrontend\b|\bui\b|\bux\b|\binterface\b|\blayout\b|\bcss\b|\bstyle\b|\bimpression\b|\blabel\b|\bprint\b|\bpdf\b)/i },
-    { key: 'BACK', match: /(\bback\b|\bbackend\b|\bserver\b|\bworker\b|\bqueue\b|\bjob\b|\bauth\b|\bjwt\b|\bapi\b|\bendpoint\b)/i },
-    { key: 'API', match: /(\bapi\b|\bintegration\b|\bwebhook\b|\brest\b|\bgrpc\b)/i },
-    { key: 'DB', match: /(\bdb\b|\bdatabase\b|\bpostgres\b|\bsql\b|\bmigration\b|\bindex\b)/i },
-    { key: 'INFRA', match: /(\binfra\b|\bdevops\b|\bdocker\b|\bk8s\b|\bci\b|\bcd\b|\bdeploy\b|\bmonitor\b)/i },
-    { key: 'UX', match: /(\bux\b|\busabilit\b|\baccessib\b|\bjourney\b)/i },
+    { key: 'DB', match: /(\bdb\b|\bdatabase\b|\bpostgres\b|\bsql\b|\bmigration\b|\bindex\b|\bstock\b|\bcatalogue\b|\binventaire\b|\bemplacement\b|\bfournisseur\b|\bsch[eé]ma\b)/i },
+    { key: 'API', match: /(\bapi\b|\bintegration\b|\bwebhook\b|\brest\b|\bgrpc\b|\bendpoint\b)/i },
+    { key: 'INFRA', match: /(\binfra\b|\bdevops\b|\bdocker\b|\bk8s\b|\bci\b|\bcd\b|\bdeploy\b|\bmonitor\b|\bcache\b)/i },
+    { key: 'UX', match: /(\busabilit\b|\baccessib\b|\bjourney\b|\bergonomi\b|\bsimplifi\b|\bagrandir\b)/i },
+    { key: 'FRONT', match: /(\bfront\b|\bfrontend\b|\bui\b|\binterface\b|\blayout\b|\bcss\b|\bstyle\b|\bimpression\b|\blabel\b|\bprint\b|\bpdf\b|\bdrawer\b|\bmodal\b|\baffichage\b|\bfiltre\b|\b[eé]tiquette\b|\bpage\b)/i },
+    { key: 'BACK', match: /(\bback\b|\bbackend\b|\bserver\b|\bworker\b|\bqueue\b|\bjob\b|\bauth\b|\bjwt\b|\bcalcul\b|\br[eé]ception\b|\bcommande\b|\bincr[eé]ment\b|\bbon de commande\b)/i },
   ];
 
   for (const rule of rules) {
@@ -105,6 +106,65 @@ function inferCategoriesFromText(text: string): string[] {
   }
 
   return Array.from(new Set(categories)).filter((c) => VALID_CATEGORIES.has(c));
+}
+
+/**
+ * Known tag words that LLMs inject into titles as [TAG] or TAG: prefixes.
+ * These are redundant — type/category/priority are separate fields.
+ */
+const TAG_WORDS = new Set([
+  // Types
+  'bug', 'feature', 'improvement', 'question', 'fix', 'hotfix',
+  // Categories
+  'front', 'back', 'api', 'db', 'infra', 'ux', 'devops',
+  // Common LLM tags
+  'tech', 'archi', 'test', 'urgent', 'critical', 'wip',
+  'refactor', 'chore', 'docs', 'perf', 'style', 'ci', 'build',
+]);
+
+/**
+ * Sanitize an AI-generated issue title:
+ * 1. Strip ALL leading [bracket] tags (e.g. "[SQX][BUG] Fix auth" → "Fix auth")
+ * 2. Strip leading project prefix/name patterns (e.g. "HLM: Fix auth" → "Fix auth")
+ * 3. Strip leading known tag words used as prefixes (e.g. "BUG: Fix auth" → "Fix auth")
+ * 4. Clean up punctuation artifacts
+ */
+export function sanitizeTitle(raw: string, projects: Project[]): string {
+  let title = (raw || '').trim();
+
+  // 1. Remove ALL leading [anything] brackets — handles [SQX][BUG][URGENT] chains
+  title = title.replace(/^(\[[^\]]*\]\s*)+/, '');
+
+  // 2. Remove leading project prefix or name patterns: "PREFIX:", "PREFIX -", "Name:", "Name -"
+  for (const p of projects) {
+    const patterns = [p.prefix, p.name, p.slug].filter(Boolean);
+    for (const pat of patterns) {
+      const escaped = pat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      title = title.replace(new RegExp(`^${escaped}\\s*[:\\-–—]\\s*`, 'i'), '');
+    }
+  }
+
+  // 3. Remove leading known tag words used as prefixes: "BUG:", "FEATURE -", "TECH:"
+  //    Only strip if followed by separator (colon, dash) — not if part of a sentence
+  title = title.replace(/^([A-Z][A-Z0-9_/]*)\s*[:\-–—]\s*/i, (match, tag) => {
+    return TAG_WORDS.has(tag.toLowerCase()) ? '' : match;
+  });
+
+  // 4. Remove leading (parenthetical) tags: "(BUG) Fix auth" → "Fix auth"
+  title = title.replace(/^\([^)]*\)\s*/, (match) => {
+    const inner = match.replace(/[()]/g, '').trim().toLowerCase();
+    return TAG_WORDS.has(inner) ? '' : match;
+  });
+
+  // 5. Clean up any remaining leading punctuation/whitespace artifacts
+  title = title.replace(/^[\s:–—\-·•]+/, '').trim();
+
+  // 6. Capitalize first letter if it became lowercase after stripping
+  if (title.length > 0 && title[0] === title[0].toLowerCase() && /[a-zàâäéèêëïîôùûüÿç]/.test(title[0])) {
+    title = title[0].toUpperCase() + title.slice(1);
+  }
+
+  return title || raw.trim();
 }
 
 function normalizeType(value: unknown, text: string): string {
@@ -228,10 +288,11 @@ async function executeCreateIssue(
     const project = projects.find((p) => p.id === projectId || p.prefix === projectId || p.name === projectId || p.slug === projectId);
     const targetProjectId = project?.id || projectId;
 
-    const text = `${String(args.title || '')} ${String(args.description || '')}`;
+    const cleanTitle = sanitizeTitle(String(args.title || ''), projects);
+    const text = `${cleanTitle} ${String(args.description || '')}`;
     const issue = await api.issues.create({
       project_id: targetProjectId,
-      title: args.title as string,
+      title: cleanTitle,
       description: args.description as string || '',
       type: normalizeType(args.type, text),
       priority: normalizePriority(args.priority, text),

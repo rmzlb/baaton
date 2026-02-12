@@ -276,7 +276,10 @@ pub async fn get_issue_github_data(
     .bind(issue_id)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "github.issue_data pr_links query failed");
+        vec![]
+    });
 
     let commits = sqlx::query_as::<_, GitHubCommitLink>(
         "SELECT * FROM github_commit_links WHERE issue_id = $1 ORDER BY committed_at DESC LIMIT 20",
@@ -284,7 +287,10 @@ pub async fn get_issue_github_data(
     .bind(issue_id)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "github.issue_data commit_links query failed");
+        vec![]
+    });
 
     let branch_name = crate::github::issue_linker::generate_branch_name(&display_id, &title);
 

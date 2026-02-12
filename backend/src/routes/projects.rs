@@ -23,7 +23,15 @@ pub async fn list(
         .bind(org_id)
         .fetch_all(&pool)
         .await
-        .unwrap_or_default()
+        .unwrap_or_else(|e| {
+            tracing::error!(
+                user_id = %auth.user_id,
+                org_id = ?auth.org_id,
+                error = %e,
+                "projects.list query failed"
+            );
+            vec![]
+        })
     } else {
         // No active org → return empty (frontend should auto-select org)
         vec![]

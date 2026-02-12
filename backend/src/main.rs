@@ -56,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
         (11, include_str!("../migrations/011_saved_views.sql")),
         (12, include_str!("../migrations/012_templates_estimates.sql")),
         (13, include_str!("../migrations/013_project_auto_assign.sql")),
+        (15, include_str!("../migrations/015_public_submit.sql")),
     ];
 
     for &(version, sql) in migrations {
@@ -114,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .nest("/api/v1", routes::api_router(pool.clone(), jwks_state.clone()))
+        .layer(axum::Extension(pool.clone()))
         .layer(axum_mw::from_fn(middleware::security::security_headers))
         .layer(cors)
         .layer(TraceLayer::new_for_http());

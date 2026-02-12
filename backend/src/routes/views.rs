@@ -51,7 +51,10 @@ pub async fn list(
     .bind(&auth.user_id)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "views.list query failed");
+        vec![]
+    });
 
     Ok(Json(ApiResponse::new(views)))
 }

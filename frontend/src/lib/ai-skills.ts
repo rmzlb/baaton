@@ -72,7 +72,7 @@ const ALL_SKILL_DECLARATIONS = [
           type: 'OBJECT',
           properties: {
             project_id: { type: 'STRING', description: 'Project ID to create the issue in' },
-            title: { type: 'STRING', description: 'Issue title — clear and concise' },
+            title: { type: 'STRING', description: 'Issue title — clear, concise, action-oriented. ABSOLUTE RULE: ZERO brackets, ZERO project prefix, ZERO type tags in the title. BAD: "[SQX][BUG] Fix auth", "[HLM][TECH] Refactor", "SQX: Fix auth". GOOD: "Fix auth token refresh". The project, type, and category are separate fields.' },
             description: {
               type: 'STRING',
               description: 'Detailed description in Markdown format',
@@ -87,7 +87,7 @@ const ALL_SKILL_DECLARATIONS = [
             },
             status: {
               type: 'STRING',
-              description: 'Initial status (default: todo)',
+              description: 'Initial status (default: backlog). Use backlog unless user explicitly requests todo/in_progress.',
             },
             tags: {
               type: 'ARRAY',

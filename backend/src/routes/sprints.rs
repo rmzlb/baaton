@@ -64,7 +64,10 @@ pub async fn list_by_project(
     .bind(org_id)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "sprints.list query failed");
+        vec![]
+    });
 
     Ok(Json(ApiResponse::new(sprints)))
 }

@@ -413,7 +413,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
         {/* Table Header — hidden on mobile (cards don't need headers) */}
-        <div className="sticky top-0 z-10 hidden md:grid grid-cols-[28px_72px_1fr_110px_90px_80px_56px_80px_100px_90px] gap-1.5 border-b border-border bg-bg px-4 md:px-6 py-2 text-[10px] uppercase tracking-wider text-muted font-medium">
+        <div className="sticky top-0 z-10 hidden md:grid grid-cols-[28px_64px_minmax(120px,1fr)_100px_80px_72px_48px_72px_90px_80px] gap-1.5 border-b border-border bg-bg px-4 md:px-6 py-2 text-[10px] uppercase tracking-wider text-muted font-medium">
           <span />
           <button onClick={() => toggleSort('display_id')} className="text-left hover:text-secondary transition-colors flex items-center">
             {t('list.id')} <SortIcon field="display_id" />

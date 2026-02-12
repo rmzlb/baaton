@@ -13,7 +13,7 @@ import { useNotificationStore } from '@/stores/notifications';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { generateAIResponse, RateLimitError } from '@/lib/ai-engine';
-import { executeSkill } from '@/lib/ai-executor';
+import { executeSkill, sanitizeTitle } from '@/lib/ai-executor';
 import {
   getOpenClawConfig,
   sendToOpenClaw,
@@ -279,8 +279,14 @@ function PendingActionPanel({
         ? [args.category]
         : [];
 
+    // Sanitize title immediately — strip brackets and project prefixes from AI output
+    const cleanTitle = isEditable && args.title
+      ? sanitizeTitle(String(args.title), projects || [])
+      : args.title;
+
     return {
       ...args,
+      title: cleanTitle,
       type: String(args.type || 'feature'),
       priority: String(args.priority || 'medium'),
       status: String(args.status || 'backlog'),
@@ -296,23 +302,28 @@ function PendingActionPanel({
         ? [args.category]
         : [];
 
+    const cleanTitle = args.title
+      ? sanitizeTitle(String(args.title), projects || [])
+      : args.title;
+
     setDraft({
       ...args,
+      title: cleanTitle,
       type: String(args.type || 'feature'),
       priority: String(args.priority || 'medium'),
       status: String(args.status || 'backlog'),
       category: categories,
     });
-  }, [args, isEditable, messageId]);
+  }, [args, isEditable, messageId, projects]);
 
   const displayArgs = isEditable ? draft : args;
   const projectLabel = resolveProjectLabel(String(displayArgs.project_id || displayArgs.project || ''), projects);
   const title = String(displayArgs.title || displayArgs.name || '');
   const summary = skill === 'create_issue'
-    ? `Créer issue: ${title || 'Sans titre'} • ${projectLabel}`
-    : `Action: ${skill}`;
+    ? t('ai.pendingAction.createIssue', { title: title || t('ai.pendingAction.noTitle'), project: projectLabel })
+    : t('ai.pendingAction.action', { skill });
   const detail = skill === 'create_issue'
-    ? `Type: ${String(displayArgs.type || 'feature')} · Priority: ${String(displayArgs.priority || 'medium')} · Category: ${Array.isArray(displayArgs.category) ? displayArgs.category.join(',') : String(displayArgs.category || '—')} · Status: ${String(displayArgs.status || 'backlog')}`
+    ? `${t('ai.pendingAction.type')}: ${String(displayArgs.type || 'feature')} · ${t('ai.pendingAction.priority')}: ${String(displayArgs.priority || 'medium')} · ${t('ai.pendingAction.category')}: ${Array.isArray(displayArgs.category) ? displayArgs.category.join(',') : String(displayArgs.category || '—')} · ${t('ai.pendingAction.status')}: ${String(displayArgs.status || 'backlog')}`
     : undefined;
 
   const statusLabel = {
@@ -326,17 +337,17 @@ function PendingActionPanel({
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 mt-2">
       <div className="flex items-center justify-between text-[11px] text-amber-200/90 mb-1">
-        <span>Validation requise</span>
+        <span>{t('ai.pendingAction.validationRequired')}</span>
         <span className="text-[10px] text-amber-200/70">{statusLabel}</span>
       </div>
       <div className="text-[12px] text-secondary mb-2">{summary}</div>
       {detail && (
         <ChainOfThought
-          title="Qualification"
+          title={t('ai.pendingAction.qualification')}
           steps={[
-            { label: 'Analyse de la demande', detail: 'Extraction des champs essentiels', status: 'done' },
-            { label: 'Qualification', detail, status: 'done' },
-            { label: 'Validation', detail: 'En attente de confirmation', status: 'waiting' },
+            { label: t('ai.pendingAction.stepAnalyze'), detail: t('ai.pendingAction.stepAnalyzeDetail'), status: 'done' },
+            { label: t('ai.pendingAction.stepQualify'), detail, status: 'done' },
+            { label: t('ai.pendingAction.stepValidate'), detail: t('ai.pendingAction.stepValidateDetail'), status: 'waiting' },
           ]}
         />
       )}
@@ -344,7 +355,7 @@ function PendingActionPanel({
       {isEditable && (
         <div className="mt-2 space-y-2">
           <div className="space-y-1">
-            <span className="text-[10px] text-muted">Titre</span>
+            <span className="text-[10px] text-muted">{t('ai.pendingAction.title')}</span>
             <input
               value={String(draft.title || '')}
               onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
@@ -352,7 +363,7 @@ function PendingActionPanel({
             />
           </div>
           <div className="space-y-1">
-            <span className="text-[10px] text-muted">Description</span>
+            <span className="text-[10px] text-muted">{t('ai.pendingAction.description')}</span>
             <textarea
               value={String(draft.description || '')}
               onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
@@ -362,7 +373,7 @@ function PendingActionPanel({
           </div>
           <div className="grid grid-cols-2 gap-2 text-[10px]">
             <label className="space-y-1">
-              <span className="text-muted">Type</span>
+              <span className="text-muted">{t('ai.pendingAction.type')}</span>
               <select
                 value={String(draft.type || 'feature')}
                 onChange={(e) => setDraft((prev) => ({ ...prev, type: e.target.value }))}
@@ -374,7 +385,7 @@ function PendingActionPanel({
               </select>
             </label>
             <label className="space-y-1">
-              <span className="text-muted">Priority</span>
+              <span className="text-muted">{t('ai.pendingAction.priority')}</span>
               <select
                 value={String(draft.priority || 'medium')}
                 onChange={(e) => setDraft((prev) => ({ ...prev, priority: e.target.value }))}
@@ -388,7 +399,7 @@ function PendingActionPanel({
           </div>
           <div className="grid grid-cols-2 gap-2 text-[10px]">
             <label className="space-y-1">
-              <span className="text-muted">Status</span>
+              <span className="text-muted">{t('ai.pendingAction.status')}</span>
               <select
                 value={String(draft.status || 'backlog')}
                 onChange={(e) => setDraft((prev) => ({ ...prev, status: e.target.value }))}
@@ -401,7 +412,7 @@ function PendingActionPanel({
             </label>
           </div>
           <div className="space-y-1">
-            <span className="text-[10px] text-muted">Category</span>
+            <span className="text-[10px] text-muted">{t('ai.pendingAction.category')}</span>
             <div className="flex flex-wrap gap-1">
               {CATEGORY_OPTIONS.map((cat) => {
                 const current = Array.isArray(draft.category) ? draft.category.map(String) : [];
@@ -433,7 +444,7 @@ function PendingActionPanel({
       )}
 
       <details className="text-[10px] text-muted mt-2">
-        <summary className="cursor-pointer">Voir les détails</summary>
+        <summary className="cursor-pointer">{t('ai.pendingAction.viewDetails')}</summary>
         <pre className="mt-2 whitespace-pre-wrap break-all rounded-md bg-surface/70 border border-border/60 p-2 text-[10px] text-muted">
           {JSON.stringify(displayArgs, null, 2)}
         </pre>
@@ -1070,7 +1081,11 @@ export function AIAssistant() {
   const handleApprovePendingAction = useCallback(async (messageId: string, skill: string, args: Record<string, unknown>) => {
     updatePendingActionState(messageId, skill, (prev) => ({ ...prev, status: 'processing', error: undefined }));
     try {
-      const result = await executeSkill(skill, args, apiClient as any, allIssuesByProject, projects);
+      // Final sanitization guard — ensure title is clean even if user edited or draft bypassed
+      const sanitizedArgs = skill === 'create_issue' && args.title
+        ? { ...args, title: sanitizeTitle(String(args.title), projects) }
+        : args;
+      const result = await executeSkill(skill, sanitizedArgs, apiClient as any, allIssuesByProject, projects);
       updatePendingActionState(messageId, skill, (prev) => ({ ...prev, status: 'approved', error: undefined }));
       addMessage('assistant', result.summary, [result]);
 

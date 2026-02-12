@@ -76,7 +76,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
         onClick={onClick}
         onContextMenu={onContextMenu ? (e: React.MouseEvent) => onContextMenu(e, issue) : undefined}
         className={cn(
-          'hidden md:grid grid-cols-[28px_72px_1fr_110px_90px_80px_56px_80px_100px_90px] gap-1.5 border-b border-gray-100 dark:border-border/50 px-4 md:px-6 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-surface transition-colors items-center h-[38px] group/row',
+          'hidden md:grid grid-cols-[28px_64px_minmax(120px,1fr)_100px_80px_72px_48px_72px_90px_80px] gap-1.5 border-b border-gray-100 dark:border-border/50 px-4 md:px-6 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-surface transition-colors items-center h-[38px] group/row',
           isDone && 'opacity-60 hover:opacity-90',
           selected && 'bg-accent/5 dark:bg-accent/10 hover:bg-accent/10',
         )}

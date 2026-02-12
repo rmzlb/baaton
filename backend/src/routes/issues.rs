@@ -79,7 +79,10 @@ async fn resolve_auto_assign_assignees(
             .bind(project_id)
             .fetch_all(tx.as_mut())
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "round_robin members query failed");
+                vec![]
+            });
 
             if members.is_empty() {
                 return Ok((project.prefix, vec![]));
@@ -125,7 +128,10 @@ pub async fn list_all(
     .bind(limit)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "issues.list_all query failed");
+        vec![]
+    });
 
     Ok(Json(ApiResponse::new(issues)))
 }
@@ -179,7 +185,10 @@ pub async fn list_by_project(
     .bind(offset)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "issues.list_by_project query failed");
+        vec![]
+    });
 
     Ok(Json(ApiResponse::new(issues)))
 }
@@ -336,7 +345,10 @@ pub async fn get_one(
     .bind(id)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "issues.get_one tldrs query failed");
+        vec![]
+    });
 
     let comments = sqlx::query_as::<_, Comment>(
         "SELECT * FROM comments WHERE issue_id = $1 ORDER BY created_at ASC",
@@ -344,7 +356,10 @@ pub async fn get_one(
     .bind(id)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "issues.get_one comments query failed");
+        vec![]
+    });
 
     Ok(Json(ApiResponse::new(IssueDetail {
         issue,
@@ -564,7 +579,10 @@ pub async fn list_mine(
     .bind(org_id)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "issues.list_mine query failed");
+        vec![]
+    });
 
     Ok(Json(ApiResponse::new(issues)))
 }

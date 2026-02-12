@@ -8,6 +8,8 @@ use axum::{
 };
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
+use sha2::{Sha256, Digest};
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -312,6 +314,83 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         }
     };
 
+    // ── API Key auth path ────────────────────────────────
+    if token.starts_with("baa_") {
+        let pool = match req.extensions().get::<PgPool>().cloned() {
+            Some(p) => p,
+            None => {
+                tracing::error!("PgPool not found in request extensions for API key auth");
+                return (StatusCode::INTERNAL_SERVER_ERROR, r#"{"error":"Auth not configured"}"#).into_response();
+            }
+        };
+
+        let hash = format!("{:x}", Sha256::digest(token.as_bytes()));
+
+        #[derive(sqlx::FromRow)]
+        struct ApiKeyLookup {
+            id: uuid::Uuid,
+            org_id: String,
+            #[allow(dead_code)]
+            name: String,
+            #[allow(dead_code)]
+            permissions: Vec<String>,
+            expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        }
+
+        let key_row = match sqlx::query_as::<_, ApiKeyLookup>(
+            "SELECT id, org_id, name, permissions, expires_at FROM api_keys WHERE key_hash = $1"
+        )
+        .bind(&hash)
+        .fetch_optional(&pool)
+        .await
+        {
+            Ok(Some(row)) => row,
+            Ok(None) => {
+                return (StatusCode::UNAUTHORIZED, r#"{"error":"Invalid API key"}"#).into_response();
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "API key lookup failed");
+                return (StatusCode::INTERNAL_SERVER_ERROR, r#"{"error":"Auth error"}"#).into_response();
+            }
+        };
+
+        // Check expiry
+        if let Some(expires) = key_row.expires_at {
+            if expires < chrono::Utc::now() {
+                return (StatusCode::UNAUTHORIZED, r#"{"error":"API key expired"}"#).into_response();
+            }
+        }
+
+        // Fire-and-forget: update last_used_at
+        let update_pool = pool.clone();
+        let key_id = key_row.id;
+        tokio::spawn(async move {
+            let _ = sqlx::query("UPDATE api_keys SET last_used_at = now() WHERE id = $1")
+                .bind(key_id)
+                .execute(&update_pool)
+                .await;
+        });
+
+        let auth_user = AuthUser {
+            user_id: format!("apikey:{}", key_row.id),
+            org_id: Some(key_row.org_id),
+            org_slug: None,
+            org_role: None,
+            email: None,
+            display_name: None,
+        };
+
+        tracing::debug!(
+            api_key_id = %key_row.id,
+            org_id = ?auth_user.org_id,
+            "Authenticated via API key"
+        );
+
+        req.extensions_mut().insert(auth_user);
+        return next.run(req).await;
+    }
+
+    // ── Clerk JWT auth path ──────────────────────────────
     // Get JWKS keys from extensions
     let keys = match req.extensions().get::<JwksKeys>() {
         Some(k) => k.clone(),

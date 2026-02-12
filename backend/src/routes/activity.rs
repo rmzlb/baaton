@@ -34,7 +34,10 @@ pub async fn list_by_issue(
     .bind(limit)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "activity.list_by_issue query failed");
+        vec![]
+    });
 
     Json(ApiResponse::new(entries))
 }
@@ -60,7 +63,10 @@ pub async fn list_recent(
     .bind(limit)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "activity.list_recent query failed");
+        vec![]
+    });
 
     Json(ApiResponse::new(entries))
 }

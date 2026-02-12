@@ -110,7 +110,10 @@ pub async fn list_by_project(
     .bind(org_id)
     .fetch_all(&pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "milestones.list query failed");
+        vec![]
+    });
 
     Ok(Json(ApiResponse::new(milestones)))
 }
@@ -326,7 +329,10 @@ pub async fn get_one(
             .bind(id)
             .fetch_all(&pool)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "milestones.get_one issues query failed");
+                vec![]
+            });
 
             let detail = MilestoneDetail {
                 id: row.id,
