@@ -41,6 +41,7 @@ createRoot(document.getElementById('root')!).render(
         signUpUrl="/sign-up"
         signInFallbackRedirectUrl="/dashboard"
         signUpFallbackRedirectUrl="/dashboard"
+        afterSignOutUrl="/sign-in"
       >
         <QueryClientProvider client={queryClient}>
           <BrowserRouter>
