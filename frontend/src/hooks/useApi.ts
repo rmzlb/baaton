@@ -138,6 +138,12 @@ export function useApi() {
           return project;
         }),
 
+      getBoardBySlug: async (slug: string): Promise<{ project: Project; issues: Issue[]; tags: ProjectTag[] }> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<{ project: Project; issues: Issue[]; tags: ProjectTag[] }>(`/projects/by-slug/${slug}/board`, token);
+        }),
+
       create: async (body: {
         name: string;
         slug: string;

@@ -60,23 +60,23 @@ export function ProjectBoard() {
     localStorage.setItem(`baaton-view-${slug}`, viewMode);
   }, [viewMode, slug]);
 
-  // Fetch project by slug
-  const { data: project, isLoading: projectLoading, error: projectError } = useQuery({
-    queryKey: ['project', slug],
-    queryFn: () => apiClient.projects.getBySlug(slug!),
+  // Single composite query: project + issues + tags in one request
+  const { data: boardData, isLoading: boardLoading, error: projectError } = useQuery({
+    queryKey: ['project-board', slug],
+    queryFn: () => apiClient.projects.getBoardBySlug(slug!),
     enabled: !!slug,
+    staleTime: 30_000,
   });
 
-  // Fetch issues for this project
-  const { data: issuesList = [], isLoading: issuesLoading } = useQuery({
-    queryKey: ['issues', project?.id],
-    queryFn: async () => {
-      const result = await apiClient.issues.listByProject(project!.id);
-      setIssues(result);
-      return result;
-    },
-    enabled: !!project?.id,
-  });
+  const project = boardData?.project;
+  const projectLoading = boardLoading && !boardData;
+  const issuesList = boardData?.issues ?? [];
+  const issuesLoading = boardLoading && !boardData;
+
+  // Sync issues to Zustand store
+  useEffect(() => {
+    if (issuesList.length > 0) setIssues(issuesList);
+  }, [issuesList, setIssues]);
 
   // ── Deep link: open drawer from ?issue=HLM-18 on initial load ONCE ──
   useEffect(() => {
@@ -114,12 +114,8 @@ export function ProjectBoard() {
     }, { replace: true });
   }, [closeDetail, setSearchParams]);
 
-  // Fetch project tags
-  const { data: projectTags = [] } = useQuery({
-    queryKey: ['project-tags', project?.id],
-    queryFn: () => apiClient.tags.listByProject(project!.id),
-    enabled: !!project?.id,
-  });
+  // Tags come from the composite board query
+  const projectTags = boardData?.tags ?? [];
 
   // Mutation for updating issue position (drag & drop) — with optimistic update in both Zustand + react-query
   const positionMutation = useMutation({
@@ -157,7 +153,7 @@ export function ProjectBoard() {
       });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['issues', project?.id] });
+      queryClient.invalidateQueries({ queryKey: ['project-board', slug] });
     },
   });
 

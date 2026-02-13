@@ -257,6 +257,51 @@ pub async fn update_public_submit_settings(
     Ok(Json(ApiResponse::new(PublicSubmitSettings { enabled: updated.0, token: updated.1, slug: updated.2 })))
 }
 
+/// Composite board endpoint: project + issues + tags in one request
+pub async fn board_by_slug(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(slug): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let project = sqlx::query_as::<_, Project>(
+        "SELECT * FROM projects WHERE slug = $1 AND org_id = $2"
+    )
+    .bind(&slug)
+    .bind(org_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
+
+    // Fetch issues and tags in parallel
+    let (issues, tags) = tokio::join!(
+        sqlx::query_as::<_, crate::models::Issue>(
+            "SELECT * FROM issues WHERE project_id = $1 ORDER BY position ASC"
+        )
+        .bind(project.id)
+        .fetch_all(&pool),
+        sqlx::query_as::<_, crate::models::ProjectTag>(
+            "SELECT * FROM project_tags WHERE project_id = $1 ORDER BY name ASC"
+        )
+        .bind(project.id)
+        .fetch_all(&pool),
+    );
+
+    let issues = issues.unwrap_or_default();
+    let tags = tags.unwrap_or_default();
+
+    Ok(Json(json!({
+        "data": {
+            "project": project,
+            "issues": issues,
+            "tags": tags,
+        }
+    })))
+}
+
 /// Resolve a public submit token to project info (no auth — public endpoint)
 pub async fn resolve_public_token(
     State(pool): State<PgPool>,
