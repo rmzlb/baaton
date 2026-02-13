@@ -141,7 +141,20 @@ export function useApi() {
       getBoardBySlug: async (slug: string): Promise<{ project: Project; issues: Issue[]; tags: ProjectTag[] }> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
-          return api.get<{ project: Project; issues: Issue[]; tags: ProjectTag[] }>(`/projects/by-slug/${slug}/board`, token);
+          try {
+            // Fast path: single composite request
+            return await api.get<{ project: Project; issues: Issue[]; tags: ProjectTag[] }>(`/projects/by-slug/${slug}/board`, token);
+          } catch {
+            // Fallback: 3 separate requests (for backends not yet updated)
+            const projects = await api.get<Project[]>('/projects', token);
+            const project = projects.find(p => p.slug === slug);
+            if (!project) throw new ApiError(404, 'NOT_FOUND', `Project "${slug}" not found`);
+            const [issues, tags] = await Promise.all([
+              api.get<Issue[]>(`/projects/${project.id}/issues`, token),
+              api.get<ProjectTag[]>(`/projects/${project.id}/tags`, token),
+            ]);
+            return { project, issues, tags };
+          }
         }),
 
       create: async (body: {
