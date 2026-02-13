@@ -1,6 +1,6 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp, OrganizationProfile, useUser } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp, OrganizationProfile, useUser, useAuth } from '@clerk/clerk-react';
 import { useOrgGuard } from '@/hooks/useOrgGuard';
 import { useVersionCheck } from '@/hooks/useVersionCheck';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -60,6 +60,29 @@ function ProtectedLayout() {
   );
 }
 
+/**
+ * Detects when a Clerk session expires/invalidates and forces a clean
+ * sign-out. Without this, Clerk's internal token refresh retries the
+ * stale session in a loop, spamming 404s in the console.
+ */
+function SessionMonitor() {
+  const { isSignedIn, signOut } = useAuth();
+  const wasSignedIn = useRef(false);
+
+  useEffect(() => {
+    if (isSignedIn) {
+      wasSignedIn.current = true;
+    } else if (wasSignedIn.current && isSignedIn === false) {
+      // Session expired while user was signed in → clean sign out
+      console.info('[auth] session expired, signing out');
+      wasSignedIn.current = false;
+      signOut({ redirectUrl: '/sign-in' });
+    }
+  }, [isSignedIn, signOut]);
+
+  return null;
+}
+
 function AuthGate() {
   return (
     <>
@@ -89,6 +112,7 @@ export function App() {
 
   return (
     <>
+      <SessionMonitor />
       {updateAvailable && (
         <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[100] rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-200 flex items-center gap-2 shadow-lg">
           <span>Nouvelle version disponible</span>
