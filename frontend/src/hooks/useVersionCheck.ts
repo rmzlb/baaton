@@ -6,7 +6,19 @@ export function useVersionCheck() {
   const currentVersion = useRef(BUILD_ID);
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
-  const reload = () => window.location.reload();
+  const reload = async () => {
+    try {
+      // Unregister service worker so it doesn't serve stale cache on reload
+      const registrations = await navigator.serviceWorker?.getRegistrations();
+      await Promise.all((registrations || []).map((r) => r.unregister()));
+      // Clear all SW caches
+      const cacheNames = await caches?.keys();
+      await Promise.all((cacheNames || []).map((name) => caches.delete(name)));
+    } catch {
+      // ignore — proceed to reload regardless
+    }
+    window.location.reload();
+  };
 
   useEffect(() => {
     if (!import.meta.env.PROD) return;
