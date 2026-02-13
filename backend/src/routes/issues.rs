@@ -631,6 +631,7 @@ pub struct PublicSubmission {
     pub reporter_name: Option<String>,
     pub reporter_email: Option<String>,
     pub token: Option<String>,
+    pub attachments: Option<serde_json::Value>,
 }
 
 pub async fn public_submit(
@@ -707,14 +708,36 @@ pub async fn public_submit(
 
     let display_id = format!("{}-{}", project.1, next_number.0);
 
+    // Validate attachments: max 5, each must have url/name/size/mime_type
+    let attachments_json = if let Some(ref atts) = body.attachments {
+        if let Some(arr) = atts.as_array() {
+            if arr.len() > 5 {
+                return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Maximum 5 attachments allowed"}))));
+            }
+            for att in arr {
+                if att.get("url").and_then(|v| v.as_str()).is_none()
+                    || att.get("name").and_then(|v| v.as_str()).is_none()
+                {
+                    return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid attachment format"}))));
+                }
+            }
+            atts.clone()
+        } else {
+            serde_json::Value::Array(vec![])
+        }
+    } else {
+        serde_json::Value::Array(vec![])
+    };
+
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         INSERT INTO issues (
             project_id, display_id, title, description, type, status,
             priority, category,
-            reporter_name, reporter_email, source, position, assignee_ids
+            reporter_name, reporter_email, source, position, assignee_ids,
+            attachments
         )
-        VALUES ($1, $2, $3, $4, $5, 'backlog', $6, $7, $8, $9, 'form', 99999, $10)
+        VALUES ($1, $2, $3, $4, $5, 'backlog', $6, $7, $8, $9, 'form', 99999, $10, $11)
         RETURNING *
         "#,
     )
@@ -728,6 +751,7 @@ pub async fn public_submit(
     .bind(&body.reporter_name)
     .bind(&body.reporter_email)
     .bind(&resolved_assignees)
+    .bind(&attachments_json)
     .fetch_one(tx.as_mut())
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;

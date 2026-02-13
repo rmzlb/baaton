@@ -428,6 +428,10 @@ const fr = {
   'publicSubmit.tooManyRequests': 'Trop de soumissions. Veuillez patienter quelques minutes.',
   'publicSubmit.genericError': 'Une erreur est survenue. Veuillez réessayer.',
   'publicSubmit.poweredBy': 'Propulsé par',
+  'publicSubmit.attachments': 'Pièces jointes',
+  'publicSubmit.attachmentsHint': 'glisser, coller ou cliquer',
+  'publicSubmit.uploadFiles': 'Déposez des fichiers ou cliquez',
+  'publicSubmit.uploadHint': 'Images, PDF, DOC • Max 10 Mo • Jusqu\'à 5 fichiers',
 
   // ─── GitHub Integration ──────────────────────
   'github.integrationsTitle': 'Intégrations',

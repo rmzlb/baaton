@@ -428,6 +428,10 @@ const en = {
   'publicSubmit.tooManyRequests': 'Too many submissions. Please wait a few minutes and try again.',
   'publicSubmit.genericError': 'Something went wrong. Please try again.',
   'publicSubmit.poweredBy': 'Powered by',
+  'publicSubmit.attachments': 'Attachments',
+  'publicSubmit.attachmentsHint': 'drag, paste, or click',
+  'publicSubmit.uploadFiles': 'Drop files or click to upload',
+  'publicSubmit.uploadHint': 'Images, PDF, DOC • Max 10MB • Up to 5 files',
 
   // ─── GitHub Integration ──────────────────────
   'github.integrationsTitle': 'Integrations',

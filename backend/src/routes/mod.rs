@@ -1,4 +1,4 @@
-use axum::{Router, routing::{get, post, put, patch, delete}, middleware as axum_mw};
+use axum::{Router, routing::{get, post, put, patch, delete}, middleware as axum_mw, extract::DefaultBodyLimit};
 use sqlx::PgPool;
 
 use crate::middleware::{auth_middleware, JwksKeys};
@@ -74,7 +74,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Public routes (auth skipped in middleware)
         .route("/invite/{code}", get(invites::redirect_invite))
         // Public routes (auth skipped in middleware based on path)
-        .route("/public/{slug}/submit", post(issues::public_submit))
+        .route("/public/{slug}/submit", post(issues::public_submit)
+            .layer(DefaultBodyLimit::max(20 * 1024 * 1024))) // 20MB for base64 attachments
         .route("/public/resolve/{token}", get(projects::resolve_public_token))
         // Webhook
         .route("/webhooks/github", post(github::webhooks::handle));
