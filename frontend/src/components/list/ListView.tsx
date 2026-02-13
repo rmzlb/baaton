@@ -14,7 +14,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import type { Issue, IssuePriority, IssueStatus, ProjectStatus, ProjectTag } from '@/lib/types';
 
-type SortField = 'display_id' | 'title' | 'status' | 'priority' | 'type' | 'created_at' | 'updated_at';
+type SortField = 'display_id' | 'title' | 'status' | 'priority' | 'type' | 'created_at' | 'updated_at' | 'closed_at';
 type SortDir = 'asc' | 'desc';
 
 const PRIORITY_ORDER: Record<string, number> = {
@@ -63,8 +63,8 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
   const { selectedIds, toggle: toggleSelect, selectAll, deselectAll } = useSelection();
   const mutations = useIssueMutations();
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortField, setSortField] = useState<SortField>('status');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [sortField, setSortField] = useState<SortField>('display_id');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'project' | 'assignee'>('status');
 
@@ -121,9 +121,13 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
     sorted.sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
-        case 'display_id':
-          cmp = a.display_id.localeCompare(b.display_id);
+        case 'display_id': {
+          // Numeric sort: extract number from "SQX-73" → 73
+          const aNum = parseInt(a.display_id.replace(/^[A-Z]+-/, ''), 10) || 0;
+          const bNum = parseInt(b.display_id.replace(/^[A-Z]+-/, ''), 10) || 0;
+          cmp = aNum - bNum;
           break;
+        }
         case 'title':
           cmp = a.title.localeCompare(b.title);
           break;
@@ -144,6 +148,9 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
           break;
         case 'updated_at':
           cmp = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+          break;
+        case 'closed_at':
+          cmp = (a.closed_at ? new Date(a.closed_at).getTime() : 0) - (b.closed_at ? new Date(b.closed_at).getTime() : 0);
           break;
       }
       return sortDir === 'asc' ? cmp : -cmp;
@@ -413,7 +420,7 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
         {/* Table Header — hidden on mobile (cards don't need headers) */}
-        <div className="sticky top-0 z-10 hidden md:grid grid-cols-[28px_64px_minmax(120px,1fr)_100px_80px_72px_48px_72px_90px_80px] gap-1.5 border-b border-border bg-bg px-4 md:px-6 py-2 text-[10px] uppercase tracking-wider text-muted font-medium">
+        <div className="sticky top-0 z-10 hidden md:grid grid-cols-[28px_64px_minmax(120px,1fr)_100px_80px_72px_48px_72px_80px_80px_80px] gap-1.5 border-b border-border bg-bg px-4 md:px-6 py-2 text-[10px] uppercase tracking-wider text-muted font-medium">
           <span />
           <button onClick={() => toggleSort('display_id')} className="text-left hover:text-secondary transition-colors flex items-center">
             {t('list.id')} <SortIcon field="display_id" />
@@ -432,7 +439,10 @@ export function ListView({ statuses, issues, onIssueClick, projectTags = [], pro
           </button>
           <span>{t('list.estimate')}</span>
           <span>{t('list.tags')}</span>
-          <span>{t('list.createdBy') || 'Created by'}</span>
+          <button onClick={() => toggleSort('updated_at')} className="text-left hover:text-secondary transition-colors flex items-center">
+            {t('list.updated')} <SortIcon field="updated_at" />
+          </button>
+          <span>{t('list.createdBy')}</span>
           <span>{t('list.assign')}</span>
         </div>
 

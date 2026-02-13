@@ -102,6 +102,8 @@ pub struct Issue {
     pub qualified_by: Option<String>,
     pub estimate: Option<i32>,
     pub sprint_id: Option<Uuid>,
+    pub status_changed_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

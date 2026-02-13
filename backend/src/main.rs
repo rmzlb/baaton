@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         (12, include_str!("../migrations/012_templates_estimates.sql")),
         (13, include_str!("../migrations/013_project_auto_assign.sql")),
         (15, include_str!("../migrations/015_public_submit.sql")),
+        (16, include_str!("../migrations/016_issue_timestamps.sql")),
     ];
 
     for &(version, sql) in migrations {

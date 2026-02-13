@@ -450,6 +450,10 @@ pub async fn update(
     let sprint_id_provided = body.sprint_id.is_some();
     let sprint_id_value = body.sprint_id.flatten();
 
+    // Compute closed_at: set when moving to done/cancelled, clear when reopening
+    let is_closing = status_changed && (new_status == "done" || new_status == "cancelled");
+    let is_reopening = status_changed && existing.closed_at.is_some() && new_status != "done" && new_status != "cancelled";
+
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         UPDATE issues SET
@@ -466,6 +470,12 @@ pub async fn update(
             attachments = COALESCE($16, attachments),
             estimate = CASE WHEN $17::boolean THEN $18 ELSE estimate END,
             sprint_id = CASE WHEN $19::boolean THEN $20 ELSE sprint_id END,
+            status_changed_at = CASE WHEN $21::boolean THEN now() ELSE status_changed_at END,
+            closed_at = CASE
+                WHEN $22::boolean THEN now()
+                WHEN $23::boolean THEN NULL
+                ELSE closed_at
+            END,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -491,6 +501,9 @@ pub async fn update(
     .bind(estimate_value)
     .bind(sprint_id_provided)
     .bind(sprint_id_value)
+    .bind(status_changed)  // $21: status_changed_at trigger
+    .bind(is_closing)      // $22: set closed_at
+    .bind(is_reopening)    // $23: clear closed_at
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;

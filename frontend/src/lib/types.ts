@@ -110,6 +110,8 @@ export interface Issue {
   qualified_at: string | null;
   qualified_by: string | null;
   estimate: number | null;
+  status_changed_at: string | null;
+  closed_at: string | null;
   created_at: string;
   updated_at: string;
   // Relations (optional, loaded on detail)
