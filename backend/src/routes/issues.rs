@@ -323,11 +323,7 @@ pub async fn get_one(
 
     let issue = sqlx::query_as::<_, Issue>(
         r#"
-        SELECT i.id, i.project_id, i.milestone_id, i.parent_id, i.display_id, i.title,
-               i.description, i.type, i.status, i.priority, i.source, i.reporter_name,
-               i.reporter_email, i.assignee_ids, i.tags, i.attachments, i.category,
-               i.position, i.created_by_id, i.created_by_name, i.due_date,
-               i.qualified_at, i.qualified_by, i.estimate, i.sprint_id, i.created_at, i.updated_at
+        SELECT i.*
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE i.id = $1 AND p.org_id = $2
@@ -569,11 +565,7 @@ pub async fn list_mine(
 
     let issues = sqlx::query_as::<_, Issue>(
         r#"
-        SELECT i.id, i.project_id, i.milestone_id, i.parent_id, i.display_id, i.title,
-               i.description, i.type, i.status, i.priority, i.source, i.reporter_name,
-               i.reporter_email, i.assignee_ids, i.tags, i.attachments, i.category,
-               i.position, i.created_by_id, i.created_by_name, i.due_date,
-               i.qualified_at, i.qualified_by, i.estimate, i.sprint_id, i.created_at, i.updated_at
+        SELECT i.*
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE $1 = ANY(i.assignee_ids) AND p.org_id = $2

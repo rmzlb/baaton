@@ -263,6 +263,7 @@ pub async fn board_by_slug(
     State(pool): State<PgPool>,
     Path(slug): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let start = std::time::Instant::now();
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
@@ -292,6 +293,15 @@ pub async fn board_by_slug(
 
     let issues = issues.unwrap_or_default();
     let tags = tags.unwrap_or_default();
+    let elapsed = start.elapsed();
+
+    tracing::info!(
+        slug = %slug,
+        issue_count = issues.len(),
+        tag_count = tags.len(),
+        elapsed_ms = elapsed.as_millis() as u64,
+        "board_by_slug"
+    );
 
     Ok(Json(json!({
         "data": {

@@ -61,11 +61,19 @@ export function ProjectBoard() {
   }, [viewMode, slug]);
 
   // Single composite query: project + issues + tags in one request
+  const boardFetchStart = useRef(0);
   const { data: boardData, isLoading: boardLoading, error: projectError } = useQuery({
     queryKey: ['project-board', slug],
-    queryFn: () => apiClient.projects.getBoardBySlug(slug!),
+    queryFn: async () => {
+      boardFetchStart.current = performance.now();
+      const result = await apiClient.projects.getBoardBySlug(slug!);
+      const elapsed = Math.round(performance.now() - boardFetchStart.current);
+      console.info(`[perf] board loaded: ${result.issues.length} issues in ${elapsed}ms (${slug})`);
+      return result;
+    },
     enabled: !!slug,
     staleTime: 30_000,
+    retry: 1,
   });
 
   const project = boardData?.project;
