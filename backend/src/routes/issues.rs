@@ -318,6 +318,7 @@ pub async fn get_one(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<IssueDetail>>, (StatusCode, Json<serde_json::Value>)> {
+    let start = std::time::Instant::now();
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
@@ -335,27 +336,29 @@ pub async fn get_one(
     .await
     .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
 
-    let tldrs = sqlx::query_as::<_, Tldr>(
-        "SELECT * FROM tldrs WHERE issue_id = $1 ORDER BY created_at DESC",
-    )
-    .bind(id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!(error = %e, "issues.get_one tldrs query failed");
-        vec![]
-    });
+    // Fetch TLDRs and comments in parallel
+    let (tldrs, comments) = tokio::join!(
+        sqlx::query_as::<_, Tldr>(
+            "SELECT * FROM tldrs WHERE issue_id = $1 ORDER BY created_at DESC",
+        )
+        .bind(id)
+        .fetch_all(&pool),
+        sqlx::query_as::<_, Comment>(
+            "SELECT * FROM comments WHERE issue_id = $1 ORDER BY created_at ASC",
+        )
+        .bind(id)
+        .fetch_all(&pool),
+    );
 
-    let comments = sqlx::query_as::<_, Comment>(
-        "SELECT * FROM comments WHERE issue_id = $1 ORDER BY created_at ASC",
-    )
-    .bind(id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!(error = %e, "issues.get_one comments query failed");
-        vec![]
-    });
+    let tldrs = tldrs.unwrap_or_default();
+    let comments = comments.unwrap_or_default();
+
+    tracing::info!(
+        issue_id = %id,
+        display_id = %issue.display_id,
+        elapsed_ms = start.elapsed().as_millis() as u64,
+        "issues.get_one"
+    );
 
     Ok(Json(ApiResponse::new(IssueDetail {
         issue,

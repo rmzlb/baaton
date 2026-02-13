@@ -592,7 +592,7 @@ function MessageBubble({
                 <div className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-secondary">
-                      {t('ai.pendingAction.bulkCount', { count: String(pendingCount) })}
+                      {t('ai.pendingAction.bulkCount', { count: pendingCount } as any)}
                     </span>
                     <button
                       onClick={() => onApproveAllPendingActions(
@@ -604,7 +604,7 @@ function MessageBubble({
                       className="flex items-center gap-1.5 rounded-md bg-emerald-500 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-600 transition-colors"
                     >
                       <CheckCircle2 size={12} />
-                      {t('ai.pendingAction.approveAll', { count: String(pendingCount) })}
+                      {t('ai.pendingAction.approveAll', { count: pendingCount } as any)}
                     </button>
                   </div>
                 </div>

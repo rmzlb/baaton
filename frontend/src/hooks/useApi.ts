@@ -51,7 +51,7 @@ export function useApi() {
 
   const getAuthToken = useCallback(async () => {
     try {
-      const token = await getToken({ skipCache: true });
+      const token = await getToken();
       if (!token) {
         console.warn('[auth] missing token', { sessionId, href: window.location.href });
         throw new ApiError(401, 'UNAUTHORIZED', 'No active session');

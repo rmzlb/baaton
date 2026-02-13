@@ -105,9 +105,15 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   });
 
   // ── Queries ──
+  const drawerStart = performance.now();
   const { data: issue, isLoading } = useQuery({
     queryKey: ['issue', issueId],
-    queryFn: () => apiClient.issues.get(issueId),
+    queryFn: async () => {
+      const t0 = performance.now();
+      const result = await apiClient.issues.get(issueId);
+      console.info(`[perf] drawer issue detail: ${Math.round(performance.now() - t0)}ms`);
+      return result;
+    },
     staleTime: 10_000,
   });
 
@@ -116,25 +122,29 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     queryKey: ['project-tags', resolvedProjectId],
     queryFn: () => apiClient.tags.listByProject(resolvedProjectId!),
     enabled: !!resolvedProjectId,
+    staleTime: 5 * 60_000,
   });
 
   const { data: projectMilestones = [] } = useQuery({
     queryKey: ['milestones', resolvedProjectId],
     queryFn: () => apiClient.milestones.listByProject(resolvedProjectId!),
     enabled: !!resolvedProjectId,
+    staleTime: 5 * 60_000,
   });
 
   const { data: projectSprints = [] } = useQuery({
     queryKey: ['sprints', resolvedProjectId],
     queryFn: () => apiClient.sprints.listByProject(resolvedProjectId!),
     enabled: !!resolvedProjectId,
+    staleTime: 5 * 60_000,
   });
 
-  // Fetch child issues (sub-issues)
+  // Fetch child issues (sub-issues) — reuses board cache if available
   const { data: allProjectIssues = [] } = useQuery({
     queryKey: ['issues', resolvedProjectId],
     queryFn: () => apiClient.issues.listByProject(resolvedProjectId!),
     enabled: !!resolvedProjectId,
+    staleTime: 30_000,
   });
 
   const childIssues = useMemo(
