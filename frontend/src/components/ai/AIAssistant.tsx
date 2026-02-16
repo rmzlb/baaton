@@ -863,10 +863,10 @@ export function AIAssistant() {
         if (response.skillsExecuted.some((s) =>
           s.success && ['create_issue', 'update_issue', 'bulk_update_issues', 'create_milestones_batch'].includes(s.skill),
         )) {
-          queryClient.invalidateQueries({ queryKey: ['issues'] });
-          queryClient.invalidateQueries({ queryKey: ['all-issues'] });
-          queryClient.invalidateQueries({ queryKey: ['my-issues'] });
-          queryClient.invalidateQueries({ queryKey: ['milestones'] });
+          queryClient.invalidateQueries({ queryKey: ['issues'], refetchType: 'all' });
+          queryClient.invalidateQueries({ queryKey: ['all-issues'], refetchType: 'all' });
+          queryClient.invalidateQueries({ queryKey: ['my-issues'], refetchType: 'all' });
+          queryClient.invalidateQueries({ queryKey: ['milestones'], refetchType: 'all' });
         }
       } catch (err) {
         console.error('AI error:', err);
@@ -1129,10 +1129,10 @@ export function AIAssistant() {
       addMessage('assistant', result.summary, [result]);
 
       if (result.success && ['create_issue', 'update_issue', 'bulk_update_issues', 'create_milestones_batch', 'add_comment'].includes(skill)) {
-        queryClient.invalidateQueries({ queryKey: ['issues'] });
-        queryClient.invalidateQueries({ queryKey: ['all-issues'] });
-        queryClient.invalidateQueries({ queryKey: ['my-issues'] });
-        queryClient.invalidateQueries({ queryKey: ['milestones'] });
+        queryClient.invalidateQueries({ queryKey: ['issues'], refetchType: 'all' });
+        queryClient.invalidateQueries({ queryKey: ['all-issues'], refetchType: 'all' });
+        queryClient.invalidateQueries({ queryKey: ['my-issues'], refetchType: 'all' });
+        queryClient.invalidateQueries({ queryKey: ['milestones'], refetchType: 'all' });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : t('ai.errorGeneric');

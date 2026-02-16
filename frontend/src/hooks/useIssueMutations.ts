@@ -31,7 +31,8 @@ export const issueKeys = {
 };
 
 // ── Types ──────────────────────────────────────
-type IssueQueryData = Issue[] | undefined;
+type BoardQueryData = { project: unknown; issues: Issue[]; tags: unknown[] } | undefined;
+type Snapshot = { queryKey: readonly unknown[]; data: unknown };
 
 interface UpdateVars {
   issueId: string;
@@ -75,6 +76,13 @@ export function useIssueMutations() {
       if (found) return found;
     }
 
+    // Also search composite project-board caches
+    const boards = queryClient.getQueriesData<BoardQueryData>({ queryKey: ['project-board'] });
+    for (const [, board] of boards) {
+      const found = board?.issues?.find((i) => i.id === issueId);
+      if (found) return found;
+    }
+
     return undefined;
   }, [queryClient]);
 
@@ -103,25 +111,29 @@ export function useIssueMutations() {
   // ── Helper: optimistically update all issue query caches ──
   const optimisticUpdate = useCallback(
     (issueId: string, patch: Partial<Issue>) => {
-      // Snapshot ALL matching query caches for rollback
-      const snapshots: { queryKey: readonly unknown[]; data: IssueQueryData }[] = [];
+      const snapshots: Snapshot[] = [];
+      const patchWithTs = { ...patch, updated_at: new Date().toISOString() };
 
-      // Update all query caches that contain issue arrays
-      queryClient.getQueriesData<Issue[]>({ queryKey: ['all-issues'] }).forEach(([key, data]) => {
-        if (data) {
-          snapshots.push({ queryKey: key, data: [...data] });
-          queryClient.setQueryData<Issue[]>(key, (old) =>
-            old?.map((i) => (i.id === issueId ? { ...i, ...patch, updated_at: new Date().toISOString() } : i)),
-          );
-        }
-      });
+      // Update flat issue-array caches
+      for (const prefix of ['all-issues', 'issues', 'my-issues'] as const) {
+        queryClient.getQueriesData<Issue[]>({ queryKey: [prefix] }).forEach(([key, data]) => {
+          if (data) {
+            snapshots.push({ queryKey: key, data: [...data] });
+            queryClient.setQueryData<Issue[]>(key, (old) =>
+              old?.map((i) => (i.id === issueId ? { ...i, ...patchWithTs } : i)),
+            );
+          }
+        });
+      }
 
-      queryClient.getQueriesData<Issue[]>({ queryKey: ['issues'] }).forEach(([key, data]) => {
-        if (data) {
-          snapshots.push({ queryKey: key, data: [...data] });
-          queryClient.setQueryData<Issue[]>(key, (old) =>
-            old?.map((i) => (i.id === issueId ? { ...i, ...patch, updated_at: new Date().toISOString() } : i)),
-          );
+      // Update composite project-board caches ({ project, issues, tags })
+      queryClient.getQueriesData<BoardQueryData>({ queryKey: ['project-board'] }).forEach(([key, data]) => {
+        if (data?.issues) {
+          snapshots.push({ queryKey: key, data: { ...data, issues: [...data.issues] } });
+          queryClient.setQueryData(key, {
+            ...data,
+            issues: data.issues.map((i) => (i.id === issueId ? { ...i, ...patchWithTs } : i)),
+          });
         }
       });
 
@@ -135,7 +147,7 @@ export function useIssueMutations() {
 
   // ── Helper: rollback from snapshots ──
   const rollback = useCallback(
-    (snapshots: { queryKey: readonly unknown[]; data: IssueQueryData }[]) => {
+    (snapshots: Snapshot[]) => {
       snapshots.forEach(({ queryKey, data }) => {
         queryClient.setQueryData(queryKey, data);
       });
@@ -146,9 +158,10 @@ export function useIssueMutations() {
   // ── Helper: optimistically remove from all caches ──
   const optimisticRemove = useCallback(
     (issueId: string) => {
-      const snapshots: { queryKey: readonly unknown[]; data: IssueQueryData }[] = [];
+      const snapshots: Snapshot[] = [];
 
-      for (const prefix of ['all-issues', 'issues']) {
+      // Remove from flat issue-array caches
+      for (const prefix of ['all-issues', 'issues', 'my-issues'] as const) {
         queryClient.getQueriesData<Issue[]>({ queryKey: [prefix] }).forEach(([key, data]) => {
           if (data) {
             snapshots.push({ queryKey: key, data: [...data] });
@@ -156,6 +169,17 @@ export function useIssueMutations() {
           }
         });
       }
+
+      // Remove from composite project-board caches ({ project, issues, tags })
+      queryClient.getQueriesData<BoardQueryData>({ queryKey: ['project-board'] }).forEach(([key, data]) => {
+        if (data?.issues) {
+          snapshots.push({ queryKey: key, data: { ...data, issues: [...data.issues] } });
+          queryClient.setQueryData(key, {
+            ...data,
+            issues: data.issues.filter((i) => i.id !== issueId),
+          });
+        }
+      });
 
       removeIssue(issueId);
       return snapshots;
@@ -173,16 +197,16 @@ export function useIssueMutations() {
     },
     onMutate: async ({ issueId, patch }) => {
       const automatedPatch = withAutomationPatch(issueId, patch);
-      // 1. Cancel outgoing refetches to avoid overwriting optimistic update
-      await queryClient.cancelQueries({ queryKey: ['all-issues'] });
-      await queryClient.cancelQueries({ queryKey: ['issues'] });
-
-      // 2. Optimistic update + snapshot for rollback
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['all-issues'] }),
+        queryClient.cancelQueries({ queryKey: ['issues'] }),
+        queryClient.cancelQueries({ queryKey: ['project-board'] }),
+        queryClient.cancelQueries({ queryKey: ['my-issues'] }),
+      ]);
       const snapshots = optimisticUpdate(issueId, automatedPatch);
       return { snapshots };
     },
     onError: (_err, _vars, context) => {
-      // Rollback on error
       if (context?.snapshots) {
         rollback(context.snapshots);
       }
@@ -193,9 +217,10 @@ export function useIssueMutations() {
       });
     },
     onSettled: () => {
-      // Always refetch to sync with server truth
       queryClient.invalidateQueries({ queryKey: ['all-issues'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
+      queryClient.invalidateQueries({ queryKey: ['project-board'] });
+      queryClient.invalidateQueries({ queryKey: ['my-issues'] });
     },
   });
 
@@ -207,8 +232,12 @@ export function useIssueMutations() {
       return apiClient.issues.delete(issueId);
     },
     onMutate: async ({ issueId }) => {
-      await queryClient.cancelQueries({ queryKey: ['all-issues'] });
-      await queryClient.cancelQueries({ queryKey: ['issues'] });
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['all-issues'] }),
+        queryClient.cancelQueries({ queryKey: ['issues'] }),
+        queryClient.cancelQueries({ queryKey: ['project-board'] }),
+        queryClient.cancelQueries({ queryKey: ['my-issues'] }),
+      ]);
       const snapshots = optimisticRemove(issueId);
       return { snapshots };
     },
@@ -221,6 +250,8 @@ export function useIssueMutations() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['all-issues'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
+      queryClient.invalidateQueries({ queryKey: ['project-board'] });
+      queryClient.invalidateQueries({ queryKey: ['my-issues'] });
     },
   });
 
@@ -237,11 +268,14 @@ export function useIssueMutations() {
       return results;
     },
     onMutate: async ({ ids, patch }) => {
-      await queryClient.cancelQueries({ queryKey: ['all-issues'] });
-      await queryClient.cancelQueries({ queryKey: ['issues'] });
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['all-issues'] }),
+        queryClient.cancelQueries({ queryKey: ['issues'] }),
+        queryClient.cancelQueries({ queryKey: ['project-board'] }),
+        queryClient.cancelQueries({ queryKey: ['my-issues'] }),
+      ]);
 
-      // Snapshot + optimistic update each issue
-      const allSnapshots: { queryKey: readonly unknown[]; data: IssueQueryData }[] = [];
+      const allSnapshots: Snapshot[] = [];
       ids.forEach((id) => {
         const snapshots = optimisticUpdate(id, withAutomationPatch(id, patch));
         allSnapshots.push(...snapshots);
@@ -258,6 +292,8 @@ export function useIssueMutations() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['all-issues'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
+      queryClient.invalidateQueries({ queryKey: ['project-board'] });
+      queryClient.invalidateQueries({ queryKey: ['my-issues'] });
     },
   });
 
@@ -272,9 +308,13 @@ export function useIssueMutations() {
       return results;
     },
     onMutate: async ({ ids }) => {
-      await queryClient.cancelQueries({ queryKey: ['all-issues'] });
-      await queryClient.cancelQueries({ queryKey: ['issues'] });
-      const allSnapshots: { queryKey: readonly unknown[]; data: IssueQueryData }[] = [];
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['all-issues'] }),
+        queryClient.cancelQueries({ queryKey: ['issues'] }),
+        queryClient.cancelQueries({ queryKey: ['project-board'] }),
+        queryClient.cancelQueries({ queryKey: ['my-issues'] }),
+      ]);
+      const allSnapshots: Snapshot[] = [];
       ids.forEach((id) => {
         const snapshots = optimisticRemove(id);
         allSnapshots.push(...snapshots);
@@ -290,6 +330,8 @@ export function useIssueMutations() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['all-issues'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
+      queryClient.invalidateQueries({ queryKey: ['project-board'] });
+      queryClient.invalidateQueries({ queryKey: ['my-issues'] });
     },
   });
 

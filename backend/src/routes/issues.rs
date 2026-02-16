@@ -195,6 +195,7 @@ pub async fn list_by_project(
 
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
+    Extension(novu): Extension<Option<crate::novu::NovuClient>>,
     State(pool): State<PgPool>,
     Json(body): Json<CreateIssue>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
@@ -255,14 +256,16 @@ pub async fn create(
         "issues.create.attempt"
     );
 
+    let attachments_json = body.attachments.unwrap_or_else(|| serde_json::Value::Array(vec![]));
+
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         INSERT INTO issues (
             project_id, display_id, title, description, type, status, priority,
             milestone_id, parent_id, tags, category, assignee_ids, position, source,
-            created_by_id, created_by_name, due_date, estimate, sprint_id
+            created_by_id, created_by_name, due_date, estimate, sprint_id, attachments
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'web', $14, $15, $16, $17, $18)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'web', $14, $15, $16, $17, $18, $19)
         RETURNING *
         "#,
     )
@@ -284,6 +287,7 @@ pub async fn create(
     .bind(body.due_date)
     .bind(body.estimate)
     .bind(body.sprint_id)
+    .bind(&attachments_json)
     .fetch_one(tx.as_mut())
     .await
     .map_err(|e| {
@@ -309,6 +313,72 @@ pub async fn create(
     tx.commit()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    // ── Novu notifications (fire-and-forget) ─────────────
+    if let Some(ref novu) = novu {
+        let actor_name = auth.display_name.clone().unwrap_or_else(|| auth.user_id.clone());
+        let display_id = issue.display_id.clone();
+        let title = issue.title.clone();
+        let priority = issue.priority.clone();
+
+        // Notify assignees (exclude self)
+        let assignees: Vec<String> = issue
+            .assignee_ids
+            .iter()
+            .filter(|id| **id != auth.user_id)
+            .cloned()
+            .collect();
+
+        if !assignees.is_empty() {
+            let novu = novu.clone();
+            let actor_name = actor_name.clone();
+            let display_id = display_id.clone();
+            let title = title.clone();
+            tokio::spawn(async move {
+                let subs: Vec<crate::novu::Subscriber> = assignees
+                    .into_iter()
+                    .map(|id| crate::novu::Subscriber { id, email: None, name: None })
+                    .collect();
+                novu.trigger_many(
+                    "issue-assigned",
+                    subs,
+                    json!({
+                        "actorName": actor_name,
+                        "issueId": display_id,
+                        "issueTitle": title,
+                    }),
+                );
+            });
+        }
+
+        // Urgent issue notification
+        if priority.as_deref() == Some("urgent") {
+            let novu = novu.clone();
+            let assignees: Vec<String> = issue
+                .assignee_ids
+                .iter()
+                .filter(|id| **id != auth.user_id)
+                .cloned()
+                .collect();
+            if !assignees.is_empty() {
+                tokio::spawn(async move {
+                    let subs: Vec<crate::novu::Subscriber> = assignees
+                        .into_iter()
+                        .map(|id| crate::novu::Subscriber { id, email: None, name: None })
+                        .collect();
+                    novu.trigger_many(
+                        "urgent-issue-created",
+                        subs,
+                        json!({
+                            "actorName": actor_name,
+                            "issueId": display_id,
+                            "issueTitle": title,
+                        }),
+                    );
+                });
+            }
+        }
+    }
 
     Ok(Json(ApiResponse::new(issue)))
 }
@@ -369,6 +439,7 @@ pub async fn get_one(
 
 pub async fn update(
     Extension(auth): Extension<AuthUser>,
+    Extension(novu): Extension<Option<crate::novu::NovuClient>>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateIssue>,
@@ -506,6 +577,74 @@ pub async fn update(
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    // ── Novu notifications (fire-and-forget) ─────────────
+    if let Some(ref novu) = novu {
+        let actor_name = auth.display_name.clone().unwrap_or_else(|| auth.user_id.clone());
+
+        // New assignees (added in this update, not previously assigned)
+        if let Some(ref new_ids) = body.assignee_ids {
+            let added: Vec<String> = new_ids
+                .iter()
+                .filter(|id| !existing.assignee_ids.contains(id) && **id != auth.user_id)
+                .cloned()
+                .collect();
+            if !added.is_empty() {
+                let novu = novu.clone();
+                let actor_name = actor_name.clone();
+                let display_id = issue.display_id.clone();
+                let title = issue.title.clone();
+                tokio::spawn(async move {
+                    let subs: Vec<crate::novu::Subscriber> = added
+                        .into_iter()
+                        .map(|id| crate::novu::Subscriber { id, email: None, name: None })
+                        .collect();
+                    novu.trigger_many(
+                        "issue-assigned",
+                        subs,
+                        json!({
+                            "actorName": actor_name,
+                            "issueId": display_id,
+                            "issueTitle": title,
+                        }),
+                    );
+                });
+            }
+        }
+
+        // Status changed → notify all assignees (exclude actor)
+        if status_changed {
+            let assignees: Vec<String> = issue
+                .assignee_ids
+                .iter()
+                .filter(|id| **id != auth.user_id)
+                .cloned()
+                .collect();
+            if !assignees.is_empty() {
+                let novu = novu.clone();
+                let actor_name = actor_name.clone();
+                let display_id = issue.display_id.clone();
+                let old_status = existing.status.clone();
+                let new_status = new_status.clone();
+                tokio::spawn(async move {
+                    let subs: Vec<crate::novu::Subscriber> = assignees
+                        .into_iter()
+                        .map(|id| crate::novu::Subscriber { id, email: None, name: None })
+                        .collect();
+                    novu.trigger_many(
+                        "status-changed",
+                        subs,
+                        json!({
+                            "actorName": actor_name,
+                            "issueId": display_id,
+                            "oldStatus": old_status,
+                            "newStatus": new_status,
+                        }),
+                    );
+                });
+            }
+        }
+    }
 
     Ok(Json(ApiResponse::new(issue)))
 }

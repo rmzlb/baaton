@@ -200,7 +200,12 @@ export function buildProjectContext(projects: Project[], allIssues: Record<strin
 
   for (const project of projects) {
     const issues = allIssues[project.id] || [];
-    if (issues.length === 0) continue;
+
+    if (issues.length === 0) {
+      lines.push(`## ${project.prefix} — ${project.name} (ID: ${project.id})`);
+      lines.push('Total: 0 issues (empty project — ready for issue creation)\n');
+      continue;
+    }
 
     const statusCounts: Record<string, number> = {};
     const priorityCounts: Record<string, number> = {};

@@ -125,6 +125,7 @@ pub struct CreateIssue {
     pub due_date: Option<NaiveDate>,
     pub estimate: Option<i32>,
     pub sprint_id: Option<Uuid>,
+    pub attachments: Option<serde_json::Value>,
 }
 
 #[allow(dead_code)]

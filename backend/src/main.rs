@@ -10,6 +10,7 @@ mod routes;
 mod models;
 mod middleware;
 mod github;
+mod novu;
 
 use middleware::{JwksKeys, fetch_jwks_keys, jwks_refresh_task};
 
@@ -106,6 +107,9 @@ async fn main() -> anyhow::Result<()> {
         github::jobs::start_job_runner(job_pool).await;
     });
 
+    // Novu notifications (None if NOVU_SECRET_KEY unset)
+    let novu_client = novu::NovuClient::from_env();
+
     // CORS
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -116,6 +120,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .nest("/api/v1", routes::api_router(pool.clone(), jwks_state.clone()))
+        .layer(axum::Extension(novu_client))
         .layer(axum::Extension(pool.clone()))
         .layer(axum_mw::from_fn(middleware::security::security_headers))
         .layer(cors)

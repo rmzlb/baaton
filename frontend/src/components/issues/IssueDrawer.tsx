@@ -190,6 +190,8 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
+      queryClient.invalidateQueries({ queryKey: ['project-board'] });
+      queryClient.invalidateQueries({ queryKey: ['all-issues'] });
     },
   });
 
@@ -2223,6 +2225,8 @@ function SubIssuesSection({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issues', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project-board'] });
+      queryClient.invalidateQueries({ queryKey: ['all-issues'] });
       setNewTitle('');
       setShowAddForm(false);
     },

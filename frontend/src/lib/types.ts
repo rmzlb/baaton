@@ -229,6 +229,7 @@ export interface CreateIssueRequest {
   due_date?: string;
   estimate?: number;
   sprint_id?: string;
+  attachments?: Attachment[];
 }
 
 export interface UpdateIssueRequest {
@@ -245,6 +246,7 @@ export interface UpdateIssueRequest {
   position?: number;
   estimate?: number | null;
   sprint_id?: string | null;
+  attachments?: Attachment[];
 }
 
 export interface CreateTLDRRequest {

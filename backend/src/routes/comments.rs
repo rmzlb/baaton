@@ -52,6 +52,7 @@ pub async fn list_by_issue(
 
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
+    Extension(novu): Extension<Option<crate::novu::NovuClient>>,
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
     Json(body): Json<CreateComment>,
@@ -87,6 +88,84 @@ pub async fn create(
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    // ── Novu notifications (fire-and-forget) ─────────────
+    if let Some(ref novu) = novu {
+        let novu = novu.clone();
+        let pool = pool.clone();
+        let commenter_id = body.author_id.clone();
+        let commenter_name = body.author_name.clone();
+        let comment_body = body.body.clone();
+
+        tokio::spawn(async move {
+            // Fetch issue to get assignees and display info
+            let issue = sqlx::query_as::<_, (String, String, Vec<String>)>(
+                "SELECT display_id, title, assignee_ids FROM issues WHERE id = $1",
+            )
+            .bind(issue_id)
+            .fetch_optional(&pool)
+            .await;
+
+            let (display_id, title, assignee_ids) = match issue {
+                Ok(Some(row)) => row,
+                _ => return,
+            };
+
+            let preview = if comment_body.len() > 120 {
+                format!("{}...", &comment_body[..120])
+            } else {
+                comment_body.clone()
+            };
+
+            // Notify assignees (exclude commenter)
+            let assignees: Vec<String> = assignee_ids
+                .iter()
+                .filter(|id| **id != commenter_id)
+                .cloned()
+                .collect();
+
+            if !assignees.is_empty() {
+                let subs: Vec<crate::novu::Subscriber> = assignees
+                    .into_iter()
+                    .map(|id| crate::novu::Subscriber { id, email: None, name: None })
+                    .collect();
+                novu.trigger_many(
+                    "comment-on-assigned-issue",
+                    subs,
+                    json!({
+                        "actorName": commenter_name,
+                        "issueId": display_id,
+                        "issueTitle": title,
+                        "commentPreview": preview,
+                    }),
+                );
+            }
+
+            // Notify @mentioned users (exclude commenter)
+            let mentioned = crate::novu::parse_mentions(&comment_body);
+            let mentioned: Vec<String> = mentioned
+                .into_iter()
+                .filter(|id| *id != commenter_id)
+                .collect();
+
+            if !mentioned.is_empty() {
+                let subs: Vec<crate::novu::Subscriber> = mentioned
+                    .into_iter()
+                    .map(|id| crate::novu::Subscriber { id, email: None, name: None })
+                    .collect();
+                novu.trigger_many(
+                    "mentioned-in-comment",
+                    subs,
+                    json!({
+                        "actorName": commenter_name,
+                        "issueId": display_id,
+                        "issueTitle": title,
+                        "commentPreview": preview,
+                    }),
+                );
+            }
+        });
+    }
 
     Ok(Json(ApiResponse::new(comment)))
 }

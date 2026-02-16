@@ -12,6 +12,7 @@ import { useUIStore } from '@/stores/ui';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
+import { NotificationBell } from '@/components/providers/NovuNotificationProvider';
 import type { Issue, Project } from '@/lib/types';
 
 export function TopBar() {
@@ -72,18 +73,21 @@ export function TopBar() {
           </nav>
         </div>
 
-        {/* Right: search trigger */}
-        <button
-          onClick={openCommandBar}
-          aria-label={t('topbar.search') || 'Search'}
-          className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary hover:border-border hover:text-primary transition-colors"
-        >
-          <Search size={14} aria-hidden="true" />
-          <span className="hidden sm:inline">{t('topbar.search')}</span>
-          <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-mono text-muted">
-            ⌘K
-          </kbd>
-        </button>
+        {/* Right: notifications + search trigger */}
+        <div className="flex items-center gap-1.5">
+          <NotificationBell />
+          <button
+            onClick={openCommandBar}
+            aria-label={t('topbar.search') || 'Search'}
+            className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary hover:border-border hover:text-primary transition-colors"
+          >
+            <Search size={14} aria-hidden="true" />
+            <span className="hidden sm:inline">{t('topbar.search')}</span>
+            <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-mono text-muted">
+              ⌘K
+            </kbd>
+          </button>
+        </div>
       </header>
 
       {/* Command Palette */}
