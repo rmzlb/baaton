@@ -11,7 +11,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { cn } from '@/lib/utils';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import type { Issue, Project } from '@/lib/types';
 
 // ─── Status bar ────────────────────────────────
@@ -295,6 +295,30 @@ export function Dashboard() {
     ];
   }, [allIssues, t]);
 
+  // Cross-org navigation: store target slug in ref so it survives re-renders
+  // caused by setActive (Clerk re-renders the entire tree on org switch)
+  const pendingNavRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (pendingNavRef.current && activeOrg) {
+      const target = pendingNavRef.current;
+      pendingNavRef.current = null;
+      navigate(`/projects/${target}`);
+    }
+  }, [activeOrg, navigate]);
+
+  const handleProjectNavigate = useCallback(
+    (orgId: string, project: Project) => {
+      if (orgId === activeOrg?.id) {
+        navigate(`/projects/${project.slug}`);
+      } else {
+        pendingNavRef.current = project.slug;
+        setActive?.({ organization: orgId });
+      }
+    },
+    [activeOrg?.id, navigate, setActive],
+  );
+
   // Sort orgs: active first
   const sortedOrgData = useMemo(() => {
     return [...orgData].sort((a, b) => {
@@ -390,12 +414,7 @@ export function Dashboard() {
                 issuesByProject={issuesByProject}
                 isCurrentOrg={org.id === activeOrg?.id}
                 onSwitch={org.id !== activeOrg?.id ? () => setActive?.({ organization: org.id }) : undefined}
-                onProjectNavigate={async (project) => {
-                  if (org.id !== activeOrg?.id) {
-                    await setActive?.({ organization: org.id });
-                  }
-                  navigate(`/projects/${project.slug}`);
-                }}
+                onProjectNavigate={(project) => handleProjectNavigate(org.id, project)}
               />
             ))
           )}
