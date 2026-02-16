@@ -7,7 +7,7 @@ import {
   Kanban, ArrowRight, Archive, Clock, Circle,
   Eye, CheckCircle2, OctagonAlert, Building2, ChevronRight,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { cn } from '@/lib/utils';
@@ -38,11 +38,11 @@ function StatusBar({ counts, total }: { counts: Record<string, number>; total: n
 function ProjectCard({
   project,
   issues,
-  isCurrentOrg,
+  onNavigate,
 }: {
   project: Project;
   issues: Issue[];
-  isCurrentOrg: boolean;
+  onNavigate: () => void;
 }) {
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -59,19 +59,13 @@ function ProjectCard({
   const active = backlog + todo + inProgress + inReview;
   const urgent = issues.filter((i) => (i.priority === 'urgent' || i.priority === 'high') && !['done', 'cancelled'].includes(i.status)).length;
 
-  const Wrapper = isCurrentOrg ? Link : 'div';
-  const wrapperProps = isCurrentOrg
-    ? { to: `/projects/${project.slug}` }
-    : {};
-
   return (
-    <Wrapper
-      {...(wrapperProps as any)}
-      className={cn(
-        'group rounded-xl border border-border bg-surface p-4 transition-all',
-        isCurrentOrg && 'hover:border-accent/30 hover:shadow-md cursor-pointer',
-        !isCurrentOrg && 'opacity-80',
-      )}
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={onNavigate}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate(); } }}
+      className="group rounded-xl border border-border bg-surface p-4 transition-all hover:border-accent/30 hover:shadow-md cursor-pointer"
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
@@ -80,10 +74,7 @@ function ProjectCard({
             {project.prefix}
           </div>
           <div>
-            <p className={cn(
-              'text-sm font-semibold text-primary',
-              isCurrentOrg && 'group-hover:text-accent transition-colors',
-            )}>
+            <p className="text-sm font-semibold text-primary group-hover:text-accent transition-colors">
               {project.name}
             </p>
             <p className="text-[10px] text-muted font-mono uppercase tracking-wider">
@@ -91,9 +82,7 @@ function ProjectCard({
             </p>
           </div>
         </div>
-        {isCurrentOrg && (
-          <ArrowRight size={14} className="text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
-        )}
+        <ArrowRight size={14} className="text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
 
       {/* Status bar */}
@@ -131,7 +120,7 @@ function ProjectCard({
           </span>
         )}
       </div>
-    </Wrapper>
+    </div>
   );
 }
 
@@ -144,6 +133,7 @@ function OrgSection({
   issuesByProject,
   isCurrentOrg,
   onSwitch,
+  onProjectNavigate,
 }: {
   orgName: string;
   orgSlug: string;
@@ -152,6 +142,7 @@ function OrgSection({
   issuesByProject: Record<string, Issue[]>;
   isCurrentOrg: boolean;
   onSwitch?: () => void;
+  onProjectNavigate: (project: Project) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const { t } = useTranslation();
@@ -220,7 +211,7 @@ function OrgSection({
                 key={p.id}
                 project={p}
                 issues={issuesByProject[p.id] || []}
-                isCurrentOrg={isCurrentOrg}
+                onNavigate={() => onProjectNavigate(p)}
               />
             ))}
           </div>
@@ -236,6 +227,7 @@ function OrgSection({
 export function Dashboard() {
   const { t } = useTranslation();
   const { getToken } = useAuth();
+  const navigate = useNavigate();
   const { organization: activeOrg } = useOrganization();
   const { userMemberships, setActive } = useOrganizationList({
     userMemberships: { infinite: true },
@@ -398,6 +390,12 @@ export function Dashboard() {
                 issuesByProject={issuesByProject}
                 isCurrentOrg={org.id === activeOrg?.id}
                 onSwitch={org.id !== activeOrg?.id ? () => setActive?.({ organization: org.id }) : undefined}
+                onProjectNavigate={async (project) => {
+                  if (org.id !== activeOrg?.id) {
+                    await setActive?.({ organization: org.id });
+                  }
+                  navigate(`/projects/${project.slug}`);
+                }}
               />
             ))
           )}
