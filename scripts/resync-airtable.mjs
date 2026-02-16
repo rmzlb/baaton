@@ -9,11 +9,16 @@
  * Also ensures project_tags for FRONT/BACK/API/DB exist.
  */
 
-const AIRTABLE_TOKEN = 'patkIXXWOuZuUj1Rg.823f32d588c361d3ba8aac3eae5ca2aa59e40097b64510545be06c027da59f3d';
-const AIRTABLE_BASE = 'appwbIveN17qHssIe';
-const AIRTABLE_TABLE = 'tblXNYMfwam5qXNkI';
+const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
+const AIRTABLE_BASE = process.env.AIRTABLE_BASE || 'appwbIveN17qHssIe';
+const AIRTABLE_TABLE = process.env.AIRTABLE_TABLE || 'tblXNYMfwam5qXNkI';
 
-const DATABASE_URL = 'postgresql://postgres.qkxamgohklyrgglggjaz:ybj4XMF.etv5xhv%2Advg@aws-1-eu-west-1.pooler.supabase.com:5432/postgres';
+const DATABASE_URL = process.env.DATABASE_URL;
+
+if (!AIRTABLE_TOKEN || !DATABASE_URL) {
+  console.error('Missing required env vars: AIRTABLE_TOKEN, DATABASE_URL');
+  process.exit(1);
+}
 
 const PRIORITY_MAP = {
   '⚡ Urgent': 'urgent',

@@ -10,6 +10,7 @@ Also ensures project_tags for FRONT/BACK/API/DB exist.
 """
 
 import json
+import os
 import sys
 import time
 import requests
@@ -18,21 +19,21 @@ try:
     import psycopg2
     import psycopg2.extras
 except ImportError:
-    print("❌ psycopg2 not installed. Run: pip install psycopg2-binary")
+    print("psycopg2 not installed. Run: pip install psycopg2-binary")
     sys.exit(1)
 
-# ── Config ─────────────────────────────────────────
+# ── Config (from environment) ─────────────────────
 
-AIRTABLE_TOKEN = "patkIXXWOuZuUj1Rg.823f32d588c361d3ba8aac3eae5ca2aa59e40097b64510545be06c027da59f3d"
-AIRTABLE_BASE = "appwbIveN17qHssIe"
-AIRTABLE_TABLE = "tblXNYMfwam5qXNkI"
+AIRTABLE_TOKEN = os.environ.get("AIRTABLE_TOKEN")
+AIRTABLE_BASE = os.environ.get("AIRTABLE_BASE", "appwbIveN17qHssIe")
+AIRTABLE_TABLE = os.environ.get("AIRTABLE_TABLE", "tblXNYMfwam5qXNkI")
 AIRTABLE_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE}/{AIRTABLE_TABLE}"
 
-DB_HOST = "aws-1-eu-west-1.pooler.supabase.com"
-DB_PORT = 5432
-DB_NAME = "postgres"
-DB_USER = "postgres.qkxamgohklyrgglggjaz"
-DB_PASS = "ybj4XMF.etv5xhv*vg"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if not AIRTABLE_TOKEN or not DATABASE_URL:
+    print("Missing required env vars: AIRTABLE_TOKEN, DATABASE_URL")
+    sys.exit(1)
 
 PRIORITY_MAP = {
     "⚡ Urgent": "urgent",
@@ -55,14 +56,9 @@ TAG_COLORS = {
 
 
 def get_db_connection():
-    """Connect to Supabase via PgBouncer pooler."""
+    """Connect to Supabase via DATABASE_URL."""
     conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASS,
-        # PgBouncer: disable prepared statements
+        dsn=DATABASE_URL,
         options="-c statement_timeout=30000",
     )
     conn.autocommit = False

@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Import Airtable tickets into Baaton"""
 
-import json, requests, sys, time
+import json, os, requests, sys, time
 
-AIRTABLE_TOKEN = "patkIXXWOuZuUj1Rg.823f32d588c361d3ba8aac3eae5ca2aa59e40097b64510545be06c027da59f3d"
-AIRTABLE_BASE = "appwbIveN17qHssIe"
-AIRTABLE_TABLE = "tblXNYMfwam5qXNkI"
+AIRTABLE_TOKEN = os.environ.get("AIRTABLE_TOKEN")
+AIRTABLE_BASE = os.environ.get("AIRTABLE_BASE", "appwbIveN17qHssIe")
+AIRTABLE_TABLE = os.environ.get("AIRTABLE_TABLE", "tblXNYMfwam5qXNkI")
 AIRTABLE_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE}/{AIRTABLE_TABLE}"
+
+if not AIRTABLE_TOKEN:
+    print("Missing required env var: AIRTABLE_TOKEN")
+    sys.exit(1)
 
 BAATON_API = "https://api.baaton.dev/api/v1"
 
