@@ -7,6 +7,77 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr, UpdateIssue};
 
+// ─── Validation constants ─────────────────────────────
+
+const VALID_PRIORITIES: &[&str] = &["urgent", "high", "medium", "low"];
+const VALID_ISSUE_TYPES: &[&str] = &["bug", "feature", "improvement", "question"];
+
+/// Fetch valid status keys for a project from its `statuses` JSONB column.
+async fn get_project_statuses(pool: &PgPool, project_id: Uuid, org_id: &str) -> Result<Vec<String>, (StatusCode, Json<serde_json::Value>)> {
+    let statuses_json: Option<(serde_json::Value,)> = sqlx::query_as(
+        "SELECT statuses FROM projects WHERE id = $1 AND org_id = $2"
+    )
+    .bind(project_id)
+    .bind(org_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    let statuses_json = statuses_json
+        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
+
+    let keys: Vec<String> = statuses_json.0
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|s| s.get("key").and_then(|k| k.as_str()).map(|k| k.to_string()))
+        .collect();
+
+    Ok(keys)
+}
+
+fn validate_status(status: &str, valid_statuses: &[String]) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if !valid_statuses.iter().any(|s| s == status) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!("Invalid status '{}'. Accepted values: {}", status, valid_statuses.join(", ")),
+                "accepted_values": valid_statuses,
+                "field": "status"
+            })),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_priority(priority: &str) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if !VALID_PRIORITIES.contains(&priority) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!("Invalid priority '{}'. Accepted values: {}", priority, VALID_PRIORITIES.join(", ")),
+                "accepted_values": VALID_PRIORITIES,
+                "field": "priority"
+            })),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_issue_type(issue_type: &str) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if !VALID_ISSUE_TYPES.contains(&issue_type) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!("Invalid issue type '{}'. Accepted values: {}", issue_type, VALID_ISSUE_TYPES.join(", ")),
+                "accepted_values": VALID_ISSUE_TYPES,
+                "field": "issue_type"
+            })),
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ListParams {
     pub status: Option<String>,
@@ -202,6 +273,19 @@ pub async fn create(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
+    // ── Input validation ─────────────────────────────────
+    let issue_type = body.issue_type.as_deref().unwrap_or("feature");
+    validate_issue_type(issue_type)?;
+
+    if let Some(ref priority) = body.priority {
+        validate_priority(priority)?;
+    }
+
+    let status = body.status.as_deref().unwrap_or("backlog");
+    let valid_statuses = get_project_statuses(&pool, body.project_id, org_id).await?;
+    validate_status(status, &valid_statuses)?;
+
+    // ── Transaction start ────────────────────────────────
     let mut tx = pool
         .begin()
         .await
@@ -235,14 +319,13 @@ pub async fn create(
         "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status = $2"
     )
     .bind(body.project_id)
-    .bind(body.status.as_deref().unwrap_or("backlog"))
+    .bind(status)
     .fetch_optional(tx.as_mut())
     .await
     .unwrap_or(None);
 
     let position = max_pos.and_then(|p| p.0).map(|p| p + 1000.0).unwrap_or(1000.0);
 
-    let status = body.status.as_deref().unwrap_or("backlog");
     let created_by_name = auth.created_by_label();
 
     tracing::info!(
@@ -273,7 +356,7 @@ pub async fn create(
     .bind(&display_id)
     .bind(&body.title)
     .bind(&body.description)
-    .bind(body.issue_type.as_deref().unwrap_or("feature"))
+    .bind(issue_type)
     .bind(status)
     .bind(&body.priority)
     .bind(body.milestone_id)
@@ -466,6 +549,22 @@ pub async fn update(
         .fetch_one(&pool)
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
+
+    // ── Input validation ─────────────────────────────────
+    if let Some(ref status) = body.status {
+        let valid_statuses = get_project_statuses(&pool, existing.project_id, org_id).await?;
+        validate_status(status, &valid_statuses)?;
+    }
+
+    if let Some(ref priority_opt) = body.priority {
+        if let Some(ref priority) = priority_opt {
+            validate_priority(priority)?;
+        }
+    }
+
+    if let Some(ref issue_type) = body.issue_type {
+        validate_issue_type(issue_type)?;
+    }
 
     let new_status = body.status.clone().unwrap_or(existing.status.clone());
     let status_changed = new_status != existing.status;
@@ -674,6 +773,15 @@ pub async fn update_position(
 
     let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("todo");
     let position = body.get("position").and_then(|v| v.as_f64()).unwrap_or(1000.0);
+
+    // Validate status against project config
+    let project_id: Uuid = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
+    let valid_statuses = get_project_statuses(&pool, project_id, org_id).await?;
+    validate_status(status, &valid_statuses)?;
 
     let issue = sqlx::query_as::<_, Issue>(
         r#"

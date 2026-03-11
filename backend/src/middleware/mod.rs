@@ -330,9 +330,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         struct ApiKeyLookup {
             id: uuid::Uuid,
             org_id: String,
-            #[allow(dead_code)]
             name: String,
-            #[allow(dead_code)]
             permissions: Vec<String>,
             expires_at: Option<chrono::DateTime<chrono::Utc>>,
         }
@@ -377,11 +375,12 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             org_slug: None,
             org_role: None,
             email: None,
-            display_name: None,
+            display_name: Some(key_row.name.clone()),
         };
 
         tracing::debug!(
             api_key_id = %key_row.id,
+            api_key_name = %key_row.name,
             org_id = ?auth_user.org_id,
             "Authenticated via API key"
         );
