@@ -152,6 +152,26 @@ export function PublicLinkModal({ project, onClose }: { project: Project; onClos
                 </>
               )}
 
+              {enabled && (
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-medium text-secondary">{t('projectAccess.embedWidget')}</span>
+                  </div>
+                  <div className="rounded-md border border-border bg-bg p-2.5">
+                    <code className="text-[10px] font-mono text-muted block whitespace-pre-wrap break-all select-all">
+                      {`<iframe\n  src="${publicUrl}?embed=true"\n  width="100%"\n  height="600"\n  frameborder="0"\n  style="border: none; border-radius: 12px;"\n></iframe>`}
+                    </code>
+                  </div>
+                  <button
+                    onClick={() => handleCopy(`<iframe src="${publicUrl}?embed=true" width="100%" height="600" frameborder="0" style="border: none; border-radius: 12px;"></iframe>`, 'embed')}
+                    className="flex items-center gap-1 text-[10px] text-accent hover:text-accent-hover transition-colors"
+                  >
+                    {copiedField === 'embed' ? <CheckCircle2 size={11} className="text-green-400" /> : <Copy size={11} />}
+                    {copiedField === 'embed' ? t('projectAccess.copied') : t('projectAccess.copyEmbed')}
+                  </button>
+                </div>
+              )}
+
               {!enabled && (
                 <p className="text-[10px] text-muted italic">
                   {t('projectAccess.publicLinkDisabledHint')}

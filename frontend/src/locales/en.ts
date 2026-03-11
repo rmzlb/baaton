@@ -13,6 +13,7 @@ const en = {
   'sidebar.docs': 'API Docs',
   'sidebar.planning': 'Planning',
   'sidebar.tools': 'Tools',
+  'sidebar.feedback': 'Feedback',
   'sidebar.lightMode': 'Light mode',
   'sidebar.darkMode': 'Dark mode',
   'sidebar.language': 'Language',
@@ -411,6 +412,9 @@ const en = {
   'projectAccess.apiAccessWarning': 'Full access',
   'projectAccess.apiAccessWarningDesc': 'API keys grant read and write access to all projects in the organization. Keep them private and never share them publicly.',
   'projectAccess.manageApiKeys': 'Manage API Keys in Settings',
+  'projectAccess.embedWidget': 'Embed widget (iframe)',
+  'projectAccess.copyEmbed': 'Copy embed code',
+  'projectAccess.copied': 'Copied!',
 
   // ─── PublicSubmit ───────────────────────────
   'publicSubmit.title': 'Submit Feedback',

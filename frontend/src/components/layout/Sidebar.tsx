@@ -4,7 +4,7 @@ import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Kanban, Settings, ChevronLeft, ChevronRight, Users, X,
-  Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox, CalendarRange, BarChart3, Webhook, BookOpen,
+  Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox, CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -71,7 +71,6 @@ export function Sidebar() {
   const toolItems = [
     { to: '/analytics', icon: BarChart3, label: t('sidebar.analytics'), tourId: undefined },
     { to: '/webhooks', icon: Webhook, label: t('sidebar.webhooks'), tourId: undefined },
-    { to: '/docs', icon: BookOpen, label: t('sidebar.docs'), tourId: undefined },
   ];
 
   const toggleLanguage = () => {
@@ -209,6 +208,50 @@ export function Sidebar() {
           {/* Tools */}
           <Divider label={t('sidebar.tools') || 'Tools'} />
           {toolItems.map((item) => <NavItem key={item.to} {...item} />)}
+
+          {/* External Links (like AgentMail: Discord/Documentation/Feedback) */}
+          <Divider />
+          {[
+            { href: '/docs', icon: BookOpen, label: t('sidebar.docs'), external: false },
+            { href: 'mailto:thibaut@carbonable.io?subject=Baaton Feedback', icon: MessageSquare, label: t('sidebar.feedback'), external: true },
+          ].map(({ href, icon: Icon, label, external }) => (
+            external ? (
+              <a
+                key={href}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors min-h-[36px] text-secondary hover:bg-surface hover:text-primary',
+                  isCompact && 'justify-center px-0',
+                )}
+              >
+                <Icon size={18} aria-hidden="true" />
+                {!isCompact && (
+                  <>
+                    <span className="flex-1 truncate">{label}</span>
+                    <ExternalLink size={12} className="text-muted" />
+                  </>
+                )}
+              </a>
+            ) : (
+              <NavLink
+                key={href}
+                to={href}
+                onClick={closeMobile}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors min-h-[36px]',
+                    isActive ? 'bg-surface-hover text-primary font-medium' : 'text-secondary hover:bg-surface hover:text-primary',
+                    isCompact && 'justify-center px-0',
+                  )
+                }
+              >
+                <Icon size={18} aria-hidden="true" />
+                {!isCompact && <span className="flex-1 truncate">{label}</span>}
+              </NavLink>
+            )
+          ))}
 
           {/* Saved Views */}
           {savedViews.length > 0 && !isCompact && (

@@ -13,6 +13,7 @@ const fr = {
   'sidebar.docs': 'Docs API',
   'sidebar.planning': 'Planification',
   'sidebar.tools': 'Outils',
+  'sidebar.feedback': 'Feedback',
   'sidebar.lightMode': 'Mode clair',
   'sidebar.darkMode': 'Mode sombre',
   'sidebar.language': 'Langue',
@@ -411,6 +412,9 @@ const fr = {
   'projectAccess.apiAccessWarning': 'Accès complet',
   'projectAccess.apiAccessWarningDesc': 'Les clés API donnent un accès lecture et écriture à tous les projets de l\'organisation. Gardez-les confidentielles et ne les partagez jamais publiquement.',
   'projectAccess.manageApiKeys': 'Gérer les Clés API dans Paramètres',
+  'projectAccess.embedWidget': 'Widget intégrable (iframe)',
+  'projectAccess.copyEmbed': 'Copier le code embed',
+  'projectAccess.copied': 'Copié !',
 
   // ─── PublicSubmit ───────────────────────────
   'publicSubmit.title': 'Soumettre un Feedback',
