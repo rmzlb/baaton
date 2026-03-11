@@ -67,7 +67,7 @@ export function Sidebar() {
       label: t('sidebar.sprints'),
       tourId: undefined as const,
     }] : []),
-    { to: '/webhooks', icon: Webhook, label: 'Webhooks', tourId: undefined },
+    { to: '/webhooks', icon: Webhook, label: t('sidebar.webhooks'), tourId: undefined },
     { to: '/org', icon: Users, label: t('sidebar.team'), tourId: undefined },
     { to: '/settings', icon: Settings, label: t('sidebar.settings'), tourId: 'settings' as const },
   ];

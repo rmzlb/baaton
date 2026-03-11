@@ -102,11 +102,11 @@ function CodeTabs() {
 }
 
 /* ─── Use Cases Data ───────────────────────── */
-const useCases = [
-  { icon: Code, title: 'Coding Agent', desc: 'Opens issues, writes code, creates PRs, and moves tickets to review — all via API.', color: 'text-blue-400', bg: 'bg-blue-500/10 dark:bg-blue-500/10' },
-  { icon: ShieldCheck, title: 'QA Agent', desc: 'Files bugs with stack traces, severity, and repro steps — directly as issues.', color: 'text-green-400', bg: 'bg-green-500/10 dark:bg-green-500/10' },
-  { icon: Server, title: 'DevOps Agent', desc: 'Creates incidents on downtime, tracks resolution, and updates status automatically.', color: 'text-purple-400', bg: 'bg-purple-500/10 dark:bg-purple-500/10' },
-  { icon: Headphones, title: 'Support Agent', desc: 'Customer tickets flow in from email/chat. AI triages, assigns priority, and resolves.', color: 'text-orange-400', bg: 'bg-orange-500/10 dark:bg-orange-500/10' },
+const useCasesConfig = [
+  { icon: Code, titleKey: 'landing.useCases.coding', descKey: 'landing.useCases.codingDesc', color: 'text-blue-400', bg: 'bg-blue-500/10 dark:bg-blue-500/10' },
+  { icon: ShieldCheck, titleKey: 'landing.useCases.qa', descKey: 'landing.useCases.qaDesc', color: 'text-green-400', bg: 'bg-green-500/10 dark:bg-green-500/10' },
+  { icon: Server, titleKey: 'landing.useCases.devops', descKey: 'landing.useCases.devopsDesc', color: 'text-purple-400', bg: 'bg-purple-500/10 dark:bg-purple-500/10' },
+  { icon: Headphones, titleKey: 'landing.useCases.support', descKey: 'landing.useCases.supportDesc', color: 'text-orange-400', bg: 'bg-orange-500/10 dark:bg-orange-500/10' },
 ];
 
 export function Landing() {
@@ -203,7 +203,7 @@ export function Landing() {
               <ArrowRight className="w-5 h-5" strokeWidth={2.5} />
             </Link>
             <Link to="/docs" className="h-14 px-10 rounded-lg bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-black dark:text-white font-semibold transition-all flex items-center gap-2 w-full sm:w-auto justify-center text-sm shadow-[0_4px_0_0_rgba(0,0,0,0.1)] hover:shadow-[0_2px_0_0_rgba(0,0,0,0.1)] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] dark:shadow-[0_4px_0_0_rgba(255,255,255,0.1)] dark:hover:shadow-[0_2px_0_0_rgba(255,255,255,0.1)]">
-              Read the Docs
+              {t('landing.readDocs')}
             </Link>
           </div>
 
@@ -310,16 +310,16 @@ export function Landing() {
       </main>
 
       {/* ── Features ───────────────────────────── */}
-      <section id="how-it-works" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#080808] transition-colors relative z-20">
+      <section id="features" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#080808] transition-colors relative z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="mb-12 sm:mb-20 md:text-center max-w-3xl mx-auto">
-            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">From Chaos<br />to Concerto.</h2>
-            <p className="text-xl text-neutral-600 dark:text-neutral-400 font-medium">AI agents are powerful but messy. Baaton provides the structured environment they need to perform effectively.</p>
+            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.features.title1')}<br />{t('landing.features.title2')}</h2>
+            <p className="text-xl text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.features.sub')}</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <FeatureCard icon={<Inbox className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title="Collect & Qualify" desc="Raw inputs from Slack, API, or forms are automatically reformatted by LLMs into structured tickets with clear acceptance criteria." />
-            <FeatureCard icon={<Cpu className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title="Agent-Ready API" desc="Connect Claude Code, Codex, or custom agents via REST. They pull context, execute tasks, and post TLDRs directly." glow />
-            <FeatureCard icon={<Gavel className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title="Human in the Loop" desc="You hold the baton. Approve PRs, reject hallucinations, and adjust priorities without leaving the command center." />
+            <FeatureCard icon={<Inbox className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.collect')} desc={t('landing.features.collectDesc')} />
+            <FeatureCard icon={<Cpu className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.api')} desc={t('landing.features.apiDesc')} glow />
+            <FeatureCard icon={<Gavel className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.human')} desc={t('landing.features.humanDesc')} />
           </div>
         </div>
       </section>
@@ -329,12 +329,12 @@ export function Landing() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-10 md:gap-16">
             <div className="md:w-1/2">
-              <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-8 md:mb-10 uppercase tracking-tight">Structured<br />for speed.</h2>
+              <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-8 md:mb-10 uppercase tracking-tight">{t('landing.workflow.title1')}<br />{t('landing.workflow.title2')}</h2>
               <ul className="space-y-10 relative">
                 <div className="absolute top-4 bottom-4 left-4 w-[2px] bg-black/5 dark:bg-white/10 -z-10" />
-                <Step n="1" title="Input" desc="Bugs and features arrive via webhooks or linear sync." />
-                <Step n="2" title="Agent Execution" desc="AI pulls the ticket, reads the repo, and codes securely." active />
-                <Step n="3" title="Review" desc="Human validates the output, tests, and merges." />
+                <Step n="1" title={t('landing.workflow.step1')} desc={t('landing.workflow.step1Desc')} />
+                <Step n="2" title={t('landing.workflow.step2')} desc={t('landing.workflow.step2Desc')} active />
+                <Step n="3" title={t('landing.workflow.step3')} desc={t('landing.workflow.step3Desc')} />
               </ul>
             </div>
             <div className="md:w-1/2 w-full">
@@ -365,17 +365,17 @@ export function Landing() {
       <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="mb-12 sm:mb-16 max-w-3xl">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">Use Cases</p>
-            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">Powering every<br />type of agent.</h2>
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.useCases.badge')}</p>
+            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.useCases.title1')}<br />{t('landing.useCases.title2')}</h2>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {useCases.map((uc) => (
-              <div key={uc.title} className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-white dark:bg-neutral-900/20 hover:shadow-xl transition-all group">
+            {useCasesConfig.map((uc) => (
+              <div key={uc.titleKey} className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-white dark:bg-neutral-900/20 hover:shadow-xl transition-all group">
                 <div className={`w-12 h-12 rounded-lg ${uc.bg} flex items-center justify-center mb-6`}>
                   <uc.icon className={`w-6 h-6 ${uc.color}`} strokeWidth={1.5} />
                 </div>
-                <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{uc.title}</h3>
-                <p className="text-base text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{uc.desc}</p>
+                <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t(uc.titleKey)}</h3>
+                <p className="text-base text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t(uc.descKey)}</p>
               </div>
             ))}
           </div>
@@ -386,16 +386,87 @@ export function Landing() {
       <section className="py-12 sm:py-20 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           {[
-            { value: 'API-First', label: 'Every feature is an endpoint' },
-            { value: '6', label: 'Webhook event types' },
-            { value: '<100ms', label: 'API response time' },
-            { value: '14+', label: 'REST endpoints' },
+            { valueKey: 'landing.stats.apiFirst', labelKey: 'landing.stats.apiFirstLabel' },
+            { valueKey: 'landing.stats.webhooks', labelKey: 'landing.stats.webhooksLabel' },
+            { valueKey: 'landing.stats.latency', labelKey: 'landing.stats.latencyLabel' },
+            { valueKey: 'landing.stats.endpoints', labelKey: 'landing.stats.endpointsLabel' },
           ].map((stat) => (
-            <div key={stat.label}>
-              <div className="text-3xl md:text-4xl font-display font-bold text-black dark:text-white mb-2 uppercase">{stat.value}</div>
-              <div className="text-sm text-neutral-500 font-medium">{stat.label}</div>
+            <div key={stat.labelKey}>
+              <div className="text-3xl md:text-4xl font-display font-bold text-black dark:text-white mb-2 uppercase">{t(stat.valueKey)}</div>
+              <div className="text-sm text-neutral-500 font-medium">{t(stat.labelKey)}</div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── Pricing ────────────────────────────── */}
+      <section id="pricing" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#080808] transition-colors relative z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="mb-12 sm:mb-16 text-center max-w-3xl mx-auto">
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.pricing.badge')}</p>
+            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.pricing.title1')}<br />{t('landing.pricing.title2')}</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            {/* Free */}
+            <div className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-neutral-50 dark:bg-neutral-900/20 hover:shadow-xl transition-all flex flex-col">
+              <h3 className="text-lg font-display uppercase tracking-wide text-black dark:text-white mb-2">{t('landing.pricing.free')}</h3>
+              <div className="flex items-baseline gap-1 mb-2">
+                <span className="text-4xl font-display font-bold text-black dark:text-white">{t('landing.pricing.freePrice')}</span>
+                <span className="text-sm text-neutral-500">{t('landing.pricing.freePeriod')}</span>
+              </div>
+              <p className="text-sm text-neutral-500 mb-6">{t('landing.pricing.freeDesc')}</p>
+              <ul className="space-y-3 mb-8 flex-1">
+                {['freeF1', 'freeF2', 'freeF3', 'freeF4'].map(k => (
+                  <li key={k} className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                    <Check className="w-4 h-4 text-green-500 flex-shrink-0" /> {t(`landing.pricing.${k}`)}
+                  </li>
+                ))}
+              </ul>
+              <Link to="/sign-up" className="w-full py-3 rounded-lg border border-black/10 dark:border-white/10 text-center text-sm font-bold text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+                {t('landing.pricing.freeCta')}
+              </Link>
+            </div>
+            {/* Pro — highlighted */}
+            <div className="p-8 rounded-xl border-2 border-amber-500 bg-white dark:bg-[#111] shadow-xl shadow-amber-500/10 hover:shadow-2xl transition-all flex flex-col relative">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-amber-500 text-black text-xs font-bold uppercase tracking-wider">Popular</div>
+              <h3 className="text-lg font-display uppercase tracking-wide text-black dark:text-white mb-2">{t('landing.pricing.pro')}</h3>
+              <div className="flex items-baseline gap-1 mb-2">
+                <span className="text-4xl font-display font-bold text-black dark:text-white">{t('landing.pricing.proPrice')}</span>
+                <span className="text-sm text-neutral-500">{t('landing.pricing.proPeriod')}</span>
+              </div>
+              <p className="text-sm text-neutral-500 mb-6">{t('landing.pricing.proDesc')}</p>
+              <ul className="space-y-3 mb-8 flex-1">
+                {['proF1', 'proF2', 'proF3', 'proF4', 'proF5'].map(k => (
+                  <li key={k} className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                    <Check className="w-4 h-4 text-amber-500 flex-shrink-0" /> {t(`landing.pricing.${k}`)}
+                  </li>
+                ))}
+              </ul>
+              <Link to="/sign-up" className="w-full py-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-center text-sm font-bold text-black transition-colors shadow-lg shadow-amber-500/20">
+                {t('landing.pricing.proCta')}
+              </Link>
+            </div>
+            {/* Enterprise */}
+            <div className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-neutral-50 dark:bg-neutral-900/20 hover:shadow-xl transition-all flex flex-col">
+              <h3 className="text-lg font-display uppercase tracking-wide text-black dark:text-white mb-2">{t('landing.pricing.enterprise')}</h3>
+              <div className="flex items-baseline gap-1 mb-2">
+                <span className="text-4xl font-display font-bold text-black dark:text-white">{t('landing.pricing.enterprisePrice')}</span>
+                {t('landing.pricing.enterprisePeriod') && <span className="text-sm text-neutral-500">{t('landing.pricing.enterprisePeriod')}</span>}
+              </div>
+              <p className="text-sm text-neutral-500 mb-6">{t('landing.pricing.enterpriseDesc')}</p>
+              <ul className="space-y-3 mb-8 flex-1">
+                {['enterpriseF1', 'enterpriseF2', 'enterpriseF3', 'enterpriseF4', 'enterpriseF5'].map(k => (
+                  <li key={k} className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                    <Check className="w-4 h-4 text-green-500 flex-shrink-0" /> {t(`landing.pricing.${k}`)}
+                  </li>
+                ))}
+              </ul>
+              <a href="mailto:thibaut@carbonable.io" className="w-full py-3 rounded-lg border border-black/10 dark:border-white/10 text-center text-sm font-bold text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+                {t('landing.pricing.enterpriseCta')}
+              </a>
+            </div>
+          </div>
+          <p className="text-center text-sm text-neutral-500 mt-8">{t('landing.readDocs')} → <Link to="/docs" className="text-amber-500 hover:underline">{t('landing.nav.docs')}</Link></p>
         </div>
       </section>
 
