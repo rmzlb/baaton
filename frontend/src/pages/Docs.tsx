@@ -561,8 +561,42 @@ export function Docs() {
               <article id="api-auth" className="scroll-mt-20 mb-10">
                 <h3 className="text-lg font-semibold mb-3">{t('docs.api.auth.title')}</h3>
                 <p className="text-secondary mb-3">{t('docs.api.auth.desc')}</p>
-                <CodeBlock language="bash">{`curl -H "Authorization: Bearer <YOUR_CLERK_JWT>" \\
+                <CodeBlock language="bash">{`# Using API Key (recommended for agents)
+curl -H "Authorization: Bearer baa_your_key_here" \\
+  https://api.baaton.dev/api/v1/projects
+
+# Using Clerk JWT (for web app)
+curl -H "Authorization: Bearer <YOUR_CLERK_JWT>" \\
   https://api.baaton.dev/api/v1/projects`}</CodeBlock>
+                <p className="mt-3 text-xs text-secondary">API keys are org-scoped. Create them in Settings → API Keys. Optionally restrict to specific projects.</p>
+              </article>
+
+              {/* Enums Reference */}
+              <article className="scroll-mt-20 mb-10">
+                <h3 className="text-lg font-semibold mb-3">Enums</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs font-semibold text-primary mb-2">Priority</p>
+                    <div className="flex flex-wrap gap-1">{['urgent','high','medium','low'].map(v => <code key={v} className="text-[10px] bg-surface rounded px-1.5 py-0.5 text-accent">{v}</code>)}</div>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs font-semibold text-primary mb-2">Issue Type</p>
+                    <div className="flex flex-wrap gap-1">{['bug','feature','improvement','question'].map(v => <code key={v} className="text-[10px] bg-surface rounded px-1.5 py-0.5 text-accent">{v}</code>)}</div>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs font-semibold text-primary mb-2">Status (default)</p>
+                    <div className="flex flex-wrap gap-1">{['backlog','todo','in_progress','in_review','done','cancelled'].map(v => <code key={v} className="text-[10px] bg-surface rounded px-1.5 py-0.5 text-accent">{v}</code>)}</div>
+                  </div>
+                </div>
+                <p className="mt-2 text-[10px] text-muted">Statuses are per-project. Use GET /projects to see valid statuses for each project.</p>
+              </article>
+
+              {/* Agent-first docs link */}
+              <article className="scroll-mt-20 mb-10">
+                <h3 className="text-lg font-semibold mb-3">🤖 Agent-First API Docs (Markdown)</h3>
+                <p className="text-secondary mb-3 text-sm">For LLMs and coding agents, a complete API reference is available as raw Markdown:</p>
+                <CodeBlock language="bash">{`curl https://api.baaton.dev/api/v1/public/docs`}</CodeBlock>
+                <p className="mt-2 text-xs text-muted">Returns the full API reference in Markdown format — optimized for AI agents. No authentication required.</p>
               </article>
 
               <article id="api-endpoints" className="scroll-mt-20 mb-10">
@@ -579,13 +613,18 @@ export function Docs() {
                     <tbody className="divide-y divide-border text-secondary">
                       <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/projects</td><td className="px-4 py-2">{t('docs.api.endpoints.listProjects')}</td></tr>
                       <tr><td className="px-4 py-2"><span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-xs font-mono text-blue-400">POST</span></td><td className="px-4 py-2 font-mono text-xs">/projects</td><td className="px-4 py-2">{t('docs.api.endpoints.createProject')}</td></tr>
-                      <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/projects/:slug/issues</td><td className="px-4 py-2">{t('docs.api.endpoints.listIssues')}</td></tr>
-                      <tr><td className="px-4 py-2"><span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-xs font-mono text-blue-400">POST</span></td><td className="px-4 py-2 font-mono text-xs">/projects/:slug/issues</td><td className="px-4 py-2">{t('docs.api.endpoints.createIssue')}</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/projects/:id/issues</td><td className="px-4 py-2">{t('docs.api.endpoints.listIssues')}</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/issues</td><td className="px-4 py-2">List all issues across projects</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-xs font-mono text-blue-400">POST</span></td><td className="px-4 py-2 font-mono text-xs">/issues</td><td className="px-4 py-2">{t('docs.api.endpoints.createIssue')}</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/issues/:id</td><td className="px-4 py-2">Get issue with TLDRs & comments</td></tr>
                       <tr><td className="px-4 py-2"><span className="rounded bg-amber-900/30 px-1.5 py-0.5 text-xs font-mono text-amber-400">PATCH</span></td><td className="px-4 py-2 font-mono text-xs">/issues/:id</td><td className="px-4 py-2">{t('docs.api.endpoints.updateIssue')}</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-red-900/30 px-1.5 py-0.5 text-xs font-mono text-red-400">DELETE</span></td><td className="px-4 py-2 font-mono text-xs">/issues/:id</td><td className="px-4 py-2">Delete an issue</td></tr>
                       <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/issues/:id/comments</td><td className="px-4 py-2">{t('docs.api.endpoints.listComments')}</td></tr>
-                      <tr><td className="px-4 py-2"><span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-xs font-mono text-blue-400">POST</span></td><td className="px-4 py-2 font-mono text-xs">/issues/:id/comments</td><td className="px-4 py-2">{t('docs.api.endpoints.addComment')}</td></tr>
-                      <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/projects/:slug/tags</td><td className="px-4 py-2">{t('docs.api.endpoints.listTags')}</td></tr>
-                      <tr><td className="px-4 py-2"><span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-xs font-mono text-blue-400">POST</span></td><td className="px-4 py-2 font-mono text-xs">/invites</td><td className="px-4 py-2">{t('docs.api.endpoints.sendInvite')}</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-xs font-mono text-blue-400">POST</span></td><td className="px-4 py-2 font-mono text-xs">/issues/:id/comments</td><td className="px-4 py-2">{t('docs.api.endpoints.addComment')} (author auto-filled from API key)</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-red-900/30 px-1.5 py-0.5 text-xs font-mono text-red-400">DELETE</span></td><td className="px-4 py-2 font-mono text-xs">/issues/:id/comments/:cid</td><td className="px-4 py-2">Delete a comment</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-xs font-mono text-blue-400">POST</span></td><td className="px-4 py-2 font-mono text-xs">/issues/:id/tldr</td><td className="px-4 py-2">Add agent summary (TLDR)</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/projects/:id/tags</td><td className="px-4 py-2">{t('docs.api.endpoints.listTags')}</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/public/docs</td><td className="px-4 py-2">API reference (Markdown, no auth)</td></tr>
                     </tbody>
                   </table>
                 </div>

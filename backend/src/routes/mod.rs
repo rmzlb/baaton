@@ -17,6 +17,7 @@ pub mod activity;
 pub mod github;
 mod views;
 mod api_keys;
+mod docs;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -38,6 +39,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/issues/{id}", get(issues::get_one).patch(issues::update).delete(issues::remove))
         .route("/issues/{id}/position", patch(issues::update_position))
         .route("/issues/{id}/comments", get(comments::list_by_issue).post(comments::create))
+        .route("/issues/{issue_id}/comments/{comment_id}", delete(comments::remove))
         .route("/issues/{id}/tldr", post(tldrs::create))
         // Activity
         .route("/issues/{id}/activity", get(activity::list_by_issue))
@@ -71,6 +73,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/api-keys", get(api_keys::list).post(api_keys::create))
         .route("/api-keys/{id}", delete(api_keys::remove))
         .route("/invites", get(invites::list).post(invites::create))
+        // Docs (public, auth skipped via path prefix)
+        .route("/public/docs", get(docs::api_docs))
         // Public routes (auth skipped in middleware)
         .route("/invite/{code}", get(invites::redirect_invite))
         // Public routes (auth skipped in middleware based on path)

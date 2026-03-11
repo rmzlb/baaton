@@ -230,9 +230,17 @@ pub struct AuthUser {
     pub org_role: Option<String>,
     pub email: Option<String>,
     pub display_name: Option<String>,
+    /// API key project scoping: if non-empty, restrict access to these projects only
+    pub scoped_project_ids: Vec<uuid::Uuid>,
 }
 
 impl AuthUser {
+    /// Check if this user has access to a specific project.
+    /// Returns true if no project scoping is set (full org access) or if the project is in scope.
+    pub fn has_project_access(&self, project_id: uuid::Uuid) -> bool {
+        self.scoped_project_ids.is_empty() || self.scoped_project_ids.contains(&project_id)
+    }
+
     pub fn created_by_label(&self) -> Option<String> {
         if let Some(name) = self.display_name.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
             return Some(name.to_string());
@@ -333,10 +341,11 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             name: String,
             permissions: Vec<String>,
             expires_at: Option<chrono::DateTime<chrono::Utc>>,
+            project_ids: Vec<uuid::Uuid>,
         }
 
         let key_row = match sqlx::query_as::<_, ApiKeyLookup>(
-            "SELECT id, org_id, name, permissions, expires_at FROM api_keys WHERE key_hash = $1"
+            "SELECT id, org_id, name, permissions, expires_at, COALESCE(project_ids, '{}') as project_ids FROM api_keys WHERE key_hash = $1"
         )
         .bind(&hash)
         .fetch_optional(&pool)
@@ -376,6 +385,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             org_role: None,
             email: None,
             display_name: Some(key_row.name.clone()),
+            scoped_project_ids: key_row.project_ids,
         };
 
         tracing::debug!(
@@ -480,6 +490,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         org_role,
         email,
         display_name,
+        scoped_project_ids: vec![], // JWT users have full org access
     };
 
     tracing::debug!(

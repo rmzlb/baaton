@@ -318,32 +318,61 @@ function ApiKeysSection() {
         </div>
       </div>
 
-      {/* New Key Created Banner */}
+      {/* New Key Created Banner + Curl Examples */}
       {newKeySecret && (
-        <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle size={20} className="text-amber-400 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-amber-200">
-                {t('settings.copyWarning')}
-              </p>
-              <div className="mt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <code className="flex-1 rounded-md bg-bg px-3 py-2 text-xs font-mono text-primary border border-border truncate min-w-0">
-                  {newKeySecret}
-                </code>
+        <div className="mb-6 space-y-4">
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={20} className="text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-amber-200">
+                  {t('settings.copyWarning')}
+                </p>
+                <div className="mt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <code className="flex-1 rounded-md bg-bg px-3 py-2 text-xs font-mono text-primary border border-border truncate min-w-0">
+                    {newKeySecret}
+                  </code>
+                  <button
+                    onClick={() => handleCopy(newKeySecret)}
+                    className="shrink-0 rounded-md bg-surface-hover p-2 text-secondary hover:text-primary transition-colors"
+                  >
+                    {copied ? <CheckCircle2 size={16} className="text-green-400" /> : <Copy size={16} />}
+                  </button>
+                </div>
                 <button
-                  onClick={() => handleCopy(newKeySecret)}
-                  className="shrink-0 rounded-md bg-surface-hover p-2 text-secondary hover:text-primary transition-colors"
+                  onClick={() => setNewKeySecret(null)}
+                  className="mt-2 text-xs text-amber-400 hover:underline"
                 >
-                  {copied ? <CheckCircle2 size={16} className="text-green-400" /> : <Copy size={16} />}
+                  {t('settings.dismiss')}
                 </button>
               </div>
-              <button
-                onClick={() => setNewKeySecret(null)}
-                className="mt-2 text-xs text-amber-400 hover:underline"
-              >
-                {t('settings.dismiss')}
-              </button>
+            </div>
+          </div>
+
+          {/* Quick Start Curl Examples */}
+          <div className="rounded-lg border border-accent/20 bg-accent/5 p-4">
+            <h3 className="text-xs font-semibold text-accent mb-3 flex items-center gap-2">
+              🚀 Quick Start — Copy & Paste
+            </h3>
+            <div className="space-y-3 text-[11px] font-mono">
+              <div>
+                <p className="text-secondary mb-1 font-sans text-xs">List your projects:</p>
+                <code className="block rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all">
+                  {`curl -s https://api.baaton.dev/api/v1/projects \\\n  -H "Authorization: Bearer ${newKeySecret}"`}
+                </code>
+              </div>
+              <div>
+                <p className="text-secondary mb-1 font-sans text-xs">Create an issue:</p>
+                <code className="block rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all">
+                  {`curl -s -X POST https://api.baaton.dev/api/v1/issues \\\n  -H "Authorization: Bearer ${newKeySecret}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"project_id":"YOUR_PROJECT_ID","title":"Bug report","issue_type":"bug","priority":"high"}'`}
+                </code>
+              </div>
+              <div>
+                <p className="text-secondary mb-1 font-sans text-xs">Full API docs:</p>
+                <code className="block rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all">
+                  {`curl -s https://api.baaton.dev/api/v1/public/docs`}
+                </code>
+              </div>
             </div>
           </div>
         </div>

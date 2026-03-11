@@ -15,6 +15,7 @@ pub struct ApiKeyRow {
     pub name: String,
     pub key_prefix: String,
     pub permissions: Vec<String>,
+    pub project_ids: Vec<Uuid>,
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -32,6 +33,9 @@ pub struct CreateApiKeyRequest {
     pub name: String,
     #[serde(default = "default_permissions")]
     pub permissions: Vec<String>,
+    /// Optional: restrict key to specific projects. Empty = all projects in org.
+    #[serde(default)]
+    pub project_ids: Vec<Uuid>,
 }
 
 fn default_permissions() -> Vec<String> {
@@ -70,7 +74,7 @@ pub async fn list(
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     let keys = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, org_id, name, key_prefix, permissions, last_used_at, expires_at, created_at \
+        "SELECT id, org_id, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at \
          FROM api_keys WHERE org_id = $1 ORDER BY created_at DESC"
     )
     .bind(org_id)
@@ -110,15 +114,16 @@ pub async fn create(
     let (full_key, prefix, hash) = generate_api_key();
 
     let row = sqlx::query_as::<_, ApiKeyRow>(
-        "INSERT INTO api_keys (org_id, name, key_hash, key_prefix, permissions) \
-         VALUES ($1, $2, $3, $4, $5) \
-         RETURNING id, org_id, name, key_prefix, permissions, last_used_at, expires_at, created_at"
+        "INSERT INTO api_keys (org_id, name, key_hash, key_prefix, permissions, project_ids) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
+         RETURNING id, org_id, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
     )
     .bind(org_id)
     .bind(body.name.trim())
     .bind(&hash)
     .bind(&prefix)
     .bind(&body.permissions)
+    .bind(&body.project_ids)
     .fetch_one(&pool)
     .await
     .map_err(|e| {

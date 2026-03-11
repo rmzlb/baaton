@@ -273,6 +273,13 @@ pub async fn create(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
+    // ── Project access check (API key scoping) ─────────
+    if !auth.has_project_access(body.project_id) {
+        return Err((StatusCode::FORBIDDEN, Json(json!({
+            "error": "API key does not have access to this project. Check project_ids scope on the key."
+        }))));
+    }
+
     // ── Input validation ─────────────────────────────────
     let issue_type = body.issue_type.as_deref().unwrap_or("feature");
     validate_issue_type(issue_type)?;
@@ -549,6 +556,11 @@ pub async fn update(
         .fetch_one(&pool)
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
+
+    // ── Project access check (API key scoping) ─────────
+    if !auth.has_project_access(existing.project_id) {
+        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "API key does not have access to this project"}))));
+    }
 
     // ── Input validation ─────────────────────────────────
     if let Some(ref status) = body.status {
