@@ -63,3 +63,5 @@ BAATON_BASE_URL=https://api.baaton.dev/api/v1
 - Email: thibaut@carbonable.io
 - Twitter: @baaboron
 - GitHub: github.com/rmzlb/baaton
+- Agent Skill: github.com/rmzlb/baaton-skills
+- Skill API: GET https://api.baaton.dev/api/v1/public/skill (SKILL.md, no auth)
