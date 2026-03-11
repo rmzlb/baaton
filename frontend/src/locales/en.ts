@@ -955,10 +955,10 @@ As a [user], I want to [action] so that [benefit].
   'milestones.planApplied': 'Milestones created successfully!',
 
 // ── Landing Page ──
-'landing.badge': 'Orchestration Board Live',
-'landing.heroLine1': 'You Lead.',
-'landing.heroLine2': 'AI Builds.',
-'landing.heroSub': 'The conductor\'s podium for engineering teams. Assign tickets to Agents. Review code. Merge faster.',
+'landing.badge': 'API-first Project Management',
+'landing.heroLine1': 'Project Management',
+'landing.heroLine2': 'for AI Agents.',
+'landing.heroSub': 'It\'s not AI for your project board. It\'s a project board for your AI. Give your agents issues, statuses, and a review loop — via API.',
 'landing.cta': 'Start for free',
 'landing.ctaMain': 'START ORCHESTRATING',
 'landing.ctaTitle1': 'Ship Faster.',

@@ -2,10 +2,12 @@ import { useAuth } from '@clerk/clerk-react';
 import { useOrganizationList, useOrganization } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
 import {
   Kanban, ArrowRight, Archive, Clock, Circle,
   Eye, CheckCircle2, OctagonAlert, Building2, ChevronRight,
+  TrendingUp, TrendingDown, Zap, Timer,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
@@ -13,6 +15,136 @@ import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { cn } from '@/lib/utils';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import type { Issue, Project } from '@/lib/types';
+
+// ─── SVG Activity Chart ────────────────────────────────
+
+interface ChartPoint {
+  date: string;
+  count: number;
+}
+
+function ActivityChart({
+  created,
+  closed,
+  days = 30,
+}: {
+  created: ChartPoint[];
+  closed: ChartPoint[];
+  days?: number;
+}) {
+  const width = 600;
+  const height = 120;
+  const padX = 10;
+  const padY = 10;
+  const plotW = width - padX * 2;
+  const plotH = height - padY * 2;
+
+  // Build date range
+  const dateRange: string[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    dateRange.push(d.toISOString().slice(0, 10));
+  }
+
+  const createdMap = Object.fromEntries(created.map((p) => [p.date, p.count]));
+  const closedMap = Object.fromEntries(closed.map((p) => [p.date, p.count]));
+
+  const createdData = dateRange.map((d) => createdMap[d] ?? 0);
+  const closedData = dateRange.map((d) => closedMap[d] ?? 0);
+
+  const maxVal = Math.max(...createdData, ...closedData, 1);
+
+  const toX = (i: number) => padX + (i / (dateRange.length - 1)) * plotW;
+  const toY = (v: number) => padY + plotH - (v / maxVal) * plotH;
+
+  const pathFor = (data: number[]) =>
+    data
+      .map((v, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`)
+      .join(' ');
+
+  const areaFor = (data: number[], color: string) => {
+    const line = pathFor(data);
+    const bottomLeft = `L${toX(data.length - 1).toFixed(1)},${(padY + plotH).toFixed(1)} L${padX},${(padY + plotH).toFixed(1)} Z`;
+    return (
+      <path
+        d={`${line} ${bottomLeft}`}
+        fill={color}
+        fillOpacity="0.08"
+        stroke="none"
+      />
+    );
+  };
+
+  return (
+    <div className="w-full overflow-hidden">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full"
+        style={{ height: '120px' }}
+        aria-label="Issue activity chart"
+      >
+        {/* Grid lines */}
+        {[0.25, 0.5, 0.75, 1].map((pct) => (
+          <line
+            key={pct}
+            x1={padX}
+            y1={padY + plotH * (1 - pct)}
+            x2={width - padX}
+            y2={padY + plotH * (1 - pct)}
+            stroke="rgba(255,255,255,0.04)"
+            strokeWidth="1"
+          />
+        ))}
+        {/* Area fills */}
+        {areaFor(createdData, '#f59e0b')}
+        {areaFor(closedData, '#22c55e')}
+        {/* Lines */}
+        <path d={pathFor(createdData)} fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeLinejoin="round" />
+        <path d={pathFor(closedData)} fill="none" stroke="#22c55e" strokeWidth="1.5" strokeLinejoin="round" />
+      </svg>
+      <div className="flex items-center gap-4 mt-1">
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-0.5 bg-amber-500 rounded-full inline-block" />
+          <span className="text-[11px] text-secondary">Created</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-0.5 bg-green-500 rounded-full inline-block" />
+          <span className="text-[11px] text-secondary">Closed</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Stats card ────────────────────────────────────────
+
+function StatCard({
+  label,
+  value,
+  color,
+  icon: Icon,
+  sub,
+}: {
+  label: string;
+  value: number | string;
+  color: string;
+  icon: React.ElementType;
+  sub?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4 md:p-5 flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] md:text-xs text-secondary uppercase tracking-wider">{label}</p>
+        <Icon size={14} style={{ color }} className="opacity-60" />
+      </div>
+      <p className="text-2xl md:text-3xl font-bold tabular-nums" style={{ color }}>
+        {value}
+      </p>
+      {sub && <p className="text-[11px] text-muted">{sub}</p>}
+    </div>
+  );
+}
 
 // ─── Status bar ────────────────────────────────
 function StatusBar({ counts, total }: { counts: Record<string, number>; total: number }) {
@@ -67,7 +199,6 @@ function ProjectCard({
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate(); } }}
       className="group rounded-xl border border-border bg-surface p-4 transition-all hover:border-accent/30 hover:shadow-md cursor-pointer"
     >
-      {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-[11px] font-bold font-mono text-accent">
@@ -84,11 +215,7 @@ function ProjectCard({
         </div>
         <ArrowRight size={14} className="text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
-
-      {/* Status bar */}
       <StatusBar counts={counts} total={total} />
-
-      {/* Status breakdown */}
       <div className="grid grid-cols-4 gap-2 mt-3">
         {[
           { key: 'backlog', label: 'Backlog', icon: Archive, color: undefined, value: backlog },
@@ -107,8 +234,6 @@ function ProjectCard({
           </div>
         ))}
       </div>
-
-      {/* Footer */}
       <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border/50">
         <span className="text-[11px] text-secondary">
           <span className="font-semibold text-primary">{active}</span> active · <span className="text-emerald-500">{done}</span> done
@@ -146,15 +271,12 @@ function OrgSection({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const { t } = useTranslation();
-
-  // Aggregate stats
   const allIssues = projects.flatMap((p) => issuesByProject[p.id] || []);
   const totalActive = allIssues.filter((i) => !['done', 'cancelled'].includes(i.status)).length;
   const totalIssues = allIssues.length;
 
   return (
     <div className="mb-6">
-      {/* Org header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
         className="flex items-center gap-2.5 mb-3 group w-full text-left"
@@ -197,8 +319,6 @@ function OrgSection({
           </button>
         )}
       </button>
-
-      {/* Projects grid */}
       {!collapsed && (
         projects.length === 0 ? (
           <div className="rounded-xl border border-border/50 bg-surface/50 p-6 text-center text-sm text-muted">
@@ -222,7 +342,7 @@ function OrgSection({
 }
 
 // ═══════════════════════════════════════════════
-// Dashboard — Cross-org view
+// Dashboard — main component
 // ═══════════════════════════════════════════════
 export function Dashboard() {
   const { t } = useTranslation();
@@ -232,6 +352,7 @@ export function Dashboard() {
   const { userMemberships, setActive } = useOrganizationList({
     userMemberships: { infinite: true },
   });
+  const apiClient = useApi();
 
   const memberships = userMemberships?.data ?? [];
 
@@ -243,13 +364,10 @@ export function Dashboard() {
         memberships.map(async (m) => {
           const org = m.organization;
           try {
-            // Get token scoped to this specific org
             const token = await getToken({ organizationId: org.id });
             if (!token) return { org, projects: [] as Project[], issues: [] as Issue[] };
-
             const projects = await api.get<Project[]>('/projects', token);
             const issues = await api.get<Issue[]>('/issues?limit=2000', token);
-
             return { org, projects, issues };
           } catch {
             return { org, projects: [] as Project[], issues: [] as Issue[] };
@@ -262,7 +380,15 @@ export function Dashboard() {
     staleTime: 30_000,
   });
 
-  // Build issues-by-project map across all orgs
+  // Metrics (for active org)
+  const { data: metrics } = useQuery({
+    queryKey: ['metrics', activeOrg?.id],
+    queryFn: () => apiClient.metrics.get(30),
+    enabled: !!activeOrg,
+    staleTime: 60_000,
+  });
+
+  // Build issues-by-project map
   const issuesByProject = useMemo(() => {
     const map: Record<string, Issue[]> = {};
     for (const { issues } of orgData) {
@@ -274,31 +400,37 @@ export function Dashboard() {
     return map;
   }, [orgData]);
 
-  // Global stats across ALL orgs
+  // Global stats
   const allIssues = orgData.flatMap((d) => d.issues);
-  const globalStats = useMemo(() => {
-    const backlog = allIssues.filter((i) => i.status === 'backlog').length;
-    const todo = allIssues.filter((i) => i.status === 'todo').length;
-    const inProgress = allIssues.filter((i) => i.status === 'in_progress').length;
-    const inReview = allIssues.filter((i) => i.status === 'in_review').length;
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const doneThisWeek = allIssues.filter(
-      (i) => i.status === 'done' && new Date(i.updated_at) >= oneWeekAgo,
+  const oneWeekAgo = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d;
+  }, []);
+
+  const statsCards = useMemo(() => {
+    const active = allIssues.filter((i) => !['done', 'cancelled'].includes(i.status)).length;
+    const createdThisWeek = allIssues.filter((i) => new Date(i.created_at) >= oneWeekAgo).length;
+    const closedThisWeek = allIssues.filter(
+      (i) => ['done', 'cancelled'].includes(i.status) && new Date(i.updated_at) >= oneWeekAgo,
     ).length;
-    const active = backlog + todo + inProgress + inReview;
+    const avgResolutionHours = metrics?.avg_resolution_hours;
+    const avgLabel = avgResolutionHours != null
+      ? avgResolutionHours >= 24
+        ? `${(avgResolutionHours / 24).toFixed(1)}d`
+        : `${avgResolutionHours.toFixed(1)}h`
+      : '—';
+
     return [
-      { label: t('dashboard.openIssues'), value: active, color: '#3b82f6' },
-      { label: t('dashboard.inProgress'), value: inProgress, color: '#f59e0b' },
-      { label: t('dashboard.inReview'), value: inReview, color: '#8b5cf6' },
-      { label: t('dashboard.doneThisWeek'), value: doneThisWeek, color: '#22c55e' },
+      { label: 'Active Issues', value: active, color: '#3b82f6', icon: TrendingUp, sub: 'Not done or cancelled' },
+      { label: 'Created This Week', value: createdThisWeek, color: '#f59e0b', icon: Zap, sub: 'Last 7 days' },
+      { label: 'Closed This Week', value: closedThisWeek, color: '#22c55e', icon: TrendingDown, sub: 'Done or cancelled' },
+      { label: 'Avg Resolution', value: avgLabel, color: '#8b5cf6', icon: Timer, sub: 'Time to close' },
     ];
-  }, [allIssues, t]);
+  }, [allIssues, oneWeekAgo, metrics]);
 
-  // Cross-org navigation: store target slug in ref so it survives re-renders
-  // caused by setActive (Clerk re-renders the entire tree on org switch)
+  // Cross-org navigation
   const pendingNavRef = useRef<string | null>(null);
-
   useEffect(() => {
     if (pendingNavRef.current && activeOrg) {
       const target = pendingNavRef.current;
@@ -319,7 +451,6 @@ export function Dashboard() {
     [activeOrg?.id, navigate, setActive],
   );
 
-  // Sort orgs: active first
   const sortedOrgData = useMemo(() => {
     return [...orgData].sort((a, b) => {
       if (a.org.id === activeOrg?.id) return -1;
@@ -340,25 +471,39 @@ export function Dashboard() {
         </p>
       </div>
 
-      {/* Global Stats */}
-      <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
-        {globalStats.map((stat) => (
-          <div key={stat.label} className="rounded-xl border border-border bg-surface p-4 md:p-5">
-            <p className="text-[10px] md:text-xs text-secondary uppercase tracking-wider">{stat.label}</p>
-            <p className="mt-2 text-2xl md:text-3xl font-bold tabular-nums" style={{ color: stat.color }}>
-              {isLoading ? '—' : stat.value}
-            </p>
-          </div>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4 mb-6">
+        {statsCards.map((stat) => (
+          <StatCard key={stat.label} {...stat} />
         ))}
       </div>
 
-      <div className="mt-6">
+      {/* Activity Chart */}
+      {metrics && (
+        <div className="rounded-xl border border-border bg-surface p-4 md:p-5 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-semibold text-secondary uppercase tracking-wider">
+              Activity — last 30 days
+            </h2>
+            <span className="text-[11px] text-muted">
+              {metrics.issues_created?.reduce((s: number, p: any) => s + p.count, 0) ?? 0} created ·{' '}
+              {metrics.issues_closed?.reduce((s: number, p: any) => s + p.count, 0) ?? 0} closed
+            </span>
+          </div>
+          <ActivityChart
+            created={metrics.issues_created ?? []}
+            closed={metrics.issues_closed ?? []}
+            days={30}
+          />
+        </div>
+      )}
+
+      <div className="mb-6">
         <GlobalCreateIssueButton variant="big" />
       </div>
 
       {/* Orgs + Projects + Activity */}
-      <div className="mt-6 md:mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Projects by org — 2 columns */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">
@@ -388,11 +533,6 @@ export function Dashboard() {
                         </div>
                       </div>
                       <div className="h-1.5 rounded-full bg-surface-hover animate-pulse" />
-                      <div className="grid grid-cols-4 gap-2">
-                        {[...Array(4)].map((_, k) => (
-                          <div key={k} className="h-8 rounded bg-surface-hover animate-pulse" />
-                        ))}
-                      </div>
                     </div>
                   ))}
                 </div>
@@ -420,7 +560,7 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Activity */}
+        {/* Activity Feed */}
         <div>
           <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4">
             {t('dashboard.recentActivity')}

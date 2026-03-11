@@ -18,6 +18,8 @@ pub mod github;
 mod views;
 mod api_keys;
 mod docs;
+pub mod webhooks;
+mod metrics;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -81,8 +83,13 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/public/{slug}/submit", post(issues::public_submit)
             .layer(DefaultBodyLimit::max(20 * 1024 * 1024))) // 20MB for base64 attachments
         .route("/public/resolve/{token}", get(projects::resolve_public_token))
-        // Webhook
-        .route("/webhooks/github", post(github::webhooks::handle));
+        // Webhook (GitHub integration)
+        .route("/webhooks/github", post(github::webhooks::handle))
+        // Baaton Webhooks (org-level event subscriptions)
+        .route("/webhooks", get(webhooks::list).post(webhooks::create))
+        .route("/webhooks/{id}", get(webhooks::get_one).patch(webhooks::update).delete(webhooks::remove))
+        // Metrics
+        .route("/metrics", get(metrics::get_metrics));
 
     // Apply auth middleware and inject JWKS state
     // Layer order: last added runs first (outer). Auth needs JWKS, so JWKS must be outer.

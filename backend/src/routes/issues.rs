@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr, UpdateIssue};
+use crate::routes::webhooks::dispatch_event;
 
 // ─── Validation constants ─────────────────────────────
 
@@ -470,6 +471,9 @@ pub async fn create(
         }
     }
 
+    // ── Webhook dispatch (fire-and-forget) ───────────
+    dispatch_event(pool.clone(), org_id.to_string(), "issue.created", serde_json::to_value(&issue).unwrap_or_default()).await;
+
     Ok(Json(ApiResponse::new(issue)))
 }
 
@@ -757,6 +761,10 @@ pub async fn update(
         }
     }
 
+    // ── Webhook dispatch (fire-and-forget) ───────────
+    let event = if status_changed { "status.changed" } else { "issue.updated" };
+    dispatch_event(pool.clone(), org_id.to_string(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
+
     Ok(Json(ApiResponse::new(issue)))
 }
 
@@ -872,6 +880,8 @@ pub async fn remove(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     if result.rows_affected() > 0 {
+        // ── Webhook dispatch (fire-and-forget) ───────────
+        dispatch_event(pool.clone(), org_id.to_string(), "issue.deleted", serde_json::json!({"id": id.to_string()})).await;
         Ok(Json(ApiResponse::new(())))
     } else {
         Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))

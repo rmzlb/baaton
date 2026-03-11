@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { motion, useInView } from 'framer-motion';
+import { motion, useInView, type Variants } from 'framer-motion';
 import {
   LayoutGrid,
   Bot,
@@ -10,19 +10,26 @@ import {
   AlertCircle,
   Clock,
   Puzzle,
+  Code2,
+  TestTube,
+  Server,
+  Headphones,
+  Key,
+  Webhook,
+  Activity,
 } from 'lucide-react';
 
 /* ─── Animation helpers ─────────────────────── */
-const fadeUp = {
+const fadeUp: Variants = {
   hidden: { opacity: 0, y: 24 },
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: { delay: i * 0.08, duration: 0.6, ease: [0.16, 1, 0.3, 1] },
+    transition: { delay: i * 0.08, duration: 0.6, ease: [0.16, 1, 0.3, 1] as number[] },
   }),
 };
 
-const stagger = {
+const stagger: Variants = {
   visible: { transition: { staggerChildren: 0.08 } },
 };
 
@@ -41,16 +48,21 @@ const painPoints = [
   {
     icon: Puzzle,
     problem: 'No structure for AI workflows',
-    solution: 'Purpose-built columns, assignments, and automations designed for human + AI teams.',
+    solution: 'Purpose-built columns, assignments, and API-first design for human + AI teams.',
   },
 ];
 
 /* ─── Features data ─────────────────────────── */
 const features = [
   {
-    icon: LayoutGrid,
-    title: 'Kanban & List Views',
-    description: 'Drag-and-drop boards and dense list views to manage issues however you prefer.',
+    icon: Key,
+    title: 'API-First Design',
+    description: 'Every action available via REST. Create issues, update status, add comments — all programmable. No UI required.',
+  },
+  {
+    icon: Webhook,
+    title: 'Webhook Events',
+    description: 'Subscribe to issue.created, status.changed, comment.added. Your agent reacts in real-time with HMAC-signed payloads.',
   },
   {
     icon: Bot,
@@ -63,9 +75,19 @@ const features = [
     description: 'Two-way sync with GitHub Issues. PRs auto-link, branches auto-create, status auto-updates.',
   },
   {
+    icon: Activity,
+    title: 'Metrics & Analytics',
+    description: 'Track issue velocity, resolution time, and agent performance. Built-in charts, zero setup.',
+  },
+  {
     icon: Radio,
     title: 'Real-time SSE',
     description: 'Live updates via Server-Sent Events. See changes as they happen across your team.',
+  },
+  {
+    icon: LayoutGrid,
+    title: 'Kanban & List Views',
+    description: 'Drag-and-drop boards and dense list views to manage issues however you prefer.',
   },
   {
     icon: Building2,
@@ -77,6 +99,58 @@ const features = [
     title: 'Internationalization',
     description: 'Full i18n support out of the box. English and French included, easily extensible.',
   },
+];
+
+/* ─── Use cases ─────────────────────────────── */
+const useCases = [
+  {
+    icon: Code2,
+    agent: 'Coding Agent',
+    tagline: 'Ships features autonomously',
+    description:
+      'Agent pulls issues from backlog, creates branches, writes code, and updates status to "In Review" when a PR is ready.',
+    color: 'from-blue-500/10 to-blue-500/5',
+    border: 'border-blue-500/20',
+    accent: 'text-blue-400',
+  },
+  {
+    icon: TestTube,
+    agent: 'QA Agent',
+    tagline: 'Catches bugs before you do',
+    description:
+      'Runs regression suite on every deploy. Opens bug issues automatically with steps to reproduce and severity assessment.',
+    color: 'from-green-500/10 to-green-500/5',
+    border: 'border-green-500/20',
+    accent: 'text-green-400',
+  },
+  {
+    icon: Server,
+    agent: 'DevOps Agent',
+    tagline: 'Monitors and self-heals',
+    description:
+      'Detects service degradation, opens incident issues, triggers playbooks, and closes the issue when health is restored.',
+    color: 'from-amber-500/10 to-amber-500/5',
+    border: 'border-amber-500/20',
+    accent: 'text-amber-400',
+  },
+  {
+    icon: Headphones,
+    agent: 'Support Agent',
+    tagline: 'Resolves tickets at scale',
+    description:
+      'Ingests support emails via public submit API, classifies and routes issues to the right team, follows up automatically.',
+    color: 'from-purple-500/10 to-purple-500/5',
+    border: 'border-purple-500/20',
+    accent: 'text-purple-400',
+  },
+];
+
+/* ─── Stats ─────────────────────────────────── */
+const stats = [
+  { value: '10ms', label: 'Median API response' },
+  { value: '99.9%', label: 'Uptime SLA' },
+  { value: '6', label: 'Webhook event types' },
+  { value: '∞', label: 'Issues per project' },
 ];
 
 /* ─── AI Demo messages ──────────────────────── */
@@ -93,7 +167,7 @@ const demoMessages = [
   },
 ];
 
-/* ─── Integration logos (SVG inlined) ───────── */
+/* ─── Integration logos ─────────────────────── */
 const integrations = [
   {
     name: 'GitHub',
@@ -125,11 +199,15 @@ const integrations = [
 export function Features() {
   const problemRef = useRef<HTMLDivElement>(null);
   const featuresRef = useRef<HTMLDivElement>(null);
+  const useCasesRef = useRef<HTMLDivElement>(null);
+  const statsRef = useRef<HTMLDivElement>(null);
   const demoRef = useRef<HTMLDivElement>(null);
   const integrationsRef = useRef<HTMLDivElement>(null);
 
   const problemInView = useInView(problemRef, { once: true, margin: '-80px' });
   const featuresInView = useInView(featuresRef, { once: true, margin: '-80px' });
+  const useCasesInView = useInView(useCasesRef, { once: true, margin: '-80px' });
+  const statsInView = useInView(statsRef, { once: true, margin: '-80px' });
   const demoInView = useInView(demoRef, { once: true, margin: '-80px' });
   const integrationsInView = useInView(integrationsRef, { once: true, margin: '-80px' });
 
@@ -144,23 +222,14 @@ export function Features() {
             animate={problemInView ? 'visible' : 'hidden'}
             variants={stagger}
           >
-            <motion.p
-              variants={fadeUp}
-              custom={0}
-              className="text-sm font-medium text-amber-500 tracking-wide uppercase mb-3"
-            >
+            <motion.p variants={fadeUp} custom={0} className="text-sm font-medium text-amber-500 tracking-wide uppercase mb-3">
               The Problem
             </motion.p>
-            <motion.h2
-              variants={fadeUp}
-              custom={1}
-              className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-16"
-            >
+            <motion.h2 variants={fadeUp} custom={1} className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-16">
               AI is powerful.
               <br />
               <span className="text-secondary">Managing it isn't.</span>
             </motion.h2>
-
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {painPoints.map((point, i) => (
                 <motion.div
@@ -175,9 +244,7 @@ export function Features() {
                   <p className="text-sm font-medium text-red-400 group-hover:text-amber-500 mb-2 transition-colors">
                     {point.problem}
                   </p>
-                  <p className="text-sm text-secondary leading-relaxed">
-                    {point.solution}
-                  </p>
+                  <p className="text-sm text-secondary leading-relaxed">{point.solution}</p>
                 </motion.div>
               ))}
             </div>
@@ -194,23 +261,14 @@ export function Features() {
             animate={featuresInView ? 'visible' : 'hidden'}
             variants={stagger}
           >
-            <motion.p
-              variants={fadeUp}
-              custom={0}
-              className="text-sm font-medium text-amber-500 tracking-wide uppercase mb-3"
-            >
+            <motion.p variants={fadeUp} custom={0} className="text-sm font-medium text-amber-500 tracking-wide uppercase mb-3">
               Features
             </motion.p>
-            <motion.h2
-              variants={fadeUp}
-              custom={1}
-              className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-16"
-            >
-              Everything you need.
+            <motion.h2 variants={fadeUp} custom={1} className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-16">
+              Everything your agent needs.
               <br />
-              <span className="text-secondary">Nothing you don't.</span>
+              <span className="text-secondary">Nothing it doesn't.</span>
             </motion.h2>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {features.map((feature, i) => (
                 <motion.div
@@ -219,23 +277,80 @@ export function Features() {
                   custom={i + 2}
                   className="group relative p-6 rounded-xl border border-border bg-surface/30 hover:bg-surface/60 hover:border-white/[0.1] transition-all"
                 >
-                  {/* Subtle corner glow on hover */}
                   <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/0 group-hover:bg-amber-500/[0.04] rounded-bl-full transition-colors pointer-events-none" />
-
                   <div className="relative">
                     <div className="w-10 h-10 rounded-lg bg-white/[0.05] border border-white/[0.06] flex items-center justify-center mb-4">
                       <feature.icon className="w-5 h-5 text-primary" strokeWidth={1.5} />
                     </div>
-                    <h3 className="text-base font-semibold text-primary mb-2">
-                      {feature.title}
-                    </h3>
-                    <p className="text-sm text-secondary leading-relaxed">
-                      {feature.description}
-                    </p>
+                    <h3 className="text-base font-semibold text-primary mb-2">{feature.title}</h3>
+                    <p className="text-sm text-secondary leading-relaxed">{feature.description}</p>
                   </div>
                 </motion.div>
               ))}
             </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ── Use Cases ─────────────────────────── */}
+      <section className="relative py-24 md:py-32" aria-label="Use cases">
+        <div className="max-w-5xl mx-auto px-6">
+          <motion.div
+            ref={useCasesRef}
+            initial="hidden"
+            animate={useCasesInView ? 'visible' : 'hidden'}
+            variants={stagger}
+          >
+            <motion.p variants={fadeUp} custom={0} className="text-sm font-medium text-amber-500 tracking-wide uppercase mb-3">
+              Use Cases
+            </motion.p>
+            <motion.h2 variants={fadeUp} custom={1} className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-4">
+              Built for every kind of agent.
+            </motion.h2>
+            <motion.p variants={fadeUp} custom={2} className="text-secondary mb-16 max-w-xl">
+              Baaton is the project board your AI agents were missing. Here's how teams use it today.
+            </motion.p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              {useCases.map((uc, i) => (
+                <motion.div
+                  key={uc.agent}
+                  variants={fadeUp}
+                  custom={i + 3}
+                  className={`group rounded-xl border ${uc.border} bg-gradient-to-br ${uc.color} p-6 hover:scale-[1.01] transition-transform`}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-9 h-9 rounded-lg bg-white/[0.06] flex items-center justify-center">
+                      <uc.icon className={`w-5 h-5 ${uc.accent}`} strokeWidth={1.5} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-primary">{uc.agent}</h3>
+                      <p className={`text-xs font-medium ${uc.accent}`}>{uc.tagline}</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-secondary leading-relaxed">{uc.description}</p>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ── By the numbers ────────────────────── */}
+      <section className="relative py-16 md:py-20" aria-label="Stats">
+        <div className="max-w-5xl mx-auto px-6">
+          <motion.div
+            ref={statsRef}
+            initial="hidden"
+            animate={statsInView ? 'visible' : 'hidden'}
+            variants={stagger}
+            className="grid grid-cols-2 md:grid-cols-4 gap-6"
+          >
+            {stats.map((s, i) => (
+              <motion.div key={s.label} variants={fadeUp} custom={i} className="text-center">
+                <p className="text-4xl md:text-5xl font-bold text-primary mb-1">{s.value}</p>
+                <p className="text-sm text-secondary">{s.label}</p>
+              </motion.div>
+            ))}
           </motion.div>
         </div>
       </section>
@@ -249,27 +364,17 @@ export function Features() {
             animate={demoInView ? 'visible' : 'hidden'}
             variants={stagger}
           >
-            <motion.p
-              variants={fadeUp}
-              custom={0}
-              className="text-sm font-medium text-amber-500 tracking-wide uppercase mb-3"
-            >
+            <motion.p variants={fadeUp} custom={0} className="text-sm font-medium text-amber-500 tracking-wide uppercase mb-3">
               AI-Native
             </motion.p>
-            <motion.h2
-              variants={fadeUp}
-              custom={1}
-              className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-16"
-            >
+            <motion.h2 variants={fadeUp} custom={1} className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-16">
               Talk to your board.
             </motion.h2>
-
             <motion.div
               variants={fadeUp}
               custom={2}
               className="max-w-2xl mx-auto rounded-xl border border-border bg-surface/50 overflow-hidden"
             >
-              {/* Chat header */}
               <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border bg-surface/80">
                 <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
                   <Bot className="w-4 h-4 text-black" strokeWidth={2.5} />
@@ -279,8 +384,6 @@ export function Features() {
                   <p className="text-xs text-muted">Online</p>
                 </div>
               </div>
-
-              {/* Messages */}
               <div className="p-5 space-y-4">
                 {demoMessages.map((msg, i) => (
                   <motion.div
@@ -300,13 +403,7 @@ export function Features() {
                     </div>
                   </motion.div>
                 ))}
-
-                {/* Typing indicator */}
-                <motion.div
-                  variants={fadeUp}
-                  custom={7}
-                  className="flex justify-start"
-                >
+                <motion.div variants={fadeUp} custom={7} className="flex justify-start">
                   <div className="bg-amber-500/[0.08] border border-amber-500/[0.12] px-4 py-3 rounded-xl rounded-bl-md flex gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500/60 animate-bounce [animation-delay:0ms]" />
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500/60 animate-bounce [animation-delay:150ms]" />
@@ -328,33 +425,16 @@ export function Features() {
             animate={integrationsInView ? 'visible' : 'hidden'}
             variants={stagger}
           >
-            <motion.p
-              variants={fadeUp}
-              custom={0}
-              className="text-sm font-medium text-amber-500 tracking-wide uppercase mb-3"
-            >
+            <motion.p variants={fadeUp} custom={0} className="text-sm font-medium text-amber-500 tracking-wide uppercase mb-3">
               Integrations
             </motion.p>
-            <motion.h2
-              variants={fadeUp}
-              custom={1}
-              className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-4"
-            >
+            <motion.h2 variants={fadeUp} custom={1} className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-4">
               Connects to your stack.
             </motion.h2>
-            <motion.p
-              variants={fadeUp}
-              custom={2}
-              className="text-secondary mb-16 max-w-lg mx-auto"
-            >
+            <motion.p variants={fadeUp} custom={2} className="text-secondary mb-16 max-w-lg mx-auto">
               Plug into the tools your team already uses — with more integrations coming soon.
             </motion.p>
-
-            <motion.div
-              variants={fadeUp}
-              custom={3}
-              className="flex items-center justify-center gap-8 md:gap-16"
-            >
+            <motion.div variants={fadeUp} custom={3} className="flex items-center justify-center gap-8 md:gap-16">
               {integrations.map((integration, i) => (
                 <motion.div
                   key={integration.name}

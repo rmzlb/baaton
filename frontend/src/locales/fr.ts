@@ -955,10 +955,10 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'milestones.planApplied': 'Jalons créés avec succès !',
 
 // ── Landing Page ──
-'landing.badge': 'Board d\'Orchestration Live',
-'landing.heroLine1': 'Tu diriges.',
-'landing.heroLine2': 'L\'IA construit.',
-'landing.heroSub': 'Le podium du chef d\'orchestre pour les équipes tech. Assigne des tickets aux Agents. Review le code. Merge plus vite.',
+'landing.badge': 'Gestion de Projet API-First',
+'landing.heroLine1': 'Gestion de Projet',
+'landing.heroLine2': 'pour Agents IA.',
+'landing.heroSub': 'Ce n\'est pas de l\'IA pour ton board. C\'est un board pour ton IA. Donne à tes agents des issues, des statuts, et une boucle de review — via API.',
 'landing.cta': 'Commencer gratuitement',
 'landing.ctaMain': 'ORCHESTRER MAINTENANT',
 'landing.ctaTitle1': 'Ship plus vite.',

@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment};
+use crate::routes::webhooks::dispatch_event;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateComment {
@@ -178,6 +179,9 @@ pub async fn create(
         });
     }
 
+    // ── Webhook dispatch (fire-and-forget) ───────────
+    dispatch_event(pool.clone(), org_id.to_string(), "comment.created", serde_json::to_value(&comment).unwrap_or_default()).await;
+
     Ok(Json(ApiResponse::new(comment)))
 }
 
@@ -211,6 +215,9 @@ pub async fn remove(
         issue_id = %issue_id,
         "comments.remove"
     );
+
+    // ── Webhook dispatch (fire-and-forget) ───────────
+    dispatch_event(pool.clone(), org_id.to_string(), "comment.deleted", serde_json::json!({"id": comment_id.to_string(), "issue_id": issue_id.to_string()})).await;
 
     Ok(Json(ApiResponse::new(())))
 }

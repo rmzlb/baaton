@@ -392,6 +392,48 @@ export function useApi() {
         }),
     },
 
+    // ─── Webhooks ──────────────────────────────
+    webhooks: {
+      list: async (): Promise<any[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<any[]>('/webhooks', token);
+        }),
+
+      create: async (body: { url: string; event_types: string[] }): Promise<any> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<any>('/webhooks', body, token);
+        }),
+
+      get: async (id: string): Promise<any> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<any>(`/webhooks/${id}`, token);
+        }),
+
+      update: async (id: string, body: { url?: string; event_types?: string[]; enabled?: boolean }): Promise<any> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<any>(`/webhooks/${id}`, body, token);
+        }),
+
+      delete: async (id: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/webhooks/${id}`, token);
+        }),
+    },
+
+    // ─── Metrics ───────────────────────────────
+    metrics: {
+      get: async (days = 30): Promise<any> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<any>(`/metrics?days=${days}`, token);
+        }),
+    },
+
     // ─── GitHub ────────────────────────────────
     github: {
       getInstallation: async (): Promise<GitHubInstallation | null> =>

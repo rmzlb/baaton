@@ -4,7 +4,7 @@ import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Kanban, Settings, ChevronLeft, ChevronRight, Users, X,
-  Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox, CalendarRange, BarChart3,
+  Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox, CalendarRange, BarChart3, Webhook,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -67,6 +67,7 @@ export function Sidebar() {
       label: t('sidebar.sprints'),
       tourId: undefined as const,
     }] : []),
+    { to: '/webhooks', icon: Webhook, label: 'Webhooks', tourId: undefined },
     { to: '/org', icon: Users, label: t('sidebar.team'), tourId: undefined },
     { to: '/settings', icon: Settings, label: t('sidebar.settings'), tourId: 'settings' as const },
   ];

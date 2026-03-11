@@ -35,6 +35,17 @@ interface NavSection {
 /* ─── Navigation Structure ────────────────── */
 const NAV: NavSection[] = [
   {
+    id: 'agent-onboarding',
+    labelKey: 'Agent Onboarding',
+    icon: <Bot size={16} />,
+    children: [
+      { id: 'agent-quickstart', labelKey: 'Quick Start' },
+      { id: 'agent-api-keys', labelKey: 'API Keys' },
+      { id: 'agent-webhooks', labelKey: 'Webhooks' },
+      { id: 'agent-metrics', labelKey: 'Metrics' },
+    ],
+  },
+  {
     id: 'getting-started',
     labelKey: 'docs.nav.gettingStarted',
     icon: <Rocket size={16} />,
@@ -267,6 +278,115 @@ export function Docs() {
           role="main"
         >
           <div className="max-w-3xl">
+            {/* ═══ AGENT ONBOARDING ═══════════ */}
+            <section id="agent-onboarding" className="scroll-mt-20 mb-16">
+              <h2 className="flex items-center gap-2 text-2xl font-bold mb-2">
+                <Bot size={24} className="text-accent" />
+                Agent Onboarding
+              </h2>
+              <p className="text-secondary mb-8">
+                Get your AI agent connected to Baaton in under 5 minutes. Create issues, track status, and receive webhooks — all via API.
+              </p>
+
+              <article id="agent-quickstart" className="scroll-mt-20 mb-10">
+                <h3 className="text-lg font-semibold mb-3">Quick Start</h3>
+                <ol className="list-decimal list-inside space-y-2 text-secondary text-sm mb-4">
+                  <li>Sign up at <a href="https://baaton.dev" className="text-accent hover:underline">baaton.dev</a> and create an organization</li>
+                  <li>Go to <strong>Settings → API Keys</strong> and create a key (prefix: <code className="text-primary bg-surface px-1 rounded">baa_</code>)</li>
+                  <li>Create a project (you'll need the <code className="text-primary bg-surface px-1 rounded">project_id</code>)</li>
+                  <li>Start creating issues via the API</li>
+                </ol>
+                <CodeBlock language="bash">{`# Create your first issue
+curl -X POST https://api.baaton.dev/api/v1/issues \\
+  -H "Authorization: Bearer baa_your_api_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "project_id": "your-project-uuid",
+    "title": "Fix login timeout bug",
+    "status": "todo",
+    "priority": "high"
+  }'`}</CodeBlock>
+              </article>
+
+              <article id="agent-api-keys" className="scroll-mt-20 mb-10">
+                <h3 className="text-lg font-semibold mb-3">API Keys</h3>
+                <p className="text-secondary text-sm mb-3">
+                  API keys are scoped to your organization. Optionally restrict them to specific projects via <code className="text-primary bg-surface px-1 rounded">project_ids</code>.
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-secondary text-sm mb-4">
+                  <li>Prefix: <code className="text-primary bg-surface px-1 rounded">baa_</code></li>
+                  <li>Pass via <code className="text-primary bg-surface px-1 rounded">Authorization: Bearer baa_xxx</code></li>
+                  <li>Auto-fills <code className="text-primary bg-surface px-1 rounded">created_by_name</code> from key name</li>
+                  <li>Comments: <code className="text-primary bg-surface px-1 rounded">author_id</code>/<code className="text-primary bg-surface px-1 rounded">author_name</code> are auto-populated</li>
+                </ul>
+              </article>
+
+              <article id="agent-webhooks" className="scroll-mt-20 mb-10">
+                <h3 className="text-lg font-semibold mb-3">Webhooks</h3>
+                <p className="text-secondary text-sm mb-3">
+                  Register endpoints to receive real-time event notifications. No polling needed.
+                </p>
+                <CodeBlock language="bash">{`# Create a webhook
+curl -X POST https://api.baaton.dev/api/v1/webhooks \\
+  -H "Authorization: Bearer baa_your_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "url": "https://your-server.com/webhooks/baaton",
+    "event_types": ["issue.created", "status.changed"]
+  }'`}</CodeBlock>
+                <h4 className="text-sm font-semibold mt-4 mb-2">Available Events</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
+                    <thead className="bg-surface">
+                      <tr>
+                        <th className="text-left px-3 py-2 border-b border-border font-medium text-primary">Event</th>
+                        <th className="text-left px-3 py-2 border-b border-border font-medium text-primary">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-secondary">
+                      <tr><td className="px-3 py-2 border-b border-border font-mono text-xs">issue.created</td><td className="px-3 py-2 border-b border-border">New issue created</td></tr>
+                      <tr><td className="px-3 py-2 border-b border-border font-mono text-xs">issue.updated</td><td className="px-3 py-2 border-b border-border">Issue fields updated</td></tr>
+                      <tr><td className="px-3 py-2 border-b border-border font-mono text-xs">issue.deleted</td><td className="px-3 py-2 border-b border-border">Issue permanently deleted</td></tr>
+                      <tr><td className="px-3 py-2 border-b border-border font-mono text-xs">status.changed</td><td className="px-3 py-2 border-b border-border">Issue status transition</td></tr>
+                      <tr><td className="px-3 py-2 border-b border-border font-mono text-xs">comment.created</td><td className="px-3 py-2 border-b border-border">Comment added</td></tr>
+                      <tr><td className="px-3 py-2 font-mono text-xs">comment.deleted</td><td className="px-3 py-2">Comment removed</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <h4 className="text-sm font-semibold mt-4 mb-2">Verifying Signatures</h4>
+                <p className="text-secondary text-sm mb-2">
+                  Each delivery includes an <code className="text-primary bg-surface px-1 rounded">X-Baaton-Signature</code> header with an HMAC-SHA256 signature.
+                </p>
+                <CodeBlock language="python">{`import hmac, hashlib
+
+def verify(body: bytes, signature: str, secret: str) -> bool:
+    expected = "sha256=" + hmac.new(
+        secret.encode(), body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)`}</CodeBlock>
+              </article>
+
+              <article id="agent-metrics" className="scroll-mt-20 mb-10">
+                <h3 className="text-lg font-semibold mb-3">Metrics</h3>
+                <p className="text-secondary text-sm mb-3">
+                  Track issue velocity and team throughput via API.
+                </p>
+                <CodeBlock language="bash">{`# Get metrics for the last 30 days
+curl https://api.baaton.dev/api/v1/metrics?days=30 \\
+  -H "Authorization: Bearer baa_your_key"
+
+# Response:
+# {
+#   "issues_created": [{"date": "2026-03-01", "count": 5}, ...],
+#   "issues_closed": [{"date": "2026-03-01", "count": 3}, ...],
+#   "avg_resolution_hours": 12.5,
+#   "active_issues": 42,
+#   "issues_by_status": {"todo": 15, "in_progress": 12, ...},
+#   "issues_by_priority": {"high": 8, "medium": 20, ...}
+# }`}</CodeBlock>
+              </article>
+            </section>
+
             {/* ═══ GETTING STARTED ═══════════ */}
             <section id="getting-started" className="scroll-mt-20 mb-16">
               <h2 className="flex items-center gap-2 text-2xl font-bold mb-2">
@@ -625,6 +745,11 @@ curl -H "Authorization: Bearer <YOUR_CLERK_JWT>" \\
                       <tr><td className="px-4 py-2"><span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-xs font-mono text-blue-400">POST</span></td><td className="px-4 py-2 font-mono text-xs">/issues/:id/tldr</td><td className="px-4 py-2">Add agent summary (TLDR)</td></tr>
                       <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/projects/:id/tags</td><td className="px-4 py-2">{t('docs.api.endpoints.listTags')}</td></tr>
                       <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/public/docs</td><td className="px-4 py-2">API reference (Markdown, no auth)</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/webhooks</td><td className="px-4 py-2">List webhook endpoints</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-xs font-mono text-blue-400">POST</span></td><td className="px-4 py-2 font-mono text-xs">/webhooks</td><td className="px-4 py-2">Create a webhook endpoint (secret returned once)</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-amber-900/30 px-1.5 py-0.5 text-xs font-mono text-amber-400">PATCH</span></td><td className="px-4 py-2 font-mono text-xs">/webhooks/:id</td><td className="px-4 py-2">Update url, event_types, or enabled status</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-red-900/30 px-1.5 py-0.5 text-xs font-mono text-red-400">DELETE</span></td><td className="px-4 py-2 font-mono text-xs">/webhooks/:id</td><td className="px-4 py-2">Delete a webhook endpoint</td></tr>
+                      <tr><td className="px-4 py-2"><span className="rounded bg-emerald-900/30 px-1.5 py-0.5 text-xs font-mono text-emerald-400">GET</span></td><td className="px-4 py-2 font-mono text-xs">/metrics?days=30</td><td className="px-4 py-2">Issue activity stats (created, closed, resolution time)</td></tr>
                     </tbody>
                   </table>
                 </div>

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
@@ -13,6 +13,90 @@ const fadeUp = {
     transition: { delay: i * 0.12, duration: 0.7, ease: [0.16, 1, 0.3, 1] },
   }),
 };
+
+// ─── Code snippet tabs ─────────────────────────
+
+const CODE_SNIPPETS: Record<string, string> = {
+  cURL: `curl -X POST https://api.baaton.dev/api/v1/issues \\
+  -H "Authorization: Bearer $BAATON_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "project_id": "uuid-here",
+    "title": "Fix login timeout bug",
+    "issue_type": "bug",
+    "priority": "high",
+    "assignee_ids": ["agent:claude-code"]
+  }'`,
+
+  Python: `import httpx
+
+client = httpx.Client(
+    base_url="https://api.baaton.dev/api/v1",
+    headers={"Authorization": f"Bearer {BAATON_KEY}"}
+)
+
+issue = client.post("/issues", json={
+    "project_id": "uuid-here",
+    "title": "Fix login timeout bug",
+    "issue_type": "bug",
+    "priority": "high",
+    "assignee_ids": ["agent:claude-code"],
+}).json()
+
+print(f"Created: {issue['data']['display_id']}")`,
+
+  TypeScript: `import { BaatonClient } from "@baaton/sdk";
+
+const baaton = new BaatonClient({ apiKey: process.env.BAATON_KEY });
+
+const issue = await baaton.issues.create({
+  projectId: "uuid-here",
+  title: "Fix login timeout bug",
+  issueType: "bug",
+  priority: "high",
+  assigneeIds: ["agent:claude-code"],
+});
+
+console.log(\`Created: \${issue.displayId}\`);`,
+};
+
+type LangTab = 'cURL' | 'Python' | 'TypeScript';
+
+function CodeSnippet() {
+  const [lang, setLang] = useState<LangTab>('cURL');
+
+  return (
+    <div className="w-full max-w-2xl mx-auto rounded-xl border border-border bg-surface/80 backdrop-blur-sm overflow-hidden shadow-2xl">
+      {/* Tab bar */}
+      <div className="flex items-center border-b border-border bg-surface/50 px-1">
+        {(Object.keys(CODE_SNIPPETS) as LangTab[]).map((l) => (
+          <button
+            key={l}
+            onClick={() => setLang(l)}
+            className={`px-4 py-2.5 text-xs font-medium transition-colors ${
+              lang === l
+                ? 'text-amber-400 border-b border-amber-400 -mb-px'
+                : 'text-muted hover:text-secondary'
+            }`}
+          >
+            {l}
+          </button>
+        ))}
+        <div className="ml-auto flex items-center gap-1.5 px-3">
+          <span className="w-2 h-2 rounded-full bg-red-500/40" />
+          <span className="w-2 h-2 rounded-full bg-yellow-500/40" />
+          <span className="w-2 h-2 rounded-full bg-green-500/40" />
+        </div>
+      </div>
+      {/* Code */}
+      <pre className="p-4 text-xs leading-relaxed font-mono text-secondary overflow-x-auto whitespace-pre">
+        <code>{CODE_SNIPPETS[lang]}</code>
+      </pre>
+    </div>
+  );
+}
+
+// ─── Hero ──────────────────────────────────────
 
 export function Hero() {
   const { t } = useTranslation();
@@ -36,7 +120,7 @@ export function Hero() {
       {/* Radial glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-gradient-radial from-amber-500/10 to-transparent opacity-60 pointer-events-none" />
 
-      {/* Gradient fade to bg */}
+      {/* Gradient fade */}
       <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-bg to-transparent pointer-events-none z-10" />
 
       <motion.div
@@ -73,7 +157,7 @@ export function Hero() {
           </motion.div>
         </motion.div>
 
-        {/* Headline */}
+        {/* Headline — agent-first */}
         <motion.h1
           variants={fadeUp}
           initial="hidden"
@@ -88,7 +172,7 @@ export function Hero() {
           </span>
         </motion.h1>
 
-        {/* Sub-headline */}
+        {/* Subtitle */}
         <motion.p
           variants={fadeUp}
           initial="hidden"
@@ -105,7 +189,7 @@ export function Hero() {
           initial="hidden"
           animate="visible"
           custom={4}
-          className="flex flex-col sm:flex-row items-center gap-4"
+          className="flex flex-col sm:flex-row items-center gap-4 mb-14"
         >
           <Link
             to="/sign-up"
@@ -127,12 +211,26 @@ export function Hero() {
           </a>
         </motion.div>
 
-        {/* Social proof hint */}
+        {/* Code snippet */}
         <motion.div
           variants={fadeUp}
           initial="hidden"
           animate="visible"
           custom={5}
+          className="w-full"
+        >
+          <p className="text-xs text-muted mb-3 uppercase tracking-wider">
+            Create your first issue via API
+          </p>
+          <CodeSnippet />
+        </motion.div>
+
+        {/* Social proof */}
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={6}
           className="mt-12 flex items-center gap-3 text-muted text-sm"
         >
           <div className="flex -space-x-2">
