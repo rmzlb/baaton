@@ -37,6 +37,19 @@ export interface Project {
   auto_assign_mode: AutoAssignMode;
   default_assignee_id: string | null;
   github_repo_url?: string;
+  github_metadata?: {
+    full_name?: string;
+    description?: string;
+    language?: string;
+    stars?: number;
+    forks?: number;
+    open_issues?: number;
+    default_branch?: string;
+    is_private?: boolean;
+    topics?: string[];
+    updated_at?: string;
+    fetched_at?: string;
+  };
   created_at: string;
 }
 

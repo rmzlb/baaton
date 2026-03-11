@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Kanban, ArrowRight, Trash2, X, Github, AlertTriangle, Copy, Check } from 'lucide-react';
+import { Plus, Kanban, ArrowRight, Trash2, X, Github, AlertTriangle, Copy, Check, Star, GitFork, Circle } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { ApiError } from '@/lib/api';
@@ -137,10 +137,47 @@ export function ProjectList() {
               {project.description && (
                 <p className="mt-1 text-xs text-secondary line-clamp-2">{project.description}</p>
               )}
+              {/* GitHub metadata */}
+              {project.github_metadata && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
+                  {project.github_metadata.language && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 font-medium">
+                      <Circle size={6} fill="currentColor" />{project.github_metadata.language}
+                    </span>
+                  )}
+                  {(project.github_metadata.stars ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-0.5 text-secondary">
+                      <Star size={10} />{project.github_metadata.stars}
+                    </span>
+                  )}
+                  {(project.github_metadata.forks ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-0.5 text-secondary">
+                      <GitFork size={10} />{project.github_metadata.forks}
+                    </span>
+                  )}
+                  {project.github_metadata.is_private ? (
+                    <span className="px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Private</span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400 font-medium">Public</span>
+                  )}
+                </div>
+              )}
+              {project.github_repo_url && !project.github_metadata && (
+                <div className="mt-2 flex items-center gap-1 text-[10px] text-secondary">
+                  <Github size={10} />
+                  <span className="truncate">{project.github_repo_url.replace('https://github.com/', '')}</span>
+                </div>
+              )}
               <div className="mt-3 flex items-center gap-3 text-[10px] text-secondary">
                 <span className="font-mono">{project.slug}</span>
                 <span>·</span>
                 <span>{timeAgo(project.created_at)}</span>
+                {project.github_repo_url && (
+                  <>
+                    <span>·</span>
+                    <Github size={10} className="text-secondary" />
+                  </>
+                )}
               </div>
             </Link>
           ))}
@@ -274,6 +311,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
         slug,
         prefix: prefix.toUpperCase() || name.slice(0, 3).toUpperCase(),
         description: description || undefined,
+        github_repo_url: githubRepoUrl || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });

@@ -9,6 +9,88 @@ use crate::models::{
     ApiResponse, CreateProject, Project, ProjectAutoAssignSettings, UpdateProjectAutoAssignSettings,
 };
 
+/// Parse "owner/repo" from a GitHub URL like https://github.com/owner/repo
+fn parse_github_owner_repo(url: &str) -> Option<(String, String)> {
+    let url = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    // Handle both https://github.com/owner/repo and github.com/owner/repo
+    let path = url.strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("http://github.com/"))
+        .or_else(|| url.strip_prefix("github.com/"))?;
+    let parts: Vec<&str> = path.splitn(3, '/').collect();
+    if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+        Some((parts[0].to_string(), parts[1].to_string()))
+    } else {
+        None
+    }
+}
+
+/// Fetch public repo metadata from GitHub API (no auth needed for public repos)
+async fn fetch_github_metadata(url: &str) -> Option<serde_json::Value> {
+    let (owner, repo) = parse_github_owner_repo(url)?;
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("https://api.github.com/repos/{}/{}", owner, repo))
+        .header("User-Agent", "Baaton/1.0")
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        tracing::warn!("GitHub API returned {} for {}/{}", resp.status(), owner, repo);
+        return None;
+    }
+    let data: serde_json::Value = resp.json().await.ok()?;
+    Some(json!({
+        "full_name": data.get("full_name").and_then(|v| v.as_str()),
+        "description": data.get("description").and_then(|v| v.as_str()),
+        "language": data.get("language").and_then(|v| v.as_str()),
+        "stars": data.get("stargazers_count").and_then(|v| v.as_u64()).unwrap_or(0),
+        "forks": data.get("forks_count").and_then(|v| v.as_u64()).unwrap_or(0),
+        "open_issues": data.get("open_issues_count").and_then(|v| v.as_u64()).unwrap_or(0),
+        "default_branch": data.get("default_branch").and_then(|v| v.as_str()).unwrap_or("main"),
+        "is_private": data.get("private").and_then(|v| v.as_bool()).unwrap_or(false),
+        "topics": data.get("topics"),
+        "updated_at": data.get("updated_at").and_then(|v| v.as_str()),
+        "fetched_at": chrono::Utc::now().to_rfc3339(),
+    }))
+}
+
+/// Refresh GitHub metadata for a project
+pub async fn refresh_github(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let row = sqlx::query_as::<_, (Option<String>,)>(
+        "SELECT github_repo_url FROM projects WHERE id = $1 AND org_id = $2"
+    )
+    .bind(id).bind(org_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    let url = match row {
+        Some((Some(u),)) if !u.is_empty() => u,
+        _ => return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "No GitHub repo URL configured for this project"})))),
+    };
+
+    let metadata = fetch_github_metadata(&url).await
+        .ok_or_else(|| (StatusCode::BAD_GATEWAY, Json(json!({"error": "Failed to fetch GitHub metadata — repo may be private or not found"}))))?;
+
+    let project = sqlx::query_as::<_, Project>(
+        "UPDATE projects SET github_metadata = $3 WHERE id = $1 AND org_id = $2 RETURNING *"
+    )
+    .bind(id).bind(org_id).bind(&metadata)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    Ok(Json(ApiResponse::new(project)))
+}
+
 /// List projects — filtered by the user's current org_id if available.
 /// If no org_id in token (no active org selected), return ALL projects accessible to user.
 pub async fn list(
@@ -86,10 +168,17 @@ pub async fn create(
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid auto_assign_mode"}))));
     }
 
+    // Fetch GitHub metadata if repo URL provided
+    let github_metadata = if let Some(ref url) = body.github_repo_url {
+        fetch_github_metadata(url).await
+    } else {
+        None
+    };
+
     let project = sqlx::query_as::<_, Project>(
         r#"
-        INSERT INTO projects (org_id, name, slug, description, prefix, auto_assign_mode, default_assignee_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO projects (org_id, name, slug, description, prefix, auto_assign_mode, default_assignee_id, github_repo_url, github_metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         "#,
     )
@@ -100,6 +189,8 @@ pub async fn create(
     .bind(&body.prefix)
     .bind(auto_assign_mode)
     .bind(&body.default_assignee_id)
+    .bind(&body.github_repo_url)
+    .bind(&github_metadata)
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -148,12 +239,22 @@ pub async fn update(
         }
     }
 
+    // If github_repo_url changed, re-fetch metadata
+    let new_github_url = body.get("github_repo_url").and_then(|v| v.as_str());
+    let github_metadata = if let Some(url) = new_github_url {
+        if url.is_empty() { None } else { fetch_github_metadata(url).await }
+    } else {
+        None
+    };
+
     let project = sqlx::query_as::<_, Project>(
         r#"UPDATE projects
            SET name = COALESCE($3, name),
                description = COALESCE($4, description),
                auto_assign_mode = COALESCE($5, auto_assign_mode),
-               default_assignee_id = CASE WHEN $6::boolean THEN $7 ELSE default_assignee_id END
+               default_assignee_id = CASE WHEN $6::boolean THEN $7 ELSE default_assignee_id END,
+               github_repo_url = CASE WHEN $8::boolean THEN $9 ELSE github_repo_url END,
+               github_metadata = CASE WHEN $10::jsonb IS NOT NULL THEN $10 ELSE github_metadata END
            WHERE id = $1 AND org_id = $2
            RETURNING *"#,
     )
@@ -163,6 +264,9 @@ pub async fn update(
     .bind(auto_assign_mode)
     .bind(body.get("default_assignee_id").is_some())
     .bind(body.get("default_assignee_id").and_then(|v| v.as_str()))
+    .bind(new_github_url.is_some())
+    .bind(new_github_url)
+    .bind(&github_metadata)
     .fetch_optional(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
