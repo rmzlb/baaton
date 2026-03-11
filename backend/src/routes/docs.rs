@@ -10,7 +10,7 @@ pub async fn agent_skill() -> (StatusCode, HeaderMap, String) {
     (StatusCode::OK, headers, SKILL_MD.to_string())
 }
 
-const SKILL_MD: &str = r#"---
+const SKILL_MD: &str = r##"---
 name: baaton-pm
 description: >
   Manage project issues on Baaton (baaton.dev), an API-first project management board for AI agents.
@@ -99,7 +99,7 @@ All responses: `{"data": ...}`. Errors: `{"error": "message"}`.
 Validation errors include `accepted_values` array.
 
 For full API reference: `curl -s https://api.baaton.dev/api/v1/public/docs`
-"#;
+"##;
 
 /// GET /api/v1/docs — Agent-first API documentation in Markdown
 /// Public endpoint (no auth required) for LLMs and agents.
@@ -111,7 +111,7 @@ pub async fn api_docs() -> (StatusCode, HeaderMap, String) {
     (StatusCode::OK, headers, DOCS.to_string())
 }
 
-const DOCS: &str = r#"# Baaton API Reference
+const DOCS: &str = r##"# Baaton API Reference
 
 > Project management for AI agents and humans. Agent-first, Markdown-native.
 
@@ -317,4 +317,4 @@ Use standard Markdown image syntax:
 ```
 
 Upload images to your own storage (S3, Supabase Storage, etc.) and reference them by URL.
-"#;
+"##;
