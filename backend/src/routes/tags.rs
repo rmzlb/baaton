@@ -69,15 +69,20 @@ pub async fn create(
 
     let tag = sqlx::query_as::<_, ProjectTag>(
         r#"
-        INSERT INTO project_tags (project_id, name, color)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (project_id, name) DO UPDATE SET color = $3
+        INSERT INTO project_tags (project_id, name, color, group_name, description)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (project_id, name) DO UPDATE
+            SET color = EXCLUDED.color,
+                group_name = EXCLUDED.group_name,
+                description = EXCLUDED.description
         RETURNING *
         "#,
     )
     .bind(project_id)
     .bind(&body.name)
     .bind(color)
+    .bind(&body.group_name)
+    .bind(&body.description)
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;

@@ -204,7 +204,9 @@ pub struct ProjectTag {
     pub id: Uuid,
     pub project_id: Uuid,
     pub name: String,
-    pub color: String,
+    pub color: Option<String>,
+    pub group_name: Option<String>,
+    pub description: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -212,6 +214,8 @@ pub struct ProjectTag {
 pub struct CreateProjectTag {
     pub name: String,
     pub color: Option<String>,
+    pub group_name: Option<String>,
+    pub description: Option<String>,
 }
 
 // ─── API Key ──────────────────────────────────────────

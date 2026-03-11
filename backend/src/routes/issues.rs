@@ -1,5 +1,5 @@
 use axum::{extract::{Path, Query, State}, http::StatusCode, Extension, Json};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -886,6 +886,190 @@ pub async fn remove(
     } else {
         Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))
     }
+}
+
+// ─── Batch Actions ────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct BatchChanges {
+    pub status: Option<String>,
+    pub priority: Option<String>,
+    pub assignee_ids: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchUpdateBody {
+    pub issue_ids: Vec<Uuid>,
+    pub changes: BatchChanges,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchDeleteBody {
+    pub issue_ids: Vec<Uuid>,
+}
+
+pub async fn batch_update(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Json(body): Json<BatchUpdateBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    if body.issue_ids.is_empty() {
+        return Ok(Json(json!({"updated": 0})));
+    }
+
+    // Validate priority if provided
+    if let Some(ref priority) = body.changes.priority {
+        validate_priority(priority)?;
+    }
+
+    // Validate status if provided — fetch project statuses from the first issue's project
+    if let Some(ref status) = body.changes.status {
+        let project_id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT i.project_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2"
+        )
+        .bind(body.issue_ids[0])
+        .bind(org_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+        if let Some(pid) = project_id {
+            let valid_statuses = get_project_statuses(&pool, pid, org_id).await?;
+            validate_status(status, &valid_statuses)?;
+        }
+    }
+
+    let mut updated_count: i64 = 0;
+
+    for issue_id in &body.issue_ids {
+        // Build dynamic update — only touch provided fields
+        let issue = sqlx::query_as::<_, Issue>(
+            r#"
+            UPDATE issues SET
+                status     = CASE WHEN $2::text IS NOT NULL THEN $2 ELSE status END,
+                priority   = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE priority END,
+                assignee_ids = CASE WHEN $4::text[] IS NOT NULL THEN $4 ELSE assignee_ids END,
+                tags       = CASE WHEN $5::text[] IS NOT NULL THEN $5 ELSE tags END,
+                updated_at = now()
+            WHERE id = $1
+              AND project_id IN (SELECT id FROM projects WHERE org_id = $6)
+            RETURNING *
+            "#,
+        )
+        .bind(issue_id)
+        .bind(&body.changes.status)
+        .bind(&body.changes.priority)
+        .bind(&body.changes.assignee_ids)
+        .bind(&body.changes.tags)
+        .bind(org_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+        if let Some(issue) = issue {
+            updated_count += 1;
+            let event = if body.changes.status.is_some() { "status.changed" } else { "issue.updated" };
+            dispatch_event(pool.clone(), org_id.to_string(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
+        }
+    }
+
+    Ok(Json(json!({"updated": updated_count})))
+}
+
+pub async fn batch_delete(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Json(body): Json<BatchDeleteBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    if body.issue_ids.is_empty() {
+        return Ok(Json(json!({"deleted": 0})));
+    }
+
+    let result = sqlx::query(
+        "DELETE FROM issues WHERE id = ANY($1) AND project_id IN (SELECT id FROM projects WHERE org_id = $2)"
+    )
+    .bind(&body.issue_ids)
+    .bind(org_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    Ok(Json(json!({"deleted": result.rows_affected()})))
+}
+
+// ─── Global Search ────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct SearchParams {
+    pub q: String,
+    pub project_id: Option<Uuid>,
+    pub status: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct SearchResult {
+    pub id: Uuid,
+    pub display_id: String,
+    pub title: String,
+    pub snippet: Option<String>,
+    pub status: String,
+    pub priority: Option<String>,
+    pub project_id: Uuid,
+}
+
+pub async fn search(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Query(params): Query<SearchParams>,
+) -> Result<Json<ApiResponse<Vec<SearchResult>>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    if params.q.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Query parameter 'q' is required"}))));
+    }
+
+    let limit = params.limit.unwrap_or(20).min(100);
+
+    let results = sqlx::query_as::<_, SearchResult>(
+        r#"
+        SELECT
+            i.id,
+            i.display_id,
+            i.title,
+            ts_headline('english', COALESCE(i.description, ''), plainto_tsquery('english', $1),
+                'MaxWords=20, MinWords=5, ShortWord=3, HighlightAll=false') AS snippet,
+            i.status,
+            i.priority,
+            i.project_id
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        WHERE i.search_vector @@ plainto_tsquery('english', $1)
+          AND p.org_id = $2
+          AND ($3::uuid IS NULL OR i.project_id = $3)
+          AND ($4::text IS NULL OR i.status = $4)
+        ORDER BY ts_rank(i.search_vector, plainto_tsquery('english', $1)) DESC
+        LIMIT $5
+        "#,
+    )
+    .bind(&params.q)
+    .bind(org_id)
+    .bind(params.project_id)
+    .bind(&params.status)
+    .bind(limit)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    Ok(Json(ApiResponse::new(results)))
 }
 
 // ─── Public Submission ────────────────────────────────

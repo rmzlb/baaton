@@ -19,6 +19,7 @@ import type { PendingFile } from '@/hooks/useFileUpload';
 import { cn, timeAgo } from '@/lib/utils';
 import { evaluateIssueSla } from '@/lib/sla';
 import { NotionEditor } from '@/components/shared/NotionEditor';
+import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 import { GitHubSection } from '@/components/github/GitHubSection';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
@@ -1017,6 +1018,8 @@ function DescriptionView({ description, editing, draft, hasUnsavedChanges, isSav
               className="prose prose-xs dark:prose-invert prose-headings:text-primary prose-p:text-secondary prose-li:text-secondary prose-a:text-accent prose-img:rounded-lg prose-img:border prose-img:border-border max-w-none text-[11px] leading-relaxed [&_img]:max-w-full [&_img]:my-2"
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description, { ADD_DATA_URI_TAGS: ['img'], ADD_ATTR: ['target'], ALLOWED_URI_REGEXP: /^(?:(?:https?|data):)/i }) }}
             />
+          ) : /^#{1,3}\s|^\*\*|^- |^```|^\|/.test(description.trim()) ? (
+            <MarkdownRenderer content={description} />
           ) : (
             <NotionEditor
               initialContent={description}

@@ -1,8 +1,10 @@
+import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { AIAssistant } from '@/components/ai/AIAssistant';
 import { ToastContainer } from '@/components/shared/Toast';
+import { CommandPalette } from '@/components/shared/CommandPalette';
 import { useUIStore } from '@/stores/ui';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import { useSSE } from '@/hooks/useSSE';
@@ -10,6 +12,19 @@ import { cn } from '@/lib/utils';
 
 export function AppLayout() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+
+  // Global Cmd+K / Ctrl+K handler
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowCommandPalette(prev => !prev);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
 
   // Onboarding tour — auto-starts for first-time users
   useOnboarding();
@@ -51,6 +66,7 @@ export function AppLayout() {
       />
       <AIAssistant />
       <ToastContainer />
+      {showCommandPalette && <CommandPalette onClose={() => setShowCommandPalette(false)} />}
     </div>
   );
 }

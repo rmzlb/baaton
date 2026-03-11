@@ -39,6 +39,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Issues
         .route("/issues", get(issues::list_all).post(issues::create))
         .route("/issues/mine", get(issues::list_mine))
+        .route("/issues/batch", patch(issues::batch_update).delete(issues::batch_delete))
+        .route("/search", get(issues::search))
         .route("/issues/{id}", get(issues::get_one).patch(issues::update).delete(issues::remove))
         .route("/issues/{id}/position", patch(issues::update_position))
         .route("/issues/{id}/comments", get(comments::list_by_issue).post(comments::create))
