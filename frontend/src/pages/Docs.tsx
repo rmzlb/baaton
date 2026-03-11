@@ -566,14 +566,27 @@ curl https://api.baaton.dev/api/v1/metrics?days=30 \\
                 <h4 className="text-sm font-semibold mb-2">{t('docs.integrations.skill.installTitle')}</h4>
                 <div className="space-y-2 mb-4">
                   <div className="rounded-lg bg-bg border border-border p-3">
-                    <p className="text-xs text-muted mb-1">OpenClaw / Claude Code / Cursor:</p>
-                    <code className="text-sm font-mono text-primary">clawhub install baaton</code>
+                    <p className="text-xs text-muted mb-1">Claude Code:</p>
+                    <code className="text-sm font-mono text-primary">/plugin marketplace add rmzlb/baaton-skills</code>
+                  </div>
+                  <div className="rounded-lg bg-bg border border-border p-3">
+                    <p className="text-xs text-muted mb-1">OpenClaw:</p>
+                    <code className="text-sm font-mono text-primary">openclaw skills install rmzlb/baaton-skills/baaton</code>
+                  </div>
+                  <div className="rounded-lg bg-bg border border-border p-3">
+                    <p className="text-xs text-muted mb-1">Git clone:</p>
+                    <code className="text-sm font-mono text-primary break-all">git clone https://github.com/rmzlb/baaton-skills ~/.claude/skills/baaton-pm</code>
                   </div>
                   <div className="rounded-lg bg-bg border border-border p-3">
                     <p className="text-xs text-muted mb-1">{t('docs.integrations.skill.curlInstall')}:</p>
                     <code className="text-sm font-mono text-primary break-all">curl -s https://api.baaton.dev/api/v1/public/skill {'>'} ~/.claude/skills/baaton-pm/SKILL.md</code>
                   </div>
                 </div>
+                <p className="text-xs text-muted mb-4">
+                  <a href="https://github.com/rmzlb/baaton-skills" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+                    github.com/rmzlb/baaton-skills
+                  </a> — {t('docs.integrations.skill.repoDesc')}
+                </p>
 
                 <h4 className="text-sm font-semibold mb-2">{t('docs.integrations.skill.configTitle')}</h4>
                 <div className="rounded-lg bg-bg border border-border p-3 mb-4">

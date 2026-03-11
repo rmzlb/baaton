@@ -867,6 +867,7 @@ As a [user], I want to [action] so that [benefit].
   'docs.integrations.skill.feat4': 'Webhooks — subscribe to real-time events (issue.created, status.changed, etc.)',
   'docs.integrations.skill.feat5': 'Metrics — dashboard data (issues per day, resolution time, breakdowns)',
   'docs.integrations.skill.feat6': 'Helper script — baaton-api.sh wraps curl with auth, error handling, and pretty-print',
+  'docs.integrations.skill.repoDesc': 'Full skill with references, workflows, and helper scripts',
   'docs.integrations.openclaw.title': '🦞 OpenClaw',
   'docs.integrations.openclaw.desc': 'Connect your personal OpenClaw AI agent to chat with it directly from the Baaton AI panel. Your agent has full context about your projects.',
   'docs.integrations.openclaw.step1': 'Install OpenClaw on your machine (docs.openclaw.ai).',
