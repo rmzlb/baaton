@@ -1,4 +1,4 @@
-use axum::{extract::{Extension, Path, State}, http::StatusCode, Json};
+use axum::{extract::{Extension, Path, Query, State}, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
@@ -361,11 +361,18 @@ pub async fn update_public_submit_settings(
     Ok(Json(ApiResponse::new(PublicSubmitSettings { enabled: updated.0, token: updated.1, slug: updated.2 })))
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct BoardParams {
+    pub include_archived: Option<bool>,
+    pub include_snoozed: Option<bool>,
+}
+
 /// Composite board endpoint: project + issues + tags in one request
 pub async fn board_by_slug(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(slug): Path<String>,
+    Query(params): Query<BoardParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let start = std::time::Instant::now();
     let org_id = auth.org_id.as_deref()
@@ -381,12 +388,23 @@ pub async fn board_by_slug(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
     .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
 
+    let include_archived = params.include_archived.unwrap_or(false);
+    let include_snoozed = params.include_snoozed.unwrap_or(false);
+
     // Fetch issues and tags in parallel
     let (issues, tags) = tokio::join!(
         sqlx::query_as::<_, crate::models::Issue>(
-            "SELECT * FROM issues WHERE project_id = $1 ORDER BY position ASC"
+            r#"
+            SELECT * FROM issues
+            WHERE project_id = $1
+              AND (archived = false OR $2::boolean)
+              AND (snoozed_until IS NULL OR snoozed_until <= CURRENT_DATE OR $3::boolean)
+            ORDER BY position ASC
+            "#
         )
         .bind(project.id)
+        .bind(include_archived)
+        .bind(include_snoozed)
         .fetch_all(&pool),
         sqlx::query_as::<_, crate::models::ProjectTag>(
             "SELECT * FROM project_tags WHERE project_id = $1 ORDER BY name ASC"

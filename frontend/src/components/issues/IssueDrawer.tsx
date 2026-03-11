@@ -20,6 +20,7 @@ import { cn, timeAgo } from '@/lib/utils';
 import { evaluateIssueSla } from '@/lib/sla';
 import { NotionEditor } from '@/components/shared/NotionEditor';
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
+import { ActivityTimeline } from '@/components/issues/ActivityTimeline';
 import { GitHubSection } from '@/components/github/GitHubSection';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
@@ -96,6 +97,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const [isDragging, setIsDragging] = useState(false);
   const [annotatingIndex, setAnnotatingIndex] = useState<number | null>(null);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'comments' | 'activity'>('comments');
   const dragCounter = useRef(0);
 
   // ── File upload hook ──
@@ -718,15 +720,36 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               {/* Divider */}
               <div className="border-t border-border" />
 
-              {/* Comments */}
-              <CommentSection
-                comments={issue.comments || []}
-                commentText={commentText}
-                onCommentTextChange={setCommentText}
-                onSubmit={handleSubmitComment}
-                isPending={commentMutation.isPending}
-                t={t}
-              />
+              {/* Comments & Activity Tabs */}
+              <div>
+                <div className="flex items-center gap-1 mb-3">
+                  <button
+                    onClick={() => setActiveTab('comments')}
+                    className={`px-3 py-1.5 text-[11px] font-medium rounded-md transition-colors ${activeTab === 'comments' ? 'bg-accent/10 text-accent' : 'text-muted hover:text-secondary'}`}
+                  >
+                    Comments {issue.comments?.length ? `(${issue.comments.length})` : ''}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('activity')}
+                    className={`px-3 py-1.5 text-[11px] font-medium rounded-md transition-colors ${activeTab === 'activity' ? 'bg-accent/10 text-accent' : 'text-muted hover:text-secondary'}`}
+                  >
+                    Activity
+                  </button>
+                </div>
+
+                {activeTab === 'comments' ? (
+                  <CommentSection
+                    comments={issue.comments || []}
+                    commentText={commentText}
+                    onCommentTextChange={setCommentText}
+                    onSubmit={handleSubmitComment}
+                    isPending={commentMutation.isPending}
+                    t={t}
+                  />
+                ) : (
+                  <ActivityTimeline issueId={issue.id} />
+                )}
+              </div>
 
               {/* GitHub Integration */}
               <GitHubSection issueId={issueId} />

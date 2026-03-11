@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr, UpdateIssue};
+use crate::routes::activity::log_activity;
 use crate::routes::webhooks::dispatch_event;
 
 // ─── Validation constants ─────────────────────────────
@@ -88,6 +89,8 @@ pub struct ListParams {
     pub search: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    pub include_snoozed: Option<bool>,
+    pub include_archived: Option<bool>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -234,6 +237,9 @@ pub async fn list_by_project(
     let limit = params.limit.unwrap_or(100);
     let offset = params.offset.unwrap_or(0);
 
+    let include_archived = params.include_archived.unwrap_or(false);
+    let include_snoozed = params.include_snoozed.unwrap_or(false);
+
     let issues = sqlx::query_as::<_, Issue>(
         r#"
         SELECT * FROM issues
@@ -243,6 +249,8 @@ pub async fn list_by_project(
           AND ($4::text IS NULL OR type = $4)
           AND ($5::text IS NULL OR title ILIKE '%' || $5 || '%')
           AND ($6::text IS NULL OR $6 = ANY(category))
+          AND (archived = false OR $9::boolean)
+          AND (snoozed_until IS NULL OR snoozed_until <= CURRENT_DATE OR $10::boolean)
         ORDER BY position ASC
         LIMIT $7 OFFSET $8
         "#,
@@ -255,6 +263,8 @@ pub async fn list_by_project(
     .bind(&params.category)
     .bind(limit)
     .bind(offset)
+    .bind(include_archived)
+    .bind(include_snoozed)
     .fetch_all(&pool)
     .await
     .unwrap_or_else(|e| {
@@ -404,6 +414,19 @@ pub async fn create(
     tx.commit()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    // ── Activity logging (fire-and-forget) ───────────────
+    {
+        let pool2 = pool.clone();
+        let uid = auth.user_id.clone();
+        let uname = auth.display_name.clone();
+        let pid = issue.project_id;
+        let iid = issue.id;
+        let oid = org_id.to_string();
+        tokio::spawn(async move {
+            log_activity(&pool2, &oid, Some(pid), Some(iid), &uid, uname.as_deref(), "issue_created", None, None, None, None).await;
+        });
+    }
 
     // ── Novu notifications (fire-and-forget) ─────────────
     if let Some(ref novu) = novu {
@@ -639,6 +662,9 @@ pub async fn update(
     let is_closing = status_changed && (new_status == "done" || new_status == "cancelled");
     let is_reopening = status_changed && existing.closed_at.is_some() && new_status != "done" && new_status != "cancelled";
 
+    let snoozed_until_provided = body.snoozed_until.is_some();
+    let snoozed_until_value = body.snoozed_until.flatten();
+
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         UPDATE issues SET
@@ -661,6 +687,7 @@ pub async fn update(
                 WHEN $23::boolean THEN NULL
                 ELSE closed_at
             END,
+            snoozed_until = CASE WHEN $24::boolean THEN $25 ELSE snoozed_until END,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -686,12 +713,61 @@ pub async fn update(
     .bind(estimate_value)
     .bind(sprint_id_provided)
     .bind(sprint_id_value)
-    .bind(status_changed)  // $21: status_changed_at trigger
-    .bind(is_closing)      // $22: set closed_at
-    .bind(is_reopening)    // $23: clear closed_at
+    .bind(status_changed)        // $21: status_changed_at trigger
+    .bind(is_closing)            // $22: set closed_at
+    .bind(is_reopening)          // $23: clear closed_at
+    .bind(snoozed_until_provided) // $24
+    .bind(snoozed_until_value)   // $25
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    // ── Activity logging (fire-and-forget) ───────────────
+    {
+        let pool_ref = pool.clone();
+        let user_id = auth.user_id.clone();
+        let user_name = auth.display_name.clone();
+        let project_id = existing.project_id;
+        let org_id_str = org_id.to_string();
+
+        if status_changed {
+            let old_val = existing.status.clone();
+            let new_val = issue.status.clone();
+            let pool2 = pool_ref.clone();
+            let uid = user_id.clone();
+            let uname = user_name.clone();
+            let oid = org_id_str.clone();
+            tokio::spawn(async move {
+                log_activity(&pool2, &oid, Some(project_id), Some(id), &uid, uname.as_deref(), "status_changed", Some("status"), Some(&old_val), Some(&new_val), None).await;
+            });
+        }
+
+        if body.priority.is_some() && existing.priority != issue.priority {
+            let old_val = existing.priority.clone().unwrap_or_default();
+            let new_val = issue.priority.clone().unwrap_or_default();
+            let pool2 = pool_ref.clone();
+            let uid = user_id.clone();
+            let uname = user_name.clone();
+            let oid = org_id_str.clone();
+            tokio::spawn(async move {
+                log_activity(&pool2, &oid, Some(project_id), Some(id), &uid, uname.as_deref(), "priority_changed", Some("priority"), Some(&old_val), Some(&new_val), None).await;
+            });
+        }
+
+        if let Some(ref new_assignees) = body.assignee_ids {
+            if *new_assignees != existing.assignee_ids {
+                let old_val = existing.assignee_ids.join(",");
+                let new_val = new_assignees.join(",");
+                let pool2 = pool_ref.clone();
+                let uid = user_id.clone();
+                let uname = user_name.clone();
+                let oid = org_id_str.clone();
+                tokio::spawn(async move {
+                    log_activity(&pool2, &oid, Some(project_id), Some(id), &uid, uname.as_deref(), "assignee_changed", Some("assignee_ids"), Some(&old_val), Some(&new_val), None).await;
+                });
+            }
+        }
+    }
 
     // ── Novu notifications (fire-and-forget) ─────────────
     if let Some(ref novu) = novu {
@@ -1012,6 +1088,7 @@ pub struct SearchParams {
     pub project_id: Option<Uuid>,
     pub status: Option<String>,
     pub limit: Option<i64>,
+    pub is_overdue: Option<bool>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -1039,6 +1116,8 @@ pub async fn search(
 
     let limit = params.limit.unwrap_or(20).min(100);
 
+    let is_overdue = params.is_overdue.unwrap_or(false);
+
     let results = sqlx::query_as::<_, SearchResult>(
         r#"
         SELECT
@@ -1056,6 +1135,7 @@ pub async fn search(
           AND p.org_id = $2
           AND ($3::uuid IS NULL OR i.project_id = $3)
           AND ($4::text IS NULL OR i.status = $4)
+          AND (NOT $6::boolean OR (i.due_date < CURRENT_DATE AND i.status NOT IN ('done', 'cancelled')))
         ORDER BY ts_rank(i.search_vector, plainto_tsquery('english', $1)) DESC
         LIMIT $5
         "#,
@@ -1065,6 +1145,7 @@ pub async fn search(
     .bind(params.project_id)
     .bind(&params.status)
     .bind(limit)
+    .bind(is_overdue)
     .fetch_all(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -1212,6 +1293,100 @@ pub async fn public_submit(
     tx.commit()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    Ok(Json(ApiResponse::new(issue)))
+}
+
+// ─── Archive / Unarchive ──────────────────────────────
+
+pub async fn archive(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
+    )
+    .bind(id)
+    .bind(org_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !exists {
+        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
+    }
+
+    let issue = sqlx::query_as::<_, Issue>(
+        "UPDATE issues SET archived = true, archived_at = now(), updated_at = now() WHERE id = $1 RETURNING *"
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    // ── Activity log ─────────────────────────────────────
+    {
+        let pool2 = pool.clone();
+        let uid = auth.user_id.clone();
+        let uname = auth.display_name.clone();
+        let pid = issue.project_id;
+        let oid = org_id.to_string();
+        tokio::spawn(async move {
+            log_activity(&pool2, &oid, Some(pid), Some(id), &uid, uname.as_deref(), "issue_archived", None, None, None, None).await;
+        });
+    }
+
+    dispatch_event(pool.clone(), org_id.to_string(), "issue.archived", serde_json::to_value(&issue).unwrap_or_default()).await;
+
+    Ok(Json(ApiResponse::new(issue)))
+}
+
+pub async fn unarchive(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
+    )
+    .bind(id)
+    .bind(org_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !exists {
+        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
+    }
+
+    let issue = sqlx::query_as::<_, Issue>(
+        "UPDATE issues SET archived = false, archived_at = NULL, updated_at = now() WHERE id = $1 RETURNING *"
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    // ── Activity log ─────────────────────────────────────
+    {
+        let pool2 = pool.clone();
+        let uid = auth.user_id.clone();
+        let uname = auth.display_name.clone();
+        let pid = issue.project_id;
+        let oid = org_id.to_string();
+        tokio::spawn(async move {
+            log_activity(&pool2, &oid, Some(pid), Some(id), &uid, uname.as_deref(), "issue_unarchived", None, None, None, None).await;
+        });
+    }
+
+    dispatch_event(pool.clone(), org_id.to_string(), "issue.unarchived", serde_json::to_value(&issue).unwrap_or_default()).await;
 
     Ok(Json(ApiResponse::new(issue)))
 }

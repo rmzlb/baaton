@@ -107,6 +107,9 @@ pub struct Issue {
     pub sprint_id: Option<Uuid>,
     pub status_changed_at: Option<DateTime<Utc>>,
     pub closed_at: Option<DateTime<Utc>>,
+    pub snoozed_until: Option<NaiveDate>,
+    pub archived: bool,
+    pub archived_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -149,6 +152,7 @@ pub struct UpdateIssue {
     pub attachments: Option<serde_json::Value>,
     pub estimate: Option<Option<i32>>,
     pub sprint_id: Option<Option<Uuid>>,
+    pub snoozed_until: Option<Option<NaiveDate>>,
 }
 
 // ─── TLDR ─────────────────────────────────────────────

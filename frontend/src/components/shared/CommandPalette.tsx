@@ -3,11 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Fuse from 'fuse.js';
 import { useApi } from '@/hooks/useApi';
-
 import {
   Search, ArrowRight, Kanban, LayoutDashboard, CheckSquare, AlertTriangle,
   FolderOpen, BarChart3, Webhook, Key, FileText, Hash,
-  CornerDownLeft, ArrowUp, ArrowDown,
+  CornerDownLeft, ArrowUp, ArrowDown, CircleDot,
 } from 'lucide-react';
 
 interface PaletteItem {
@@ -19,6 +18,25 @@ interface PaletteItem {
   action: () => void;
 }
 
+interface SearchResult {
+  id: string;
+  display_id: string;
+  title: string;
+  snippet?: string;
+  status: string;
+  priority: string;
+  project_id: string;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  backlog: 'text-gray-400',
+  todo: 'text-blue-400',
+  in_progress: 'text-yellow-400',
+  in_review: 'text-purple-400',
+  done: 'text-green-400',
+  cancelled: 'text-red-400',
+};
+
 export function CommandPalette({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const apiClient = useApi();
@@ -26,24 +44,43 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const listRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
 
-  // Fetch data for search
+  // Debounce search query (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // Fetch projects (cached)
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: () => apiClient.projects.list(),
     staleTime: 60_000,
   });
 
+  // Live issue search via API
+  const { data: searchResults = [], isFetching: isSearching } = useQuery({
+    queryKey: ['command-search', debouncedQuery],
+    queryFn: async () => {
+      if (!debouncedQuery.trim() || debouncedQuery.length < 2) return [];
+      const res = await apiClient.get<SearchResult[]>(`/search?q=${encodeURIComponent(debouncedQuery)}&limit=8`);
+      return res;
+    },
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 10_000,
+  });
+
   // Navigation items
   const navItems: PaletteItem[] = useMemo(() => [
-    { id: 'nav-dashboard', type: 'navigation', title: 'Dashboard', subtitle: 'Overview', icon: <LayoutDashboard size={16} />, action: () => { navigate('/dashboard'); onClose(); } },
+    { id: 'nav-dashboard', type: 'navigation', title: 'Dashboard', subtitle: 'Overview & metrics', icon: <LayoutDashboard size={16} />, action: () => { navigate('/dashboard'); onClose(); } },
     { id: 'nav-my-tasks', type: 'navigation', title: 'My Tasks', subtitle: 'Issues assigned to you', icon: <CheckSquare size={16} />, action: () => { navigate('/my-tasks'); onClose(); } },
     { id: 'nav-all-issues', type: 'navigation', title: 'All Issues', subtitle: 'Browse all issues', icon: <Hash size={16} />, action: () => { navigate('/all-issues'); onClose(); } },
     { id: 'nav-triage', type: 'navigation', title: 'Triage', subtitle: 'Incoming issues', icon: <AlertTriangle size={16} />, action: () => { navigate('/triage'); onClose(); } },
     { id: 'nav-projects', type: 'navigation', title: 'Projects', subtitle: 'All projects', icon: <FolderOpen size={16} />, action: () => { navigate('/projects'); onClose(); } },
     { id: 'nav-analytics', type: 'navigation', title: 'Analytics', subtitle: 'Metrics & insights', icon: <BarChart3 size={16} />, action: () => { navigate('/analytics'); onClose(); } },
     { id: 'nav-webhooks', type: 'navigation', title: 'Webhooks', subtitle: 'Event subscriptions', icon: <Webhook size={16} />, action: () => { navigate('/webhooks'); onClose(); } },
-    { id: 'nav-api-keys', type: 'navigation', title: 'API Keys', subtitle: 'Manage keys', icon: <Key size={16} />, action: () => { navigate('/api-keys'); onClose(); } },
+    { id: 'nav-api-keys', type: 'navigation', title: 'API Keys', subtitle: 'Manage API keys', icon: <Key size={16} />, action: () => { navigate('/api-keys'); onClose(); } },
     { id: 'nav-docs', type: 'navigation', title: 'Documentation', subtitle: 'API reference', icon: <FileText size={16} />, action: () => { navigate('/docs'); onClose(); } },
   ], [navigate, onClose]);
 
@@ -60,31 +97,59 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     [projects, navigate, onClose]
   );
 
-  // All items
-  const allItems = useMemo(() => [...navItems, ...projectItems], [navItems, projectItems]);
+  // Issue items from search API
+  const issueItems: PaletteItem[] = useMemo(() =>
+    searchResults.map(r => {
+      // Find project slug for navigation
+      const project = projects.find(p => p.id === r.project_id);
+      return {
+        id: `issue-${r.id}`,
+        type: 'issue' as const,
+        title: `${r.display_id}: ${r.title}`,
+        subtitle: r.snippet ? r.snippet.replace(/<\/?b>/g, '').slice(0, 80) : r.status,
+        icon: <CircleDot size={16} className={STATUS_COLORS[r.status] || 'text-gray-400'} />,
+        action: () => {
+          if (project) {
+            navigate(`/projects/${project.slug}?issue=${r.display_id}`);
+          }
+          onClose();
+        },
+      };
+    }),
+    [searchResults, projects, navigate, onClose]
+  );
 
-  // Fuse search
-  const fuse = useMemo(() => new Fuse(allItems, {
+  // Static items for fuse search
+  const staticItems = useMemo(() => [...navItems, ...projectItems], [navItems, projectItems]);
+
+  const fuse = useMemo(() => new Fuse(staticItems, {
     keys: ['title', 'subtitle'],
     threshold: 0.4,
     includeScore: true,
-  }), [allItems]);
+  }), [staticItems]);
 
-  // Filtered results
+  // Combined results: issues first (if searching), then fuse results
   const results = useMemo(() => {
     if (!query.trim()) {
-      return allItems.slice(0, 12);
+      return staticItems.slice(0, 12);
     }
-    return fuse.search(query).slice(0, 12).map(r => r.item);
-  }, [query, fuse, allItems]);
+    const fuseResults = fuse.search(query).slice(0, 6).map(r => r.item);
+    // Issues from API go first, then local fuse results
+    const combined = [...issueItems, ...fuseResults];
+    // Dedupe by id
+    const seen = new Set<string>();
+    return combined.filter(item => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    }).slice(0, 12);
+  }, [query, fuse, staticItems, issueItems]);
 
-  // Reset active index on results change
+  // Reset active on results change
   useEffect(() => { setActiveIndex(0); }, [results]);
-
-  // Focus input on mount
+  // Focus on mount
   useEffect(() => { inputRef.current?.focus(); }, []);
-
-  // Scroll active item into view
+  // Scroll active into view
   useEffect(() => {
     const el = listRef.current?.children[activeIndex] as HTMLElement | undefined;
     el?.scrollIntoView({ block: 'nearest' });
@@ -125,14 +190,14 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       >
         {/* Search input */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-          <Search size={18} className="text-secondary shrink-0" />
+          <Search size={18} className={`shrink-0 ${isSearching ? 'text-accent animate-pulse' : 'text-secondary'}`} />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search or jump to..."
+            placeholder="Search issues, projects, or navigate..."
             className="flex-1 bg-transparent text-sm text-primary placeholder:text-muted outline-none"
           />
           <kbd className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border text-[10px] text-muted font-mono">
@@ -141,9 +206,11 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Results */}
-        <div ref={listRef} className="max-h-[320px] overflow-y-auto py-1">
-          {results.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-muted">No results found</div>
+        <div ref={listRef} className="max-h-[360px] overflow-y-auto py-1">
+          {results.length === 0 && !isSearching ? (
+            <div className="px-4 py-8 text-center text-sm text-muted">
+              {query.length > 0 ? 'No results found' : 'Start typing to search...'}
+            </div>
           ) : (
             results.map((item, i) => (
               <button
@@ -167,6 +234,9 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                 {i === activeIndex && <ArrowRight size={14} className="text-accent shrink-0" />}
               </button>
             ))
+          )}
+          {isSearching && (
+            <div className="px-4 py-2 text-center text-[11px] text-muted animate-pulse">Searching issues...</div>
           )}
         </div>
 

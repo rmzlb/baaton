@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment};
+use crate::routes::activity::log_activity;
 use crate::routes::webhooks::dispatch_event;
 
 #[derive(Debug, Deserialize)]
@@ -176,6 +177,33 @@ pub async fn create(
                     }),
                 );
             }
+        });
+    }
+
+    // ── Activity log (fire-and-forget) ───────────────────
+    {
+        let pool2 = pool.clone();
+        let uid = author_id.clone();
+        let uname_opt = Some(author_name.clone());
+        let comment_preview = if body.body.len() > 120 {
+            format!("{}...", &body.body[..120])
+        } else {
+            body.body.clone()
+        };
+        let oid = org_id.to_string();
+        tokio::spawn(async move {
+            // Fetch project_id for the issue
+            let pid: Option<uuid::Uuid> = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
+                .bind(issue_id)
+                .fetch_optional(&pool2)
+                .await
+                .ok()
+                .flatten();
+            log_activity(
+                &pool2, &oid, pid, Some(issue_id), &uid, uname_opt.as_deref(),
+                "comment_added", None, None, None,
+                Some(serde_json::json!({"preview": comment_preview})),
+            ).await;
         });
     }
 
