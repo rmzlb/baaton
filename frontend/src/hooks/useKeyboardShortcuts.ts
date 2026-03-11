@@ -6,14 +6,23 @@ import { useIssuesStore } from '@/stores/issues';
  * All shortcut definitions — exported for use by ShortcutHelp overlay.
  */
 export const SHORTCUT_DEFS = [
-  { keys: 'j', label: 'Next issue' },
-  { keys: 'k', label: 'Previous issue' },
-  { keys: 'e', label: 'Open selected issue' },
-  { keys: 'n', label: 'New issue' },
-  { keys: 'shift+m', label: 'Assign milestone' },
-  { keys: 'g>m', label: 'Go to milestones' },
-  { keys: 'Escape', label: 'Close drawer / modal' },
-  { keys: 'shift+/', label: 'Show keyboard shortcuts' },
+  // Navigation
+  { keys: 'j', label: 'Next issue', group: 'Navigation' },
+  { keys: 'k', label: 'Previous issue', group: 'Navigation' },
+  { keys: 'e', label: 'Open selected issue', group: 'Navigation' },
+  { keys: 'g>p', label: 'Go to projects', group: 'Navigation' },
+  { keys: 'g>d', label: 'Go to dashboard', group: 'Navigation' },
+  { keys: 'g>t', label: 'Go to triage', group: 'Navigation' },
+  { keys: 'g>m', label: 'Go to milestones', group: 'Navigation' },
+  { keys: 'g>a', label: 'Go to analytics', group: 'Navigation' },
+  { keys: 'g>s', label: 'Go to search', group: 'Navigation' },
+  // Actions
+  { keys: 'n', label: 'New issue', group: 'Actions' },
+  { keys: 'shift+m', label: 'Assign milestone', group: 'Actions' },
+  { keys: 'mod+k', label: 'Command palette', group: 'Actions' },
+  // General
+  { keys: 'Escape', label: 'Close drawer / modal', group: 'General' },
+  { keys: 'shift+/', label: 'Show keyboard shortcuts', group: 'General' },
 ] as const;
 
 interface UseKeyboardShortcutsOptions {
@@ -123,7 +132,6 @@ export function useKeyboardShortcuts({
   useHotkeys(
     'g>m',
     () => {
-      // Extract current project slug from URL
       const match = location.pathname.match(/^\/projects\/([^/]+)/);
       if (match) {
         navigate(`/projects/${match[1]}/milestones`);
@@ -132,6 +140,21 @@ export function useKeyboardShortcuts({
     { preventDefault: true },
     [location.pathname, navigate],
   );
+
+  // G then P — go to projects
+  useHotkeys('g>p', () => navigate('/projects'), { preventDefault: true }, [navigate]);
+
+  // G then D — go to dashboard
+  useHotkeys('g>d', () => navigate('/dashboard'), { preventDefault: true }, [navigate]);
+
+  // G then T — go to triage
+  useHotkeys('g>t', () => navigate('/triage'), { preventDefault: true }, [navigate]);
+
+  // G then A — go to analytics
+  useHotkeys('g>a', () => navigate('/analytics'), { preventDefault: true }, [navigate]);
+
+  // G then S — go to search
+  useHotkeys('g>s', () => navigate('/search'), { preventDefault: true }, [navigate]);
 
   // Escape — close drawer/modal
   useHotkeys(

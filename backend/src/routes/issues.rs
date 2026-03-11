@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr, UpdateIssue};
 use crate::routes::activity::log_activity;
+use crate::routes::notifications::create_notification;
 use crate::routes::webhooks::dispatch_event;
 
 // ─── Sub-Issues ───────────────────────────────────────
@@ -920,6 +921,58 @@ pub async fn update(
                             "newStatus": new_status,
                         }),
                     );
+                });
+            }
+        }
+    }
+
+    // ── Internal notifications (fire-and-forget) ─────────
+    {
+        let issue_id_copy = id;
+        let project_id_copy = existing.project_id;
+        let org_id_str2 = org_id.to_string();
+
+        // On assignee change → notify newly added assignees (type='assigned')
+        if let Some(ref new_ids) = body.assignee_ids {
+            let added: Vec<String> = new_ids
+                .iter()
+                .filter(|uid| !existing.assignee_ids.contains(uid))
+                .cloned()
+                .collect();
+            if !added.is_empty() {
+                let pool2 = pool.clone();
+                let oid = org_id_str2.clone();
+                let title = format!("You were assigned to: {}", issue.title);
+                tokio::spawn(async move {
+                    for uid in added {
+                        create_notification(
+                            &pool2, &uid, &oid, "assigned",
+                            Some(issue_id_copy), Some(project_id_copy),
+                            &title, None,
+                        ).await;
+                    }
+                });
+            }
+        }
+
+        // On status change → notify all assignees (type='status_changed')
+        if status_changed {
+            let assignees: Vec<String> = issue.assignee_ids.clone();
+            if !assignees.is_empty() {
+                let pool2 = pool.clone();
+                let oid = org_id_str2.clone();
+                let title = format!(
+                    "Issue '{}' status changed to {}",
+                    issue.title, issue.status
+                );
+                tokio::spawn(async move {
+                    for uid in assignees {
+                        create_notification(
+                            &pool2, &uid, &oid, "status_changed",
+                            Some(issue_id_copy), Some(project_id_copy),
+                            &title, None,
+                        ).await;
+                    }
                 });
             }
         }

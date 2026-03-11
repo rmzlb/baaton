@@ -11,17 +11,26 @@ mod tags;
 mod invites;
 mod milestones;
 mod sprints;
+mod cycles;
 mod templates;
 mod ai;
 pub mod activity;
 pub mod github;
 mod views;
+pub mod notifications;
 mod api_keys;
 mod docs;
 pub mod webhooks;
 mod metrics;
 pub mod relations;
 pub mod recurring;
+pub mod triage;
+pub mod email_intake;
+pub mod attachments;
+pub mod slack;
+mod admin;
+mod initiatives;
+mod import_export;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -38,6 +47,10 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/projects/{id}/milestones", get(milestones::list_by_project).post(milestones::create))
         // Sprints
         .route("/projects/{id}/sprints", get(sprints::list_by_project).post(sprints::create))
+        // Cycles
+        .route("/projects/{id}/cycles", get(cycles::list).post(cycles::create))
+        .route("/cycles/{id}", get(cycles::get_one).patch(cycles::update))
+        .route("/cycles/{id}/complete", post(cycles::complete))
         // Issues
         .route("/issues", get(issues::list_all).post(issues::create))
         .route("/issues/mine", get(issues::list_mine))
@@ -83,6 +96,13 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Views
         .route("/views", get(views::list).post(views::create))
         .route("/views/{id}", patch(views::update).delete(views::remove))
+        .route("/views/{id}/issues", get(views::get_issues))
+        // Notifications
+        .route("/notifications", get(notifications::list))
+        .route("/notifications/count", get(notifications::count))
+        .route("/notifications/{id}/read", patch(notifications::mark_read))
+        .route("/notifications/read-all", post(notifications::read_all))
+        .route("/notifications/preferences", get(notifications::get_preferences).patch(notifications::update_preferences))
         // API Keys
         .route("/api-keys", get(api_keys::list).post(api_keys::create))
         .route("/api-keys/{id}", delete(api_keys::remove))
@@ -98,6 +118,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/public/resolve/{token}", get(projects::resolve_public_token))
         // Webhook (GitHub integration)
         .route("/webhooks/github", post(github::webhooks::handle))
+        // Slack webhook (public, no auth)
+        .route("/public/slack/command", post(slack::handle_command))
         // Baaton Webhooks (org-level event subscriptions)
         .route("/webhooks", get(webhooks::list).post(webhooks::create))
         .route("/webhooks/{id}", get(webhooks::get_one).patch(webhooks::update).delete(webhooks::remove))
@@ -106,7 +128,25 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/recurring/{id}", patch(recurring::update).delete(recurring::remove))
         .route("/recurring/{id}/trigger", post(recurring::trigger))
         // Metrics
-        .route("/metrics", get(metrics::get_metrics));
+        .route("/metrics", get(metrics::get_metrics))
+        .route("/issues/{id}/triage", post(triage::analyze))
+        .route("/public/{slug}/email-intake", post(email_intake::intake))
+        .route("/issues/{id}/attachments", get(attachments::list).post(attachments::create))
+        .route("/issues/{id}/attachments/{att_id}", delete(attachments::remove))
+        // Admin (BAA-1)
+        .route("/admin/orgs/{id}/plan", patch(admin::set_plan))
+        // Initiatives (BAA-9)
+        .route("/initiatives", get(initiatives::list).post(initiatives::create))
+        .route("/initiatives/{id}", get(initiatives::get_one).patch(initiatives::update).delete(initiatives::remove))
+        .route("/initiatives/{id}/projects", post(initiatives::add_project))
+        .route("/initiatives/{id}/projects/{project_id}", delete(initiatives::remove_project))
+        // Import/Export (BAA-23)
+        .route("/projects/{id}/export", get(import_export::export))
+        .route("/projects/{id}/import", post(import_export::import))
+        // Slack (BAA-25)
+        .route("/integrations/slack", get(slack::list).post(slack::create))
+        .route("/integrations/slack/{id}", delete(slack::remove))
+        .route("/integrations/slack/{id}/channels", patch(slack::update_channels));
 
     // Apply auth middleware and inject JWKS state
     // Layer order: last added runs first (outer). Auth needs JWKS, so JWKS must be outer.

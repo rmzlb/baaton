@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment};
 use crate::routes::activity::log_activity;
+use crate::routes::notifications::create_notification;
 use crate::routes::webhooks::dispatch_event;
 
 #[derive(Debug, Deserialize)]
@@ -204,6 +205,53 @@ pub async fn create(
                 "comment_added", None, None, None,
                 Some(serde_json::json!({"preview": comment_preview})),
             ).await;
+        });
+    }
+
+    // ── Internal notifications (fire-and-forget) ─────────
+    {
+        let pool2 = pool.clone();
+        let oid = org_id.to_string();
+        let commenter = author_id.clone();
+        let preview = if body.body.len() > 80 {
+            format!("{}...", &body.body[..80])
+        } else {
+            body.body.clone()
+        };
+        tokio::spawn(async move {
+            // Fetch issue creator + assignees
+            let row: Option<(Option<String>, Vec<String>, Uuid)> = sqlx::query_as(
+                "SELECT created_by_id, assignee_ids, project_id FROM issues WHERE id = $1"
+            )
+            .bind(issue_id)
+            .fetch_optional(&pool2)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some((creator_id, assignee_ids, project_id)) = row {
+                let notif_body = Some(preview.as_str());
+                let title = "New comment on an issue you're involved in";
+
+                // Collect unique recipients (creator + assignees, exclude commenter)
+                let mut recipients: Vec<String> = assignee_ids
+                    .into_iter()
+                    .filter(|uid| *uid != commenter)
+                    .collect();
+                if let Some(ref cid) = creator_id {
+                    if *cid != commenter && !recipients.contains(cid) {
+                        recipients.push(cid.clone());
+                    }
+                }
+
+                for uid in recipients {
+                    create_notification(
+                        &pool2, &uid, &oid, "comment_added",
+                        Some(issue_id), Some(project_id),
+                        title, notif_body,
+                    ).await;
+                }
+            }
         });
     }
 

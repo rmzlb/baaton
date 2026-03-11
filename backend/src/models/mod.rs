@@ -110,6 +110,8 @@ pub struct Issue {
     pub snoozed_until: Option<NaiveDate>,
     pub archived: bool,
     pub archived_at: Option<DateTime<Utc>>,
+    pub sla_deadline: Option<DateTime<Utc>>,
+    pub sla_breached: Option<bool>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

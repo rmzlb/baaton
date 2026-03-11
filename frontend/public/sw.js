@@ -1,56 +1,50 @@
-// Baaton Service Worker — cache-first for static assets, network-first for API
 const CACHE_NAME = 'baaton-v1';
-const STATIC_ASSETS = [
+const PRECACHE_URLS = [
   '/',
-  '/manifest.json',
+  '/dashboard',
+  '/projects',
 ];
 
-// Install — pre-cache shell
+// Install: precache shell
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
-// Activate — clean old caches
+// Activate: clean old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Fetch — network-first for API, cache-first for static assets
+// Fetch: network-first for API, cache-first for static
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
+  const url = new URL(event.request.url);
 
-  // Skip non-GET and API calls
-  if (request.method !== 'GET') return;
+  // Skip non-GET
+  if (event.request.method !== 'GET') return;
+
+  // API: network only
   if (url.pathname.startsWith('/api/')) return;
 
-  // For navigation requests, always go to network (SPA)
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request).catch(() => caches.match('/'))
-    );
-    return;
-  }
-
-  // For static assets: cache-first
+  // Static assets: stale-while-revalidate
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (response.ok && url.origin === self.location.origin) {
+    caches.match(event.request).then(cached => {
+      const fetchPromise = fetch(event.request).then(response => {
+        if (response.ok) {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
         return response;
-      });
+      }).catch(() => cached);
+
+      return cached || fetchPromise;
     })
   );
 });

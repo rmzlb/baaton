@@ -8,62 +8,111 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
 
+// ─── Structs ──────────────────────────────────────────
+
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct IssueTemplate {
     pub id: Uuid,
     pub project_id: Uuid,
+    pub org_id: String,
     pub name: String,
-    pub title_template: Option<String>,
-    pub description_template: Option<String>,
-    #[sqlx(rename = "type")]
-    pub template_type: String,
-    pub priority: Option<String>,
-    pub tags: Vec<String>,
+    pub title_prefix: Option<String>,
+    pub description: Option<String>,
+    pub default_tags: Vec<String>,
+    pub default_priority: String,
+    pub default_issue_type: String,
+    pub default_assignee_ids: Vec<String>,
+    pub is_default: bool,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateTemplate {
     pub name: String,
-    pub title_template: Option<String>,
-    pub description_template: Option<String>,
-    #[serde(rename = "type")]
-    pub template_type: Option<String>,
-    pub priority: Option<String>,
-    pub tags: Option<Vec<String>>,
+    pub title_prefix: Option<String>,
+    pub description: Option<String>,
+    pub default_tags: Option<Vec<String>>,
+    pub default_priority: Option<String>,
+    pub default_issue_type: Option<String>,
+    pub default_assignee_ids: Option<Vec<String>>,
+    pub is_default: Option<bool>,
 }
 
-/// GET /projects/:project_id/templates
-pub async fn list_by_project(
+#[derive(Debug, Deserialize)]
+pub struct UpdateTemplate {
+    pub name: Option<String>,
+    pub title_prefix: Option<String>,
+    pub description: Option<String>,
+    pub default_tags: Option<Vec<String>>,
+    pub default_priority: Option<String>,
+    pub default_issue_type: Option<String>,
+    pub default_assignee_ids: Option<Vec<String>>,
+    pub is_default: Option<bool>,
+}
+
+// ─── Column list helper (avoid SELECT * with mixed old/new schema) ───────────
+
+const TEMPLATE_COLS: &str = r#"
+    id, project_id, org_id, name, title_prefix, description,
+    default_tags, default_priority, default_issue_type,
+    default_assignee_ids, is_default, created_at
+"#;
+
+// ─── Routes ──────────────────────────────────────────
+
+/// GET /projects/{id}/templates
+pub async fn list(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
-) -> Result<Json<ApiResponse<Vec<IssueTemplate>>>, StatusCode> {
-    let org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
+) -> Result<Json<ApiResponse<Vec<IssueTemplate>>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    let templates = sqlx::query_as::<_, IssueTemplate>(
-        r#"
-        SELECT t.id, t.project_id, t.name, t.title_template, t.description_template,
-               t.type, t.priority, t.tags, t.created_at
-        FROM issue_templates t
-        JOIN projects p ON p.id = t.project_id
-        WHERE t.project_id = $1 AND p.org_id = $2
-        ORDER BY t.created_at
-        "#,
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!(error = %e, "templates.list query failed");
-        vec![]
-    });
+    let sql = format!(
+        "SELECT {} FROM issue_templates WHERE project_id = $1 AND org_id = $2 ORDER BY is_default DESC, created_at ASC",
+        TEMPLATE_COLS
+    );
+
+    let templates = sqlx::query_as::<_, IssueTemplate>(&sql)
+        .bind(project_id)
+        .bind(org_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "templates.list query failed");
+            vec![]
+        });
 
     Ok(Json(ApiResponse::new(templates)))
 }
 
-/// POST /projects/:project_id/templates
+/// GET /templates/{id}
+pub async fn get_one(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<IssueTemplate>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let sql = format!(
+        "SELECT {} FROM issue_templates WHERE id = $1 AND org_id = $2",
+        TEMPLATE_COLS
+    );
+
+    let template = sqlx::query_as::<_, IssueTemplate>(&sql)
+        .bind(id)
+        .bind(org_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Template not found"}))))?;
+
+    Ok(Json(ApiResponse::new(template)))
+}
+
+/// POST /projects/{id}/templates
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
@@ -73,7 +122,6 @@ pub async fn create(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    // Verify project belongs to org
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
     )
@@ -87,28 +135,84 @@ pub async fn create(
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
     }
 
-    let template = sqlx::query_as::<_, IssueTemplate>(
+    let sql = format!(
         r#"
-        INSERT INTO issue_templates (project_id, name, title_template, description_template, type, priority, tags)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING id, project_id, name, title_template, description_template, type, priority, tags, created_at
+        INSERT INTO issue_templates (
+            project_id, org_id, name, title_prefix, description,
+            default_tags, default_priority, default_issue_type,
+            default_assignee_ids, is_default
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING {}
         "#,
-    )
-    .bind(project_id)
-    .bind(&body.name)
-    .bind(&body.title_template)
-    .bind(&body.description_template)
-    .bind(body.template_type.as_deref().unwrap_or("feature"))
-    .bind(&body.priority)
-    .bind(&body.tags.unwrap_or_default())
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        TEMPLATE_COLS
+    );
+
+    let template = sqlx::query_as::<_, IssueTemplate>(&sql)
+        .bind(project_id)
+        .bind(org_id)
+        .bind(&body.name)
+        .bind(&body.title_prefix)
+        .bind(&body.description)
+        .bind(body.default_tags.unwrap_or_default())
+        .bind(body.default_priority.as_deref().unwrap_or("medium"))
+        .bind(body.default_issue_type.as_deref().unwrap_or("feature"))
+        .bind(body.default_assignee_ids.unwrap_or_default())
+        .bind(body.is_default.unwrap_or(false))
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     Ok(Json(ApiResponse::new(template)))
 }
 
-/// DELETE /templates/:id
+/// PATCH /templates/{id}
+pub async fn update(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateTemplate>,
+) -> Result<Json<ApiResponse<IssueTemplate>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let sql = format!(
+        r#"
+        UPDATE issue_templates SET
+            name               = COALESCE($2, name),
+            title_prefix       = COALESCE($3, title_prefix),
+            description        = COALESCE($4, description),
+            default_tags       = COALESCE($5, default_tags),
+            default_priority   = COALESCE($6, default_priority),
+            default_issue_type = COALESCE($7, default_issue_type),
+            default_assignee_ids = COALESCE($8, default_assignee_ids),
+            is_default         = COALESCE($9, is_default)
+        WHERE id = $1 AND org_id = $10
+        RETURNING {}
+        "#,
+        TEMPLATE_COLS
+    );
+
+    let template = sqlx::query_as::<_, IssueTemplate>(&sql)
+        .bind(id)
+        .bind(&body.name)
+        .bind(&body.title_prefix)
+        .bind(&body.description)
+        .bind(&body.default_tags)
+        .bind(&body.default_priority)
+        .bind(&body.default_issue_type)
+        .bind(&body.default_assignee_ids)
+        .bind(body.is_default)
+        .bind(org_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Template not found"}))))?;
+
+    Ok(Json(ApiResponse::new(template)))
+}
+
+/// DELETE /templates/{id}
 pub async fn remove(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
@@ -118,7 +222,7 @@ pub async fn remove(
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     let result = sqlx::query(
-        "DELETE FROM issue_templates WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = $2)"
+        "DELETE FROM issue_templates WHERE id = $1 AND org_id = $2"
     )
     .bind(id)
     .bind(org_id)
@@ -132,3 +236,7 @@ pub async fn remove(
         Err((StatusCode::NOT_FOUND, Json(json!({"error": "Template not found"}))))
     }
 }
+
+// ─── Backward-compat aliases ──────────────────────────
+// Old route used list_by_project; keep as alias so mod.rs can use either name.
+pub use list as list_by_project;
