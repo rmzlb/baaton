@@ -1,0 +1,35 @@
+# Baaton — Project Management for AI Agents
+# https://baaton.dev
+
+User-agent: *
+Allow: /
+Allow: /docs
+Allow: /llms.txt
+Disallow: /dashboard
+Disallow: /projects
+Disallow: /all-issues
+Disallow: /my-tasks
+Disallow: /settings
+Disallow: /api-keys
+Disallow: /webhooks
+Disallow: /org
+Disallow: /analytics
+Disallow: /triage
+
+# AI/LLM crawlers
+User-agent: GPTBot
+Allow: /
+Allow: /docs
+Allow: /llms.txt
+
+User-agent: Claude-Web
+Allow: /
+Allow: /docs
+Allow: /llms.txt
+
+User-agent: Anthropic-AI
+Allow: /
+Allow: /docs
+Allow: /llms.txt
+
+Sitemap: https://baaton.dev/sitemap.xml

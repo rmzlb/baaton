@@ -3,13 +3,15 @@ import { NavLink, useLocation, Link } from 'react-router-dom';
 import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  LayoutDashboard, Kanban, Settings, ChevronLeft, ChevronRight, Users, X,
-  Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox, CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink,
+  LayoutDashboard, Kanban, PanelLeftClose, PanelLeft, X,
+  Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox,
+  CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink, KeyRound,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useApi } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
+import { PixelTanuki } from '@/components/shared/PixelTanuki';
 import type { Issue } from '@/lib/types';
 
 export function Sidebar() {
@@ -43,35 +45,7 @@ export function Sidebar() {
     (i: Issue) => i.source === 'form' || (i.assignee_ids.length === 0 && i.status === 'backlog')
   ).length;
 
-  /* ─── Grouped Nav ────────────────────────── */
-  const coreItems = [
-    { to: '/dashboard', icon: LayoutDashboard, label: t('sidebar.dashboard'), tourId: undefined },
-    { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks'), tourId: 'my-tasks' as const },
-    { to: '/all-issues', icon: Layers, label: t('sidebar.allIssues'), tourId: undefined },
-    { to: '/triage', icon: Inbox, label: t('sidebar.triage'), tourId: undefined, badge: triageCount > 0 ? triageCount : undefined },
-    { to: '/projects', icon: Kanban, label: t('sidebar.projects'), tourId: 'projects-list' as const },
-  ];
-
-  const planItems = [
-    {
-      to: currentProjectSlug ? `/projects/${currentProjectSlug}/milestones` : '/milestones',
-      icon: Target,
-      label: t('sidebar.milestones'),
-      tourId: undefined,
-    },
-    { to: '/roadmap', icon: CalendarRange, label: t('sidebar.roadmap'), tourId: undefined },
-    ...(currentProjectSlug ? [{
-      to: `/projects/${currentProjectSlug}/sprints`,
-      icon: Zap,
-      label: t('sidebar.sprints'),
-      tourId: undefined,
-    }] : []),
-  ];
-
-  const toolItems = [
-    { to: '/analytics', icon: BarChart3, label: t('sidebar.analytics'), tourId: undefined },
-    { to: '/webhooks', icon: Webhook, label: t('sidebar.webhooks'), tourId: undefined },
-  ];
+  const isCompact = collapsed && !mobileOpen;
 
   const toggleLanguage = () => {
     const next = i18n.language === 'fr' ? 'en' : 'fr';
@@ -89,18 +63,35 @@ export function Sidebar() {
   useEffect(() => {
     const mql = window.matchMedia('(max-width: 767px)');
     const handleChange = (e: MediaQueryListEvent | MediaQueryList) => {
-      if (e.matches) {
-        useUIStore.getState().setSidebarCollapsed(true);
-      }
+      if (e.matches) useUIStore.getState().setSidebarCollapsed(true);
     };
     handleChange(mql);
     mql.addEventListener('change', handleChange);
     return () => mql.removeEventListener('change', handleChange);
   }, []);
 
-  const isCompact = collapsed && !mobileOpen;
+  /* ─── Nav Groups ─────────────────────────── */
+  const coreItems = [
+    { to: '/dashboard', icon: LayoutDashboard, label: t('sidebar.dashboard') },
+    { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks'), tourId: 'my-tasks' },
+    { to: '/all-issues', icon: Layers, label: t('sidebar.allIssues') },
+    { to: '/triage', icon: Inbox, label: t('sidebar.triage'), badge: triageCount > 0 ? triageCount : undefined },
+    { to: '/projects', icon: Kanban, label: t('sidebar.projects'), tourId: 'projects-list' },
+  ];
 
-  /* ─── Render NavItem ─────────────────────── */
+  const planItems = [
+    { to: currentProjectSlug ? `/projects/${currentProjectSlug}/milestones` : '/milestones', icon: Target, label: t('sidebar.milestones') },
+    { to: '/roadmap', icon: CalendarRange, label: t('sidebar.roadmap') },
+    ...(currentProjectSlug ? [{ to: `/projects/${currentProjectSlug}/sprints`, icon: Zap, label: t('sidebar.sprints') }] : []),
+  ];
+
+  const toolItems = [
+    { to: '/analytics', icon: BarChart3, label: t('sidebar.analytics') },
+    { to: '/webhooks', icon: Webhook, label: t('sidebar.webhooks') },
+    { to: '/api-keys', icon: KeyRound, label: t('sidebar.apiKeys') },
+  ];
+
+  /* ─── Render Helpers ─────────────────────── */
   const NavItem = ({ to, icon: Icon, label, tourId, badge }: any) => (
     <NavLink
       key={to}
@@ -111,9 +102,7 @@ export function Sidebar() {
       className={({ isActive }) =>
         cn(
           'flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors min-h-[36px]',
-          isActive
-            ? 'bg-surface-hover text-primary font-medium'
-            : 'text-secondary hover:bg-surface hover:text-primary',
+          isActive ? 'bg-surface-hover text-primary font-medium' : 'text-secondary hover:bg-surface hover:text-primary',
           isCompact && 'justify-center px-0',
         )
       }
@@ -123,9 +112,7 @@ export function Sidebar() {
           <Icon size={18} aria-hidden="true" />
           {!isCompact && <span className="flex-1 truncate">{label}</span>}
           {!isCompact && badge !== undefined && (
-            <span className="rounded-full bg-accent/20 text-accent px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
-              {badge}
-            </span>
+            <span className="rounded-full bg-accent/20 text-accent px-1.5 py-0.5 text-[10px] font-bold tabular-nums">{badge}</span>
           )}
           {isActive && <span className="sr-only">(current page)</span>}
         </>
@@ -133,26 +120,45 @@ export function Sidebar() {
     </NavLink>
   );
 
-  /* ─── Group Separator ────────────────────── */
   const Divider = ({ label }: { label?: string }) => (
     <div className="pt-3 pb-1">
       {!isCompact && label && (
-        <span className="px-3 text-[10px] font-semibold uppercase tracking-wider text-muted">
-          {label}
-        </span>
+        <span className="px-3 text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</span>
       )}
       {isCompact && <div className="mx-3 border-t border-border" />}
     </div>
   );
 
+  const ExtLink = ({ href, icon: Icon, label, isExternal }: { href: string; icon: any; label: string; isExternal?: boolean }) => {
+    const cls = cn(
+      'flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors min-h-[32px] text-muted hover:bg-surface hover:text-secondary',
+      isCompact && 'justify-center px-0',
+    );
+    if (isExternal) {
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+          <Icon size={16} aria-hidden="true" />
+          {!isCompact && (
+            <>
+              <span className="flex-1 truncate">{label}</span>
+              <ExternalLink size={10} className="text-muted/50" />
+            </>
+          )}
+        </a>
+      );
+    }
+    return (
+      <NavLink to={href} onClick={closeMobile} className={({ isActive }) => cn(cls, isActive && 'text-secondary bg-surface-hover')}>
+        <Icon size={16} aria-hidden="true" />
+        {!isCompact && <span className="flex-1 truncate">{label}</span>}
+      </NavLink>
+    );
+  };
+
   return (
     <>
       {mobileOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
-          onClick={closeMobile}
-          aria-hidden="true"
-        />
+        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden" onClick={closeMobile} aria-hidden="true" />
       )}
 
       <aside
@@ -166,12 +172,38 @@ export function Sidebar() {
           mobileOpen && 'max-md:translate-x-0',
         )}
       >
-        {/* Header: Org Switcher */}
+        {/* ─── Header: Logo + Collapse ─── */}
         <div className="flex h-12 items-center border-b border-border px-2 justify-between">
+          <Link to="/dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity min-w-0">
+            <div className="flex-shrink-0">
+              <PixelTanuki size={isCompact ? 28 : 24} />
+            </div>
+            {!isCompact && (
+              <span className="font-display text-base font-bold text-primary uppercase tracking-wide truncate">Baaton</span>
+            )}
+          </Link>
+          <div className="flex items-center gap-0.5 shrink-0">
+            {mobileOpen && (
+              <button onClick={closeMobile} className="rounded-md p-1.5 text-secondary hover:bg-surface hover:text-primary transition-colors md:hidden">
+                <X size={16} />
+              </button>
+            )}
+            <button
+              onClick={toggle}
+              className="rounded-md p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors hidden md:block"
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
+            </button>
+          </div>
+        </div>
+
+        {/* ─── Org Switcher ─── */}
+        <div className="border-b border-border px-2 py-1.5">
           {isCompact ? (
-            <Link to="/dashboard" className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-black font-bold text-xs mx-auto hover:bg-accent-hover transition-colors" title="Baaton">
-              B
-            </Link>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-accent font-bold text-xs mx-auto" title="Organization">
+              O
+            </div>
           ) : (
             <OrganizationSwitcher
               appearance={{
@@ -185,73 +217,17 @@ export function Sidebar() {
               afterSelectOrganizationUrl="/dashboard"
             />
           )}
-          {mobileOpen && (
-            <button
-              onClick={closeMobile}
-              aria-label={t('sidebar.closeMenu') || 'Close menu'}
-              className="rounded-md p-1.5 text-secondary hover:bg-surface hover:text-primary transition-colors md:hidden shrink-0 ml-1"
-            >
-              <X size={16} aria-hidden="true" />
-            </button>
-          )}
         </div>
 
-        {/* Nav */}
-        <nav aria-label={t('sidebar.mainNavigation') || 'Main navigation'} className="flex-1 space-y-0.5 p-1.5 overflow-y-auto">
-          {/* Core */}
+        {/* ─── Main Nav ─── */}
+        <nav aria-label="Main navigation" className="flex-1 space-y-0.5 p-1.5 overflow-y-auto">
           {coreItems.map((item) => <NavItem key={item.to} {...item} />)}
 
-          {/* Planning */}
-          <Divider label={t('sidebar.planning') || 'Planning'} />
+          <Divider label={t('sidebar.planning')} />
           {planItems.map((item) => <NavItem key={item.to} {...item} />)}
 
-          {/* Tools */}
-          <Divider label={t('sidebar.tools') || 'Tools'} />
+          <Divider label={t('sidebar.tools')} />
           {toolItems.map((item) => <NavItem key={item.to} {...item} />)}
-
-          {/* External Links (like AgentMail: Discord/Documentation/Feedback) */}
-          <Divider />
-          {[
-            { href: '/docs', icon: BookOpen, label: t('sidebar.docs'), external: false },
-            { href: 'mailto:thibaut@carbonable.io?subject=Baaton Feedback', icon: MessageSquare, label: t('sidebar.feedback'), external: true },
-          ].map(({ href, icon: Icon, label, external }) => (
-            external ? (
-              <a
-                key={href}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors min-h-[36px] text-secondary hover:bg-surface hover:text-primary',
-                  isCompact && 'justify-center px-0',
-                )}
-              >
-                <Icon size={18} aria-hidden="true" />
-                {!isCompact && (
-                  <>
-                    <span className="flex-1 truncate">{label}</span>
-                    <ExternalLink size={12} className="text-muted" />
-                  </>
-                )}
-              </a>
-            ) : (
-              <NavLink
-                key={href}
-                to={href}
-                onClick={closeMobile}
-                className={({ isActive }) =>
-                  cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors min-h-[36px]',
-                    isActive ? 'bg-surface-hover text-primary font-medium' : 'text-secondary hover:bg-surface hover:text-primary',
-                    isCompact && 'justify-center px-0',
-                  )
-                }
-              >
-                <Icon size={18} aria-hidden="true" />
-                {!isCompact && <span className="flex-1 truncate">{label}</span>}
-              </NavLink>
-            )
-          ))}
 
           {/* Saved Views */}
           {savedViews.length > 0 && !isCompact && (
@@ -265,9 +241,7 @@ export function Sidebar() {
                   className={({ isActive }) =>
                     cn(
                       'flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors min-h-[32px]',
-                      isActive
-                        ? 'bg-surface-hover text-primary'
-                        : 'text-secondary hover:bg-surface hover:text-primary',
+                      isActive ? 'bg-surface-hover text-primary' : 'text-secondary hover:bg-surface hover:text-primary',
                     )
                   }
                 >
@@ -279,44 +253,38 @@ export function Sidebar() {
           )}
         </nav>
 
-        {/* Footer */}
-        <div className="border-t border-border p-2 space-y-1">
-          {/* Settings + Team (bottom group) */}
-          <NavItem to="/org" icon={Users} label={t('sidebar.team')} />
-          <NavItem to="/settings" icon={Settings} label={t('sidebar.settings')} tourId="settings" />
+        {/* ─── Bottom Links (AgentMail pattern) ─── */}
+        <div className="p-1.5 space-y-0.5">
+          <ExtLink href="/docs" icon={BookOpen} label={t('sidebar.docs')} />
+          <ExtLink href="mailto:thibaut@carbonable.io?subject=Baaton Feedback" icon={MessageSquare} label={t('sidebar.feedback')} isExternal />
+        </div>
 
-          {/* Theme + Language row */}
-          <div className={cn('flex items-center gap-1', isCompact ? 'flex-col' : 'px-1 pt-1')}>
-            <button
-              onClick={toggleTheme}
-              className="rounded-lg p-2 text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
-              title={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}
-              aria-label={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}
-            >
-              {theme === 'dark' ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
-            </button>
-            <button
-              onClick={toggleLanguage}
-              className="rounded-lg p-2 text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
-              title={t('sidebar.language')}
-              aria-label={t('sidebar.language') || 'Switch language'}
-            >
-              <Globe size={16} aria-hidden="true" />
-            </button>
-            <div className="flex-1" />
-            {/* User avatar + collapse */}
-            <UserButton
-              appearance={{
-                elements: { avatarBox: 'h-7 w-7' },
-              }}
-            />
-            <button
-              onClick={toggle}
-              aria-label={collapsed ? (t('sidebar.expand') || 'Expand sidebar') : (t('sidebar.collapse') || 'Collapse sidebar')}
-              className="rounded-md p-1.5 text-secondary hover:bg-surface-hover hover:text-primary transition-colors hidden md:block"
-            >
-              {collapsed ? <ChevronRight size={14} aria-hidden="true" /> : <ChevronLeft size={14} aria-hidden="true" />}
-            </button>
+        {/* ─── Footer ─── */}
+        <div className="border-t border-border p-2">
+          <div className={cn('flex items-center', isCompact ? 'flex-col gap-2' : 'gap-1 px-1')}>
+            <UserButton appearance={{ elements: { avatarBox: 'h-7 w-7' } }} />
+            {!isCompact && (
+              <div className="flex items-center gap-1 ml-auto">
+                <button onClick={toggleTheme} className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors"
+                  title={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}>
+                  {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+                </button>
+                <button onClick={toggleLanguage} className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors"
+                  title={t('sidebar.language')}>
+                  <Globe size={14} />
+                </button>
+              </div>
+            )}
+            {isCompact && (
+              <>
+                <button onClick={toggleTheme} className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors">
+                  {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+                </button>
+                <button onClick={toggleLanguage} className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors">
+                  <Globe size={14} />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </aside>

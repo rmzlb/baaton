@@ -289,10 +289,29 @@ export function PublicLinkModal({ project, onClose }: { project: Project; onClos
                   </div>
                 )}
 
-                {/* Usage hint */}
-                <div className="rounded-md border border-border bg-bg p-2.5 space-y-1 text-[10px] font-mono text-muted">
-                  <p className="text-secondary">curl -H &quot;Authorization: Bearer baa_...&quot; \</p>
-                  <p className="text-secondary pl-4">https://api.baaton.dev/api/v1/issues</p>
+                {/* Project ID + Agent Guide */}
+                <div className="rounded-md border border-accent/15 bg-accent/5 p-3 space-y-2">
+                  <span className="text-[10px] font-semibold text-accent">{t('projectAccess.agentGuide')}</span>
+                  
+                  <div className="flex items-center gap-2 rounded-md border border-border bg-bg px-2.5 py-1.5">
+                    <span className="text-[9px] text-muted font-mono">project_id:</span>
+                    <code className="flex-1 text-[10px] font-mono text-primary truncate">{project.id}</code>
+                    <button onClick={() => handleCopy(project.id, 'pid')} className="shrink-0 text-accent hover:text-accent-hover">
+                      {copiedField === 'pid' ? <CheckCircle2 size={11} className="text-green-400" /> : <Copy size={11} />}
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5 text-[10px] font-mono text-muted">
+                    <p className="font-sans text-[10px] text-secondary">{t('projectAccess.agentEnv')}</p>
+                    <pre className="rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all select-all">{`BAATON_API_KEY=baa_your_key
+BAATON_PROJECT_ID=${project.id}
+BAATON_BASE_URL=https://api.baaton.dev/api/v1`}</pre>
+                  </div>
+
+                  <div className="space-y-1 text-[10px] font-mono text-muted">
+                    <p className="font-sans text-[10px] text-secondary">{t('projectAccess.agentGetDocs')}</p>
+                    <pre className="rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all select-all">curl -s https://api.baaton.dev/api/v1/public/docs</pre>
+                  </div>
                 </div>
               </div>
             )}
