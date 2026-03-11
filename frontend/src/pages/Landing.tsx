@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, Sun, Moon, LayoutDashboard, Bot, User, Check,
-  MoreHorizontal, Loader, Inbox, Cpu, Gavel, Wand2, Copy,
-  Menu, X,
+  MoreHorizontal, Loader, Inbox, Cpu, Gavel, Copy,
+  Menu, X, Code, ShieldCheck, Server, Headphones,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
@@ -21,6 +21,93 @@ function useTheme() {
   }, [dark]);
   return { dark, toggle: () => setDark(d => !d) };
 }
+
+/* ─── Code Tabs Component ──────────────────── */
+const codeSnippets: Record<string, string> = {
+  cURL: `curl -X POST https://api.baaton.dev/api/v1/issues \\
+  -H "Authorization: Bearer baa_your_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "project_id": "your-project-id",
+    "title": "Fix auth timeout bug",
+    "status": "todo",
+    "priority": "high"
+  }'`,
+  Python: `import requests
+
+resp = requests.post(
+    "https://api.baaton.dev/api/v1/issues",
+    headers={"Authorization": "Bearer baa_your_key"},
+    json={
+        "project_id": "your-project-id",
+        "title": "Fix auth timeout bug",
+        "status": "todo",
+        "priority": "high",
+    },
+)
+print(resp.json()["data"]["display_id"])`,
+  TypeScript: `const resp = await fetch(
+  "https://api.baaton.dev/api/v1/issues",
+  {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer baa_your_key",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      project_id: "your-project-id",
+      title: "Fix auth timeout bug",
+      status: "todo",
+      priority: "high",
+    }),
+  }
+);
+const { data } = await resp.json();`,
+};
+
+function CodeTabs() {
+  const [tab, setTab] = useState<string>('cURL');
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(codeSnippets[tab]);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="w-full max-w-2xl mx-auto mt-12 rounded-xl border border-black/10 dark:border-white/10 bg-[#1a1a1a] dark:bg-[#0A0A0A] overflow-hidden text-left opacity-0 animate-fade-in-delay shadow-2xl">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-black/20">
+        <div className="flex gap-1">
+          {Object.keys(codeSnippets).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${
+                tab === t ? 'bg-amber-500/15 text-amber-500' : 'text-neutral-500 hover:text-neutral-300'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <button onClick={handleCopy} className="flex items-center gap-1 px-2 py-1 rounded text-xs text-neutral-500 hover:text-white transition-colors">
+          {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre className="p-4 overflow-x-auto text-[13px] leading-relaxed">
+        <code className="text-emerald-300/90 font-mono">{codeSnippets[tab]}</code>
+      </pre>
+    </div>
+  );
+}
+
+/* ─── Use Cases Data ───────────────────────── */
+const useCases = [
+  { icon: Code, title: 'Coding Agent', desc: 'Opens issues, writes code, creates PRs, and moves tickets to review — all via API.', color: 'text-blue-400', bg: 'bg-blue-500/10 dark:bg-blue-500/10' },
+  { icon: ShieldCheck, title: 'QA Agent', desc: 'Files bugs with stack traces, severity, and repro steps — directly as issues.', color: 'text-green-400', bg: 'bg-green-500/10 dark:bg-green-500/10' },
+  { icon: Server, title: 'DevOps Agent', desc: 'Creates incidents on downtime, tracks resolution, and updates status automatically.', color: 'text-purple-400', bg: 'bg-purple-500/10 dark:bg-purple-500/10' },
+  { icon: Headphones, title: 'Support Agent', desc: 'Customer tickets flow in from email/chat. AI triages, assigns priority, and resolves.', color: 'text-orange-400', bg: 'bg-orange-500/10 dark:bg-orange-500/10' },
+];
 
 export function Landing() {
   const { dark, toggle } = useTheme();
@@ -112,14 +199,16 @@ export function Landing() {
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 opacity-0 animate-reveal-up-delay-3">
             <Link to="/sign-up" className="h-14 px-10 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-lg transition-all shadow-[0_4px_0_0_#d97706] hover:shadow-[0_2px_0_0_#d97706] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] flex items-center gap-2 w-full sm:w-auto justify-center group">
-              <Wand2 className="w-5 h-5" strokeWidth={2.5} />
-              <span className="tracking-tight">{t('landing.ctaMain')}</span>
+              <span className="tracking-tight">{t('landing.cta')}</span>
+              <ArrowRight className="w-5 h-5" strokeWidth={2.5} />
             </Link>
-            <button className="h-14 px-10 rounded-lg bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-black dark:text-white font-semibold transition-all flex items-center gap-2 w-full sm:w-auto justify-center font-mono text-sm shadow-[0_4px_0_0_rgba(0,0,0,0.1)] hover:shadow-[0_2px_0_0_rgba(0,0,0,0.1)] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] dark:shadow-[0_4px_0_0_rgba(255,255,255,0.1)] dark:hover:shadow-[0_2px_0_0_rgba(255,255,255,0.1)]">
-              <span className="opacity-40">$</span> npm i baaton-cli
-              <Copy className="w-4 h-4 ml-2 text-neutral-400" />
-            </button>
+            <Link to="/docs" className="h-14 px-10 rounded-lg bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-black dark:text-white font-semibold transition-all flex items-center gap-2 w-full sm:w-auto justify-center text-sm shadow-[0_4px_0_0_rgba(0,0,0,0.1)] hover:shadow-[0_2px_0_0_rgba(0,0,0,0.1)] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] dark:shadow-[0_4px_0_0_rgba(255,255,255,0.1)] dark:hover:shadow-[0_2px_0_0_rgba(255,255,255,0.1)]">
+              Read the Docs
+            </Link>
           </div>
+
+          {/* Code Snippet Tabs */}
+          <CodeTabs />
         </div>
 
         {/* ── Kanban Mockup ──────────────────────── */}
@@ -272,6 +361,44 @@ export function Landing() {
         </div>
       </section>
 
+      {/* ── Use Cases ──────────────────────────── */}
+      <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="mb-12 sm:mb-16 max-w-3xl">
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">Use Cases</p>
+            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">Powering every<br />type of agent.</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {useCases.map((uc) => (
+              <div key={uc.title} className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-white dark:bg-neutral-900/20 hover:shadow-xl transition-all group">
+                <div className={`w-12 h-12 rounded-lg ${uc.bg} flex items-center justify-center mb-6`}>
+                  <uc.icon className={`w-6 h-6 ${uc.color}`} strokeWidth={1.5} />
+                </div>
+                <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{uc.title}</h3>
+                <p className="text-base text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{uc.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Stats ──────────────────────────────── */}
+      <section className="py-12 sm:py-20 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+          {[
+            { value: 'API-First', label: 'Every feature is an endpoint' },
+            { value: '6', label: 'Webhook event types' },
+            { value: '<100ms', label: 'API response time' },
+            { value: '14+', label: 'REST endpoints' },
+          ].map((stat) => (
+            <div key={stat.label}>
+              <div className="text-3xl md:text-4xl font-display font-bold text-black dark:text-white mb-2 uppercase">{stat.value}</div>
+              <div className="text-sm text-neutral-500 font-medium">{stat.label}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* ── CTA ─────────────────────────────────── */}
       <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 relative overflow-hidden bg-white dark:bg-[#050505] transition-colors z-20">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/5 blur-[120px] rounded-full pointer-events-none" />
@@ -298,9 +425,9 @@ export function Landing() {
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
           <Link to="/" className="font-display text-2xl text-black dark:text-white uppercase tracking-wide">Baaton</Link>
           <div className="flex gap-8 text-neutral-600 dark:text-neutral-500 font-bold uppercase tracking-wider text-xs">
-            <a href="#" className="hover:text-black dark:hover:text-white transition-colors">Twitter</a>
-            <a href="#" className="hover:text-black dark:hover:text-white transition-colors">GitHub</a>
-            <a href="#" className="hover:text-black dark:hover:text-white transition-colors">Discord</a>
+            <a href="https://x.com/baaboron" target="_blank" rel="noopener noreferrer" className="hover:text-black dark:hover:text-white transition-colors">Twitter</a>
+            <a href="https://github.com/rmzlb/baaton" target="_blank" rel="noopener noreferrer" className="hover:text-black dark:hover:text-white transition-colors">GitHub</a>
+            <Link to="/docs" className="hover:text-black dark:hover:text-white transition-colors">Docs</Link>
           </div>
           <div className="text-neutral-500 font-medium">© 2026 Baaton Inc.</div>
         </div>
