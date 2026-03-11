@@ -66,7 +66,7 @@ curl -s -X PATCH "$BASE/issues/{id}" -H "Authorization: Bearer $BAATON_API_KEY" 
 # 4. Post TLDR
 curl -s -X POST "$BASE/issues/{id}/tldr" -H "Authorization: Bearer $BAATON_API_KEY" \
   -H "Content-Type: application/json" -d '{
-  "agent_name":"my-agent","summary":"## Changes\n- Fixed X\n- Added Y",
+  "agent_name":"my-agent","summary":"Fixed X and added Y",
   "files_changed":["src/main.rs"],"tests_status":"passed"
 }'
 
