@@ -11,6 +11,8 @@ const fr = {
   'sidebar.analytics': 'Analytique',
   'sidebar.webhooks': 'Webhooks',
   'sidebar.docs': 'Docs API',
+  'sidebar.planning': 'Planification',
+  'sidebar.tools': 'Outils',
   'sidebar.lightMode': 'Mode clair',
   'sidebar.darkMode': 'Mode sombre',
   'sidebar.language': 'Langue',
@@ -526,6 +528,12 @@ const fr = {
   'tour.btn.done': 'C\'est parti !',
   'tour.btn.progress': '{{current}} sur {{total}}',
   'settings.replayTour': '🎓 Relancer le tour d\'introduction',
+  'settings.quickStart': 'Démarrage rapide — Copier & Coller',
+  'settings.qs.listProjects': 'Lister vos projets :',
+  'settings.qs.createIssue': 'Créer une issue :',
+  'settings.qs.agentSkill': 'Ajouter à la config de votre agent :',
+  'settings.qs.fullDocs': 'Documentation API complète :',
+  'settings.qs.viewDocs': 'Voir la documentation complète',
 
   // ─── Flux d'activité ────────────────────────
   'activity.created': 'a créé l\'issue',

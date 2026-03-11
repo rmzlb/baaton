@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { OrganizationProfile, useOrganization } from '@clerk/clerk-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Plus, Trash2, Copy, Eye, EyeOff, CheckCircle2, AlertTriangle, Globe, UserPlus, Link2, Mail, GraduationCap } from 'lucide-react';
@@ -352,28 +353,37 @@ function ApiKeysSection() {
           {/* Quick Start Curl Examples */}
           <div className="rounded-lg border border-accent/20 bg-accent/5 p-4">
             <h3 className="text-xs font-semibold text-accent mb-3 flex items-center gap-2">
-              🚀 Quick Start — Copy & Paste
+              🚀 {t('settings.quickStart')}
             </h3>
             <div className="space-y-3 text-[11px] font-mono">
               <div>
-                <p className="text-secondary mb-1 font-sans text-xs">List your projects:</p>
+                <p className="text-secondary mb-1 font-sans text-xs">{t('settings.qs.listProjects')}</p>
                 <code className="block rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all">
                   {`curl -s https://api.baaton.dev/api/v1/projects \\\n  -H "Authorization: Bearer ${newKeySecret}"`}
                 </code>
               </div>
               <div>
-                <p className="text-secondary mb-1 font-sans text-xs">Create an issue:</p>
+                <p className="text-secondary mb-1 font-sans text-xs">{t('settings.qs.createIssue')}</p>
                 <code className="block rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all">
                   {`curl -s -X POST https://api.baaton.dev/api/v1/issues \\\n  -H "Authorization: Bearer ${newKeySecret}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"project_id":"YOUR_PROJECT_ID","title":"Bug report","issue_type":"bug","priority":"high"}'`}
                 </code>
               </div>
               <div>
-                <p className="text-secondary mb-1 font-sans text-xs">Full API docs:</p>
+                <p className="text-secondary mb-1 font-sans text-xs">{t('settings.qs.agentSkill')}</p>
+                <code className="block rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all">
+                  {`# Add to your agent's SKILL.md or .env:\nBAATON_API_KEY=${newKeySecret}\nBAATON_BASE_URL=https://api.baaton.dev/api/v1`}
+                </code>
+              </div>
+              <div>
+                <p className="text-secondary mb-1 font-sans text-xs">{t('settings.qs.fullDocs')}</p>
                 <code className="block rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all">
                   {`curl -s https://api.baaton.dev/api/v1/public/docs`}
                 </code>
               </div>
             </div>
+            <Link to="/docs" className="inline-flex items-center gap-1 mt-3 text-xs text-accent hover:underline">
+              {t('settings.qs.viewDocs')} →
+            </Link>
           </div>
         </div>
       )}

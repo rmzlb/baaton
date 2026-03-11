@@ -11,6 +11,8 @@ const en = {
   'sidebar.analytics': 'Analytics',
   'sidebar.webhooks': 'Webhooks',
   'sidebar.docs': 'API Docs',
+  'sidebar.planning': 'Planning',
+  'sidebar.tools': 'Tools',
   'sidebar.lightMode': 'Light mode',
   'sidebar.darkMode': 'Dark mode',
   'sidebar.language': 'Language',
@@ -526,6 +528,12 @@ const en = {
   'tour.btn.done': 'Let\'s go!',
   'tour.btn.progress': '{{current}} of {{total}}',
   'settings.replayTour': '🎓 Replay Onboarding Tour',
+  'settings.quickStart': 'Quick Start — Copy & Paste',
+  'settings.qs.listProjects': 'List your projects:',
+  'settings.qs.createIssue': 'Create an issue:',
+  'settings.qs.agentSkill': 'Add to your agent config:',
+  'settings.qs.fullDocs': 'Full API docs:',
+  'settings.qs.viewDocs': 'View full documentation',
 
   // ─── Activity Feed ──────────────────────────
   'activity.created': 'created issue',

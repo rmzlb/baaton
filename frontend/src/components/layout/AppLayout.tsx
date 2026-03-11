@@ -31,7 +31,7 @@ export function AppLayout() {
         className={cn(
           'flex flex-1 flex-col overflow-hidden transition-all duration-200',
           // Desktop: offset for sidebar
-          collapsed ? 'md:ml-16' : 'md:ml-60',
+          collapsed ? 'md:ml-14' : 'md:ml-56',
           // Mobile: no offset (sidebar is overlay)
           'ml-0',
         )}
