@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight, Sun, Moon, LayoutDashboard, Bot, User, Check,
   MoreHorizontal, Loader, Inbox, Cpu, Gavel, Copy,
-  Menu, X, Code, ShieldCheck, Server, Headphones,
+  Menu, X, Rocket, Users, Layers, MessageCircle,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
@@ -103,10 +103,10 @@ function CodeTabs() {
 
 /* ─── Use Cases Data ───────────────────────── */
 const useCasesConfig = [
-  { icon: Code, titleKey: 'landing.useCases.coding', descKey: 'landing.useCases.codingDesc', color: 'text-blue-400', bg: 'bg-blue-500/10 dark:bg-blue-500/10' },
-  { icon: ShieldCheck, titleKey: 'landing.useCases.qa', descKey: 'landing.useCases.qaDesc', color: 'text-green-400', bg: 'bg-green-500/10 dark:bg-green-500/10' },
-  { icon: Server, titleKey: 'landing.useCases.devops', descKey: 'landing.useCases.devopsDesc', color: 'text-purple-400', bg: 'bg-purple-500/10 dark:bg-purple-500/10' },
-  { icon: Headphones, titleKey: 'landing.useCases.support', descKey: 'landing.useCases.supportDesc', color: 'text-orange-400', bg: 'bg-orange-500/10 dark:bg-orange-500/10' },
+  { icon: Rocket, titleKey: 'landing.useCases.coding', descKey: 'landing.useCases.codingDesc', color: 'text-blue-400', bg: 'bg-blue-500/10 dark:bg-blue-500/10' },
+  { icon: Users, titleKey: 'landing.useCases.qa', descKey: 'landing.useCases.qaDesc', color: 'text-green-400', bg: 'bg-green-500/10 dark:bg-green-500/10' },
+  { icon: Layers, titleKey: 'landing.useCases.devops', descKey: 'landing.useCases.devopsDesc', color: 'text-purple-400', bg: 'bg-purple-500/10 dark:bg-purple-500/10' },
+  { icon: MessageCircle, titleKey: 'landing.useCases.support', descKey: 'landing.useCases.supportDesc', color: 'text-orange-400', bg: 'bg-orange-500/10 dark:bg-orange-500/10' },
 ];
 
 export function Landing() {
@@ -143,7 +143,7 @@ export function Landing() {
             <div className="h-4 w-[1px] bg-black/10 dark:bg-white/10 hidden sm:block" />
             <Link to="/sign-in" className="text-sm font-semibold text-neutral-900 dark:text-white hover:opacity-70 transition-opacity hidden sm:block">{t('landing.nav.login')}</Link>
             <Link to="/sign-up" className="hidden sm:flex px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-all items-center gap-2 shadow-xl shadow-black/10 dark:shadow-white/5 transform hover:-translate-y-0.5">
-              <span>Conduct</span>
+              <span>{t('landing.cta')}</span>
               <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
             </Link>
             {/* Mobile hamburger */}
@@ -273,9 +273,9 @@ export function Landing() {
                   </div>
                   <p className="text-sm text-black dark:text-white mb-4 font-bold leading-snug">Refactor database schema for scalability</p>
                   <div className="p-3 mb-4 bg-neutral-900 dark:bg-black/60 rounded border border-neutral-800 dark:border-white/5 font-mono text-[10px] text-neutral-300 dark:text-neutral-400 leading-relaxed">
-                    <div className="flex gap-2"><span className="text-green-500 font-bold">➜</span> analyzing dependency graph...</div>
-                    <div className="flex gap-2"><span className="text-green-500 font-bold">➜</span> identifying foreign keys...</div>
-                    <div className="flex gap-2"><span className="text-neutral-500">...</span> optimizing indices</div>
+                    <div className="flex gap-2"><span className="text-green-500 font-bold">➜</span> reading issue context...</div>
+                    <div className="flex gap-2"><span className="text-green-500 font-bold">➜</span> updating status: in_progress</div>
+                    <div className="flex gap-2"><span className="text-neutral-500">...</span> posting TLDR summary</div>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="px-2 py-1 rounded bg-amber-100 dark:bg-amber-950/30 text-[10px] font-bold text-amber-700 dark:text-amber-500 uppercase tracking-tight">Backend</span>
@@ -348,13 +348,13 @@ export function Landing() {
                   <span className="ml-4 text-neutral-500 text-xs">agent-logs.txt</span>
                 </div>
                 <div className="space-y-3 text-xs md:text-sm">
-                  <LogLine time="10:42:01" level="INFO" color="text-blue-400" text="Ticket #124 received. Context loading..." dim />
-                  <LogLine time="10:42:05" level="INFO" color="text-blue-400" text="Analyzing src/auth/oauth.ts" />
-                  <LogLine time="10:42:23" level="WARN" color="text-amber-500" text="Deprecated method detected in line 45." />
+                  <LogLine time="10:42:01" level="INFO" color="text-blue-400" text="Agent read issue BAT-124 context" dim />
+                  <LogLine time="10:42:05" level="INFO" color="text-blue-400" text="Status → in_progress" />
+                  <LogLine time="10:42:23" level="INFO" color="text-green-400" text="TLDR posted: 3 files changed, tests passed" />
                   <div className="flex gap-3 mt-4 p-3 bg-white/5 rounded border-l-2 border-amber-500 animate-pulse">
                     <span className="text-neutral-500">10:43:45</span>
-                    <span className="text-purple-400 font-bold">POST</span>
-                    <span className="text-white font-bold">Submitted PR #892 for review.</span>
+                    <span className="text-purple-400 font-bold">PATCH</span>
+                    <span className="text-white font-bold">Status → in_review. Waiting for approval.</span>
                   </div>
                 </div>
               </div>
