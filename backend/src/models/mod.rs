@@ -144,6 +144,7 @@ pub struct UpdateIssue {
     pub status: Option<String>,
     pub priority: Option<Option<String>>,
     pub milestone_id: Option<Option<Uuid>>,
+    pub parent_id: Option<Option<Uuid>>,
     pub assignee_ids: Option<Vec<String>>,
     pub tags: Option<Vec<String>>,
     pub category: Option<Vec<String>>,
@@ -153,6 +154,41 @@ pub struct UpdateIssue {
     pub estimate: Option<Option<i32>>,
     pub sprint_id: Option<Option<Uuid>>,
     pub snoozed_until: Option<Option<NaiveDate>>,
+}
+
+// ─── Issue Relation ───────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct IssueRelation {
+    pub id: Uuid,
+    pub source_issue_id: Uuid,
+    pub target_issue_id: Uuid,
+    pub relation_type: String,
+    pub created_by: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+// ─── Recurrence Rule ──────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct RecurrenceRule {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub org_id: String,
+    pub title_template: String,
+    pub description: Option<String>,
+    pub assignee_ids: Vec<String>,
+    pub tags: Vec<String>,
+    pub priority: String,
+    pub issue_type: String,
+    pub rrule: String,
+    pub next_run_at: DateTime<Utc>,
+    pub paused: bool,
+    pub end_date: Option<chrono::NaiveDate>,
+    pub max_occurrences: Option<i32>,
+    pub occurrence_count: i32,
+    pub created_by: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 // ─── TLDR ─────────────────────────────────────────────

@@ -21,6 +21,7 @@ import { evaluateIssueSla } from '@/lib/sla';
 import { NotionEditor } from '@/components/shared/NotionEditor';
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 import { ActivityTimeline } from '@/components/issues/ActivityTimeline';
+import { IssueRelations } from '@/components/issues/IssueRelations';
 import { GitHubSection } from '@/components/github/GitHubSection';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
@@ -1536,6 +1537,11 @@ function MetadataSidebar({
           </div>
         </div>
       )}
+
+      {/* Relations */}
+      <div className="border-t border-border pt-3">
+        <IssueRelations issueId={issue.id} />
+      </div>
     </>
   );
 }

@@ -20,6 +20,8 @@ mod api_keys;
 mod docs;
 pub mod webhooks;
 mod metrics;
+pub mod relations;
+pub mod recurring;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -48,6 +50,11 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/issues/{id}/comments", get(comments::list_by_issue).post(comments::create))
         .route("/issues/{issue_id}/comments/{comment_id}", delete(comments::remove))
         .route("/issues/{id}/tldr", post(tldrs::create))
+        // Sub-issues (children)
+        .route("/issues/{id}/children", get(issues::list_children))
+        // Relations (BAA-3)
+        .route("/issues/{id}/relations", get(relations::list).post(relations::create))
+        .route("/issues/{id}/relations/{relation_id}", delete(relations::remove))
         // Activity
         .route("/issues/{id}/activity", get(activity::list_by_issue))
         .route("/activity", get(activity::list_recent))
@@ -94,6 +101,10 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Baaton Webhooks (org-level event subscriptions)
         .route("/webhooks", get(webhooks::list).post(webhooks::create))
         .route("/webhooks/{id}", get(webhooks::get_one).patch(webhooks::update).delete(webhooks::remove))
+        // Recurring issues (BAA-17)
+        .route("/projects/{id}/recurring", get(recurring::list).post(recurring::create))
+        .route("/recurring/{id}", patch(recurring::update).delete(recurring::remove))
+        .route("/recurring/{id}/trigger", post(recurring::trigger))
         // Metrics
         .route("/metrics", get(metrics::get_metrics));
 

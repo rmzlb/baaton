@@ -9,6 +9,41 @@ use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr,
 use crate::routes::activity::log_activity;
 use crate::routes::webhooks::dispatch_event;
 
+// ─── Sub-Issues ───────────────────────────────────────
+
+/// GET /issues/{id}/children — list sub-issues
+pub async fn list_children(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(parent_id): Path<Uuid>,
+) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
+    )
+    .bind(parent_id)
+    .bind(org_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+
+    if !exists {
+        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Parent issue not found"}))));
+    }
+
+    let children = sqlx::query_as::<_, Issue>(
+        "SELECT * FROM issues WHERE parent_id = $1 ORDER BY created_at ASC"
+    )
+    .bind(parent_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    Ok(Json(ApiResponse::new(children)))
+}
+
 // ─── Validation constants ─────────────────────────────
 
 const VALID_PRIORITIES: &[&str] = &["urgent", "high", "medium", "low"];
@@ -302,6 +337,30 @@ pub async fn create(
     let status = body.status.as_deref().unwrap_or("backlog");
     let valid_statuses = get_project_statuses(&pool, body.project_id, org_id).await?;
     validate_status(status, &valid_statuses)?;
+
+    // ── Depth validation for parent_id (max depth 2) ─────
+    if let Some(pid) = body.parent_id {
+        // Fetch the parent issue's own parent_id
+        let parent_parent: Option<Option<Uuid>> = sqlx::query_scalar(
+            "SELECT parent_id FROM issues WHERE id = $1"
+        )
+        .bind(pid)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+        match parent_parent {
+            None => {
+                return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Parent issue not found"}))));
+            }
+            Some(Some(_grandparent)) => {
+                return Err((StatusCode::BAD_REQUEST, Json(json!({
+                    "error": "Cannot nest issues more than 2 levels deep (parent already has a parent)"
+                }))));
+            }
+            Some(None) => {} // parent is top-level, ok
+        }
+    }
 
     // ── Transaction start ────────────────────────────────
     let mut tx = pool
@@ -665,6 +724,32 @@ pub async fn update(
     let snoozed_until_provided = body.snoozed_until.is_some();
     let snoozed_until_value = body.snoozed_until.flatten();
 
+    let parent_id_provided = body.parent_id.is_some();
+    let parent_id_value = body.parent_id.flatten();
+
+    // Depth check for parent_id update
+    if let Some(new_parent_id) = parent_id_value {
+        let parent_parent: Option<Option<Uuid>> = sqlx::query_scalar(
+            "SELECT parent_id FROM issues WHERE id = $1"
+        )
+        .bind(new_parent_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+        match parent_parent {
+            None => {
+                return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Parent issue not found"}))));
+            }
+            Some(Some(_)) => {
+                return Err((StatusCode::BAD_REQUEST, Json(json!({
+                    "error": "Cannot nest issues more than 2 levels deep"
+                }))));
+            }
+            Some(None) => {}
+        }
+    }
+
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         UPDATE issues SET
@@ -688,6 +773,7 @@ pub async fn update(
                 ELSE closed_at
             END,
             snoozed_until = CASE WHEN $24::boolean THEN $25 ELSE snoozed_until END,
+            parent_id = CASE WHEN $26::boolean THEN $27 ELSE parent_id END,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -713,11 +799,13 @@ pub async fn update(
     .bind(estimate_value)
     .bind(sprint_id_provided)
     .bind(sprint_id_value)
-    .bind(status_changed)        // $21: status_changed_at trigger
-    .bind(is_closing)            // $22: set closed_at
-    .bind(is_reopening)          // $23: clear closed_at
+    .bind(status_changed)         // $21: status_changed_at trigger
+    .bind(is_closing)             // $22: set closed_at
+    .bind(is_reopening)           // $23: clear closed_at
     .bind(snoozed_until_provided) // $24
-    .bind(snoozed_until_value)   // $25
+    .bind(snoozed_until_value)    // $25
+    .bind(parent_id_provided)     // $26
+    .bind(parent_id_value)        // $27
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
