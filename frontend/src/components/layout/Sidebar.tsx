@@ -256,7 +256,7 @@ export function Sidebar() {
         {/* ─── Bottom Links (AgentMail pattern) ─── */}
         <div className="p-1.5 space-y-0.5">
           <ExtLink href="/docs" icon={BookOpen} label={t('sidebar.docs')} />
-          <ExtLink href="mailto:thibaut@carbonable.io?subject=Baaton Feedback" icon={MessageSquare} label={t('sidebar.feedback')} isExternal />
+          <ExtLink href="mailto:haros@agentmail.to?subject=Baaton Feedback" icon={MessageSquare} label={t('sidebar.feedback')} isExternal />
         </div>
 
         {/* ─── Footer ─── */}
