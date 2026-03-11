@@ -10,6 +10,7 @@ const fr = {
   'sidebar.roadmap': 'Feuille de route',
   'sidebar.analytics': 'Analytique',
   'sidebar.webhooks': 'Webhooks',
+  'sidebar.docs': 'Docs API',
   'sidebar.lightMode': 'Mode clair',
   'sidebar.darkMode': 'Mode sombre',
   'sidebar.language': 'Langue',
@@ -971,6 +972,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.nav.methodology': 'Méthodologie',
 'landing.nav.pricing': 'Tarifs',
 'landing.nav.docs': 'Docs',
+'landing.nav.api': 'Référence API',
 'landing.nav.login': 'Connexion',
 'landing.readDocs': 'Lire la doc',
 // ─── Landing: Features section

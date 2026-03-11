@@ -133,6 +133,7 @@ export function Landing() {
             <a href="#how-it-works" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.methodology')}</a>
             <a href="#pricing" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.pricing')}</a>
             <Link to="/docs" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.docs')}</Link>
+            <Link to="/docs#api-reference" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.api')}</Link>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
             <button onClick={toggle} className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-neutral-900 dark:text-white transition-colors" aria-label="Toggle theme">
@@ -162,6 +163,7 @@ export function Landing() {
             <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.methodology')}</a>
             <a href="#pricing" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.pricing')}</a>
             <Link to="/docs" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.docs')}</Link>
+            <Link to="/docs#api-reference" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.api')}</Link>
             <div className="border-t border-black/5 dark:border-white/10 pt-3 flex flex-col gap-2">
               <LanguageSwitcher variant="full" className="py-1" />
               <Link to="/sign-in" onClick={() => setMobileMenuOpen(false)} className="text-sm font-semibold text-neutral-900 dark:text-white py-2">{t('landing.nav.login')}</Link>
@@ -496,9 +498,10 @@ export function Landing() {
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
           <Link to="/" className="font-display text-2xl text-black dark:text-white uppercase tracking-wide">Baaton</Link>
           <div className="flex gap-8 text-neutral-600 dark:text-neutral-500 font-bold uppercase tracking-wider text-xs">
-            <a href="https://x.com/baaboron" target="_blank" rel="noopener noreferrer" className="hover:text-black dark:hover:text-white transition-colors">Twitter</a>
+            <Link to="/docs" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.docs')}</Link>
+            <Link to="/docs#api-reference" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.api')}</Link>
             <a href="https://github.com/rmzlb/baaton" target="_blank" rel="noopener noreferrer" className="hover:text-black dark:hover:text-white transition-colors">GitHub</a>
-            <Link to="/docs" className="hover:text-black dark:hover:text-white transition-colors">Docs</Link>
+            <a href="https://x.com/baaboron" target="_blank" rel="noopener noreferrer" className="hover:text-black dark:hover:text-white transition-colors">Twitter</a>
           </div>
           <div className="text-neutral-500 font-medium">© 2026 Baaton Inc.</div>
         </div>

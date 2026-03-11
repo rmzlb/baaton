@@ -10,6 +10,7 @@ const en = {
   'sidebar.roadmap': 'Roadmap',
   'sidebar.analytics': 'Analytics',
   'sidebar.webhooks': 'Webhooks',
+  'sidebar.docs': 'API Docs',
   'sidebar.lightMode': 'Light mode',
   'sidebar.darkMode': 'Dark mode',
   'sidebar.language': 'Language',
@@ -971,6 +972,7 @@ As a [user], I want to [action] so that [benefit].
 'landing.nav.methodology': 'Methodology',
 'landing.nav.pricing': 'Pricing',
 'landing.nav.docs': 'Docs',
+'landing.nav.api': 'API Reference',
 'landing.nav.login': 'Log in',
 'landing.readDocs': 'Read the Docs',
 // ─── Landing: Features section
