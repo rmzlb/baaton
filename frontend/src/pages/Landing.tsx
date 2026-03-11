@@ -126,7 +126,7 @@ export function Landing() {
               Baaton
               <div className="absolute -right-2 -top-1 w-2 h-2 bg-amber-500 rounded-full" />
             </Link>
-            <span className="hidden sm:inline-block px-1.5 py-0.5 rounded border border-black/10 dark:border-white/10 text-[10px] font-mono text-neutral-500 uppercase tracking-widest bg-white/50 dark:bg-white/5">Beta v1.0</span>
+
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm font-semibold text-neutral-600 dark:text-neutral-400">
             <a href="#features" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.features')}</a>
