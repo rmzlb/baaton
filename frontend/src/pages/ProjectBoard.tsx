@@ -13,7 +13,7 @@ import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2 } from 'lucide-react';
+import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2, Settings, Github, Star, GitFork, Circle, RefreshCw, ExternalLink, X } from 'lucide-react';
 import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { cn } from '@/lib/utils';
 import type { Issue, IssueStatus, ProjectStatus } from '@/lib/types';
@@ -46,6 +46,7 @@ export function ProjectBoard() {
   const [showCreateIssue, setShowCreateIssue] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [showPublicLink, setShowPublicLink] = useState(false);
+  const [showProjectSettings, setShowProjectSettings] = useState(false);
   const [, setSearchParams] = useSearchParams();
   // Capture the initial deep-link param ONCE at mount, then forget it
   const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
@@ -273,6 +274,14 @@ export function ProjectBoard() {
           </div>
 
           <button
+            onClick={() => setShowProjectSettings(true)}
+            className="rounded-lg border border-border bg-surface p-1.5 text-secondary hover:bg-surface-hover hover:text-primary transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+            title={t('settings.title')}
+          >
+            <Settings size={16} />
+          </button>
+
+          <button
             onClick={() => setShowPublicLink(true)}
             className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 md:px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors min-h-[36px]"
           >
@@ -338,6 +347,14 @@ export function ProjectBoard() {
         />
       )}
 
+      {showProjectSettings && project && (
+        <ProjectSettingsModal
+          project={project}
+          onClose={() => setShowProjectSettings(false)}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: ['project-board', slug] })}
+        />
+      )}
+
       {/* Keyboard Shortcut Help Overlay */}
       {showShortcutHelp && (
         <ShortcutHelp onClose={() => setShowShortcutHelp(false)} />
@@ -376,6 +393,188 @@ function DensityToggle() {
           <Icon size={16} />
         </button>
       ))}
+    </div>
+  );
+}
+
+/* ── Project Settings Modal ─────────────────────── */
+
+function ProjectSettingsModal({
+  project,
+  onClose,
+  onSaved,
+}: {
+  project: { id: string; name: string; description: string | null; github_repo_url?: string; github_metadata?: { full_name?: string; description?: string; language?: string; stars?: number; forks?: number; open_issues?: number; default_branch?: string; is_private?: boolean; topics?: string[]; updated_at?: string; fetched_at?: string } };
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { t } = useTranslation();
+  const apiClient = useApi();
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description || '');
+  const [githubUrl, setGithubUrl] = useState(project.github_repo_url || '');
+  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+
+  const meta = project.github_metadata;
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      await apiClient.projects.update(project.id, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        github_repo_url: githubUrl.trim() || '',
+      });
+      onSaved();
+      onClose();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRefreshGithub = async () => {
+    setRefreshing(true);
+    try {
+      await apiClient.projects.refreshGithub(project.id);
+      onSaved();
+    } catch {
+      // silent — might not have URL
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-xl border border-border bg-surface p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-semibold text-primary">{t('settings.title')}</h2>
+          <button onClick={onClose} className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {/* Name */}
+          <div>
+            <label className="block text-xs font-medium text-secondary mb-1">{t('projectList.projectName')}</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full rounded-lg border border-border bg-surface-hover px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-medium text-secondary mb-1">{t('projectList.description')}</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              className="w-full rounded-lg border border-border bg-surface-hover px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none resize-none"
+            />
+          </div>
+
+          {/* GitHub URL */}
+          <div>
+            <label className="block text-xs font-medium text-secondary mb-1">
+              <Github size={12} className="inline mr-1" />
+              {t('settings.githubRepo')}
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={githubUrl}
+                onChange={(e) => setGithubUrl(e.target.value)}
+                placeholder="https://github.com/owner/repo"
+                className="flex-1 rounded-lg border border-border bg-surface-hover px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none font-mono"
+              />
+              {project.github_repo_url && (
+                <button
+                  onClick={handleRefreshGithub}
+                  disabled={refreshing}
+                  className="rounded-lg border border-border bg-surface-hover px-2.5 py-2 text-secondary hover:text-primary hover:bg-border transition-colors"
+                  title="Refresh GitHub metadata"
+                >
+                  <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* GitHub Metadata Preview */}
+          {meta && (
+            <div className="rounded-lg border border-border bg-surface-hover p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-secondary">GitHub Info</span>
+                {meta.full_name && (
+                  <a
+                    href={project.github_repo_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-accent hover:underline flex items-center gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {meta.full_name} <ExternalLink size={10} />
+                  </a>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 text-[11px]">
+                {meta.language && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 font-medium">
+                    <Circle size={7} fill="currentColor" />{meta.language}
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1 text-secondary">
+                  <Star size={11} />{meta.stars ?? 0}
+                </span>
+                <span className="inline-flex items-center gap-1 text-secondary">
+                  <GitFork size={11} />{meta.forks ?? 0}
+                </span>
+                {meta.is_private ? (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Private</span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-medium">Public</span>
+                )}
+                {meta.default_branch && (
+                  <span className="text-secondary font-mono">{meta.default_branch}</span>
+                )}
+              </div>
+              {meta.description && (
+                <p className="text-xs text-secondary">{meta.description}</p>
+              )}
+              {meta.fetched_at && (
+                <p className="text-[9px] text-muted">Last fetched: {new Date(meta.fetched_at!).toLocaleString()}</p>
+              )}
+            </div>
+          )}
+
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-border px-4 py-2 text-sm text-secondary hover:bg-surface-hover transition-colors"
+          >
+            {t('common.cancel')}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !name.trim()}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover transition-colors disabled:opacity-50"
+          >
+            {saving ? '...' : t('common.save')}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

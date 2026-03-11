@@ -162,6 +162,7 @@ export function useApi() {
         slug: string;
         description?: string;
         prefix: string;
+        github_repo_url?: string;
       }): Promise<Project> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
@@ -170,11 +171,17 @@ export function useApi() {
 
       update: async (
         id: string,
-        body: Partial<Pick<Project, 'name' | 'description'>>,
+        body: Partial<Pick<Project, 'name' | 'description' | 'github_repo_url'>>,
       ): Promise<Project> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.patch<Project>(`/projects/${id}`, body, token);
+        }),
+
+      refreshGithub: async (id: string): Promise<Project> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<Project>(`/projects/${id}/refresh-github`, {}, token);
         }),
 
       delete: async (id: string): Promise<void> =>
