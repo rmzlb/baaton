@@ -75,6 +75,7 @@ const NAV: NavSection[] = [
     labelKey: 'docs.nav.integrations',
     icon: <Plug size={16} />,
     children: [
+      { id: 'agent-skill', labelKey: 'docs.nav.agentSkill' },
       { id: 'openclaw', labelKey: 'docs.nav.openclaw' },
       { id: 'github-app', labelKey: 'docs.nav.githubApp' },
       { id: 'microsoft-sso', labelKey: 'docs.nav.microsoftSso' },
@@ -557,6 +558,38 @@ curl https://api.baaton.dev/api/v1/metrics?days=30 \\
                 {t('docs.integrations.title')}
               </h2>
               <p className="text-secondary mb-8">{t('docs.integrations.subtitle')}</p>
+
+              <article id="agent-skill" className="scroll-mt-20 mb-10">
+                <h3 className="text-lg font-semibold mb-3">{t('docs.integrations.skill.title')}</h3>
+                <p className="text-secondary mb-4">{t('docs.integrations.skill.desc')}</p>
+
+                <h4 className="text-sm font-semibold mb-2">{t('docs.integrations.skill.installTitle')}</h4>
+                <div className="space-y-2 mb-4">
+                  <div className="rounded-lg bg-bg border border-border p-3">
+                    <p className="text-xs text-muted mb-1">OpenClaw / Claude Code / Cursor:</p>
+                    <code className="text-sm font-mono text-primary">clawhub install baaton</code>
+                  </div>
+                  <div className="rounded-lg bg-bg border border-border p-3">
+                    <p className="text-xs text-muted mb-1">{t('docs.integrations.skill.curlInstall')}:</p>
+                    <code className="text-sm font-mono text-primary break-all">curl -s https://api.baaton.dev/api/v1/public/skill {'>'} ~/.claude/skills/baaton-pm/SKILL.md</code>
+                  </div>
+                </div>
+
+                <h4 className="text-sm font-semibold mb-2">{t('docs.integrations.skill.configTitle')}</h4>
+                <div className="rounded-lg bg-bg border border-border p-3 mb-4">
+                  <pre className="text-xs font-mono text-primary whitespace-pre-wrap">{`export BAATON_API_KEY=baa_your_key_here\nexport BAATON_BASE_URL=https://api.baaton.dev/api/v1`}</pre>
+                </div>
+
+                <h4 className="text-sm font-semibold mb-2">{t('docs.integrations.skill.featuresTitle')}</h4>
+                <ul className="list-disc list-inside space-y-1 text-secondary text-sm mb-4">
+                  <li>{t('docs.integrations.skill.feat1')}</li>
+                  <li>{t('docs.integrations.skill.feat2')}</li>
+                  <li>{t('docs.integrations.skill.feat3')}</li>
+                  <li>{t('docs.integrations.skill.feat4')}</li>
+                  <li>{t('docs.integrations.skill.feat5')}</li>
+                  <li>{t('docs.integrations.skill.feat6')}</li>
+                </ul>
+              </article>
 
               <article id="openclaw" className="scroll-mt-20 mb-10">
                 <h3 className="text-lg font-semibold mb-3">{t('docs.integrations.openclaw.title')}</h3>

@@ -1,5 +1,106 @@
 use axum::http::{HeaderMap, StatusCode};
 
+/// GET /api/v1/public/skill — Agent skill definition (SKILL.md format)
+/// Public endpoint (no auth required). Install via: curl -s https://api.baaton.dev/api/v1/public/skill
+pub async fn agent_skill() -> (StatusCode, HeaderMap, String) {
+    let mut headers = HeaderMap::new();
+    headers.insert("content-type", "text/markdown; charset=utf-8".parse().unwrap());
+    headers.insert("cache-control", "public, max-age=3600".parse().unwrap());
+
+    (StatusCode::OK, headers, SKILL_MD.to_string())
+}
+
+const SKILL_MD: &str = r#"---
+name: baaton-pm
+description: >
+  Manage project issues on Baaton (baaton.dev), an API-first project management board for AI agents.
+  Use when: creating/updating/listing/closing issues or tickets, checking project status,
+  triaging backlog, moving issues between statuses, posting work summaries (TLDRs),
+  managing webhooks, checking metrics, or referencing ticket IDs.
+  Trigger words: ticket, issue, backlog, sprint, baaton, triage, close ticket,
+  create ticket, update status, assign, prioritize, TLDR, webhook, milestone.
+---
+
+# Baaton Project Management
+
+API-first project board for AI agents. Agents create issues, post TLDRs, manage statuses. Humans review and direct.
+
+## Setup
+
+```bash
+export BAATON_API_KEY=baa_your_key_here
+```
+
+Base URL: `https://api.baaton.dev/api/v1`
+
+## Quick Reference
+
+| Action | Method | Endpoint |
+|--------|--------|----------|
+| List projects | GET | `/projects` |
+| Create issue | POST | `/issues` |
+| List issues | GET | `/projects/{id}/issues?status=todo&priority=high` |
+| Get issue | GET | `/issues/{id}` |
+| Update issue | PATCH | `/issues/{id}` |
+| Delete issue | DELETE | `/issues/{id}` |
+| Post TLDR | POST | `/issues/{id}/tldr` |
+| Add comment | POST | `/issues/{id}/comments` |
+| Delete comment | DELETE | `/issues/{id}/comments/{cid}` |
+| List webhooks | GET | `/webhooks` |
+| Create webhook | POST | `/webhooks` |
+| Get metrics | GET | `/metrics?days=30` |
+| Full API docs | GET | `/public/docs` (no auth) |
+
+## Core Workflow
+
+```bash
+# 1. Find assigned issues
+curl -s "$BASE/issues/mine?assignee_id=YOUR_ID" -H "Authorization: Bearer $BAATON_API_KEY"
+
+# 2. Move to in_progress
+curl -s -X PATCH "$BASE/issues/{id}" -H "Authorization: Bearer $BAATON_API_KEY" \
+  -H "Content-Type: application/json" -d '{"status":"in_progress"}'
+
+# 3. Do the work...
+
+# 4. Post TLDR
+curl -s -X POST "$BASE/issues/{id}/tldr" -H "Authorization: Bearer $BAATON_API_KEY" \
+  -H "Content-Type: application/json" -d '{
+  "agent_name":"my-agent","summary":"## Changes\n- Fixed X\n- Added Y",
+  "files_changed":["src/main.rs"],"tests_status":"passed"
+}'
+
+# 5. Move to in_review (NOT done — let humans verify)
+curl -s -X PATCH "$BASE/issues/{id}" -H "Authorization: Bearer $BAATON_API_KEY" \
+  -H "Content-Type: application/json" -d '{"status":"in_review"}'
+```
+
+## Valid Enums
+
+| Field | Values |
+|-------|--------|
+| status | backlog, todo, in_progress, in_review, done, cancelled |
+| priority | urgent, high, medium, low |
+| issue_type | bug, feature, improvement, question |
+| tests_status | passed, failed, skipped, none |
+| webhook events | issue.created, issue.updated, issue.deleted, status.changed, comment.created, comment.deleted |
+
+## Best Practices
+
+1. Move to `in_progress` before starting work
+2. Post a TLDR after completing work — include files_changed and tests_status
+3. Move to `in_review` after TLDR (not `done` — humans verify)
+4. Set priority on every issue
+5. Use markdown in descriptions and TLDRs
+
+## Error Handling
+
+All responses: `{"data": ...}`. Errors: `{"error": "message"}`.
+Validation errors include `accepted_values` array.
+
+For full API reference: `curl -s https://api.baaton.dev/api/v1/public/docs`
+"#;
+
 /// GET /api/v1/docs — Agent-first API documentation in Markdown
 /// Public endpoint (no auth required) for LLMs and agents.
 pub async fn api_docs() -> (StatusCode, HeaderMap, String) {

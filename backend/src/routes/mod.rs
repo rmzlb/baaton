@@ -77,6 +77,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/invites", get(invites::list).post(invites::create))
         // Docs (public, auth skipped via path prefix)
         .route("/public/docs", get(docs::api_docs))
+        .route("/public/skill", get(docs::agent_skill))
         // Public routes (auth skipped in middleware)
         .route("/invite/{code}", get(invites::redirect_invite))
         // Public routes (auth skipped in middleware based on path)
