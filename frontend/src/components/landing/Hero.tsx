@@ -1,16 +1,16 @@
 import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion, useScroll, useTransform, type Variants } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { PixelTanuki } from '@/components/shared/PixelTanuki';
 import { useTranslation } from '@/hooks/useTranslation';
 
-const fadeUp = {
+const fadeUp: Variants = {
   hidden: { opacity: 0, y: 30 },
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: { delay: i * 0.12, duration: 0.7, ease: [0.16, 1, 0.3, 1] },
+    transition: { delay: i * 0.12, duration: 0.7, ease: [0.16, 1, 0.3, 1] as number[] },
   }),
 };
 
