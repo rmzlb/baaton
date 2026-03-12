@@ -460,7 +460,7 @@ export function Dashboard() {
   }, [orgData, activeOrg?.id]);
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6">
       {/* Header */}
       <div className="mb-6 md:mb-8">
         <h1 className="text-xl md:text-2xl font-bold text-primary">{t('dashboard.title')}</h1>

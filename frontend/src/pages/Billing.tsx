@@ -94,7 +94,7 @@ export function Billing() {
   const currentPlan = billing?.plan || 'free';
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl">
+    <div className="p-4 md:p-6">
       <h1 className="text-2xl font-bold text-primary mb-1">{t('billing.title')}</h1>
       <p className="text-sm text-muted mb-8">{t('billing.subtitle')}</p>
 

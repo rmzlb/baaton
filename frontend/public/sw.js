@@ -1,20 +1,9 @@
-const CACHE_NAME = 'baaton-v1';
-const PRECACHE_URLS = [
-  '/',
-  '/dashboard',
-  '/projects',
-];
+const CACHE_NAME = 'baaton-v2';
 
-// Install: precache shell
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(PRECACHE_URLS))
-      .then(() => self.skipWaiting())
-  );
-});
+// Install: skip waiting immediately
+self.addEventListener('install', () => self.skipWaiting());
 
-// Activate: clean old caches
+// Activate: clean ALL old caches + claim clients
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -23,28 +12,29 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch: network-first for API, cache-first for static
+// Fetch: network-first for everything
+// Vite already adds content hashes to JS/CSS — no need for SW caching of assets
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
   // Skip non-GET
   if (event.request.method !== 'GET') return;
 
-  // API: network only
-  if (url.pathname.startsWith('/api/')) return;
+  const url = new URL(event.request.url);
 
-  // Static assets: stale-while-revalidate
+  // Skip API calls, chrome-extension, non-http
+  if (url.pathname.startsWith('/api/')) return;
+  if (!url.protocol.startsWith('http')) return;
+
+  // Network-first: try network, fall back to cache for offline
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      const fetchPromise = fetch(event.request).then(response => {
-        if (response.ok) {
+    fetch(event.request)
+      .then(response => {
+        // Only cache successful HTML responses (for offline shell)
+        if (response.ok && event.request.headers.get('accept')?.includes('text/html')) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
         return response;
-      }).catch(() => cached);
-
-      return cached || fetchPromise;
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });

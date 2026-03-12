@@ -472,7 +472,7 @@ export function AgentConfig() {
 
   if (isError) {
     return (
-      <div className="p-4 md:p-6 max-w-4xl">
+      <div className="p-4 md:p-6">
         <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
           <AlertCircle size={16} className="text-amber-400 shrink-0" />
           <p className="text-sm text-amber-300">{t('agentConfig.loadError')}</p>
@@ -489,7 +489,7 @@ export function AgentConfig() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl">
+    <div className="p-4 md:p-6">
 
       {/* ── Page Header ─────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-8 gap-4">

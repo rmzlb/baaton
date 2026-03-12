@@ -81,7 +81,7 @@ export default function SearchPage() {
   const statusOptions = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled'];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6">
+    <div className="p-4 md:p-6">
       {/* Search header */}
       <div className="flex items-center gap-3 mb-6">
         <div className="flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border border-border bg-surface focus-within:border-accent transition-colors">

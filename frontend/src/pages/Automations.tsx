@@ -717,7 +717,7 @@ function ProjectSelector({ projects }: { projects: Project[] }) {
   const { t } = useTranslation();
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl">
+    <div className="p-4 md:p-6">
       <div className="mb-6">
         <h2 className="text-base font-semibold text-primary mb-1">{t('automations.selectProject')}</h2>
         <p className="text-sm text-secondary">{t('automations.selectProjectDesc')}</p>
@@ -941,7 +941,7 @@ export function Automations() {
 
       {/* ── Content ─────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
-        <div className="p-4 md:p-6 max-w-5xl">
+        <div className="p-4 md:p-6">
 
           {/* ── Section 1: Template Gallery ─────────────────────────────────── */}
           <div className="mb-8">
