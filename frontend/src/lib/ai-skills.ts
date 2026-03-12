@@ -46,7 +46,7 @@ const SKILL_GROUPS: Record<SkillContext, string[]> = {
 };
 
 // ─── All Skill Declarations ───────────────────
-const ALL_SKILL_DECLARATIONS = [
+export const ALL_SKILL_DECLARATIONS = [
       {
         name: 'search_issues',
         description:
