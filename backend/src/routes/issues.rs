@@ -1441,8 +1441,8 @@ pub async fn search_global(
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Query parameter 'q' is required"}))));
     }
 
-    // Get all org IDs this user belongs to via Clerk API
-    let org_ids = fetch_user_org_ids(&auth.user_id).await.map_err(|e| {
+    // Get all org IDs this user belongs to (API key → direct, Clerk user → API call)
+    let org_ids = resolve_user_org_ids(&auth).await.map_err(|e| {
         tracing::error!(error = %e, "Failed to fetch user org memberships");
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to resolve organizations"})))
     })?;
@@ -1512,6 +1512,17 @@ pub async fn search_global(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     Ok(Json(ApiResponse::new(results)))
+}
+
+/// Resolve all organization IDs for an authenticated user.
+/// For API key users, returns the org_id from the auth middleware directly.
+/// For Clerk users, fetches memberships from Clerk API.
+pub async fn resolve_user_org_ids(auth: &super::super::middleware::AuthUser) -> Result<Vec<String>, String> {
+    if auth.user_id.starts_with("apikey:") {
+        // API key auth: org_id already resolved by middleware
+        return Ok(auth.org_id.iter().cloned().collect());
+    }
+    fetch_user_org_ids(&auth.user_id).await
 }
 
 /// Fetch all organization IDs that a user belongs to via Clerk API

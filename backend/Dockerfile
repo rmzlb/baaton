@@ -7,6 +7,7 @@ WORKDIR /app
 FROM chef AS planner
 COPY Cargo.toml ./
 COPY src/ src/
+COPY docs/ docs/
 # Generate Cargo.lock if missing
 RUN cargo generate-lockfile
 RUN cargo chef prepare --recipe-path recipe.json
@@ -21,6 +22,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 # Now copy real source and build (only our code recompiles — seconds, not minutes)
 COPY Cargo.toml ./
 COPY src/ src/
+COPY docs/ docs/
 COPY migrations/ migrations/
 RUN cargo generate-lockfile
 

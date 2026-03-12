@@ -237,6 +237,4 @@ pub async fn remove(
     }
 }
 
-// ─── Backward-compat aliases ──────────────────────────
-// Old route used list_by_project; keep as alias so mod.rs can use either name.
-pub use list as list_by_project;
+
