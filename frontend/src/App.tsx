@@ -30,6 +30,7 @@ const Initiatives = lazy(() => import('./pages/Initiatives'));
 const Automations = lazy(() => import('./pages/Automations'));
 const Billing = lazy(() => import('./pages/Billing'));
 const AgentConfig = lazy(() => import('./pages/AgentConfig'));
+const Admin = lazy(() => import('./pages/Admin'));
 const AIChat = lazy(() => import('./pages/AIChat'));
 
 const isAppDomain = window.location.hostname === 'app.baaton.dev';
@@ -181,6 +182,7 @@ export function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/billing" element={<Billing />} />
             <Route path="/agent-config" element={<AgentConfig />} />
+            <Route path="/admin" element={<Admin />} />
             <Route path="/ai" element={<AIChat />} />
             <Route
               path="/org/*"

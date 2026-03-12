@@ -1,43 +1,100 @@
-use axum::{extract::{Extension, Path, State}, http::StatusCode, Json};
+use axum::{extract::{Extension, Path, State, Query}, http::StatusCode, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 
 use crate::middleware::AuthUser;
 
+// ─── Superadmin guard ──────────────────────────────────────────────────────
+
+/// Check if user is a super admin (platform-level, not org-level).
+/// Checks super_admins table by user_id OR by email.
+async fn is_super_admin(pool: &PgPool, auth: &AuthUser) -> bool {
+    // Check by user_id
+    let by_id: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM super_admins WHERE user_id = $1)"
+    )
+    .bind(&auth.user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if by_id { return true; }
+
+    // Check by email (for initial setup before user_id is known)
+    if let Some(ref email) = auth.email {
+        let by_email: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM super_admins WHERE email = $1 AND user_id IS NULL)"
+        )
+        .bind(email)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
+
+        if by_email {
+            // Auto-fill user_id for future lookups
+            let _ = sqlx::query(
+                "UPDATE super_admins SET user_id = $1 WHERE email = $2 AND user_id IS NULL"
+            )
+            .bind(&auth.user_id)
+            .bind(email)
+            .execute(pool)
+            .await;
+            return true;
+        }
+    }
+
+    false
+}
+
+fn forbidden() -> (StatusCode, Json<Value>) {
+    (StatusCode::FORBIDDEN, Json(json!({"error": "Super admin access required"})))
+}
+
+// ─── Plan management ──────────────────────────────────────────────────────
+
+const VALID_PLANS: &[&str] = &["free", "pro", "enterprise", "partner", "tester", "unlimited"];
+
 #[derive(Debug, Deserialize)]
 pub struct SetPlanBody {
     pub plan: String,
 }
 
-/// PATCH /admin/orgs/{id}/plan — set org plan (free/pro/enterprise)
-/// Requires authenticated user. In production, restrict to org:admin role.
+/// PATCH /admin/orgs/{id}/plan — set org plan
+/// Superadmin: can set any plan. Org admin: can only set free/pro/enterprise on own org.
 pub async fn set_plan(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(org_id): Path<String>,
     Json(body): Json<SetPlanBody>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    // Role check: must be admin or be operating on own org
-    let is_admin = auth.org_role.as_deref()
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let sa = is_super_admin(&pool, &auth).await;
+    let is_org_admin = auth.org_role.as_deref()
         .map(|r| r.contains("admin"))
         .unwrap_or(false);
     let is_own_org = auth.org_id.as_deref() == Some(org_id.as_str());
 
-    if !is_admin && !is_own_org {
-        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "Admin role required"}))));
+    // Special plans require superadmin
+    let special_plans = ["partner", "tester", "unlimited"];
+    if special_plans.contains(&body.plan.as_str()) && !sa {
+        return Err(forbidden());
     }
 
-    if !matches!(body.plan.as_str(), "free" | "pro" | "enterprise") {
+    // Regular plans: need org admin or superadmin
+    if !sa && !(is_org_admin && is_own_org) {
+        return Err(forbidden());
+    }
+
+    if !VALID_PLANS.contains(&body.plan.as_str()) {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(json!({
-                "error": "Invalid plan. Must be one of: free, pro, enterprise"
+                "error": format!("Invalid plan. Must be one of: {}", VALID_PLANS.join(", ")),
+                "accepted_values": VALID_PLANS,
             })),
         ));
     }
 
-    // Upsert org first (in case it doesn't exist yet)
     sqlx::query(
         "INSERT INTO organizations (id, name, slug, plan) VALUES ($1, $1, $1, $2) ON CONFLICT (id) DO UPDATE SET plan = $2"
     )
@@ -51,6 +108,7 @@ pub async fn set_plan(
         admin_user = %auth.user_id,
         org_id = %org_id,
         plan = %body.plan,
+        is_super_admin = sa,
         "admin.set_plan"
     );
 
@@ -62,22 +120,363 @@ pub async fn set_plan(
     })))
 }
 
-/// GET /billing — get user-level plan, usage across ALL orgs, and limits
-/// Plan is tied to the user (via their "primary" org), but usage spans all orgs.
-/// Returns: plan, org count, project count (per org + total), API requests, issues count.
+// ─── GET /admin/superadmin/check — check if current user is superadmin ───
+
+pub async fn check_superadmin(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+) -> Json<Value> {
+    let sa = is_super_admin(&pool, &auth).await;
+    Json(json!({ "data": { "is_super_admin": sa } }))
+}
+
+// ─── GET /admin/overview — platform-wide analytics (superadmin only) ─────
+
+pub async fn platform_overview(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_super_admin(&pool, &auth).await {
+        return Err(forbidden());
+    }
+
+    // Total counts
+    let total_orgs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM organizations")
+        .fetch_one(&pool).await.unwrap_or(0);
+    let total_projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
+        .fetch_one(&pool).await.unwrap_or(0);
+    let total_issues: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues")
+        .fetch_one(&pool).await.unwrap_or(0);
+    let total_comments: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM comments")
+        .fetch_one(&pool).await.unwrap_or(0);
+    let total_api_keys: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_keys")
+        .fetch_one(&pool).await.unwrap_or(0);
+    let total_automations: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM automations")
+        .fetch_one(&pool).await.unwrap_or(0);
+    let total_webhooks: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM webhooks")
+        .fetch_one(&pool).await.unwrap_or(0);
+
+    // AI usage this month
+    let ai_this_month: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ai_usage WHERE created_at >= date_trunc('month', now())"
+    ).fetch_one(&pool).await.unwrap_or(0);
+
+    let ai_tokens_in: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(tokens_in), 0) FROM ai_usage WHERE created_at >= date_trunc('month', now())"
+    ).fetch_one(&pool).await.unwrap_or(0);
+
+    let ai_tokens_out: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(tokens_out), 0) FROM ai_usage WHERE created_at >= date_trunc('month', now())"
+    ).fetch_one(&pool).await.unwrap_or(0);
+
+    // Plan distribution
+    let plan_dist = sqlx::query_as::<_, (String, i64)>(
+        "SELECT COALESCE(plan, 'free'), COUNT(*) FROM organizations GROUP BY plan ORDER BY COUNT(*) DESC"
+    )
+    .fetch_all(&pool).await.unwrap_or_default();
+
+    let plans: Value = plan_dist.iter().map(|(plan, count)| {
+        json!({ "plan": plan, "count": count })
+    }).collect::<Vec<_>>().into();
+
+    // Issues created per day (last 30 days)
+    let daily_issues = sqlx::query_as::<_, (String, i64)>(
+        "SELECT created_at::date::text, COUNT(*) FROM issues WHERE created_at >= now() - interval '30 days' GROUP BY 1 ORDER BY 1"
+    ).fetch_all(&pool).await.unwrap_or_default();
+
+    let daily: Vec<Value> = daily_issues.iter().map(|(day, count)| {
+        json!({ "date": day, "count": count })
+    }).collect();
+
+    // Top 10 orgs by usage
+    let top_orgs = sqlx::query_as::<_, (String, String, i64, i64)>(
+        r#"SELECT o.id, COALESCE(o.name, o.id), COUNT(DISTINCT p.id), COUNT(i.id)
+           FROM organizations o
+           LEFT JOIN projects p ON p.org_id = o.id
+           LEFT JOIN issues i ON i.project_id = p.id
+           GROUP BY o.id, o.name
+           ORDER BY COUNT(i.id) DESC
+           LIMIT 10"#
+    ).fetch_all(&pool).await.unwrap_or_default();
+
+    let orgs: Vec<Value> = top_orgs.iter().map(|(id, name, projects, issues)| {
+        json!({ "org_id": id, "name": name, "projects": projects, "issues": issues })
+    }).collect();
+
+    // Estimated AI cost
+    let est_cost = (ai_tokens_in as f64 * 0.000000075) + (ai_tokens_out as f64 * 0.0000003);
+
+    Ok(Json(json!({
+        "data": {
+            "totals": {
+                "organizations": total_orgs,
+                "projects": total_projects,
+                "issues": total_issues,
+                "comments": total_comments,
+                "api_keys": total_api_keys,
+                "automations": total_automations,
+                "webhooks": total_webhooks,
+            },
+            "ai_usage_this_month": {
+                "messages": ai_this_month,
+                "tokens_in": ai_tokens_in,
+                "tokens_out": ai_tokens_out,
+                "estimated_cost_usd": format!("{:.4}", est_cost),
+            },
+            "plan_distribution": plans,
+            "daily_issues_30d": daily,
+            "top_orgs": orgs,
+        }
+    })))
+}
+
+// ─── GET /admin/users — list all users with their orgs & plans (superadmin) ──
+
+#[derive(Debug, Deserialize)]
+pub struct UserListParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub plan: Option<String>,
+    pub search: Option<String>,
+}
+
+pub async fn list_users(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Query(params): Query<UserListParams>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_super_admin(&pool, &auth).await {
+        return Err(forbidden());
+    }
+
+    let limit = params.limit.unwrap_or(50).min(200);
+    let offset = params.offset.unwrap_or(0);
+
+    // Get all orgs with their plans
+    let orgs = sqlx::query_as::<_, (String, String, String, String, chrono::DateTime<chrono::Utc>)>(
+        r#"SELECT
+            o.id,
+            COALESCE(o.name, o.id),
+            o.slug,
+            COALESCE(o.plan, 'free'),
+            o.created_at
+           FROM organizations o
+           ORDER BY o.created_at DESC
+           LIMIT $1 OFFSET $2"#
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    // For each org, count projects, issues, api_keys, last activity
+    let mut org_list: Vec<Value> = Vec::new();
+
+    for (org_id, name, slug, plan, created_at) in &orgs {
+        // Apply plan filter
+        if let Some(ref filter_plan) = params.plan {
+            if plan != filter_plan { continue; }
+        }
+
+        // Apply search filter
+        if let Some(ref q) = params.search {
+            let q_lower = q.to_lowercase();
+            if !name.to_lowercase().contains(&q_lower)
+                && !slug.to_lowercase().contains(&q_lower)
+                && !org_id.to_lowercase().contains(&q_lower) {
+                continue;
+            }
+        }
+
+        let project_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM projects WHERE org_id = $1"
+        ).bind(org_id).fetch_one(&pool).await.unwrap_or(0);
+
+        let issue_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM issues i JOIN projects p ON i.project_id = p.id WHERE p.org_id = $1"
+        ).bind(org_id).fetch_one(&pool).await.unwrap_or(0);
+
+        let key_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM api_keys WHERE org_id = $1"
+        ).bind(org_id).fetch_one(&pool).await.unwrap_or(0);
+
+        let automation_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM automations a JOIN projects p ON a.project_id = p.id WHERE p.org_id = $1"
+        ).bind(org_id).fetch_one(&pool).await.unwrap_or(0);
+
+        let last_issue: Option<String> = sqlx::query_scalar(
+            "SELECT MAX(i.created_at)::text FROM issues i JOIN projects p ON i.project_id = p.id WHERE p.org_id = $1"
+        ).bind(org_id).fetch_optional(&pool).await.ok().flatten();
+
+        let ai_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM ai_usage WHERE org_id = $1 AND created_at >= date_trunc('month', now())"
+        ).bind(org_id).fetch_one(&pool).await.unwrap_or(0);
+
+        // Fetch member count + emails from Clerk
+        let member_info = fetch_org_members(org_id).await;
+
+        org_list.push(json!({
+            "org_id": org_id,
+            "name": name,
+            "slug": slug,
+            "plan": plan,
+            "created_at": created_at.to_rfc3339(),
+            "projects": project_count,
+            "issues": issue_count,
+            "api_keys": key_count,
+            "automations": automation_count,
+            "ai_messages_this_month": ai_count,
+            "last_activity": last_issue,
+            "members": member_info,
+        }));
+    }
+
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM organizations")
+        .fetch_one(&pool).await.unwrap_or(0);
+
+    Ok(Json(json!({
+        "data": {
+            "organizations": org_list,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    })))
+}
+
+/// Fetch org members from Clerk API
+async fn fetch_org_members(org_id: &str) -> Vec<Value> {
+    let clerk_key = std::env::var("CLERK_SECRET_KEY").unwrap_or_default();
+    if clerk_key.is_empty() { return vec![]; }
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("https://api.clerk.com/v1/organizations/{org_id}/memberships?limit=100"))
+        .header("Authorization", format!("Bearer {clerk_key}"))
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) => {
+            if let Ok(body) = r.json::<Value>().await {
+                if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
+                    return data.iter().filter_map(|m| {
+                        let user = m.get("public_user_data")?;
+                        Some(json!({
+                            "user_id": user.get("user_id")?.as_str()?,
+                            "email": user.get("identifier").and_then(|i| i.as_str()).unwrap_or(""),
+                            "first_name": user.get("first_name").and_then(|n| n.as_str()).unwrap_or(""),
+                            "last_name": user.get("last_name").and_then(|n| n.as_str()).unwrap_or(""),
+                            "image_url": user.get("image_url").and_then(|u| u.as_str()).unwrap_or(""),
+                            "role": m.get("role").and_then(|r| r.as_str()).unwrap_or("member"),
+                        }))
+                    }).collect();
+                }
+            }
+            vec![]
+        }
+        Err(_) => vec![],
+    }
+}
+
+// ─── POST /admin/superadmins — add a super admin (superadmin only) ──────
+
+#[derive(Debug, Deserialize)]
+pub struct AddSuperAdminBody {
+    pub email: String,
+    pub user_id: Option<String>,
+}
+
+pub async fn add_super_admin(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Json(body): Json<AddSuperAdminBody>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_super_admin(&pool, &auth).await {
+        return Err(forbidden());
+    }
+
+    sqlx::query(
+        "INSERT INTO super_admins (user_id, email, granted_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+    )
+    .bind(&body.user_id.unwrap_or_default())
+    .bind(&body.email)
+    .bind(&auth.user_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    tracing::info!(admin = %auth.user_id, new_admin = %body.email, "superadmin.added");
+
+    Ok(Json(json!({ "data": { "email": body.email, "status": "granted" } })))
+}
+
+// ─── DELETE /admin/superadmins/{email} — remove super admin ─────────────
+
+pub async fn remove_super_admin(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(email): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_super_admin(&pool, &auth).await {
+        return Err(forbidden());
+    }
+
+    // Can't remove yourself
+    if auth.email.as_deref() == Some(email.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Cannot remove yourself as super admin"}))));
+    }
+
+    sqlx::query("DELETE FROM super_admins WHERE email = $1")
+        .bind(&email)
+        .execute(&pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    Ok(Json(json!({ "data": { "email": email, "status": "revoked" } })))
+}
+
+// ─── GET /admin/superadmins — list super admins ─────────────────────────
+
+pub async fn list_super_admins(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_super_admin(&pool, &auth).await {
+        return Err(forbidden());
+    }
+
+    let admins = sqlx::query_as::<_, (String, Option<String>, chrono::DateTime<chrono::Utc>, Option<String>)>(
+        "SELECT COALESCE(user_id, ''), email, granted_at, granted_by FROM super_admins ORDER BY granted_at"
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let list: Vec<Value> = admins.iter().map(|(uid, email, at, by)| json!({
+        "user_id": uid,
+        "email": email,
+        "granted_at": at.to_rfc3339(),
+        "granted_by": by,
+    })).collect();
+
+    Ok(Json(json!({ "data": list })))
+}
+
+// ─── GET /billing — user billing (unchanged, available to all users) ────
+
 pub async fn get_billing(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     use crate::routes::issues::fetch_user_org_ids;
 
-    // Get all orgs for this user via Clerk
     let org_ids = fetch_user_org_ids(&auth.user_id).await.map_err(|e| {
         tracing::error!(error = %e, "billing: failed to fetch org memberships");
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to resolve organizations"})))
     })?;
 
-    // Determine plan from current org (or first org)
     let current_org = auth.org_id.as_deref()
         .or(org_ids.first().map(|s| s.as_str()))
         .unwrap_or("unknown");
@@ -92,7 +491,7 @@ pub async fn get_billing(
     .flatten()
     .unwrap_or_else(|| "free".to_string());
 
-    // Fetch org names from Clerk API (org_ids → names)
+    // Fetch org names from Clerk
     let org_names: std::collections::HashMap<String, String> = {
         let mut map = std::collections::HashMap::new();
         let clerk_key = std::env::var("CLERK_SECRET_KEY").unwrap_or_default();
@@ -105,7 +504,7 @@ pub async fn get_billing(
                     .send()
                     .await
                 {
-                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+                    if let Ok(body) = resp.json::<Value>().await {
                         if let Some(name) = body.get("name").and_then(|n| n.as_str()) {
                             map.insert(oid.clone(), name.to_string());
                         }
@@ -116,60 +515,28 @@ pub async fn get_billing(
         map
     };
 
-    // Per-org breakdown: project count + issue count
     #[derive(sqlx::FromRow)]
-    struct OrgUsageRow {
-        org_id: String,
-        org_name: String,
-        project_count: i64,
-        issue_count: i64,
-    }
-
+    struct OrgUsageRow { org_id: String, org_name: String, project_count: i64, issue_count: i64 }
     #[derive(serde::Serialize)]
-    struct OrgUsage {
-        org_id: String,
-        org_name: String,
-        project_count: i64,
-        issue_count: i64,
-    }
+    struct OrgUsage { org_id: String, org_name: String, project_count: i64, issue_count: i64 }
 
     let org_usage: Vec<OrgUsage> = if !org_ids.is_empty() {
-        let rows = sqlx::query_as::<_, OrgUsageRow>(
-            r#"
-            SELECT
-                p.org_id,
-                COALESCE(o.name, p.org_id) AS org_name,
-                COUNT(DISTINCT p.id) AS project_count,
-                COUNT(i.id) AS issue_count
-            FROM projects p
-            LEFT JOIN organizations o ON o.id = p.org_id
-            LEFT JOIN issues i ON i.project_id = p.id
-            WHERE p.org_id = ANY($1)
-            GROUP BY p.org_id, o.name
-            ORDER BY issue_count DESC
-            "#,
-        )
-        .bind(&org_ids)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_default();
-
-        rows.into_iter().map(|r| {
+        sqlx::query_as::<_, OrgUsageRow>(
+            r#"SELECT p.org_id, COALESCE(o.name, p.org_id) AS org_name,
+                COUNT(DISTINCT p.id) AS project_count, COUNT(i.id) AS issue_count
+               FROM projects p LEFT JOIN organizations o ON o.id = p.org_id
+               LEFT JOIN issues i ON i.project_id = p.id WHERE p.org_id = ANY($1)
+               GROUP BY p.org_id, o.name ORDER BY issue_count DESC"#
+        ).bind(&org_ids).fetch_all(&pool).await.unwrap_or_default()
+        .into_iter().map(|r| {
             let name = org_names.get(&r.org_id).cloned().unwrap_or(r.org_name);
-            OrgUsage {
-                org_id: r.org_id,
-                org_name: name,
-                project_count: r.project_count,
-                issue_count: r.issue_count,
-            }
+            OrgUsage { org_id: r.org_id, org_name: name, project_count: r.project_count, issue_count: r.issue_count }
         }).collect()
     } else {
-        // Include orgs that have no projects yet
         org_ids.iter().map(|oid| OrgUsage {
             org_id: oid.clone(),
             org_name: org_names.get(oid).cloned().unwrap_or_else(|| oid.clone()),
-            project_count: 0,
-            issue_count: 0,
+            project_count: 0, issue_count: 0,
         }).collect()
     };
 
@@ -177,51 +544,31 @@ pub async fn get_billing(
     let total_projects: i64 = org_usage.iter().map(|o| o.project_count).sum();
     let total_issues: i64 = org_usage.iter().map(|o| o.issue_count).sum();
 
-    // API request count this month (sum across all orgs)
     let month = chrono::Utc::now().format("%Y-%m").to_string();
     let api_count: i64 = if !org_ids.is_empty() {
-        sqlx::query_scalar(
-            "SELECT COALESCE(SUM(count), 0) FROM api_request_log WHERE org_id = ANY($1) AND month = $2"
-        )
-        .bind(&org_ids)
-        .bind(&month)
-        .fetch_optional(&pool)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(0)
+        sqlx::query_scalar("SELECT COALESCE(SUM(count), 0) FROM api_request_log WHERE org_id = ANY($1) AND month = $2")
+            .bind(&org_ids).bind(&month).fetch_optional(&pool).await.ok().flatten().unwrap_or(0)
     } else { 0 };
 
-    // Plan limits (users, orgs, projects, api_requests/mo, issues, ai_messages/mo, api_keys, automations)
-    let (org_limit, project_limit, api_limit, issue_limit, user_limit, ai_limit, key_limit, auto_limit) = match plan.as_str() {
-        "free" =>       (1,  3,   1_000,    500,  2, 50,    3,  3),
-        "pro" =>        (5, 25, 100_000,     -1, -1, 2_000, -1, -1),
-        "enterprise" => (-1, -1,     -1,     -1, -1, -1,    -1, -1), // unlimited
-        _ =>            (1,  3,   1_000,    500,  2, 50,    3,  3),
-    };
+    let plan_config = plan_limits(&plan);
 
-    // Count AI usage this month
     let ai_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM ai_usage WHERE user_id = $1 AND created_at >= date_trunc('month', now())"
-    )
-    .bind(&auth.user_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(0);
+    ).bind(&auth.user_id).fetch_one(&pool).await.unwrap_or(0);
 
     Ok(Json(json!({
         "data": {
             "plan": plan,
             "organizations": org_usage,
             "usage": {
-                "orgs": { "current": total_orgs, "limit": org_limit },
-                "projects": { "current": total_projects, "limit": project_limit },
-                "issues": { "current": total_issues, "limit": issue_limit },
-                "api_requests": { "current": api_count, "limit": api_limit, "month": month },
-                "ai_messages": { "current": ai_count, "limit": ai_limit, "month": month },
-                "users": { "limit": user_limit },
-                "api_keys": { "limit": key_limit },
-                "automations": { "limit": auto_limit }
+                "orgs": { "current": total_orgs, "limit": plan_config.org_limit },
+                "projects": { "current": total_projects, "limit": plan_config.project_limit },
+                "issues": { "current": total_issues, "limit": plan_config.issue_limit },
+                "api_requests": { "current": api_count, "limit": plan_config.api_limit, "month": month },
+                "ai_messages": { "current": ai_count, "limit": plan_config.ai_limit, "month": month },
+                "users": { "limit": plan_config.user_limit },
+                "api_keys": { "limit": plan_config.key_limit },
+                "automations": { "limit": plan_config.auto_limit }
             },
             "pricing": {
                 "free": { "price": 0, "label": "$0/mo", "users_included": 2 },
@@ -232,12 +579,28 @@ pub async fn get_billing(
     })))
 }
 
-/// GET /billing/ai-usage — detailed AI usage report with token breakdown
+// ─── Plan limits helper ──────────────────────────────────────────────────
+
+struct PlanLimits { org_limit: i64, project_limit: i64, api_limit: i64, issue_limit: i64, user_limit: i64, ai_limit: i64, key_limit: i64, auto_limit: i64 }
+
+fn plan_limits(plan: &str) -> PlanLimits {
+    match plan {
+        "free" =>       PlanLimits { org_limit: 1, project_limit: 3, api_limit: 1_000, issue_limit: 500, user_limit: 2, ai_limit: 50, key_limit: 3, auto_limit: 3 },
+        "pro" =>        PlanLimits { org_limit: 5, project_limit: 25, api_limit: 100_000, issue_limit: -1, user_limit: -1, ai_limit: 2_000, key_limit: -1, auto_limit: -1 },
+        // partner, tester, unlimited = same as enterprise (unlimited)
+        "enterprise" | "partner" | "tester" | "unlimited" =>
+                        PlanLimits { org_limit: -1, project_limit: -1, api_limit: -1, issue_limit: -1, user_limit: -1, ai_limit: -1, key_limit: -1, auto_limit: -1 },
+        _ =>            PlanLimits { org_limit: 1, project_limit: 3, api_limit: 1_000, issue_limit: 500, user_limit: 2, ai_limit: 50, key_limit: 3, auto_limit: 3 },
+    }
+}
+
+// ─── GET /billing/ai-usage — detailed AI usage report ───────────────────
+
 pub async fn get_ai_usage(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
-    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let from = params.get("from").cloned().unwrap_or_else(|| {
         chrono::Utc::now().format("%Y-%m-01").to_string()
     });
@@ -245,67 +608,38 @@ pub async fn get_ai_usage(
         chrono::Utc::now().format("%Y-%m-%d").to_string()
     });
 
-    // Summary: total messages, tokens, by event_type
     let rows = sqlx::query_as::<_, (String, i64, i64, i64)>(
-        "SELECT event_type, COUNT(*) as count, COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0) \
+        "SELECT event_type, COUNT(*), COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0) \
          FROM ai_usage WHERE user_id = $1 AND created_at >= $2::date AND created_at < ($3::date + interval '1 day') \
          GROUP BY event_type"
-    )
-    .bind(&auth.user_id)
-    .bind(&from)
-    .bind(&to)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    ).bind(&auth.user_id).bind(&from).bind(&to).fetch_all(&pool).await.unwrap_or_default();
 
     let mut by_type = serde_json::Map::new();
-    let mut total_messages: i64 = 0;
-    let mut total_tokens_in: i64 = 0;
-    let mut total_tokens_out: i64 = 0;
+    let (mut total_messages, mut total_tokens_in, mut total_tokens_out) = (0i64, 0i64, 0i64);
 
     for (event_type, count, t_in, t_out) in &rows {
         total_messages += count;
         total_tokens_in += t_in;
         total_tokens_out += t_out;
-        by_type.insert(event_type.clone(), json!({
-            "count": count,
-            "tokens_in": t_in,
-            "tokens_out": t_out,
-        }));
+        by_type.insert(event_type.clone(), json!({ "count": count, "tokens_in": t_in, "tokens_out": t_out }));
     }
 
-    // Daily breakdown
     let daily = sqlx::query_as::<_, (String, i64, i64, i64)>(
-        "SELECT created_at::date::text as day, COUNT(*), COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0) \
+        "SELECT created_at::date::text, COUNT(*), COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0) \
          FROM ai_usage WHERE user_id = $1 AND created_at >= $2::date AND created_at < ($3::date + interval '1 day') \
-         GROUP BY day ORDER BY day"
-    )
-    .bind(&auth.user_id)
-    .bind(&from)
-    .bind(&to)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+         GROUP BY 1 ORDER BY 1"
+    ).bind(&auth.user_id).bind(&from).bind(&to).fetch_all(&pool).await.unwrap_or_default();
 
     let daily_data: Vec<Value> = daily.iter().map(|(day, count, t_in, t_out)| json!({
-        "date": day,
-        "messages": count,
-        "tokens_in": t_in,
-        "tokens_out": t_out,
+        "date": day, "messages": count, "tokens_in": t_in, "tokens_out": t_out,
     })).collect();
 
-    // Estimated cost (Gemini Flash pricing: ~$0.075/1M input, ~$0.30/1M output)
     let est_cost = (total_tokens_in as f64 * 0.000000075) + (total_tokens_out as f64 * 0.0000003);
 
     Ok(Json(json!({
         "data": {
             "period": { "from": from, "to": to },
-            "total": {
-                "messages": total_messages,
-                "tokens_in": total_tokens_in,
-                "tokens_out": total_tokens_out,
-                "estimated_cost_usd": format!("{:.4}", est_cost),
-            },
+            "total": { "messages": total_messages, "tokens_in": total_tokens_in, "tokens_out": total_tokens_out, "estimated_cost_usd": format!("{:.4}", est_cost) },
             "by_type": by_type,
             "daily": daily_data,
         }

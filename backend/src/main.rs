@@ -81,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
         (36, include_str!("../migrations/036_slack.sql")),
         (37, include_str!("../migrations/037_ai_usage.sql")),
         (37, include_str!("../migrations/037_agent_config.sql")),
+        (38, include_str!("../migrations/038_superadmin.sql")),
     ];
 
     for &(version, sql) in migrations {

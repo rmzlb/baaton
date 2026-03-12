@@ -772,5 +772,7 @@ export function useApi() {
         return api.public.post<Issue>(`/public/${slug}/submit`, body);
       },
     },
+    // Expose token getter for direct fetch calls (e.g. Admin page)
+    _getToken: getAuthToken,
   }), [getAuthToken, withErrorHandling]);
 }
