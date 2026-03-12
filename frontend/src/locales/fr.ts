@@ -1484,6 +1484,9 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'sla.deadline': 'Échéance SLA',
 
   // ─── Agent Config ────────────────────────────
+  'agentConfig.proRequired': 'Plan Pro requis',
+  'agentConfig.proDescription': 'La configuration de l\'agent est une fonctionnalité Pro. Passez au plan Pro pour débloquer les comportements autonomes : tâches planifiées, triage automatique, récaps par email, et plus.',
+  'agentConfig.upgradeToPro': 'Passer au Pro',
   'agentConfig.title': 'Configuration de l\'agent',
   'agentConfig.subtitle': 'Configurez les comportements autonomes et les planifications de votre agent IA',
   'agentConfig.saved': 'Paramètres enregistrés',

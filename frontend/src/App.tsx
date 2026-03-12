@@ -173,6 +173,7 @@ export function App() {
             <Route path="/api-keys" element={<ApiKeys />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/initiatives" element={<Initiatives />} />
+            <Route path="/automations" element={<Automations />} />
             <Route path="/projects/:slug/automations" element={<Automations />} />
             <Route path="/projects/:slug/milestones" element={<Milestones />} />
             <Route path="/projects/:slug/sprints" element={<Sprints />} />

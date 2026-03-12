@@ -6,8 +6,9 @@ import { useNotificationStore } from '@/stores/notifications';
 import { cn, timeAgo } from '@/lib/utils';
 import {
   Bot, Clock, Shield, Mail, BarChart3, Zap, Lock, Activity,
-  Loader2, ChevronDown, AlertCircle, CheckCircle2,
+  Loader2, ChevronDown, AlertCircle, CheckCircle2, Crown, ArrowRight,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { Project } from '@/lib/types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -344,6 +345,15 @@ export function AgentConfig() {
   const [form, setForm] = useState<AgentConfig>(DEFAULT_CONFIG);
   const [initialized, setInitialized] = useState(false);
 
+  // ─── Check plan (Agent Config = Pro+ feature) ────────────────────────────
+  const { data: billingData } = useQuery({
+    queryKey: ['billing'],
+    queryFn: () => apiClient.billing.get(),
+    staleTime: 300_000,
+  });
+  const userPlan = (billingData as any)?.plan || 'free';
+  const isPro = userPlan === 'pro' || userPlan === 'enterprise';
+
   // ─── Fetch config ────────────────────────────────────────────────────────
   const { data: configData, isLoading: configLoading, isError } = useQuery({
     queryKey: ['agent-config'],
@@ -473,6 +483,9 @@ export function AgentConfig() {
 
   const isSaving = saveMutation.isPending;
 
+  // ─── Pro plan gate (show upgrade CTA for free users) ───────────────────
+  const showProGate = !isPro;
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -494,7 +507,29 @@ export function AgentConfig() {
         )}
       </div>
 
-      <div className="space-y-6">
+      {/* ── Pro plan gate ─────────────────────────────────────────────── */}
+      {showProGate && (
+        <div className="mb-6 rounded-xl border border-accent/30 bg-accent/5 p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 shrink-0">
+              <Crown size={24} className="text-accent" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-primary mb-1">{t('agentConfig.proRequired')}</h3>
+              <p className="text-sm text-secondary mb-4">{t('agentConfig.proDescription')}</p>
+              <Link
+                to="/billing"
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black hover:bg-accent/90 transition-colors"
+              >
+                {t('agentConfig.upgradeToPro')}
+                <ArrowRight size={14} />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className={showProGate ? 'opacity-40 pointer-events-none select-none' : 'space-y-6'}>
 
         {/* ── Section 1: Agent Identity ──────────────────────────────────── */}
         <SectionCard

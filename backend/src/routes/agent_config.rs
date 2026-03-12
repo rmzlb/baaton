@@ -125,28 +125,33 @@ pub async fn update_config(
 
     let config = sqlx::query_as::<_, AgentConfig>(
         r#"
-        INSERT INTO agent_configs (org_id, user_id)
-        VALUES ($1, $2)
-        ON CONFLICT (org_id, user_id) DO NOTHING;
-
-        UPDATE agent_configs SET
-            agent_name = COALESCE($3, agent_name),
-            heartbeat_enabled = COALESCE($4, heartbeat_enabled),
-            heartbeat_cron = COALESCE($5, heartbeat_cron),
-            auto_triage_enabled = COALESCE($6, auto_triage_enabled),
-            auto_triage_cron = COALESCE($7, auto_triage_cron),
-            auto_triage_auto_apply = COALESCE($8, auto_triage_auto_apply),
-            email_recap_enabled = COALESCE($9, email_recap_enabled),
-            email_recap_cron = COALESCE($10, email_recap_cron),
-            email_recap_to = COALESCE($11, email_recap_to),
-            analytics_digest_enabled = COALESCE($12, analytics_digest_enabled),
-            analytics_digest_cron = COALESCE($13, analytics_digest_cron),
-            suggest_automations = COALESCE($14, suggest_automations),
-            allowed_project_ids = COALESCE($15, allowed_project_ids),
-            max_actions_per_run = COALESCE($16, max_actions_per_run),
-            require_approval = COALESCE($17, require_approval),
+        INSERT INTO agent_configs (org_id, user_id, agent_name, heartbeat_enabled, heartbeat_cron,
+            auto_triage_enabled, auto_triage_cron, auto_triage_auto_apply,
+            email_recap_enabled, email_recap_cron, email_recap_to,
+            analytics_digest_enabled, analytics_digest_cron, suggest_automations,
+            allowed_project_ids, max_actions_per_run, require_approval)
+        VALUES ($1, $2, COALESCE($3, 'Baaton Agent'), COALESCE($4, false), $5,
+            COALESCE($6, false), $7, COALESCE($8, false),
+            COALESCE($9, false), $10, $11,
+            COALESCE($12, false), $13, COALESCE($14, false),
+            COALESCE($15, '{}'), COALESCE($16, 10), COALESCE($17, true))
+        ON CONFLICT (org_id, user_id) DO UPDATE SET
+            agent_name = COALESCE($3, agent_configs.agent_name),
+            heartbeat_enabled = COALESCE($4, agent_configs.heartbeat_enabled),
+            heartbeat_cron = COALESCE($5, agent_configs.heartbeat_cron),
+            auto_triage_enabled = COALESCE($6, agent_configs.auto_triage_enabled),
+            auto_triage_cron = COALESCE($7, agent_configs.auto_triage_cron),
+            auto_triage_auto_apply = COALESCE($8, agent_configs.auto_triage_auto_apply),
+            email_recap_enabled = COALESCE($9, agent_configs.email_recap_enabled),
+            email_recap_cron = COALESCE($10, agent_configs.email_recap_cron),
+            email_recap_to = COALESCE($11, agent_configs.email_recap_to),
+            analytics_digest_enabled = COALESCE($12, agent_configs.analytics_digest_enabled),
+            analytics_digest_cron = COALESCE($13, agent_configs.analytics_digest_cron),
+            suggest_automations = COALESCE($14, agent_configs.suggest_automations),
+            allowed_project_ids = COALESCE($15, agent_configs.allowed_project_ids),
+            max_actions_per_run = COALESCE($16, agent_configs.max_actions_per_run),
+            require_approval = COALESCE($17, agent_configs.require_approval),
             updated_at = now()
-        WHERE org_id = $1 AND user_id = $2
         RETURNING *
         "#,
     )

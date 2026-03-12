@@ -672,6 +672,15 @@ export function useApi() {
         }),
     },
 
+    // ─── Billing ──────────────────────────────
+    billing: {
+      get: async (): Promise<any> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<any>('/billing', token);
+        }),
+    },
+
     // ─── Agent Config ──────────────────────────
     agentConfig: {
       get: async (): Promise<any> =>

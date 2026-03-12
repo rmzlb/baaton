@@ -94,7 +94,7 @@ export function Sidebar() {
     { to: '/api-keys', icon: KeyRound, label: t('sidebar.apiKeys') },
     { to: '/billing', icon: CreditCard, label: t('sidebar.billing') },
     { to: '/agent-config', icon: Bot, label: t('sidebar.agentConfig') },
-    ...(currentProjectSlug ? [{ to: `/projects/${currentProjectSlug}/automations`, icon: Workflow, label: t('sidebar.automations') }] : []),
+    { to: currentProjectSlug ? `/projects/${currentProjectSlug}/automations` : '/automations', icon: Workflow, label: t('sidebar.automations') },
   ];
 
   /* ─── Render Helpers ─────────────────────── */

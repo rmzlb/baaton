@@ -1484,6 +1484,9 @@ As a [user], I want to [action] so that [benefit].
   'sla.deadline': 'SLA deadline',
 
   // ─── Agent Config ────────────────────────────
+  'agentConfig.proRequired': 'Pro Plan Required',
+  'agentConfig.proDescription': 'Agent Configuration is a Pro feature. Upgrade to unlock autonomous agent behaviors: scheduled tasks, auto-triage, email recaps, analytics digests, and more.',
+  'agentConfig.upgradeToPro': 'Upgrade to Pro',
   'agentConfig.title': 'Agent Configuration',
   'agentConfig.subtitle': 'Configure your AI agent\'s autonomous behaviors and schedules',
   'agentConfig.saved': 'Settings saved',
