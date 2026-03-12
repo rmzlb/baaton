@@ -324,22 +324,9 @@ pub async fn create(
 
     // ── Plan enforcement: check issue limit ─────────────
     {
-        let plan: String = sqlx::query_scalar(
-            "SELECT COALESCE(plan, 'free') FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&pool)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "free".to_string());
-
-        let issue_limit: Option<i64> = match plan.as_str() {
-            "free" => Some(500),
-            "pro" => None,        // unlimited
-            "enterprise" => None, // unlimited
-            _ => Some(500),
-        };
+        let plan = crate::routes::admin::get_user_plan(&pool, &auth.user_id, Some(org_id)).await;
+        let limits = crate::routes::admin::plan_limits(&plan);
+        let issue_limit: Option<i64> = if limits.issue_limit < 0 { None } else { Some(limits.issue_limit) };
 
         if let Some(limit) = issue_limit {
             let count: i64 = sqlx::query_scalar(

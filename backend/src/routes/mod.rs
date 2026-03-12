@@ -152,6 +152,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/admin/users", get(admin::list_users))
         .route("/admin/superadmins", get(admin::list_super_admins).post(admin::add_super_admin))
         .route("/admin/superadmins/{email}", delete(admin::remove_super_admin))
+        .route("/admin/users/{user_id}/plan", patch(admin::set_user_plan))
         .route("/admin/audit-log", get(admin::get_audit_log))
         .route("/billing", get(admin::get_billing))
         .route("/billing/ai-usage", get(admin::get_ai_usage))

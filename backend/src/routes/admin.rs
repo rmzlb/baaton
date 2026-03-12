@@ -110,6 +110,7 @@ pub async fn set_plan(
         ));
     }
 
+    // Write to organizations (legacy compat) AND user_plans for all members
     sqlx::query(
         "INSERT INTO organizations (id, name, slug, plan) VALUES ($1, $1, $1, $2) ON CONFLICT (id) DO UPDATE SET plan = $2"
     )
@@ -119,7 +120,25 @@ pub async fn set_plan(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    audit_log(&pool, &auth, "set_plan", "organization", &org_id, json!({ "plan": body.plan })).await;
+    // Also set user_plans for all org members (via Clerk)
+    let members = fetch_org_members(&org_id).await;
+    for member in &members {
+        if let Some(uid) = member.get("user_id").and_then(|u| u.as_str()) {
+            if !uid.is_empty() {
+                let _ = sqlx::query(
+                    "INSERT INTO user_plans (user_id, plan, updated_by) VALUES ($1, $2, $3) \
+                     ON CONFLICT (user_id) DO UPDATE SET plan = $2, updated_at = now(), updated_by = $3"
+                )
+                .bind(uid)
+                .bind(&body.plan)
+                .bind(&auth.user_id)
+                .execute(&pool)
+                .await;
+            }
+        }
+    }
+
+    audit_log(&pool, &auth, "set_plan", "organization", &org_id, json!({ "plan": body.plan, "members_updated": members.len() })).await;
 
     tracing::info!(
         admin_user = %auth.user_id,
@@ -135,6 +154,46 @@ pub async fn set_plan(
             "plan": body.plan
         }
     })))
+}
+
+// ─── PATCH /admin/users/{user_id}/plan — set user plan directly ──────────
+
+#[derive(Debug, Deserialize)]
+pub struct SetUserPlanBody {
+    pub plan: String,
+}
+
+pub async fn set_user_plan(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(user_id): Path<String>,
+    Json(body): Json<SetUserPlanBody>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_super_admin(&pool, &auth).await {
+        return Err(forbidden());
+    }
+
+    if !VALID_PLANS.contains(&body.plan.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({
+            "error": format!("Invalid plan. Must be one of: {}", VALID_PLANS.join(", ")),
+            "accepted_values": VALID_PLANS,
+        }))));
+    }
+
+    sqlx::query(
+        "INSERT INTO user_plans (user_id, plan, updated_by) VALUES ($1, $2, $3) \
+         ON CONFLICT (user_id) DO UPDATE SET plan = $2, updated_at = now(), updated_by = $3"
+    )
+    .bind(&user_id)
+    .bind(&body.plan)
+    .bind(&auth.user_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    audit_log(&pool, &auth, "set_user_plan", "user", &user_id, json!({ "plan": body.plan })).await;
+
+    Ok(Json(json!({ "data": { "user_id": user_id, "plan": body.plan } })))
 }
 
 // ─── GET /admin/superadmin/check — check if current user is superadmin ───
@@ -501,15 +560,7 @@ pub async fn get_billing(
         .or(org_ids.first().map(|s| s.as_str()))
         .unwrap_or("unknown");
 
-    let plan: String = sqlx::query_scalar(
-        "SELECT COALESCE(plan, 'free') FROM organizations WHERE id = $1"
-    )
-    .bind(current_org)
-    .fetch_optional(&pool)
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or_else(|| "free".to_string());
+    let plan = get_user_plan(&pool, &auth.user_id, Some(current_org)).await;
 
     // Fetch org names from Clerk
     let org_names: std::collections::HashMap<String, String> = {
@@ -599,11 +650,49 @@ pub async fn get_billing(
     })))
 }
 
+// ─── User plan lookup (single source of truth) ──────────────────────────
+
+/// Get a user's plan. Checks user_plans table first, falls back to org plan.
+/// This is the ONLY function that should determine a user's plan.
+pub async fn get_user_plan(pool: &PgPool, user_id: &str, org_id: Option<&str>) -> String {
+    // 1. Check user_plans table (authoritative)
+    let user_plan: Option<String> = sqlx::query_scalar(
+        "SELECT plan FROM user_plans WHERE user_id = $1"
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    if let Some(p) = user_plan {
+        return p;
+    }
+
+    // 2. Fallback: check org plan (legacy, for migration period)
+    if let Some(oid) = org_id {
+        let org_plan: Option<String> = sqlx::query_scalar(
+            "SELECT COALESCE(plan, 'free') FROM organizations WHERE id = $1"
+        )
+        .bind(oid)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+        if let Some(p) = org_plan {
+            return p;
+        }
+    }
+
+    "free".to_string()
+}
+
 // ─── Plan limits helper ──────────────────────────────────────────────────
 
-struct PlanLimits { org_limit: i64, project_limit: i64, api_limit: i64, issue_limit: i64, user_limit: i64, ai_limit: i64, key_limit: i64, auto_limit: i64 }
+pub struct PlanLimits { pub org_limit: i64, pub project_limit: i64, pub api_limit: i64, pub issue_limit: i64, pub user_limit: i64, pub ai_limit: i64, pub key_limit: i64, pub auto_limit: i64 }
 
-fn plan_limits(plan: &str) -> PlanLimits {
+pub fn plan_limits(plan: &str) -> PlanLimits {
     match plan {
         "free" =>       PlanLimits { org_limit: 1, project_limit: 3, api_limit: 1_000, issue_limit: 500, user_limit: 2, ai_limit: 50, key_limit: 3, auto_limit: 3 },
         "pro" =>        PlanLimits { org_limit: 5, project_limit: 25, api_limit: 100_000, issue_limit: -1, user_limit: -1, ai_limit: 2_000, key_limit: -1, auto_limit: -1 },

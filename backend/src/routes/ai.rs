@@ -86,22 +86,9 @@ pub async fn chat(
 ) -> Response {
     // ── AI quota check ──
     let org_id = auth.org_id.as_deref().unwrap_or("unknown");
-    let plan: String = sqlx::query_scalar(
-        "SELECT COALESCE(plan, 'free') FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(&pool)
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or_else(|| "free".to_string());
-
-    let ai_limit: i64 = match plan.as_str() {
-        "free" => 50,
-        "pro" => 2_000,
-        "enterprise" => i64::MAX,
-        _ => 50,
-    };
+    let plan = crate::routes::admin::get_user_plan(&pool, &auth.user_id, Some(org_id)).await;
+    let limits = crate::routes::admin::plan_limits(&plan);
+    let ai_limit: i64 = if limits.ai_limit < 0 { i64::MAX } else { limits.ai_limit };
 
     let ai_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM ai_usage WHERE user_id = $1 AND created_at >= date_trunc('month', now())"
