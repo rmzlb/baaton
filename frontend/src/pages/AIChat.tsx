@@ -324,11 +324,13 @@ function SuggestionChips({ onSelect, disabled }: { onSelect: (p: string) => void
   const { t } = useTranslation();
   const chips = useMemo(() => [
     { label: t('ai.suggestionSummary'), prompt: t('ai.suggestionSummaryPrompt') },
-    { label: t('ai.suggestionBlockers'), prompt: t('ai.suggestionBlockersPrompt') },
-    { label: t('ai.suggestionTodo'), prompt: t('ai.suggestionTodoPrompt') },
+    { label: t('ai.suggestionTriage'), prompt: t('ai.suggestionTriagePrompt') },
     { label: t('ai.suggestionCreate'), prompt: t('ai.suggestionCreatePrompt') },
-    { label: t('ai.suggestionReprioritize'), prompt: t('ai.suggestionReprioritizePrompt') },
+    { label: t('ai.suggestionAutomation'), prompt: t('ai.suggestionAutomationPrompt') },
+    { label: t('ai.suggestionSprint'), prompt: t('ai.suggestionSprintPrompt') },
+    { label: t('ai.suggestionBatch'), prompt: t('ai.suggestionBatchPrompt') },
     { label: t('ai.suggestionRecap'), prompt: t('ai.suggestionRecapPrompt') },
+    { label: t('ai.suggestionSearch'), prompt: t('ai.suggestionSearchPrompt') },
   ], [t]);
 
   return (
