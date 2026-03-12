@@ -1114,6 +1114,18 @@ As a [user], I want to [action] so that [benefit].
 // ─── Sidebar (additional) ─────────────────────
 'sidebar.triage': 'Triage',
 'sidebar.views': 'Views',
+'sidebar.search': 'Search',
+'sidebar.navigation': 'Sidebar',
+
+// ─── Global Search Page ──────────────────
+'search.placeholder': 'Search all issues across all organizations…',
+'search.results': '{count} result(s) for "{query}"',
+'search.noResults': 'No issues found for "{query}"',
+'search.noResultsHint': 'Try different keywords or remove filters',
+'search.emptyTitle': 'Search across all your issues',
+'search.emptyHint': 'Full-text search on titles, descriptions, and comments — across all orgs and projects',
+'search.filterStatus': 'Status:',
+'search.filterClear': 'Clear',
 
 // ─── All Issues (additional) ──────────────────
 'allIssues.saveView': 'Save view',

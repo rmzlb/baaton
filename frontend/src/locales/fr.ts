@@ -1114,6 +1114,18 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 // ─── Sidebar (additional) ─────────────────────
 'sidebar.triage': 'Triage',
 'sidebar.views': 'Vues',
+'sidebar.search': 'Recherche',
+'sidebar.navigation': 'Barre latérale',
+
+// ─── Recherche globale ──────────────────
+'search.placeholder': 'Rechercher dans toutes les issues, toutes les organisations…',
+'search.results': '{count} résultat(s) pour « {query} »',
+'search.noResults': 'Aucune issue trouvée pour « {query} »',
+'search.noResultsHint': 'Essayez d\'autres mots-clés ou retirez les filtres',
+'search.emptyTitle': 'Rechercher dans toutes vos issues',
+'search.emptyHint': 'Recherche plein texte sur titres, descriptions et commentaires — toutes orgs et projets',
+'search.filterStatus': 'Statut :',
+'search.filterClear': 'Effacer',
 
 // ─── All Issues (additional) ──────────────────
 'allIssues.saveView': 'Sauvegarder la vue',

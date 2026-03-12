@@ -15,7 +15,9 @@ mod cycles;
 mod templates;
 mod ai;
 pub mod activity;
+pub mod automations;
 pub mod github;
+mod sla;
 mod views;
 pub mod notifications;
 mod api_keys;
@@ -56,6 +58,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/issues/mine", get(issues::list_mine))
         .route("/issues/batch", patch(issues::batch_update).delete(issues::batch_delete))
         .route("/search", get(issues::search))
+        .route("/search/global", get(issues::search_global))
         .route("/issues/{id}", get(issues::get_one).patch(issues::update).delete(issues::remove))
         .route("/issues/{id}/position", patch(issues::update_position))
         .route("/issues/{id}/archive", post(issues::archive))
@@ -88,9 +91,16 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/tags/{id}", delete(tags::remove))
         // Milestones by ID
         .route("/milestones/{id}", get(milestones::get_one).put(milestones::update).delete(milestones::remove))
-        // Templates
-        .route("/projects/{id}/templates", get(templates::list_by_project).post(templates::create))
-        .route("/templates/{id}", delete(templates::remove))
+        // Templates (BAA-13)
+        .route("/projects/{id}/templates", get(templates::list).post(templates::create))
+        .route("/templates/{id}", get(templates::get_one).patch(templates::update).delete(templates::remove))
+        // SLA (BAA-8)
+        .route("/projects/{id}/sla-rules", get(sla::list).post(sla::create))
+        .route("/sla-rules/{id}", delete(sla::remove))
+        .route("/projects/{id}/sla-stats", get(sla::stats))
+        // Automations (BAA-27)
+        .route("/projects/{id}/automations", get(automations::list).post(automations::create))
+        .route("/automations/{id}", patch(automations::update).delete(automations::remove))
         // Sprints by ID
         .route("/sprints/{id}", put(sprints::update).delete(sprints::remove))
         // Views

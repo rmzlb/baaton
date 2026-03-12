@@ -7,7 +7,9 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr, UpdateIssue};
 use crate::routes::activity::log_activity;
+use crate::routes::automations::evaluate_automations;
 use crate::routes::notifications::create_notification;
+use crate::routes::sla::apply_sla_deadline;
 use crate::routes::webhooks::dispatch_event;
 
 // ─── Sub-Issues ───────────────────────────────────────
@@ -554,6 +556,28 @@ pub async fn create(
         }
     }
 
+    // ── SLA deadline (fire-and-forget) ────────────────
+    {
+        let pool2 = pool.clone();
+        let iid = issue.id;
+        let pid = issue.project_id;
+        let priority = issue.priority.clone();
+        tokio::spawn(async move {
+            apply_sla_deadline(&pool2, iid, pid, priority.as_deref()).await;
+        });
+    }
+
+    // ── Automations: issue_created (fire-and-forget) ──
+    {
+        let pool2 = pool.clone();
+        let oid = org_id.to_string();
+        let pid = issue.project_id;
+        let issue2 = issue.clone();
+        tokio::spawn(async move {
+            evaluate_automations(&pool2, &oid, pid, "issue_created", &issue2, 3).await;
+        });
+    }
+
     // ── Webhook dispatch (fire-and-forget) ───────────
     dispatch_event(pool.clone(), org_id.to_string(), "issue.created", serde_json::to_value(&issue).unwrap_or_default()).await;
 
@@ -978,6 +1002,39 @@ pub async fn update(
         }
     }
 
+    // ── SLA deadline on priority change (fire-and-forget) ─
+    let priority_changed_flag = body.priority.is_some() && existing.priority != issue.priority;
+    if priority_changed_flag {
+        let pool2 = pool.clone();
+        let iid = issue.id;
+        let pid = issue.project_id;
+        let priority = issue.priority.clone();
+        tokio::spawn(async move {
+            apply_sla_deadline(&pool2, iid, pid, priority.as_deref()).await;
+        });
+    }
+
+    // ── Automations: status/priority change (fire-and-forget) ─
+    {
+        let pool2 = pool.clone();
+        let oid = org_id.to_string();
+        let pid = issue.project_id;
+        let issue2 = issue.clone();
+        let trigger = if status_changed {
+            "status_changed"
+        } else if priority_changed_flag {
+            "priority_changed"
+        } else {
+            "issue_updated"
+        };
+        let trigger = trigger.to_string();
+        tokio::spawn(async move {
+            if trigger != "issue_updated" {
+                evaluate_automations(&pool2, &oid, pid, &trigger, &issue2, 3).await;
+            }
+        });
+    }
+
     // ── Webhook dispatch (fire-and-forget) ───────────
     let event = if status_changed { "status.changed" } else { "issue.updated" };
     dispatch_event(pool.clone(), org_id.to_string(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
@@ -1292,6 +1349,125 @@ pub async fn search(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     Ok(Json(ApiResponse::new(results)))
+}
+
+// ─── Global Search (cross-org) ────────────────────────
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct GlobalSearchResult {
+    pub id: Uuid,
+    pub display_id: String,
+    pub title: String,
+    pub snippet: Option<String>,
+    pub status: String,
+    pub priority: Option<String>,
+    pub project_id: Uuid,
+    pub org_id: String,
+    pub org_name: String,
+    pub project_name: String,
+}
+
+pub async fn search_global(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Query(params): Query<SearchParams>,
+) -> Result<Json<ApiResponse<Vec<GlobalSearchResult>>>, (StatusCode, Json<serde_json::Value>)> {
+    if params.q.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Query parameter 'q' is required"}))));
+    }
+
+    // Get all org IDs this user belongs to via Clerk API
+    let org_ids = fetch_user_org_ids(&auth.user_id).await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to fetch user org memberships");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to resolve organizations"})))
+    })?;
+
+    if org_ids.is_empty() {
+        return Ok(Json(ApiResponse::new(vec![])));
+    }
+
+    let limit = params.limit.unwrap_or(30).min(100);
+    let is_overdue = params.is_overdue.unwrap_or(false);
+
+    let results = sqlx::query_as::<_, GlobalSearchResult>(
+        r##"
+        SELECT
+            i.id,
+            i.display_id,
+            i.title,
+            ts_headline('english', COALESCE(i.description, ''), plainto_tsquery('english', $1),
+                'MaxWords=20, MinWords=5, ShortWord=3, HighlightAll=false') AS snippet,
+            i.status,
+            i.priority,
+            i.project_id,
+            p.org_id,
+            COALESCE(o.name, p.org_id) AS org_name,
+            p.name AS project_name
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        LEFT JOIN organizations o ON o.id = p.org_id
+        WHERE i.search_vector @@ plainto_tsquery('english', $1)
+          AND p.org_id = ANY($2)
+          AND ($3::uuid IS NULL OR i.project_id = $3)
+          AND ($4::text IS NULL OR i.status = $4)
+          AND (NOT $6::boolean OR (i.due_date < CURRENT_DATE AND i.status NOT IN ('done', 'cancelled')))
+        ORDER BY ts_rank(i.search_vector, plainto_tsquery('english', $1)) DESC
+        LIMIT $5
+        "##,
+    )
+    .bind(&params.q)
+    .bind(&org_ids)
+    .bind(params.project_id)
+    .bind(&params.status)
+    .bind(limit)
+    .bind(is_overdue)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    Ok(Json(ApiResponse::new(results)))
+}
+
+/// Fetch all organization IDs that a user belongs to via Clerk API
+async fn fetch_user_org_ids(user_id: &str) -> Result<Vec<String>, String> {
+    let secret = std::env::var("CLERK_SECRET_KEY")
+        .map_err(|_| "CLERK_SECRET_KEY not configured".to_string())?;
+
+    let url = format!(
+        "https://api.clerk.com/v1/users/{}/organization_memberships?limit=100",
+        user_id
+    );
+
+    let response = reqwest::Client::new()
+        .get(&url)
+        .bearer_auth(&secret)
+        .send()
+        .await
+        .map_err(|e| format!("Clerk API request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Clerk API returned {}: {}", status, body));
+    }
+
+    #[derive(Deserialize)]
+    struct ClerkOrgMembership {
+        organization: ClerkOrgRef,
+    }
+    #[derive(Deserialize)]
+    struct ClerkOrgRef {
+        id: String,
+    }
+    #[derive(Deserialize)]
+    struct ClerkOrgMembershipsResponse {
+        data: Vec<ClerkOrgMembership>,
+    }
+
+    let memberships: ClerkOrgMembershipsResponse = response.json().await
+        .map_err(|e| format!("Failed to parse Clerk response: {}", e))?;
+
+    Ok(memberships.data.into_iter().map(|m| m.organization.id).collect())
 }
 
 // ─── Public Submission ────────────────────────────────

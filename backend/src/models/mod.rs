@@ -77,7 +77,7 @@ pub struct Milestone {
 // ─── Issue ────────────────────────────────────────────
 
 #[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Issue {
     pub id: Uuid,
     pub project_id: Uuid,
