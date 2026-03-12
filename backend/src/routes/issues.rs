@@ -336,8 +336,8 @@ pub async fn create(
 
         let issue_limit: Option<i64> = match plan.as_str() {
             "free" => Some(500),
-            "pro" => Some(10_000),
-            "enterprise" | _ if plan == "enterprise" => None,
+            "pro" => None,        // unlimited
+            "enterprise" => None, // unlimited
             _ => Some(500),
         };
 

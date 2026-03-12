@@ -80,9 +80,48 @@ struct GeminiPart {
 // ─── Handler ──────────────────────────────────────────
 
 pub async fn chat(
-    Extension(_auth): Extension<AuthUser>, // Ensures user is authenticated
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
     Json(body): Json<ChatRequest>,
 ) -> Response {
+    // ── AI quota check ──
+    let org_id = auth.org_id.as_deref().unwrap_or("unknown");
+    let plan: String = sqlx::query_scalar(
+        "SELECT COALESCE(plan, 'free') FROM organizations WHERE id = $1"
+    )
+    .bind(org_id)
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| "free".to_string());
+
+    let ai_limit: i64 = match plan.as_str() {
+        "free" => 50,
+        "pro" => 2_000,
+        "enterprise" => i64::MAX,
+        _ => 50,
+    };
+
+    let ai_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ai_usage WHERE user_id = $1 AND created_at >= date_trunc('month', now())"
+    )
+    .bind(&auth.user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    if ai_count >= ai_limit {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({
+                "error": "AI message quota exceeded for this month",
+                "usage": { "current": ai_count, "limit": ai_limit },
+                "upgrade_url": "/billing"
+            })),
+        ).into_response();
+    }
+
     // Validate input
     if body.messages.is_empty() {
         return (
@@ -205,6 +244,16 @@ pub async fn chat(
                 .into_response();
         }
     };
+
+    // ── Record AI usage ──
+    let _ = sqlx::query(
+        "INSERT INTO ai_usage (org_id, user_id, event_type, model) VALUES ($1, $2, 'chat_message', $3)"
+    )
+    .bind(org_id)
+    .bind(&auth.user_id)
+    .bind(body.model.as_deref().unwrap_or("gemini-3-flash-preview"))
+    .execute(&pool)
+    .await;
 
     Json(gemini_json).into_response()
 }

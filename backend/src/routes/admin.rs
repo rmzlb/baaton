@@ -192,13 +192,22 @@ pub async fn get_billing(
         .unwrap_or(0)
     } else { 0 };
 
-    // Plan limits
-    let (org_limit, project_limit, api_limit, issue_limit) = match plan.as_str() {
-        "free" => (2, 3, 1_000, 500),
-        "pro" => (10, 25, 50_000, 10_000),
-        "enterprise" => (-1, -1, -1, -1), // unlimited
-        _ => (2, 3, 1_000, 500),
+    // Plan limits (users, orgs, projects, api_requests/mo, issues, ai_messages/mo, api_keys, automations)
+    let (org_limit, project_limit, api_limit, issue_limit, user_limit, ai_limit, key_limit, auto_limit) = match plan.as_str() {
+        "free" =>       (1,  3,   1_000,    500,  2, 50,    3,  3),
+        "pro" =>        (5, 25, 100_000,     -1, -1, 2_000, -1, -1),
+        "enterprise" => (-1, -1,     -1,     -1, -1, -1,    -1, -1), // unlimited
+        _ =>            (1,  3,   1_000,    500,  2, 50,    3,  3),
     };
+
+    // Count AI usage this month
+    let ai_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ai_usage WHERE user_id = $1 AND created_at >= date_trunc('month', now())"
+    )
+    .bind(&auth.user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
 
     Ok(Json(json!({
         "data": {
@@ -208,7 +217,16 @@ pub async fn get_billing(
                 "orgs": { "current": total_orgs, "limit": org_limit },
                 "projects": { "current": total_projects, "limit": project_limit },
                 "issues": { "current": total_issues, "limit": issue_limit },
-                "api_requests": { "current": api_count, "limit": api_limit, "month": month }
+                "api_requests": { "current": api_count, "limit": api_limit, "month": month },
+                "ai_messages": { "current": ai_count, "limit": ai_limit, "month": month },
+                "users": { "limit": user_limit },
+                "api_keys": { "limit": key_limit },
+                "automations": { "limit": auto_limit }
+            },
+            "pricing": {
+                "free": { "price": 0, "label": "$0/mo", "users_included": 2 },
+                "pro": { "price": 19, "label": "$19/mo", "users_included": 3, "extra_user_price": 19 },
+                "enterprise": { "price": -1, "label": "On demand", "users_included": -1 }
             }
         }
     })))

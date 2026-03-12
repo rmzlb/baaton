@@ -19,6 +19,10 @@ interface BillingData {
     projects: { current: number; limit: number };
     issues: { current: number; limit: number };
     api_requests: { current: number; limit: number; month: string };
+    ai_messages: { current: number; limit: number; month: string };
+    users: { limit: number };
+    api_keys: { limit: number };
+    automations: { limit: number };
   };
 }
 
@@ -122,6 +126,11 @@ export function Billing() {
               current={billing.usage.api_requests.current}
               limit={billing.usage.api_requests.limit}
               label={`${t('billing.apiRequests')} (${billing.usage.api_requests.month})`}
+            />
+            <UsageBar
+              current={billing.usage.ai_messages?.current ?? 0}
+              limit={billing.usage.ai_messages?.limit ?? 50}
+              label={`${t('billing.aiMessages')} (${billing.usage.ai_messages?.month ?? ''})`}
             />
           </div>
         </div>

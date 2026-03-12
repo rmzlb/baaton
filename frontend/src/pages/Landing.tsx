@@ -418,7 +418,7 @@ export function Landing() {
               </div>
               <p className="text-sm text-neutral-500 mb-6">{t('landing.pricing.freeDesc')}</p>
               <ul className="space-y-3 mb-8 flex-1">
-                {['freeF1', 'freeF2', 'freeF3', 'freeF4'].map(k => (
+                {['freeF1', 'freeF2', 'freeF3', 'freeF4', 'freeF5'].map(k => (
                   <li key={k} className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
                     <Check className="w-4 h-4 text-green-500 flex-shrink-0" /> {t(`landing.pricing.${k}`)}
                   </li>
@@ -463,7 +463,7 @@ export function Landing() {
                   </li>
                 ))}
               </ul>
-              <a href="mailto:thibaut@carbonable.io" className="w-full py-3 rounded-lg border border-black/10 dark:border-white/10 text-center text-sm font-bold text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+              <a href="mailto:haros@agentmail.to?subject=Baaton%20Enterprise" className="w-full py-3 rounded-lg border border-black/10 dark:border-white/10 text-center text-sm font-bold text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
                 {t('landing.pricing.enterpriseCta')}
               </a>
             </div>
