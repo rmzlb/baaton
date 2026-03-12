@@ -28,6 +28,7 @@ const ApiKeys = lazy(() => import('./pages/ApiKeys'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
 const Initiatives = lazy(() => import('./pages/Initiatives'));
 const Automations = lazy(() => import('./pages/Automations'));
+const Billing = lazy(() => import('./pages/Billing'));
 
 const isAppDomain = window.location.hostname === 'app.baaton.dev';
 
@@ -175,6 +176,7 @@ export function App() {
             <Route path="/projects/:slug/milestones" element={<Milestones />} />
             <Route path="/projects/:slug/sprints" element={<Sprints />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/billing" element={<Billing />} />
             <Route
               path="/org/*"
               element={

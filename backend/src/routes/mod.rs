@@ -145,6 +145,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/issues/{id}/attachments/{att_id}", delete(attachments::remove))
         // Admin (BAA-1)
         .route("/admin/orgs/{id}/plan", patch(admin::set_plan))
+        .route("/billing", get(admin::get_billing))
         // Initiatives (BAA-9)
         .route("/initiatives", get(initiatives::list).post(initiatives::create))
         .route("/initiatives/{id}", get(initiatives::get_one).patch(initiatives::update).delete(initiatives::remove))
