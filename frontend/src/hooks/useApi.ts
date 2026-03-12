@@ -26,6 +26,7 @@ import type {
   Sprint,
   IssueTemplate,
   SavedView,
+  Automation,
 } from '@/lib/types';
 
 /**
@@ -669,6 +670,52 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.delete(`/templates/${id}`, token);
+        }),
+    },
+
+    // ─── Automations ──────────────────────────
+    automations: {
+      list: async (projectId: string): Promise<Automation[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<Automation[]>(`/projects/${projectId}/automations`, token);
+        }),
+
+      create: async (projectId: string, body: {
+        name: string;
+        trigger_type: string;
+        action_type: string;
+        trigger_config: Record<string, unknown>;
+        action_config: Record<string, unknown>;
+      }): Promise<Automation> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<Automation>(`/projects/${projectId}/automations`, body, token);
+        }),
+
+      update: async (projectId: string, id: string, body: Partial<{
+        name: string;
+        trigger_type: string;
+        action_type: string;
+        trigger_config: Record<string, unknown>;
+        action_config: Record<string, unknown>;
+        enabled: boolean;
+      }>): Promise<Automation> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<Automation>(`/projects/${projectId}/automations/${id}`, body, token);
+        }),
+
+      toggle: async (projectId: string, id: string, enabled: boolean): Promise<Automation> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<Automation>(`/projects/${projectId}/automations/${id}`, { enabled }, token);
+        }),
+
+      delete: async (projectId: string, id: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/projects/${projectId}/automations/${id}`, token);
         }),
     },
 

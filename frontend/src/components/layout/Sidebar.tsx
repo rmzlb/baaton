@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Kanban, PanelLeftClose, PanelLeft, X,
   Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox,
   CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink, KeyRound, Search,
-  Flag, Workflow, CreditCard, Bot,
+  Flag, Workflow, CreditCard, Bot, Sparkles,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -89,6 +89,7 @@ export function Sidebar() {
 
   const toolItems = [
     { to: '/search', icon: Search, label: t('sidebar.search') || 'Search' },
+    { to: '/ai', icon: Sparkles, label: t('sidebar.aiChat') },
     { to: '/analytics', icon: BarChart3, label: t('sidebar.analytics') },
     { to: '/webhooks', icon: Webhook, label: t('sidebar.webhooks') },
     { to: '/api-keys', icon: KeyRound, label: t('sidebar.apiKeys') },

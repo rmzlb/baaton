@@ -1412,6 +1412,63 @@ As a [user], I want to [action] so that [benefit].
   'automations.action.assign_user': 'Assign user',
   'automations.action.send_webhook': 'Send webhook',
   'automations.action.add_comment': 'Add comment',
+  // template gallery
+  'automations.templates': 'Templates',
+  'automations.templatesDesc': 'Start with a pre-built automation',
+  'automations.useTemplate': 'Use',
+  // form
+  'automations.conditions': 'Conditions',
+  'automations.condition.status': 'When status is',
+  'automations.condition.priority': 'When priority is',
+  'automations.condition.assignee': 'When assignee is',
+  'automations.condition.label': 'When label is',
+  'automations.noConditions': 'No conditions — always fires',
+  'automations.actionValue': 'Action Value',
+  'automations.flowPreview': 'Flow Preview',
+  'automations.editAutomation': 'Edit Automation',
+  'automations.createNew': 'Create Automation',
+  'automations.updating': 'Updating…',
+  'automations.update': 'Update',
+  'automations.selectProject': 'Select a project',
+  'automations.selectProjectDesc': 'Choose a project to manage its automations.',
+  'automations.open': 'Open',
+  'automations.activeRules': 'Active Rules',
+  'automations.noConditionPill': 'always',
+  // status options
+  'automations.status.backlog': 'Backlog',
+  'automations.status.todo': 'Todo',
+  'automations.status.in_progress': 'In Progress',
+  'automations.status.in_review': 'In Review',
+  'automations.status.done': 'Done',
+  // priority options
+  'automations.priority.none': 'None',
+  'automations.priority.low': 'Low',
+  'automations.priority.medium': 'Medium',
+  'automations.priority.high': 'High',
+  'automations.priority.urgent': 'Urgent',
+  // input placeholders
+  'automations.webhookUrl': 'Webhook URL',
+  'automations.assigneePlaceholder': 'Username or user ID',
+  'automations.labelPlaceholder': 'Label name',
+  'automations.commentPlaceholder': 'Comment text…',
+  'automations.actionValuePlaceholder': 'Value',
+  // templates
+  'automations.template.autoClose.name': 'Auto-close stale issues',
+  'automations.template.autoClose.desc': 'Close issues when their due date passes',
+  'automations.template.escalateUrgent.name': 'Escalate urgent to high',
+  'automations.template.escalateUrgent.desc': 'Bump urgent priority issues to high',
+  'automations.template.autoAssign.name': 'Auto-assign on in progress',
+  'automations.template.autoAssign.desc': 'Assign a user when issue moves to in progress',
+  'automations.template.labelBacklog.name': 'Label backlog overflow',
+  'automations.template.labelBacklog.desc': 'Tag issues needing triage on status change',
+  'automations.template.notifyCompletion.name': 'Notify on completion',
+  'automations.template.notifyCompletion.desc': 'Post a comment when an issue is marked done',
+  'automations.template.weeklyStale.name': 'Weekly stale check',
+  'automations.template.weeklyStale.desc': 'Label overdue issues as stale automatically',
+  // card
+  'automations.createdAt': 'Created',
+  'automations.neverRun': 'Never run',
+  'automations.conditionsLabel': 'Conditions',
 
   // ─── Recurring Issues ────────────────────────
   'recurring.title': 'Recurring Issues',
@@ -1563,6 +1620,26 @@ As a [user], I want to [action] so that [benefit].
 
   // Sidebar
   'sidebar.agentConfig': 'Agent Config',
+  'sidebar.aiChat': 'AI Chat',
+
+  // ─── AI Chat Page ────────────────────────────
+  'aiChat.title': 'AI Chat',
+  'aiChat.newChat': 'New Chat',
+  'aiChat.noConversations': 'No conversations yet',
+  'aiChat.deleteConversation': 'Delete conversation',
+  'aiChat.context': 'Context',
+  'aiChat.skills': 'Skills',
+  'aiChat.model': 'Model',
+  'aiChat.projects': 'Projects',
+  'aiChat.you': 'You',
+  'aiChat.assistant': 'Baaton AI',
+  'aiChat.copy': 'Copy',
+  'aiChat.copied': 'Copied!',
+  'aiChat.regenerate': 'Regenerate',
+  'aiChat.send': 'Send',
+  'aiChat.emptyTitle': 'How can I help?',
+  'aiChat.emptyDesc': 'Ask me anything about your projects — I can analyze issues, create tasks, summarize progress, and more.',
+  'aiChat.executingSkill': 'Running {{name}}…',
 
 } as const;
 

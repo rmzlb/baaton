@@ -1412,6 +1412,63 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'automations.action.assign_user': 'Assigner un utilisateur',
   'automations.action.send_webhook': 'Envoyer un webhook',
   'automations.action.add_comment': 'Ajouter un commentaire',
+  // template gallery
+  'automations.templates': 'Modèles',
+  'automations.templatesDesc': 'Démarrez avec une automatisation prête à l\'emploi',
+  'automations.useTemplate': 'Utiliser',
+  // form
+  'automations.conditions': 'Conditions',
+  'automations.condition.status': 'Quand le statut est',
+  'automations.condition.priority': 'Quand la priorité est',
+  'automations.condition.assignee': 'Quand l\'assigné est',
+  'automations.condition.label': 'Quand le label est',
+  'automations.noConditions': 'Aucune condition — se déclenche toujours',
+  'automations.actionValue': 'Valeur de l\'action',
+  'automations.flowPreview': 'Aperçu du flux',
+  'automations.editAutomation': 'Modifier l\'automatisation',
+  'automations.createNew': 'Créer une automatisation',
+  'automations.updating': 'Mise à jour…',
+  'automations.update': 'Mettre à jour',
+  'automations.selectProject': 'Sélectionner un projet',
+  'automations.selectProjectDesc': 'Choisissez un projet pour gérer ses automatisations.',
+  'automations.open': 'Ouvrir',
+  'automations.activeRules': 'Règles actives',
+  'automations.noConditionPill': 'toujours',
+  // status options
+  'automations.status.backlog': 'Backlog',
+  'automations.status.todo': 'À faire',
+  'automations.status.in_progress': 'En cours',
+  'automations.status.in_review': 'En révision',
+  'automations.status.done': 'Terminé',
+  // priority options
+  'automations.priority.none': 'Aucune',
+  'automations.priority.low': 'Faible',
+  'automations.priority.medium': 'Moyenne',
+  'automations.priority.high': 'Haute',
+  'automations.priority.urgent': 'Urgente',
+  // input placeholders
+  'automations.webhookUrl': 'URL du webhook',
+  'automations.assigneePlaceholder': 'Nom d\'utilisateur ou ID',
+  'automations.labelPlaceholder': 'Nom du label',
+  'automations.commentPlaceholder': 'Texte du commentaire…',
+  'automations.actionValuePlaceholder': 'Valeur',
+  // templates
+  'automations.template.autoClose.name': 'Fermer les issues obsolètes',
+  'automations.template.autoClose.desc': 'Ferme les issues quand leur date limite est dépassée',
+  'automations.template.escalateUrgent.name': 'Escalader les issues urgentes',
+  'automations.template.escalateUrgent.desc': 'Passe les issues urgentes en haute priorité',
+  'automations.template.autoAssign.name': 'Auto-assigner en cours',
+  'automations.template.autoAssign.desc': 'Assigne un utilisateur quand une issue passe en cours',
+  'automations.template.labelBacklog.name': 'Étiqueter le backlog',
+  'automations.template.labelBacklog.desc': 'Tagger les issues qui nécessitent un triage',
+  'automations.template.notifyCompletion.name': 'Notifier à la complétion',
+  'automations.template.notifyCompletion.desc': 'Commente quand une issue est marquée terminée',
+  'automations.template.weeklyStale.name': 'Vérification hebdomadaire',
+  'automations.template.weeklyStale.desc': 'Étiquette les issues en retard comme obsolètes',
+  // card
+  'automations.createdAt': 'Créé',
+  'automations.neverRun': 'Jamais exécuté',
+  'automations.conditionsLabel': 'Conditions',
 
   // ─── Recurring Issues ────────────────────────
   'recurring.title': 'Issues récurrentes',
@@ -1563,6 +1620,26 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 
   // Sidebar
   'sidebar.agentConfig': 'Config agent',
+  'sidebar.aiChat': 'Chat IA',
+
+  // ─── AI Chat Page ────────────────────────────
+  'aiChat.title': 'Chat IA',
+  'aiChat.newChat': 'Nouveau chat',
+  'aiChat.noConversations': 'Aucune conversation',
+  'aiChat.deleteConversation': 'Supprimer la conversation',
+  'aiChat.context': 'Contexte',
+  'aiChat.skills': 'Compétences',
+  'aiChat.model': 'Modèle',
+  'aiChat.projects': 'Projets',
+  'aiChat.you': 'Vous',
+  'aiChat.assistant': 'Baaton IA',
+  'aiChat.copy': 'Copier',
+  'aiChat.copied': 'Copié !',
+  'aiChat.regenerate': 'Régénérer',
+  'aiChat.send': 'Envoyer',
+  'aiChat.emptyTitle': 'Comment puis-je vous aider ?',
+  'aiChat.emptyDesc': 'Posez-moi des questions sur vos projets — je peux analyser les issues, créer des tâches, résumer l\'avancement, et plus encore.',
+  'aiChat.executingSkill': 'Exécution de {{name}}…',
 
 } as const;
 
