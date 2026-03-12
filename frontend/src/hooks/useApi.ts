@@ -672,6 +672,21 @@ export function useApi() {
         }),
     },
 
+    // ─── Agent Config ──────────────────────────
+    agentConfig: {
+      get: async (): Promise<any> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<any>('/agent-config', token);
+        }),
+
+      update: async (body: Record<string, unknown>): Promise<any> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<any>('/agent-config', body, token);
+        }),
+    },
+
     // ─── Public (no auth) ──────────────────────
     public: {
       submit: async (

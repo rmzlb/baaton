@@ -1483,6 +1483,84 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'sla.status.completed': 'Terminé',
   'sla.deadline': 'Échéance SLA',
 
+  // ─── Agent Config ────────────────────────────
+  'agentConfig.title': 'Configuration de l\'agent',
+  'agentConfig.subtitle': 'Configurez les comportements autonomes et les planifications de votre agent IA',
+  'agentConfig.saved': 'Paramètres enregistrés',
+  'agentConfig.saveError': 'Échec de la sauvegarde',
+  'agentConfig.saving': 'Sauvegarde…',
+  'agentConfig.loadError': 'Impossible de charger la configuration de l\'agent',
+
+  // Identity
+  'agentConfig.identity.title': 'Identité de l\'agent',
+  'agentConfig.identity.name': 'Nom de l\'agent',
+  'agentConfig.identity.namePlaceholder': 'ex. Agent Baaton',
+  'agentConfig.identity.lastHeartbeat': 'Dernier heartbeat',
+  'agentConfig.identity.online': 'En ligne',
+  'agentConfig.identity.offline': 'Hors ligne',
+  'agentConfig.identity.neverSeen': 'Jamais connecté',
+
+  // Scheduled Tasks
+  'agentConfig.scheduled.title': 'Tâches planifiées',
+  'agentConfig.scheduled.subtitle': 'Automatisez les actions récurrentes de l\'agent selon un planning',
+
+  // Heartbeat
+  'agentConfig.heartbeat.label': 'Heartbeat',
+  'agentConfig.heartbeat.description': 'Vérification régulière de l\'état de vos projets',
+
+  // Auto-Triage
+  'agentConfig.triage.label': 'Triage automatique',
+  'agentConfig.triage.description': 'Triage et catégorisation automatiques des nouvelles issues',
+  'agentConfig.triage.autoApply': 'Appliquer automatiquement',
+  'agentConfig.triage.autoApplyDesc': 'Applique les suggestions de triage sans validation humaine',
+
+  // Email Recap
+  'agentConfig.recap.label': 'Récap email',
+  'agentConfig.recap.description': 'Envoyez des résumés périodiques de l\'état du projet par email',
+  'agentConfig.recap.emailTo': 'Envoyer le récap à',
+  'agentConfig.recap.emailPlaceholder': 'vous@exemple.com',
+
+  // Analytics Digest
+  'agentConfig.digest.label': 'Digest analytiques',
+  'agentConfig.digest.description': 'Recevez des insights et performances analytiques selon un planning',
+
+  // Cron
+  'agentConfig.cron.label': 'Planification',
+  'agentConfig.cron.custom': 'Personnalisé…',
+  'agentConfig.cron.placeholder': 'ex. 0 9 * * 1-5',
+  'agentConfig.cron.preset.weekdays9am': 'Chaque jour ouvré à 9h',
+  'agentConfig.cron.preset.monday9am': 'Chaque lundi à 9h',
+  'agentConfig.cron.preset.daily8am': 'Chaque jour à 8h',
+  'agentConfig.cron.preset.friday6pm': 'Vendredi à 18h',
+
+  // AI Behaviors
+  'agentConfig.behaviors.title': 'Comportements IA',
+  'agentConfig.behaviors.subtitle': 'Contrôlez comment l\'agent apprend et s\'adapte',
+  'agentConfig.suggest.label': 'Suggérer des automatisations',
+  'agentConfig.suggest.description': 'L\'IA suggère des automatisations basées sur vos patterns de travail',
+
+  // Security
+  'agentConfig.security.title': 'Sécurité & Guardrails',
+  'agentConfig.security.subtitle': 'Contrôlez les permissions et les limites de sécurité de l\'agent',
+  'agentConfig.approval.label': 'Validation requise',
+  'agentConfig.approval.description': 'Human-in-the-loop : les actions de l\'agent nécessitent votre validation avant exécution',
+  'agentConfig.maxActions.label': 'Actions max par exécution',
+  'agentConfig.maxActions.description': 'Limitez le nombre d\'actions que l\'agent peut effectuer en une seule exécution (1–100)',
+  'agentConfig.allowedProjects.label': 'Projets autorisés',
+  'agentConfig.allowedProjects.description': 'Limitez l\'agent à des projets spécifiques. Laissez vide pour tout autoriser.',
+  'agentConfig.allowedProjects.allProjects': 'Tous les projets (sans restriction)',
+  'agentConfig.allowedProjects.noProjects': 'Aucun projet trouvé',
+
+  // Activity Log
+  'agentConfig.activity.title': 'Journal d\'activité',
+  'agentConfig.activity.lastHeartbeat': 'Dernier heartbeat',
+  'agentConfig.activity.lastTriage': 'Dernier triage',
+  'agentConfig.activity.lastRecap': 'Dernier récap',
+  'agentConfig.activity.never': 'Jamais',
+
+  // Sidebar
+  'sidebar.agentConfig': 'Config agent',
+
 } as const;
 
 export default fr;

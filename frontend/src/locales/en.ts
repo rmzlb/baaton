@@ -1483,6 +1483,84 @@ As a [user], I want to [action] so that [benefit].
   'sla.status.completed': 'Completed',
   'sla.deadline': 'SLA deadline',
 
+  // ─── Agent Config ────────────────────────────
+  'agentConfig.title': 'Agent Configuration',
+  'agentConfig.subtitle': 'Configure your AI agent\'s autonomous behaviors and schedules',
+  'agentConfig.saved': 'Settings saved',
+  'agentConfig.saveError': 'Failed to save settings',
+  'agentConfig.saving': 'Saving…',
+  'agentConfig.loadError': 'Failed to load agent configuration',
+
+  // Identity
+  'agentConfig.identity.title': 'Agent Identity',
+  'agentConfig.identity.name': 'Agent Name',
+  'agentConfig.identity.namePlaceholder': 'e.g., Baaton Agent',
+  'agentConfig.identity.lastHeartbeat': 'Last heartbeat',
+  'agentConfig.identity.online': 'Online',
+  'agentConfig.identity.offline': 'Offline',
+  'agentConfig.identity.neverSeen': 'Never connected',
+
+  // Scheduled Tasks
+  'agentConfig.scheduled.title': 'Scheduled Tasks',
+  'agentConfig.scheduled.subtitle': 'Automate recurring agent actions on a schedule',
+
+  // Heartbeat
+  'agentConfig.heartbeat.label': 'Heartbeat',
+  'agentConfig.heartbeat.description': 'Regular health check of your projects',
+
+  // Auto-Triage
+  'agentConfig.triage.label': 'Auto-Triage',
+  'agentConfig.triage.description': 'Automatically triage and categorize incoming issues',
+  'agentConfig.triage.autoApply': 'Auto-apply suggestions',
+  'agentConfig.triage.autoApplyDesc': 'Apply triage suggestions without human review',
+
+  // Email Recap
+  'agentConfig.recap.label': 'Email Recap',
+  'agentConfig.recap.description': 'Send periodic project status summaries by email',
+  'agentConfig.recap.emailTo': 'Send recap to',
+  'agentConfig.recap.emailPlaceholder': 'you@example.com',
+
+  // Analytics Digest
+  'agentConfig.digest.label': 'Analytics Digest',
+  'agentConfig.digest.description': 'Receive analytics and performance insights on a schedule',
+
+  // Cron
+  'agentConfig.cron.label': 'Schedule',
+  'agentConfig.cron.custom': 'Custom…',
+  'agentConfig.cron.placeholder': 'e.g. 0 9 * * 1-5',
+  'agentConfig.cron.preset.weekdays9am': 'Every weekday at 9am',
+  'agentConfig.cron.preset.monday9am': 'Every Monday at 9am',
+  'agentConfig.cron.preset.daily8am': 'Daily at 8am',
+  'agentConfig.cron.preset.friday6pm': 'Friday at 6pm',
+
+  // AI Behaviors
+  'agentConfig.behaviors.title': 'AI Behaviors',
+  'agentConfig.behaviors.subtitle': 'Control how the agent learns and adapts',
+  'agentConfig.suggest.label': 'Suggest Automations',
+  'agentConfig.suggest.description': 'AI suggests workflow automations based on your patterns',
+
+  // Security
+  'agentConfig.security.title': 'Security & Guardrails',
+  'agentConfig.security.subtitle': 'Control agent permissions and safety limits',
+  'agentConfig.approval.label': 'Require Approval',
+  'agentConfig.approval.description': 'Human-in-the-loop: agent actions require your approval before executing',
+  'agentConfig.maxActions.label': 'Max Actions Per Run',
+  'agentConfig.maxActions.description': 'Limit how many actions the agent can take in a single run (1–100)',
+  'agentConfig.allowedProjects.label': 'Allowed Projects',
+  'agentConfig.allowedProjects.description': 'Restrict the agent to specific projects. Leave empty to allow all.',
+  'agentConfig.allowedProjects.allProjects': 'All projects (unrestricted)',
+  'agentConfig.allowedProjects.noProjects': 'No projects found',
+
+  // Activity Log
+  'agentConfig.activity.title': 'Activity Log',
+  'agentConfig.activity.lastHeartbeat': 'Last heartbeat',
+  'agentConfig.activity.lastTriage': 'Last triage',
+  'agentConfig.activity.lastRecap': 'Last recap',
+  'agentConfig.activity.never': 'Never',
+
+  // Sidebar
+  'sidebar.agentConfig': 'Agent Config',
+
 } as const;
 
 export default en;
