@@ -245,12 +245,22 @@ pub async fn chat(
         }
     };
 
-    // ── Record AI usage ──
+    // ── Record AI usage with token tracking (Marathon-inspired metering) ──
+    let (tokens_in, tokens_out) = {
+        let usage = gemini_json.pointer("/usageMetadata");
+        (
+            usage.and_then(|u| u.get("promptTokenCount")).and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+            usage.and_then(|u| u.get("candidatesTokenCount")).and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+        )
+    };
+
     let _ = sqlx::query(
-        "INSERT INTO ai_usage (org_id, user_id, event_type, model) VALUES ($1, $2, 'chat_message', $3)"
+        "INSERT INTO ai_usage (org_id, user_id, event_type, tokens_in, tokens_out, model) VALUES ($1, $2, 'chat_message', $3, $4, $5)"
     )
     .bind(org_id)
     .bind(&auth.user_id)
+    .bind(tokens_in)
+    .bind(tokens_out)
     .bind(body.model.as_deref().unwrap_or("gemini-3-flash-preview"))
     .execute(&pool)
     .await;

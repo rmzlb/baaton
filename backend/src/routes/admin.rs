@@ -1,6 +1,6 @@
 use axum::{extract::{Extension, Path, State}, http::StatusCode, Json};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use sqlx::PgPool;
 
 use crate::middleware::AuthUser;
@@ -228,6 +228,86 @@ pub async fn get_billing(
                 "pro": { "price": 19, "label": "$19/mo", "users_included": 3, "extra_user_price": 19 },
                 "enterprise": { "price": -1, "label": "On demand", "users_included": -1 }
             }
+        }
+    })))
+}
+
+/// GET /billing/ai-usage — detailed AI usage report with token breakdown
+pub async fn get_ai_usage(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let from = params.get("from").cloned().unwrap_or_else(|| {
+        chrono::Utc::now().format("%Y-%m-01").to_string()
+    });
+    let to = params.get("to").cloned().unwrap_or_else(|| {
+        chrono::Utc::now().format("%Y-%m-%d").to_string()
+    });
+
+    // Summary: total messages, tokens, by event_type
+    let rows = sqlx::query_as::<_, (String, i64, i64, i64)>(
+        "SELECT event_type, COUNT(*) as count, COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0) \
+         FROM ai_usage WHERE user_id = $1 AND created_at >= $2::date AND created_at < ($3::date + interval '1 day') \
+         GROUP BY event_type"
+    )
+    .bind(&auth.user_id)
+    .bind(&from)
+    .bind(&to)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let mut by_type = serde_json::Map::new();
+    let mut total_messages: i64 = 0;
+    let mut total_tokens_in: i64 = 0;
+    let mut total_tokens_out: i64 = 0;
+
+    for (event_type, count, t_in, t_out) in &rows {
+        total_messages += count;
+        total_tokens_in += t_in;
+        total_tokens_out += t_out;
+        by_type.insert(event_type.clone(), json!({
+            "count": count,
+            "tokens_in": t_in,
+            "tokens_out": t_out,
+        }));
+    }
+
+    // Daily breakdown
+    let daily = sqlx::query_as::<_, (String, i64, i64, i64)>(
+        "SELECT created_at::date::text as day, COUNT(*), COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0) \
+         FROM ai_usage WHERE user_id = $1 AND created_at >= $2::date AND created_at < ($3::date + interval '1 day') \
+         GROUP BY day ORDER BY day"
+    )
+    .bind(&auth.user_id)
+    .bind(&from)
+    .bind(&to)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let daily_data: Vec<Value> = daily.iter().map(|(day, count, t_in, t_out)| json!({
+        "date": day,
+        "messages": count,
+        "tokens_in": t_in,
+        "tokens_out": t_out,
+    })).collect();
+
+    // Estimated cost (Gemini Flash pricing: ~$0.075/1M input, ~$0.30/1M output)
+    let est_cost = (total_tokens_in as f64 * 0.000000075) + (total_tokens_out as f64 * 0.0000003);
+
+    Ok(Json(json!({
+        "data": {
+            "period": { "from": from, "to": to },
+            "total": {
+                "messages": total_messages,
+                "tokens_in": total_tokens_in,
+                "tokens_out": total_tokens_out,
+                "estimated_cost_usd": format!("{:.4}", est_cost),
+            },
+            "by_type": by_type,
+            "daily": daily_data,
         }
     })))
 }

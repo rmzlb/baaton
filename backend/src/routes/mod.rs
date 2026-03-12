@@ -148,6 +148,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Admin (BAA-1)
         .route("/admin/orgs/{id}/plan", patch(admin::set_plan))
         .route("/billing", get(admin::get_billing))
+        .route("/billing/ai-usage", get(admin::get_ai_usage))
         .route("/agent-config", get(agent_config::get_config).patch(agent_config::update_config))
         // Initiatives (BAA-9)
         .route("/initiatives", get(initiatives::list).post(initiatives::create))

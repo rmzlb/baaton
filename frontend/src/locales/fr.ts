@@ -1654,6 +1654,51 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'aiChat.skillsLabel': 'Compétences',
   'aiChat.projectsLabel': 'Projets',
 
+  // ─── Raccourcis Clavier ────────────────────────────
+  'shortcut.title': 'Raccourcis Clavier',
+  'shortcut.bindings': 'raccourcis',
+  'shortcut.footer': 'Appuyez sur ? pour afficher. Actifs quand aucun champ n\'est focus.',
+  // Navigation
+  'shortcut.nextIssue': 'Issue suivante',
+  'shortcut.prevIssue': 'Issue précédente',
+  'shortcut.openIssue': 'Ouvrir l\'issue',
+  'shortcut.selectToggle': 'Sélectionner',
+  'shortcut.nextProject': 'Projet suivant',
+  'shortcut.prevProject': 'Projet précédent',
+  // Go-To
+  'shortcut.goProjects': 'Aller aux projets',
+  'shortcut.goDashboard': 'Aller au dashboard',
+  'shortcut.goTriage': 'Aller au triage',
+  'shortcut.goMilestones': 'Aller aux milestones',
+  'shortcut.goAnalytics': 'Aller aux analytics',
+  'shortcut.goSearch': 'Aller à la recherche',
+  'shortcut.goBilling': 'Aller à la facturation',
+  'shortcut.goAI': 'Aller au chat IA',
+  'shortcut.goWebhooks': 'Aller aux webhooks',
+  'shortcut.goAutomations': 'Aller aux automations',
+  // Actions
+  'shortcut.newIssue': 'Nouvelle issue',
+  'shortcut.commentIssue': 'Commenter l\'issue',
+  'shortcut.labelIssue': 'Ajouter un label',
+  'shortcut.assignIssue': 'Assigner l\'issue',
+  'shortcut.milestoneIssue': 'Définir le milestone',
+  'shortcut.commandPalette': 'Palette de commandes',
+  // Quick Status
+  'shortcut.statusBacklog': 'Statut → Backlog',
+  'shortcut.statusTodo': 'Statut → Todo',
+  'shortcut.statusProgress': 'Statut → En cours',
+  'shortcut.statusDone': 'Statut → Terminé',
+  // Quick Priority
+  'shortcut.prioUrgent': 'Priorité → Urgente',
+  'shortcut.prioHigh': 'Priorité → Haute',
+  'shortcut.prioMedium': 'Priorité → Moyenne',
+  'shortcut.prioLow': 'Priorité → Basse',
+  // General
+  'shortcut.close': 'Fermer panneau / modal',
+  'shortcut.showHelp': 'Afficher les raccourcis',
+  'shortcut.toggleFilter': 'Basculer les filtres',
+  'shortcut.refresh': 'Rafraîchir les données',
+
 } as const;
 
 export default fr;

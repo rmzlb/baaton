@@ -1654,6 +1654,51 @@ As a [user], I want to [action] so that [benefit].
   'aiChat.skillsLabel': 'Skills',
   'aiChat.projectsLabel': 'Projects',
 
+  // ─── Keyboard Shortcuts ────────────────────────────
+  'shortcut.title': 'Keyboard Shortcuts',
+  'shortcut.bindings': 'bindings',
+  'shortcut.footer': 'Press ? to toggle this overlay. Shortcuts are active when no input is focused.',
+  // Navigation
+  'shortcut.nextIssue': 'Next issue',
+  'shortcut.prevIssue': 'Previous issue',
+  'shortcut.openIssue': 'Open selected issue',
+  'shortcut.selectToggle': 'Toggle select',
+  'shortcut.nextProject': 'Next project',
+  'shortcut.prevProject': 'Previous project',
+  // Go-To
+  'shortcut.goProjects': 'Go to projects',
+  'shortcut.goDashboard': 'Go to dashboard',
+  'shortcut.goTriage': 'Go to triage',
+  'shortcut.goMilestones': 'Go to milestones',
+  'shortcut.goAnalytics': 'Go to analytics',
+  'shortcut.goSearch': 'Go to search',
+  'shortcut.goBilling': 'Go to billing',
+  'shortcut.goAI': 'Go to AI chat',
+  'shortcut.goWebhooks': 'Go to webhooks',
+  'shortcut.goAutomations': 'Go to automations',
+  // Actions
+  'shortcut.newIssue': 'New issue',
+  'shortcut.commentIssue': 'Comment on issue',
+  'shortcut.labelIssue': 'Add label',
+  'shortcut.assignIssue': 'Assign issue',
+  'shortcut.milestoneIssue': 'Set milestone',
+  'shortcut.commandPalette': 'Command palette',
+  // Quick Status
+  'shortcut.statusBacklog': 'Set → Backlog',
+  'shortcut.statusTodo': 'Set → Todo',
+  'shortcut.statusProgress': 'Set → In Progress',
+  'shortcut.statusDone': 'Set → Done',
+  // Quick Priority
+  'shortcut.prioUrgent': 'Priority → Urgent',
+  'shortcut.prioHigh': 'Priority → High',
+  'shortcut.prioMedium': 'Priority → Medium',
+  'shortcut.prioLow': 'Priority → Low',
+  // General
+  'shortcut.close': 'Close drawer / modal',
+  'shortcut.showHelp': 'Show keyboard shortcuts',
+  'shortcut.toggleFilter': 'Toggle filters',
+  'shortcut.refresh': 'Refresh data',
+
 } as const;
 
 export default en;
