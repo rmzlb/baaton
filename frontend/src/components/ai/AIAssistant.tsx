@@ -1265,7 +1265,7 @@ export function AIAssistant() {
                     : 'bg-surface-hover text-secondary hover:text-primary',
                 )}
               >
-                {t('ai.modeOpenclaw')}
+                {t('ai.modeOpenClaw')}
                 {openclawConnected && aiMode !== 'openclaw' && (
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 )}
