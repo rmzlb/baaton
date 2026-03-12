@@ -1756,6 +1756,8 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'admin.grantedAt': 'Ajouté le',
   'admin.noSuperadmins': 'Aucun super admin configuré.',
   'admin.superadminWarning': 'Les super admins ont un accès total à la plateforme : ils peuvent changer le plan de n\'importe quelle org, voir toutes les données, et gérer les autres admins. N\'accordez ce rôle qu\'à des personnes de confiance.',
+  'admin.auditLog': 'Journal d\'audit',
+  'admin.noAuditEntries': 'Aucune action admin enregistrée.',
 
   // ─── Raccourcis Clavier ────────────────────────────
   'shortcut.title': 'Raccourcis Clavier',

@@ -42,6 +42,20 @@ export function Sidebar() {
     staleTime: 60_000,
   });
 
+  // Superadmin check for conditional sidebar link
+  const { data: isSuperAdmin } = useQuery({
+    queryKey: ['superadmin-check-sidebar'],
+    queryFn: async () => {
+      const token = await apiClient._getToken();
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'https://api.baaton.dev'}/api/v1/admin/superadmin/check`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      return json.data?.is_super_admin ?? false;
+    },
+    staleTime: 300_000, // 5 min cache
+  });
+
   const triageCount = allIssues.filter(
     (i: Issue) => i.source === 'form' || (i.assignee_ids.length === 0 && i.status === 'backlog')
   ).length;
@@ -95,7 +109,7 @@ export function Sidebar() {
     { to: '/api-keys', icon: KeyRound, label: t('sidebar.apiKeys') },
     { to: '/billing', icon: CreditCard, label: t('sidebar.billing') },
     { to: '/agent-config', icon: Bot, label: t('sidebar.agentConfig') },
-    { to: '/admin', icon: Shield, label: t('sidebar.admin') },
+    ...(isSuperAdmin ? [{ to: '/admin', icon: Shield, label: t('sidebar.admin') }] : []),
     { to: currentProjectSlug ? `/projects/${currentProjectSlug}/automations` : '/automations', icon: Workflow, label: t('sidebar.automations') },
   ];
 

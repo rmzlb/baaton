@@ -67,7 +67,7 @@ export default function Admin() {
   const { t } = useTranslation();
   const apiClient = useApi();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'overview' | 'orgs' | 'superadmins'>('overview');
+  const [tab, setTab] = useState<'overview' | 'orgs' | 'superadmins' | 'audit'>('overview');
   const [search, setSearch] = useState('');
   const [planFilter, setPlanFilter] = useState('');
   const [sortBy, setSortBy] = useState<'issues' | 'projects' | 'created'>('issues');
@@ -226,10 +226,10 @@ export default function Admin() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-surface rounded-lg p-1 w-fit">
-        {(['overview', 'orgs', 'superadmins'] as const).map(t => (
+        {(['overview', 'orgs', 'superadmins', 'audit'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === t ? 'bg-surface-hover text-primary' : 'text-muted hover:text-secondary'}`}>
-            {t === 'overview' ? '📊 Overview' : t === 'orgs' ? '🏢 Organizations' : '🛡️ Super Admins'}
+            {t === 'overview' ? '📊 Overview' : t === 'orgs' ? '🏢 Organizations' : t === 'superadmins' ? '🛡️ Super Admins' : '📋 Audit Log'}
           </button>
         ))}
       </div>
@@ -513,6 +513,76 @@ export default function Admin() {
           </div>
         </div>
       )}
+
+      {/* ─── Audit Log Tab ────────────────────────────────────────── */}
+      {tab === 'audit' && <AuditLogTab apiClient={apiClient} t={t} />}
+    </div>
+  );
+}
+
+// ─── Audit Log Tab ──────────────────────────────────────────────────────
+
+function AuditLogTab({ apiClient, t }: { apiClient: any; t: (k: string) => string }) {
+  const { data, isLoading } = useQuery<{ entries: any[]; total: number }>({
+    queryKey: ['admin-audit-log'],
+    queryFn: async () => {
+      const token = await apiClient._getToken();
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'https://api.baaton.dev'}/api/v1/admin/audit-log?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      return json.data;
+    },
+  });
+
+  const ACTION_ICONS: Record<string, string> = {
+    set_plan: '👑',
+    add_superadmin: '🛡️',
+    remove_superadmin: '🚫',
+  };
+
+  const ACTION_COLORS: Record<string, string> = {
+    set_plan: 'text-blue-400',
+    add_superadmin: 'text-green-400',
+    remove_superadmin: 'text-red-400',
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-surface rounded-xl border border-border p-5">
+        <h3 className="text-sm font-medium text-secondary mb-4 flex items-center gap-2">
+          <Activity size={16} /> {t('admin.auditLog')} {data?.total ? `(${data.total})` : ''}
+        </h3>
+
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-12 bg-black/20 rounded-lg animate-pulse" />
+            ))}
+          </div>
+        ) : data?.entries?.length === 0 ? (
+          <div className="text-sm text-muted py-8 text-center">{t('admin.noAuditEntries')}</div>
+        ) : (
+          <div className="space-y-2">
+            {data?.entries?.map((entry: any) => (
+              <div key={entry.id} className="flex items-center gap-3 p-3 bg-black/20 rounded-lg text-sm">
+                <span className="text-lg">{ACTION_ICONS[entry.action] || '📝'}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-medium ${ACTION_COLORS[entry.action] || 'text-primary'}`}>{entry.action}</span>
+                    <span className="text-muted">→</span>
+                    <span className="text-primary truncate">{entry.target_id}</span>
+                  </div>
+                  <div className="text-xs text-muted">
+                    {entry.admin_email || entry.admin_user_id} · {new Date(entry.created_at).toLocaleString()}
+                    {entry.details?.plan && <span className="ml-2 px-1.5 py-0.5 rounded bg-surface-hover">{entry.details.plan}</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

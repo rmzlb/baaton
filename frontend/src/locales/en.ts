@@ -1756,6 +1756,8 @@ As a [user], I want to [action] so that [benefit].
   'admin.grantedAt': 'Granted',
   'admin.noSuperadmins': 'No super admins configured.',
   'admin.superadminWarning': 'Super admins have full platform access: they can change any org plan, view all data, and manage other admins. Only grant this to people you trust completely.',
+  'admin.auditLog': 'Audit Log',
+  'admin.noAuditEntries': 'No admin actions recorded yet.',
 
   // ─── Keyboard Shortcuts ────────────────────────────
   'shortcut.title': 'Keyboard Shortcuts',

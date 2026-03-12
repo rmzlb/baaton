@@ -51,6 +51,21 @@ fn forbidden() -> (StatusCode, Json<Value>) {
     (StatusCode::FORBIDDEN, Json(json!({"error": "Super admin access required"})))
 }
 
+/// Record an admin action in the audit log
+async fn audit_log(pool: &PgPool, auth: &AuthUser, action: &str, target_type: &str, target_id: &str, details: Value) {
+    let _ = sqlx::query(
+        "INSERT INTO admin_audit_log (admin_user_id, admin_email, action, target_type, target_id, details) VALUES ($1, $2, $3, $4, $5, $6)"
+    )
+    .bind(&auth.user_id)
+    .bind(&auth.email)
+    .bind(action)
+    .bind(target_type)
+    .bind(target_id)
+    .bind(&details)
+    .execute(pool)
+    .await;
+}
+
 // ─── Plan management ──────────────────────────────────────────────────────
 
 const VALID_PLANS: &[&str] = &["free", "pro", "enterprise", "partner", "tester", "unlimited"];
@@ -103,6 +118,8 @@ pub async fn set_plan(
     .execute(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    audit_log(&pool, &auth, "set_plan", "organization", &org_id, json!({ "plan": body.plan })).await;
 
     tracing::info!(
         admin_user = %auth.user_id,
@@ -407,6 +424,7 @@ pub async fn add_super_admin(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
+    audit_log(&pool, &auth, "add_superadmin", "superadmin", &body.email, json!({})).await;
     tracing::info!(admin = %auth.user_id, new_admin = %body.email, "superadmin.added");
 
     Ok(Json(json!({ "data": { "email": body.email, "status": "granted" } })))
@@ -433,6 +451,8 @@ pub async fn remove_super_admin(
         .execute(&pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    audit_log(&pool, &auth, "remove_superadmin", "superadmin", &email, json!({})).await;
 
     Ok(Json(json!({ "data": { "email": email, "status": "revoked" } })))
 }
@@ -642,6 +662,54 @@ pub async fn get_ai_usage(
             "total": { "messages": total_messages, "tokens_in": total_tokens_in, "tokens_out": total_tokens_out, "estimated_cost_usd": format!("{:.4}", est_cost) },
             "by_type": by_type,
             "daily": daily_data,
+        }
+    })))
+}
+
+// ─── GET /admin/audit-log — admin audit log (superadmin only) ───────────
+
+pub async fn get_audit_log(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !is_super_admin(&pool, &auth).await {
+        return Err(forbidden());
+    }
+
+    let limit = params.get("limit").and_then(|l| l.parse::<i64>().ok()).unwrap_or(50).min(200);
+    let offset = params.get("offset").and_then(|o| o.parse::<i64>().ok()).unwrap_or(0);
+
+    let rows = sqlx::query_as::<_, (uuid::Uuid, String, Option<String>, String, String, String, Value, chrono::DateTime<chrono::Utc>)>(
+        "SELECT id, admin_user_id, admin_email, action, target_type, target_id, details, created_at \
+         FROM admin_audit_log ORDER BY created_at DESC LIMIT $1 OFFSET $2"
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let entries: Vec<Value> = rows.iter().map(|(id, user_id, email, action, ttype, tid, details, at)| json!({
+        "id": id,
+        "admin_user_id": user_id,
+        "admin_email": email,
+        "action": action,
+        "target_type": ttype,
+        "target_id": tid,
+        "details": details,
+        "created_at": at.to_rfc3339(),
+    })).collect();
+
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_audit_log")
+        .fetch_one(&pool).await.unwrap_or(0);
+
+    Ok(Json(json!({
+        "data": {
+            "entries": entries,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
         }
     })))
 }
