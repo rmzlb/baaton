@@ -1,5 +1,4 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles, X, Send, Trash2, Bot, User, Loader2,
@@ -1163,18 +1162,14 @@ export function AIAssistant() {
   const totalIssues = Object.values(allIssuesByProject).reduce((sum, arr) => sum + arr.length, 0);
   const skillCount = ALL_SKILL_DECLARATIONS.length;
 
-  const navigate = useNavigate();
-
   return (
     <>
-      {/* Floating Button — navigates to /ai full page */}
+      {/* Floating Button — toggles modal */}
       <button
         data-tour="ai-assistant"
-        onClick={() => {
-          if (open) { setOpen(false); }
-          else { navigate('/ai'); }
-        }}
-        aria-label={t('ai.openAssistant') || 'Open AI Chat'}
+        onClick={toggle}
+        aria-label={open ? (t('ai.closeAssistant') || 'Close AI assistant') : (t('ai.openAssistant') || 'Open AI assistant')}
+        aria-expanded={open}
         className={cn(
           'fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-all duration-300 hover:scale-105',
           open
