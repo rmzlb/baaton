@@ -164,7 +164,8 @@ function buildActionConfig(action_type: ActionType, action_value: string): Recor
   return { value: action_value };
 }
 
-function getConditionFromConfig(trigger_type: TriggerType, config: Record<string, unknown>): string {
+function getConditionFromConfig(trigger_type: TriggerType, config?: Record<string, unknown> | null): string {
+  if (!config) return '';
   switch (trigger_type) {
     case 'status_changed':  return (config.status   as string) ?? '';
     case 'priority_changed':return (config.priority as string) ?? '';
@@ -174,7 +175,8 @@ function getConditionFromConfig(trigger_type: TriggerType, config: Record<string
   }
 }
 
-function getActionValueFromConfig(action_type: ActionType, config: Record<string, unknown>): string {
+function getActionValueFromConfig(action_type: ActionType, config?: Record<string, unknown> | null): string {
+  if (!config) return '';
   if (action_type === 'send_webhook') return (config.url   as string) ?? '';
   return                                      (config.value as string) ?? '';
 }
