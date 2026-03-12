@@ -111,7 +111,10 @@ pub async fn api_docs() -> (StatusCode, HeaderMap, String) {
     (StatusCode::OK, headers, DOCS.to_string())
 }
 
-const DOCS: &str = r##"# Baaton API Reference
+const DOCS: &str = include_str!("../../docs/api-reference.md");
+
+#[allow(dead_code)]
+const _OLD_DOCS: &str = r##"# Baaton API Reference (old — now served from docs/api-reference.md)
 
 > Project management for AI agents and humans. Agent-first, Markdown-native.
 
