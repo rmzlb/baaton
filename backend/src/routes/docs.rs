@@ -10,10 +10,13 @@ pub async fn agent_skill() -> (StatusCode, HeaderMap, String) {
     (StatusCode::OK, headers, SKILL_MD.to_string())
 }
 
-const SKILL_MD: &str = r##"---
-name: baaton-pm
+const SKILL_MD: &str = include_str!("../../docs/SKILL.md");
+
+#[allow(dead_code)]
+const _OLD_SKILL_MD: &str = r##"---
+name: baaton-pm-old
 description: >
-  Manage project issues on Baaton (baaton.dev), an API-first project management board for AI agents.
+  OLD — now served from docs/SKILL.md
   Use when: creating/updating/listing/closing issues or tickets, checking project status,
   triaging backlog, moving issues between statuses, posting work summaries (TLDRs),
   managing webhooks, checking metrics, or referencing ticket IDs.
