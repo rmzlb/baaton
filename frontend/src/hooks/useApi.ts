@@ -332,6 +332,12 @@ export function useApi() {
           const token = await getAuthToken();
           return api.delete(`/api-keys/${id}`, token);
         }),
+
+      regenerate: async (id: string): Promise<ApiKey & { key: string }> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<ApiKey & { key: string }>(`/api-keys/${id}/regenerate`, {}, token);
+        }),
     },
 
     // ─── Comments ──────────────────────────────

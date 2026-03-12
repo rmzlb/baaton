@@ -1117,6 +1117,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'sidebar.search': 'Recherche',
 'sidebar.navigation': 'Barre latérale',
 'sidebar.billing': 'Plan & Facturation',
+'apiKeys.regenerateConfirm': 'Régénérer la clé "{name}" ? L\'ancienne clé sera immédiatement révoquée. Vous recevrez une nouvelle clé à copier.',
 
 // ─── Recherche globale ──────────────────
 'search.placeholder': 'Rechercher dans toutes les issues, toutes les organisations…',

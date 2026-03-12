@@ -162,6 +162,48 @@ pub async fn create(
     })))
 }
 
+/// POST /api/v1/api-keys/{id}/regenerate — regenerate a key (old key immediately revoked)
+/// Returns new plaintext key once. Same name/permissions/scopes preserved.
+pub async fn regenerate(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(key_id): Path<Uuid>,
+) -> Result<Json<ApiResponse<ApiKeyWithSecret>>, (StatusCode, Json<serde_json::Value>)> {
+    require_clerk_user(&auth)?;
+
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let (full_key, prefix, hash) = generate_api_key();
+
+    let row = sqlx::query_as::<_, ApiKeyRow>(
+        "UPDATE api_keys SET key_hash = $1, key_prefix = $2 \
+         WHERE id = $3 AND org_id = $4 \
+         RETURNING id, org_id, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
+    )
+    .bind(&hash)
+    .bind(&prefix)
+    .bind(key_id)
+    .bind(org_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "API key not found"}))))?;
+
+    tracing::info!(
+        user_id = %auth.user_id,
+        org_id = org_id,
+        key_id = %key_id,
+        key_prefix = %prefix,
+        "api_keys.regenerate — old key revoked"
+    );
+
+    Ok(Json(ApiResponse::new(ApiKeyWithSecret {
+        inner: row,
+        key: full_key,
+    })))
+}
+
 /// DELETE /api/v1/api-keys/{id} — revoke an API key
 pub async fn remove(
     Extension(auth): Extension<AuthUser>,

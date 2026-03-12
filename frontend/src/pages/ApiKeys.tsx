@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Copy, Eye, EyeOff, CheckCircle2, AlertTriangle, BookOpen } from 'lucide-react';
+import { Plus, Trash2, Copy, Eye, EyeOff, CheckCircle2, AlertTriangle, BookOpen, RefreshCw } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
@@ -33,6 +33,14 @@ export function ApiKeys() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.apiKeys.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['api-keys'] }),
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: (id: string) => apiClient.apiKeys.regenerate(id),
+    onSuccess: (data) => {
+      setNewKeySecret(data.key);
+      queryClient.invalidateQueries({ queryKey: ['api-keys'] });
+    },
   });
 
   const handleCopy = async (text: string, id: string) => {
@@ -157,6 +165,11 @@ BAATON_BASE_URL=https://api.baaton.dev/api/v1`}
                   apiKey={key}
                   copied={copied}
                   onCopy={handleCopy}
+                  onRegenerate={() => {
+                    if (confirm(t('apiKeys.regenerateConfirm', { name: key.name }))) {
+                      regenerateMutation.mutate(key.id);
+                    }
+                  }}
                   onDelete={() => {
                     if (confirm(t('settings.revokeConfirm', { name: key.name }))) {
                       deleteMutation.mutate(key.id);
@@ -172,10 +185,11 @@ BAATON_BASE_URL=https://api.baaton.dev/api/v1`}
   );
 }
 
-function ApiKeyTableRow({ apiKey, onDelete }: {
+function ApiKeyTableRow({ apiKey, onRegenerate, onDelete }: {
   apiKey: ApiKey;
   copied?: string | null;
   onCopy?: (text: string, id: string) => void;
+  onRegenerate: () => void;
   onDelete: () => void;
 }) {
   const [showPrefix, setShowPrefix] = useState(false);
@@ -209,9 +223,14 @@ function ApiKeyTableRow({ apiKey, onDelete }: {
         <span className="text-xs text-muted">{timeAgo(apiKey.created_at)}</span>
       </td>
       <td className="px-4 py-3">
-        <button onClick={onDelete} className="rounded-md p-1.5 text-muted hover:bg-red-500/10 hover:text-red-400 transition-all">
-          <Trash2 size={14} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button onClick={onRegenerate} className="rounded-md p-1.5 text-muted hover:bg-accent/10 hover:text-accent transition-all" title="Regenerate key">
+            <RefreshCw size={14} />
+          </button>
+          <button onClick={onDelete} className="rounded-md p-1.5 text-muted hover:bg-red-500/10 hover:text-red-400 transition-all" title="Revoke key">
+            <Trash2 size={14} />
+          </button>
+        </div>
       </td>
     </tr>
   );

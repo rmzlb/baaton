@@ -1117,6 +1117,7 @@ As a [user], I want to [action] so that [benefit].
 'sidebar.search': 'Search',
 'sidebar.navigation': 'Sidebar',
 'sidebar.billing': 'Plan & Billing',
+'apiKeys.regenerateConfirm': 'Regenerate key "{name}"? The old key will be immediately revoked. You will receive a new key to copy.',
 
 // ─── Global Search Page ──────────────────
 'search.placeholder': 'Search all issues across all organizations…',
