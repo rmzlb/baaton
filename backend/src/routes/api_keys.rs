@@ -8,6 +8,32 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
 
+/// Full list of valid permission strings for API keys.
+/// "admin:full" grants all permissions (superkey).
+const VALID_PERMISSIONS: &[&str] = &[
+    "issues:read", "issues:write", "issues:delete",
+    "projects:read", "projects:write", "projects:delete",
+    "comments:read", "comments:write", "comments:delete",
+    "labels:read", "labels:write",
+    "milestones:read", "milestones:write",
+    "sprints:read", "sprints:write",
+    "automations:read", "automations:write",
+    "webhooks:read", "webhooks:write",
+    "members:read", "members:invite",
+    "ai:chat", "ai:triage",
+    "billing:read",
+    "admin:full",
+];
+
+fn validate_permissions(perms: &[String]) -> Result<(), String> {
+    for p in perms {
+        if !VALID_PERMISSIONS.contains(&p.as_str()) {
+            return Err(format!("Unknown permission: '{}'. Valid permissions: {}", p, VALID_PERMISSIONS.join(", ")));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct ApiKeyRow {
     pub id: Uuid,
@@ -36,10 +62,20 @@ pub struct CreateApiKeyRequest {
     /// Optional: restrict key to specific projects. Empty = all projects in org.
     #[serde(default)]
     pub project_ids: Vec<Uuid>,
+    /// Optional expiry: ISO 8601 datetime string
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateApiKeyRequest {
+    pub name: Option<String>,
+    pub permissions: Option<Vec<String>>,
+    pub project_ids: Option<Vec<Uuid>>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 fn default_permissions() -> Vec<String> {
-    vec!["read".to_string(), "write".to_string()]
+    vec!["issues:read".to_string(), "issues:write".to_string(), "projects:read".to_string()]
 }
 
 fn generate_api_key() -> (String, String, String) {
@@ -103,6 +139,9 @@ pub async fn create(
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Name is required and must be under 200 characters"}))));
     }
 
+    validate_permissions(&body.permissions)
+        .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
+
     // Ensure the org exists
     let _ = sqlx::query(
         "INSERT INTO organizations (id, name, slug) VALUES ($1, $1, $1) ON CONFLICT (id) DO NOTHING"
@@ -114,8 +153,8 @@ pub async fn create(
     let (full_key, prefix, hash) = generate_api_key();
 
     let row = sqlx::query_as::<_, ApiKeyRow>(
-        "INSERT INTO api_keys (org_id, name, key_hash, key_prefix, permissions, project_ids) \
-         VALUES ($1, $2, $3, $4, $5, $6) \
+        "INSERT INTO api_keys (org_id, name, key_hash, key_prefix, permissions, project_ids, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) \
          RETURNING id, org_id, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
     )
     .bind(org_id)
@@ -124,6 +163,7 @@ pub async fn create(
     .bind(&prefix)
     .bind(&body.permissions)
     .bind(&body.project_ids)
+    .bind(body.expires_at)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -160,6 +200,64 @@ pub async fn create(
         inner: row,
         key: full_key,
     })))
+}
+
+/// PATCH /api/v1/api-keys/{id} — update name, permissions, project_ids, expires_at
+pub async fn update(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(key_id): Path<Uuid>,
+    Json(body): Json<UpdateApiKeyRequest>,
+) -> Result<Json<ApiResponse<ApiKeyRow>>, (StatusCode, Json<serde_json::Value>)> {
+    require_clerk_user(&auth)?;
+
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    if let Some(ref name) = body.name {
+        if name.trim().is_empty() || name.len() > 200 {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Name must be between 1 and 200 characters"}))));
+        }
+    }
+
+    if let Some(ref perms) = body.permissions {
+        validate_permissions(perms)
+            .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
+    }
+
+    // Build dynamic update — only touch provided fields
+    let row = sqlx::query_as::<_, ApiKeyRow>(
+        "UPDATE api_keys SET \
+           name       = COALESCE($3, name), \
+           permissions = COALESCE($4, permissions), \
+           project_ids = COALESCE($5, project_ids), \
+           expires_at  = CASE WHEN $6 THEN $7 ELSE expires_at END \
+         WHERE id = $1 AND org_id = $2 \
+         RETURNING id, org_id, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
+    )
+    .bind(key_id)
+    .bind(org_id)
+    .bind(body.name.as_deref().map(|s| s.trim()))
+    .bind(body.permissions.as_ref())
+    .bind(body.project_ids.as_ref())
+    .bind(body.expires_at.is_some())  // $6: whether to update expires_at
+    .bind(body.expires_at)             // $7: new value (or null to clear)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "api_keys.update failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to update API key"})))
+    })?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "API key not found"}))))?;
+
+    tracing::info!(
+        user_id = %auth.user_id,
+        org_id = org_id,
+        key_id = %key_id,
+        "api_keys.update"
+    );
+
+    Ok(Json(ApiResponse::new(row)))
 }
 
 /// POST /api/v1/api-keys/{id}/regenerate — regenerate a key (old key immediately revoked)

@@ -322,10 +322,23 @@ export function useApi() {
       create: async (body: {
         name: string;
         permissions?: string[];
+        project_ids?: string[];
+        expires_at?: string | null;
       }): Promise<ApiKey & { key: string }> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.post<ApiKey & { key: string }>('/api-keys', body, token);
+        }),
+
+      update: async (id: string, body: {
+        name?: string;
+        permissions?: string[];
+        project_ids?: string[];
+        expires_at?: string | null;
+      }): Promise<ApiKey> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<ApiKey>(`/api-keys/${id}`, body, token);
         }),
 
       delete: async (id: string): Promise<void> =>

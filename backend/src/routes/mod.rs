@@ -116,7 +116,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/notifications/preferences", get(notifications::get_preferences).patch(notifications::update_preferences))
         // API Keys
         .route("/api-keys", get(api_keys::list).post(api_keys::create))
-        .route("/api-keys/{id}", delete(api_keys::remove))
+        .route("/api-keys/{id}", patch(api_keys::update).delete(api_keys::remove))
         .route("/api-keys/{id}/regenerate", post(api_keys::regenerate))
         .route("/invites", get(invites::list).post(invites::create))
         // Docs (public, auth skipped via path prefix)

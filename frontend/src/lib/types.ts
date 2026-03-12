@@ -167,6 +167,7 @@ export interface ApiKey {
   name: string;
   key_prefix: string;
   permissions: string[];
+  project_ids: string[];
   last_used_at: string | null;
   expires_at: string | null;
   created_at: string;
