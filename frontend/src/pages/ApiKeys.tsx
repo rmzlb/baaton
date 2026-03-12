@@ -178,7 +178,7 @@ BAATON_BASE_URL=https://api.baaton.dev/api/v1`}
           </tbody>
         </table>
       </div>
-    </div>
+
       {/* Regenerate Modal */}
       {regenerateTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setRegenerateTarget(null)}>
