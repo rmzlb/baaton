@@ -447,12 +447,17 @@ export interface Automation {
   id: string;
   project_id: string;
   name: string;
-  trigger_type: string;
-  trigger_config: Record<string, unknown>;
-  action_type: string;
-  action_config: Record<string, unknown>;
+  trigger: string;
+  conditions: Record<string, unknown>[];
+  actions: Record<string, unknown>[];
   enabled: boolean;
+  priority: number;
   created_at: string;
+  // Computed helpers for UI
+  trigger_type?: string;
+  action_type?: string;
+  trigger_config?: Record<string, unknown> | null;
+  action_config?: Record<string, unknown> | null;
 }
 
 // ─── SLA Rules (BAA-8) ───────────────────────

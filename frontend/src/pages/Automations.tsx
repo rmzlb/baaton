@@ -187,13 +187,33 @@ function getActionValueFromConfig(action_type: ActionType, config?: Record<strin
   return                                      (config.value as string) ?? '';
 }
 
+/** Normalize backend Automation → add computed trigger_type, action_type, etc. */
+function normalizeAutomation(a: Automation): Automation & { trigger_type: string; action_type: string; action_config: Record<string, unknown> } {
+  const trigger_type = a.trigger || a.trigger_type || 'status_changed';
+  const firstAction = Array.isArray(a.actions) && a.actions.length > 0 ? a.actions[0] : null;
+  const action_type = (firstAction?.type as string) || a.action_type || 'set_status';
+  // Build action_config from actions array for backward compat
+  const action_config: Record<string, unknown> = firstAction
+    ? (firstAction.type === 'send_webhook' ? { url: firstAction.value } : { value: firstAction.value })
+    : (a.action_config || {});
+  // Build trigger_config from conditions array
+  const trigger_config: Record<string, unknown> = {};
+  if (Array.isArray(a.conditions)) {
+    for (const c of a.conditions) {
+      if (c.field && c.value) trigger_config[c.field as string] = c.value;
+    }
+  }
+  return { ...a, trigger_type, action_type, trigger_config, action_config };
+}
+
 function automationToForm(a: Automation): FormState {
+  const n = normalizeAutomation(a);
   return {
-    name: a.name,
-    trigger_type: a.trigger_type as TriggerType,
-    condition_value: getConditionFromConfig(a.trigger_type as TriggerType, a.trigger_config),
-    action_type: a.action_type as ActionType,
-    action_value: getActionValueFromConfig(a.action_type as ActionType, a.action_config),
+    name: n.name,
+    trigger_type: n.trigger_type as TriggerType,
+    condition_value: getConditionFromConfig(n.trigger_type as TriggerType, n.trigger_config),
+    action_type: n.action_type as ActionType,
+    action_value: getActionValueFromConfig(n.action_type as ActionType, n.action_config),
   };
 }
 
@@ -750,12 +770,13 @@ export function Automations() {
 
   const project = projects.find((p: Project) => p.slug === slug);
 
-  const { data: automations = [], isLoading: loadingAutomations } = useQuery({
+  const { data: rawAutomations = [], isLoading: loadingAutomations } = useQuery({
     queryKey: ['automations', project?.id],
     queryFn: () => apiClient.automations.list(project!.id),
     enabled: !!project?.id,
     staleTime: 30_000,
   });
+  const automations = rawAutomations.map(normalizeAutomation);
 
   // ── Mutations ───────────────────────────────────────────────────────────────
 
@@ -798,12 +819,25 @@ export function Automations() {
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   const handleSave = (form: FormState) => {
+    // Build conditions array from trigger type + condition value
+    const conditions: Record<string, unknown>[] = [];
+    if (form.condition_value.trim()) {
+      const fieldMap: Record<string, string> = {
+        status_changed: 'status', priority_changed: 'priority',
+        assignee_changed: 'assignee', label_added: 'label',
+      };
+      const field = fieldMap[form.trigger_type];
+      if (field) conditions.push({ field, operator: 'equals', value: form.condition_value });
+    }
+
+    // Build actions array: [{type, value}]
+    const actions = [{ type: form.action_type, value: form.action_value.trim() }];
+
     const payload = {
       name: form.name.trim(),
-      trigger_type: form.trigger_type,
-      action_type: form.action_type,
-      trigger_config: buildTriggerConfig(form.trigger_type, form.condition_value),
-      action_config: buildActionConfig(form.action_type, form.action_value),
+      trigger: form.trigger_type,
+      conditions,
+      actions,
     };
 
     if (editingAutomation) {
