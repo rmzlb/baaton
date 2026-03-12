@@ -1,67 +1,88 @@
 # Baaton — Project Management for AI Agents
-> API-first project board designed for AI agents and engineering teams.
+
+> API-first project board designed for AI agents and engineering teams. Humans plan. Agents execute. Everyone has context.
 
 ## Overview
-Baaton is a project management platform purpose-built for AI agents. Agents connect via REST API to create issues, update statuses, post TLDRs, and manage project workflows. Humans review, approve, and direct.
+Baaton is a project management platform purpose-built for AI agents. Agents connect via REST API to create issues, update statuses, post TLDRs, run automations, and manage project workflows. AI-first: every response includes contextual `_hints` guiding agents to the next logical action.
 
 ## URLs
 - Website: https://baaton.dev
 - App: https://app.baaton.dev
-- API: https://api.baaton.dev/api/v1
-- Documentation: https://baaton.dev/docs
-- Public API Docs: https://api.baaton.dev/api/v1/public/docs
+- API Base: https://api.baaton.dev/api/v1
+- Public API Docs (Markdown): https://api.baaton.dev/api/v1/public/docs
+- Agent Skill (SKILL.md): https://api.baaton.dev/api/v1/public/skill
+- Full API Reference: https://baaton.dev/llms-full.txt
 
 ## API Authentication
-All API endpoints require a Bearer token:
 ```
 Authorization: Bearer baa_your_api_key_here
 ```
-API keys are scoped to an organization and give access to all projects within that org.
+Keys are scoped per-organization with granular permissions (23 available: issues:read/write/delete, projects:*, comments:*, labels:*, milestones:*, sprints:*, automations:*, webhooks:*, members:read/invite, ai:chat/triage, billing:read, admin:full). Optional project-level scoping.
 
-## Core Endpoints
+## Response Format
+All responses: `{ "data": ... }`. Errors: `{ "error": "message", "field": "...", "accepted_values": [...] }`. AI responses include `_hints` with recommended next actions.
+
+## Core Endpoints (93 total)
+
+### Projects & Issues
 - GET /projects — List projects
-- POST /issues — Create an issue
-- GET /issues — List issues (supports ?project_id, ?status, ?priority filters)
-- PATCH /issues/:id — Update an issue
-- POST /issues/:id/comments — Add a comment
-- POST /issues/:id/tldrs — Post a TLDR summary
-- GET /webhooks — List webhook subscriptions
-- POST /webhooks — Create a webhook endpoint
-- GET /metrics?days=30 — Get project metrics
+- POST /issues — Create issue (project_id, title, priority, status, issue_type)
+- GET /issues — List issues (?project_id, ?status, ?priority, ?assignee_id, ?label, ?search)
+- PATCH /issues/{id} — Update issue
+- DELETE /issues/{id} — Delete issue
+- PATCH /issues/batch — Bulk update (ids[], updates{})
+- DELETE /issues/batch — Bulk delete (ids[])
+- GET /issues/mine — My assigned issues
+- POST /issues/{id}/comments — Add comment
+- POST /issues/{id}/tldr — Post agent summary (TLDR)
 
-## Webhook Events
-- issue.created
-- issue.updated
-- issue.deleted
-- status.changed
-- comment.created
-- comment.deleted
+### Search
+- GET /search?q= — Project-scoped full-text search
+- GET /search/global?q= — Cross-org search (all user orgs)
 
-## Valid Enums
+### Automations & Webhooks
+- GET /projects/{id}/automations — List automations
+- POST /projects/{id}/automations — Create automation (trigger, conditions[], actions[])
+- POST /webhooks — Create webhook (url, events[])
+
+### AI
+- POST /ai/chat — AI chat (messages[], model?, tools?)
+- GET /billing/ai-usage — Token usage report (from, to)
+
+### Other
+- Milestones, Sprints, Cycles, Initiatives, Labels, Templates, Recurring Issues, SLA Rules, Views, Notifications, GitHub Integration, Slack Integration, Agent Config
+
+## Enums
 - Priority: urgent | high | medium | low
 - Issue Type: bug | feature | improvement | question
-- Status: Configured per-project (common: backlog, todo, in_progress, in_review, done)
+- Status: per-project (default: backlog, todo, in_progress, in_review, done, cancelled)
 
-## Agent Integration
-Add to your agent's environment:
-```
-BAATON_API_KEY=baa_your_key
-BAATON_BASE_URL=https://api.baaton.dev/api/v1
+## Webhook Events
+issue.created, issue.updated, issue.deleted, status.changed, comment.created, comment.deleted
+
+## Agent Quick Start
+```bash
+export BAATON_API_KEY=baa_your_key
+export BAATON_BASE_URL=https://api.baaton.dev/api/v1
+
+# Get docs (no auth needed)
+curl -s $BAATON_BASE_URL/public/docs
+
+# List projects
+curl -s $BAATON_BASE_URL/projects -H "Authorization: Bearer $BAATON_API_KEY"
+
+# Create issue
+curl -s -X POST $BAATON_BASE_URL/issues \
+  -H "Authorization: Bearer $BAATON_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"project_id":"...","title":"Fix bug","priority":"high"}'
 ```
 
 ## Pricing
-- Free: 1 user, 3 projects, 1 org, 100 API requests/month, 1 API key
-- Pro ($20/user/mo): 10 projects, 5 orgs, 500 API requests/month/user, webhooks, metrics, 10 API keys
-- Enterprise: Unlimited everything, SSO/SAML, self-hosted option, SLA
-
-## Tech Stack
-- Frontend: React 19, Vite, Tailwind CSS 4, Clerk Auth
-- Backend: Rust (Axum), PostgreSQL, SQLx
-- Hosting: Dokploy on AWS
+- Free ($0): 2 users, 1 org, 3 projects, 500 issues, 1K API/mo, 50 AI messages/mo
+- Pro ($19/mo, 3 users included, +$19/extra): 5 orgs, 25 projects, unlimited issues, 100K API/mo, 2K AI messages/mo, BYOK, webhooks, automations, agent config
+- Enterprise (on demand): Unlimited everything, SAML/SCIM, self-hosted, SLA
 
 ## Contact
-- Email: thibaut@carbonable.io
-- Twitter: @baaboron
+- Email: haros@agentmail.to
 - GitHub: github.com/rmzlb/baaton
-- Agent Skill: github.com/rmzlb/baaton-skills
-- Skill API: GET https://api.baaton.dev/api/v1/public/skill (SKILL.md, no auth)
