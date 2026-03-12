@@ -29,6 +29,7 @@ pub mod recurring;
 pub mod triage;
 pub mod email_intake;
 pub mod attachments;
+pub mod agent_config;
 pub mod slack;
 mod admin;
 mod initiatives;
@@ -147,6 +148,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Admin (BAA-1)
         .route("/admin/orgs/{id}/plan", patch(admin::set_plan))
         .route("/billing", get(admin::get_billing))
+        .route("/agent-config", get(agent_config::get_config).patch(agent_config::update_config))
         // Initiatives (BAA-9)
         .route("/initiatives", get(initiatives::list).post(initiatives::create))
         .route("/initiatives/{id}", get(initiatives::get_one).patch(initiatives::update).delete(initiatives::remove))

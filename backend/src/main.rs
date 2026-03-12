@@ -79,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
         (34, include_str!("../migrations/034_initiatives.sql")),
         (35, include_str!("../migrations/035_attachments.sql")),
         (36, include_str!("../migrations/036_slack.sql")),
+        (37, include_str!("../migrations/037_agent_config.sql")),
     ];
 
     for &(version, sql) in migrations {

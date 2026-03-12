@@ -1117,7 +1117,12 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'sidebar.search': 'Recherche',
 'sidebar.navigation': 'Barre latérale',
 'sidebar.billing': 'Plan & Facturation',
-'apiKeys.regenerateConfirm': 'Régénérer la clé "{name}" ? L\'ancienne clé sera immédiatement révoquée. Vous recevrez une nouvelle clé à copier.',
+'apiKeys.regenerateTitle': 'Régénérer la clé API',
+'apiKeys.regenerateWarning': 'Cette action va immédiatement révoquer la clé actuelle et en générer une nouvelle. Tout agent ou intégration utilisant l\'ancienne clé cessera de fonctionner.',
+'apiKeys.regeneratePoint1': 'La clé actuelle sera définitivement invalidée',
+'apiKeys.regeneratePoint2': 'Toutes les connexions actives utilisant cette clé seront coupées',
+'apiKeys.regeneratePoint3': 'Une nouvelle clé sera générée pour que vous la copiez (affichée une seule fois)',
+'apiKeys.regenerateConfirmBtn': 'Régénérer la clé',
 
 // ─── Recherche globale ──────────────────
 'search.placeholder': 'Rechercher dans toutes les issues, toutes les organisations…',

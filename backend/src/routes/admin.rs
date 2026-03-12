@@ -92,8 +92,40 @@ pub async fn get_billing(
     .flatten()
     .unwrap_or_else(|| "free".to_string());
 
+    // Fetch org names from Clerk API (org_ids → names)
+    let org_names: std::collections::HashMap<String, String> = {
+        let mut map = std::collections::HashMap::new();
+        let clerk_key = std::env::var("CLERK_SECRET_KEY").unwrap_or_default();
+        if !clerk_key.is_empty() {
+            let client = reqwest::Client::new();
+            for oid in &org_ids {
+                if let Ok(resp) = client
+                    .get(format!("https://api.clerk.com/v1/organizations/{oid}"))
+                    .header("Authorization", format!("Bearer {clerk_key}"))
+                    .send()
+                    .await
+                {
+                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+                        if let Some(name) = body.get("name").and_then(|n| n.as_str()) {
+                            map.insert(oid.clone(), name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        map
+    };
+
     // Per-org breakdown: project count + issue count
-    #[derive(sqlx::FromRow, serde::Serialize)]
+    #[derive(sqlx::FromRow)]
+    struct OrgUsageRow {
+        org_id: String,
+        org_name: String,
+        project_count: i64,
+        issue_count: i64,
+    }
+
+    #[derive(serde::Serialize)]
     struct OrgUsage {
         org_id: String,
         org_name: String,
@@ -101,8 +133,8 @@ pub async fn get_billing(
         issue_count: i64,
     }
 
-    let org_usage = if !org_ids.is_empty() {
-        sqlx::query_as::<_, OrgUsage>(
+    let org_usage: Vec<OrgUsage> = if !org_ids.is_empty() {
+        let rows = sqlx::query_as::<_, OrgUsageRow>(
             r#"
             SELECT
                 p.org_id,
@@ -120,9 +152,25 @@ pub async fn get_billing(
         .bind(&org_ids)
         .fetch_all(&pool)
         .await
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+        rows.into_iter().map(|r| {
+            let name = org_names.get(&r.org_id).cloned().unwrap_or(r.org_name);
+            OrgUsage {
+                org_id: r.org_id,
+                org_name: name,
+                project_count: r.project_count,
+                issue_count: r.issue_count,
+            }
+        }).collect()
     } else {
-        vec![]
+        // Include orgs that have no projects yet
+        org_ids.iter().map(|oid| OrgUsage {
+            org_id: oid.clone(),
+            org_name: org_names.get(oid).cloned().unwrap_or_else(|| oid.clone()),
+            project_count: 0,
+            issue_count: 0,
+        }).collect()
     };
 
     let total_orgs = org_ids.len() as i64;

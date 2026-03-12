@@ -29,7 +29,7 @@ import {
 } from '@/components/ai/PmPlanResultPanel';
 import type { Issue, Milestone, Sprint, Project } from '@/lib/types';
 import type { SkillResult } from '@/lib/ai-skills';
-import { SKILL_TOOLS } from '@/lib/ai-skills';
+import { SKILL_TOOLS, ALL_SKILL_DECLARATIONS } from '@/lib/ai-skills';
 import { type AIStateContext, createInitialState } from '@/lib/ai-state';
 
 type AIMode = 'gemini' | 'openclaw';
@@ -1160,7 +1160,7 @@ export function AIAssistant() {
   };
 
   const totalIssues = Object.values(allIssuesByProject).reduce((sum, arr) => sum + arr.length, 0);
-  const skillCount = SUGGESTIONS.length;
+  const skillCount = ALL_SKILL_DECLARATIONS.length;
 
   return (
     <>

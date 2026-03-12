@@ -1117,7 +1117,12 @@ As a [user], I want to [action] so that [benefit].
 'sidebar.search': 'Search',
 'sidebar.navigation': 'Sidebar',
 'sidebar.billing': 'Plan & Billing',
-'apiKeys.regenerateConfirm': 'Regenerate key "{name}"? The old key will be immediately revoked. You will receive a new key to copy.',
+'apiKeys.regenerateTitle': 'Regenerate API Key',
+'apiKeys.regenerateWarning': 'This action will immediately revoke the current key and generate a new one. Any agent or integration using the old key will stop working instantly.',
+'apiKeys.regeneratePoint1': 'The current key will be permanently invalidated',
+'apiKeys.regeneratePoint2': 'All active connections using this key will break',
+'apiKeys.regeneratePoint3': 'A new key will be generated for you to copy (shown once)',
+'apiKeys.regenerateConfirmBtn': 'Regenerate Key',
 
 // ─── Global Search Page ──────────────────
 'search.placeholder': 'Search all issues across all organizations…',

@@ -14,6 +14,7 @@ export function ApiKeys() {
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeySecret, setNewKeySecret] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [regenerateTarget, setRegenerateTarget] = useState<{ id: string; name: string } | null>(null);
 
   const { data: apiKeys = [], isLoading } = useQuery({
     queryKey: ['api-keys'],
@@ -165,11 +166,7 @@ BAATON_BASE_URL=https://api.baaton.dev/api/v1`}
                   apiKey={key}
                   copied={copied}
                   onCopy={handleCopy}
-                  onRegenerate={() => {
-                    if (confirm(t('apiKeys.regenerateConfirm', { name: key.name }))) {
-                      regenerateMutation.mutate(key.id);
-                    }
-                  }}
+                  onRegenerate={() => setRegenerateTarget({ id: key.id, name: key.name })}
                   onDelete={() => {
                     if (confirm(t('settings.revokeConfirm', { name: key.name }))) {
                       deleteMutation.mutate(key.id);
@@ -181,6 +178,62 @@ BAATON_BASE_URL=https://api.baaton.dev/api/v1`}
           </tbody>
         </table>
       </div>
+    </div>
+      {/* Regenerate Modal */}
+      {regenerateTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setRegenerateTarget(null)}>
+          <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/10">
+                <AlertTriangle size={20} className="text-amber-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-primary">{t('apiKeys.regenerateTitle')}</h3>
+                <p className="text-xs text-muted">{regenerateTarget.name}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 p-3 mb-4">
+              <p className="text-xs text-secondary leading-relaxed">
+                {t('apiKeys.regenerateWarning')}
+              </p>
+            </div>
+
+            <ul className="space-y-1.5 mb-6 text-xs text-secondary">
+              <li className="flex items-start gap-2">
+                <span className="text-amber-500 mt-0.5">•</span>
+                {t('apiKeys.regeneratePoint1')}
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-amber-500 mt-0.5">•</span>
+                {t('apiKeys.regeneratePoint2')}
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-emerald-500 mt-0.5">•</span>
+                {t('apiKeys.regeneratePoint3')}
+              </li>
+            </ul>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setRegenerateTarget(null)}
+                className="rounded-lg px-4 py-2 text-xs font-medium text-secondary hover:text-primary transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={() => {
+                  regenerateMutation.mutate(regenerateTarget.id);
+                  setRegenerateTarget(null);
+                }}
+                className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-semibold text-black hover:bg-amber-400 transition-colors"
+              >
+                {t('apiKeys.regenerateConfirmBtn')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
