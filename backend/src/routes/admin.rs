@@ -62,71 +62,105 @@ pub async fn set_plan(
     })))
 }
 
-/// GET /billing — get current org plan, usage, and limits
+/// GET /billing — get user-level plan, usage across ALL orgs, and limits
+/// Plan is tied to the user (via their "primary" org), but usage spans all orgs.
+/// Returns: plan, org count, project count (per org + total), API requests, issues count.
 pub async fn get_billing(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    use crate::routes::issues::fetch_user_org_ids;
 
-    // Get plan + project count
-    let plan_row = sqlx::query_as::<_, (Option<String>, i64)>(
-        r#"
-        SELECT o.plan, COUNT(p.id) AS project_count
-        FROM organizations o
-        LEFT JOIN projects p ON p.org_id = o.id
-        WHERE o.id = $1
-        GROUP BY o.plan
-        "#,
+    // Get all orgs for this user via Clerk
+    let org_ids = fetch_user_org_ids(&auth.user_id).await.map_err(|e| {
+        tracing::error!(error = %e, "billing: failed to fetch org memberships");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to resolve organizations"})))
+    })?;
+
+    // Determine plan from current org (or first org)
+    let current_org = auth.org_id.as_deref()
+        .or(org_ids.first().map(|s| s.as_str()))
+        .unwrap_or("unknown");
+
+    let plan: String = sqlx::query_scalar(
+        "SELECT COALESCE(plan, 'free') FROM organizations WHERE id = $1"
     )
-    .bind(org_id)
+    .bind(current_org)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| "free".to_string());
 
-    let (plan, project_count) = plan_row
-        .map(|(p, c)| (p.unwrap_or_else(|| "free".to_string()), c))
-        .unwrap_or(("free".to_string(), 0));
+    // Per-org breakdown: project count + issue count
+    #[derive(sqlx::FromRow, serde::Serialize)]
+    struct OrgUsage {
+        org_id: String,
+        org_name: String,
+        project_count: i64,
+        issue_count: i64,
+    }
 
-    // Get API request count this month
+    let org_usage = if !org_ids.is_empty() {
+        sqlx::query_as::<_, OrgUsage>(
+            r#"
+            SELECT
+                p.org_id,
+                COALESCE(o.name, p.org_id) AS org_name,
+                COUNT(DISTINCT p.id) AS project_count,
+                COUNT(i.id) AS issue_count
+            FROM projects p
+            LEFT JOIN organizations o ON o.id = p.org_id
+            LEFT JOIN issues i ON i.project_id = p.id
+            WHERE p.org_id = ANY($1)
+            GROUP BY p.org_id, o.name
+            ORDER BY issue_count DESC
+            "#,
+        )
+        .bind(&org_ids)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    let total_orgs = org_ids.len() as i64;
+    let total_projects: i64 = org_usage.iter().map(|o| o.project_count).sum();
+    let total_issues: i64 = org_usage.iter().map(|o| o.issue_count).sum();
+
+    // API request count this month (sum across all orgs)
     let month = chrono::Utc::now().format("%Y-%m").to_string();
-    let api_count: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(count, 0) FROM api_request_log WHERE org_id = $1 AND month = $2"
-    )
-    .bind(org_id)
-    .bind(&month)
-    .fetch_optional(&pool)
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or(0);
+    let api_count: i64 = if !org_ids.is_empty() {
+        sqlx::query_scalar(
+            "SELECT COALESCE(SUM(count), 0) FROM api_request_log WHERE org_id = ANY($1) AND month = $2"
+        )
+        .bind(&org_ids)
+        .bind(&month)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0)
+    } else { 0 };
 
-    // Member count
-    let member_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT user_id) FROM (SELECT DISTINCT creator_user_id AS user_id FROM issues WHERE org_id = $1 UNION SELECT DISTINCT unnest(assignee_ids) FROM issues WHERE org_id = $1) AS users"
-    )
-    .bind(org_id)
-    .fetch_optional(&pool)
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or(0);
-
-    let (project_limit, api_limit, member_limit) = match plan.as_str() {
-        "free" => (3, 1000, 5),
-        "pro" => (10, 10000, 25),
-        "enterprise" => (-1, -1, -1), // unlimited
-        _ => (3, 1000, 5),
+    // Plan limits
+    let (org_limit, project_limit, api_limit, issue_limit) = match plan.as_str() {
+        "free" => (2, 3, 1_000, 500),
+        "pro" => (10, 25, 50_000, 10_000),
+        "enterprise" => (-1, -1, -1, -1), // unlimited
+        _ => (2, 3, 1_000, 500),
     };
 
     Ok(Json(json!({
         "data": {
             "plan": plan,
+            "organizations": org_usage,
             "usage": {
-                "projects": { "current": project_count, "limit": project_limit },
-                "api_requests": { "current": api_count, "limit": api_limit, "month": month },
-                "members": { "current": member_count, "limit": member_limit }
+                "orgs": { "current": total_orgs, "limit": org_limit },
+                "projects": { "current": total_projects, "limit": project_limit },
+                "issues": { "current": total_issues, "limit": issue_limit },
+                "api_requests": { "current": api_count, "limit": api_limit, "month": month }
             }
         }
     })))

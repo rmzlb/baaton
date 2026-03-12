@@ -322,6 +322,46 @@ pub async fn create(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
+    // ── Plan enforcement: check issue limit ─────────────
+    {
+        let plan: String = sqlx::query_scalar(
+            "SELECT COALESCE(plan, 'free') FROM organizations WHERE id = $1"
+        )
+        .bind(org_id)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "free".to_string());
+
+        let issue_limit: Option<i64> = match plan.as_str() {
+            "free" => Some(500),
+            "pro" => Some(10_000),
+            "enterprise" | _ if plan == "enterprise" => None,
+            _ => Some(500),
+        };
+
+        if let Some(limit) = issue_limit {
+            let count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1"
+            )
+            .bind(org_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(0);
+
+            if count >= limit {
+                return Err((StatusCode::PAYMENT_REQUIRED, Json(json!({
+                    "error": "Issue limit reached for your plan",
+                    "limit": limit,
+                    "current": count,
+                    "plan": plan,
+                    "upgrade_url": "https://baaton.dev/billing"
+                }))));
+            }
+        }
+    }
+
     // ── Project access check (API key scoping) ─────────
     if !auth.has_project_access(body.project_id) {
         return Err((StatusCode::FORBIDDEN, Json(json!({
@@ -1389,14 +1429,25 @@ pub async fn search_global(
     let limit = params.limit.unwrap_or(30).min(100);
     let is_overdue = params.is_overdue.unwrap_or(false);
 
+    // Build prefix-safe tsquery: "hlm" → "hlm:*", "audio record" → "audio:* & record:*"
+    let tsquery_str = params.q.split_whitespace()
+        .filter(|w| !w.is_empty())
+        .map(|w| format!("{}:*", w.replace('\'', "").replace('\\', "")))
+        .collect::<Vec<_>>()
+        .join(" & ");
+
+    // Combined search: full-text (prefix) + ILIKE fallback on title/display_id
     let results = sqlx::query_as::<_, GlobalSearchResult>(
         r##"
-        SELECT
+        SELECT DISTINCT ON (i.id)
             i.id,
             i.display_id,
             i.title,
-            ts_headline('english', COALESCE(i.description, ''), plainto_tsquery('english', $1),
-                'MaxWords=20, MinWords=5, ShortWord=3, HighlightAll=false') AS snippet,
+            COALESCE(
+                NULLIF(ts_headline('english', COALESCE(i.description, ''), to_tsquery('english', $7),
+                    'MaxWords=20, MinWords=5, ShortWord=3, HighlightAll=false'), ''),
+                LEFT(COALESCE(i.description, ''), 120)
+            ) AS snippet,
             i.status,
             i.priority,
             i.project_id,
@@ -1406,12 +1457,21 @@ pub async fn search_global(
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         LEFT JOIN organizations o ON o.id = p.org_id
-        WHERE i.search_vector @@ plainto_tsquery('english', $1)
-          AND p.org_id = ANY($2)
+        WHERE p.org_id = ANY($2)
+          AND (
+            -- Full-text prefix search
+            ($7 != '' AND i.search_vector @@ to_tsquery('english', $7))
+            -- ILIKE fallback on title
+            OR i.title ILIKE '%' || $1 || '%'
+            -- Match display_id prefix (e.g. "HLM" matches "HLM-42")
+            OR i.display_id ILIKE $1 || '%'
+            -- Match project prefix (e.g. "hlm" matches project with prefix "HLM")
+            OR p.prefix ILIKE $1 || '%'
+          )
           AND ($3::uuid IS NULL OR i.project_id = $3)
           AND ($4::text IS NULL OR i.status = $4)
           AND (NOT $6::boolean OR (i.due_date < CURRENT_DATE AND i.status NOT IN ('done', 'cancelled')))
-        ORDER BY ts_rank(i.search_vector, plainto_tsquery('english', $1)) DESC
+        ORDER BY i.id, i.created_at DESC
         LIMIT $5
         "##,
     )
@@ -1421,6 +1481,7 @@ pub async fn search_global(
     .bind(&params.status)
     .bind(limit)
     .bind(is_overdue)
+    .bind(&tsquery_str)
     .fetch_all(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -1429,7 +1490,7 @@ pub async fn search_global(
 }
 
 /// Fetch all organization IDs that a user belongs to via Clerk API
-async fn fetch_user_org_ids(user_id: &str) -> Result<Vec<String>, String> {
+pub async fn fetch_user_org_ids(user_id: &str) -> Result<Vec<String>, String> {
     let secret = std::env::var("CLERK_SECRET_KEY")
         .map_err(|_| "CLERK_SECRET_KEY not configured".to_string())?;
 

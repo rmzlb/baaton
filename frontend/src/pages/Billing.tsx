@@ -2,14 +2,23 @@ import { useQuery } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
-import { Crown, Zap, Building2, Check, ArrowRight, Loader2 } from 'lucide-react';
+import { Crown, Zap, Building2, Check, ArrowRight, Loader2, FolderKanban, FileText, Globe } from 'lucide-react';
+
+interface OrgUsage {
+  org_id: string;
+  org_name: string;
+  project_count: number;
+  issue_count: number;
+}
 
 interface BillingData {
   plan: string;
+  organizations: OrgUsage[];
   usage: {
+    orgs: { current: number; limit: number };
     projects: { current: number; limit: number };
+    issues: { current: number; limit: number };
     api_requests: { current: number; limit: number; month: string };
-    members: { current: number; limit: number };
   };
 }
 
@@ -19,7 +28,7 @@ const PLANS = [
     icon: Zap,
     color: 'text-gray-400',
     bg: 'bg-gray-500/10 border-gray-500/20',
-    features: ['billing.free.f1', 'billing.free.f2', 'billing.free.f3', 'billing.free.f4'],
+    features: ['billing.free.f1', 'billing.free.f2', 'billing.free.f3', 'billing.free.f4', 'billing.free.f5'],
   },
   {
     key: 'pro',
@@ -40,7 +49,7 @@ const PLANS = [
 
 function UsageBar({ current, limit, label }: { current: number; limit: number; label: string }) {
   const unlimited = limit < 0;
-  const pct = unlimited ? 0 : Math.min((current / limit) * 100, 100);
+  const pct = unlimited ? 0 : Math.min((current / Math.max(limit, 1)) * 100, 100);
   const isNearLimit = !unlimited && pct >= 80;
   const isAtLimit = !unlimited && pct >= 100;
 
@@ -89,26 +98,61 @@ export function Billing() {
       <h1 className="text-2xl font-bold text-primary mb-1">{t('billing.title')}</h1>
       <p className="text-sm text-muted mb-8">{t('billing.subtitle')}</p>
 
-      {/* Usage section */}
+      {/* Usage overview */}
       {billing && (
-        <div className="rounded-xl border border-border bg-surface p-6 mb-8">
+        <div className="rounded-xl border border-border bg-surface p-6 mb-6">
           <h2 className="text-sm font-semibold text-primary mb-4">{t('billing.currentUsage')}</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <UsageBar
+              current={billing.usage.orgs.current}
+              limit={billing.usage.orgs.limit}
+              label={t('billing.organizations')}
+            />
             <UsageBar
               current={billing.usage.projects.current}
               limit={billing.usage.projects.limit}
               label={t('billing.projects')}
             />
             <UsageBar
-              current={billing.usage.api_requests.current}
-              limit={billing.usage.api_requests.limit}
-              label={t('billing.apiRequests', { month: billing.usage.api_requests.month })}
+              current={billing.usage.issues.current}
+              limit={billing.usage.issues.limit}
+              label={t('billing.issues')}
             />
             <UsageBar
-              current={billing.usage.members.current}
-              limit={billing.usage.members.limit}
-              label={t('billing.members')}
+              current={billing.usage.api_requests.current}
+              limit={billing.usage.api_requests.limit}
+              label={`${t('billing.apiRequests')} (${billing.usage.api_requests.month})`}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Per-org breakdown */}
+      {billing && billing.organizations.length > 0 && (
+        <div className="rounded-xl border border-border bg-surface p-6 mb-8">
+          <h2 className="text-sm font-semibold text-primary mb-4">{t('billing.orgBreakdown')}</h2>
+          <div className="space-y-3">
+            {billing.organizations.map((org) => (
+              <div
+                key={org.org_id}
+                className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3"
+              >
+                <div className="flex items-center gap-3">
+                  <Globe size={16} className="text-muted" />
+                  <span className="text-sm font-medium text-primary">{org.org_name}</span>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-1.5 text-xs text-secondary">
+                    <FolderKanban size={12} className="text-muted" />
+                    {org.project_count} {t('billing.projectsShort')}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-secondary">
+                    <FileText size={12} className="text-muted" />
+                    {org.issue_count.toLocaleString()} {t('billing.issuesShort')}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
