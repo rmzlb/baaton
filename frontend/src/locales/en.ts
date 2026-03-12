@@ -1643,6 +1643,10 @@ As a [user], I want to [action] so that [benefit].
   'aiChat.emptyTitle': 'How can I help?',
   'aiChat.emptyDesc': 'Ask me anything about your projects — I can analyze issues, create tasks, summarize progress, and more.',
   'aiChat.executingSkill': 'Running {{name}}…',
+  'aiChat.stop': 'Stop',
+  'aiChat.thinking': 'Thinking…',
+  'aiChat.skillsLabel': 'Skills',
+  'aiChat.projectsLabel': 'Projects',
 
 } as const;
 
