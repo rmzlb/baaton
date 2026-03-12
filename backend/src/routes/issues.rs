@@ -621,7 +621,21 @@ pub async fn create(
     // ── Webhook dispatch (fire-and-forget) ───────────
     dispatch_event(pool.clone(), org_id.to_string(), "issue.created", serde_json::to_value(&issue).unwrap_or_default()).await;
 
-    Ok(Json(ApiResponse::new(issue)))
+    // AI-first: action hints for agents
+    let hints = vec![
+        crate::models::ActionHint::recommended(
+            "add_description",
+            "New issue created. Add a detailed description to help with triage and estimation.",
+            Some(&format!("PATCH /issues/{}", issue.id)),
+        ),
+        crate::models::ActionHint::recommended(
+            "add_tldr",
+            "Add a TLDR summary of the work to be done. This helps reviewers and other agents understand the scope.",
+            Some(&format!("POST /issues/{}/tldr", issue.id)),
+        ),
+    ];
+
+    Ok(Json(ApiResponse::with_hints(issue, hints)))
 }
 
 pub async fn get_one(
@@ -1079,7 +1093,31 @@ pub async fn update(
     let event = if status_changed { "status.changed" } else { "issue.updated" };
     dispatch_event(pool.clone(), org_id.to_string(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
 
-    Ok(Json(ApiResponse::new(issue)))
+    // AI-first: contextual action hints
+    let mut hints = vec![];
+    if status_changed {
+        hints.push(crate::models::ActionHint::recommended(
+            "add_comment",
+            "Status changed. Add a comment explaining why (e.g. 'Moved to done: all tests passing, deployed to staging').",
+            Some(&format!("POST /issues/{}/comments", issue.id)),
+        ));
+        if issue.status == "done" || issue.status == "cancelled" {
+            hints.push(crate::models::ActionHint::recommended(
+                "add_tldr",
+                "Issue closed. Add a TLDR summarizing what was done, decisions made, and any follow-ups needed.",
+                Some(&format!("POST /issues/{}/tldr", issue.id)),
+            ));
+        }
+    }
+    if priority_changed_flag {
+        hints.push(crate::models::ActionHint::recommended(
+            "add_comment",
+            "Priority changed. Consider adding a comment explaining the reprioritization rationale.",
+            Some(&format!("POST /issues/{}/comments", issue.id)),
+        ));
+    }
+
+    Ok(Json(ApiResponse::with_hints(issue, hints)))
 }
 
 pub async fn update_position(

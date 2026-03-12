@@ -46,7 +46,7 @@ pub async fn list(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Ok(Json(ApiResponse { data: integrations }))
+    Ok(Json(ApiResponse::new(integrations)))
 }
 
 /// POST /integrations/slack — add slack integration
@@ -73,7 +73,7 @@ pub async fn create(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Ok(Json(ApiResponse { data: integration }))
+    Ok(Json(ApiResponse::new(integration)))
 }
 
 /// PATCH /integrations/slack/{id}/channels — update channel mappings
@@ -99,7 +99,7 @@ pub async fn update_channels(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
     .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Integration not found"}))))?;
 
-    Ok(Json(ApiResponse { data: integration }))
+    Ok(Json(ApiResponse::new(integration)))
 }
 
 /// DELETE /integrations/slack/{id}

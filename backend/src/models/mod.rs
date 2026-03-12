@@ -296,9 +296,27 @@ pub struct ActivityEntry {
 
 // ─── API Response Wrapper ─────────────────────────────
 
+/// AI-first action hint: tells agents what to do next after this response.
+/// Inspired by HATEOAS but designed for LLM agents, not browsers.
+#[derive(Debug, Serialize, Clone)]
+pub struct ActionHint {
+    /// What the agent should do next (e.g. "add_tldr", "verify_status", "add_comment")
+    pub action: String,
+    /// Why this action is recommended
+    pub reason: String,
+    /// API endpoint to call (e.g. "POST /issues/{id}/tldr")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// Priority: "required", "recommended", "optional"
+    pub priority: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ApiResponse<T: Serialize> {
     pub data: T,
+    /// AI-first action hints: contextual next steps for agents
+    #[serde(rename = "_hints", skip_serializing_if = "Vec::is_empty")]
+    pub hints: Vec<ActionHint>,
 }
 
 #[allow(dead_code)]
@@ -312,10 +330,49 @@ pub struct ApiError {
 pub struct ApiErrorBody {
     pub code: String,
     pub message: String,
+    /// Remediation steps for AI agents
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remediation: Option<String>,
+    /// Accepted values if the error is about invalid enum
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accepted_values: Option<Vec<String>>,
 }
 
 impl<T: Serialize> ApiResponse<T> {
     pub fn new(data: T) -> Self {
-        Self { data }
+        Self { data, hints: vec![] }
+    }
+
+    /// Add AI-first action hints to the response
+    pub fn with_hints(data: T, hints: Vec<ActionHint>) -> Self {
+        Self { data, hints }
+    }
+}
+
+impl ActionHint {
+    pub fn required(action: &str, reason: &str, endpoint: Option<&str>) -> Self {
+        Self {
+            action: action.to_string(),
+            reason: reason.to_string(),
+            endpoint: endpoint.map(|s| s.to_string()),
+            priority: "required".to_string(),
+        }
+    }
+    pub fn recommended(action: &str, reason: &str, endpoint: Option<&str>) -> Self {
+        Self {
+            action: action.to_string(),
+            reason: reason.to_string(),
+            endpoint: endpoint.map(|s| s.to_string()),
+            priority: "recommended".to_string(),
+        }
+    }
+    #[allow(dead_code)]
+    pub fn optional(action: &str, reason: &str, endpoint: Option<&str>) -> Self {
+        Self {
+            action: action.to_string(),
+            reason: reason.to_string(),
+            endpoint: endpoint.map(|s| s.to_string()),
+            priority: "optional".to_string(),
+        }
     }
 }

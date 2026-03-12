@@ -47,7 +47,7 @@ pub async fn list(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Ok(Json(ApiResponse { data: attachments }))
+    Ok(Json(ApiResponse::new(attachments)))
 }
 
 /// POST /issues/{id}/attachments — register attachment metadata
@@ -88,7 +88,7 @@ pub async fn create(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Ok(Json(ApiResponse { data: attachment }))
+    Ok(Json(ApiResponse::new(attachment)))
 }
 
 /// DELETE /issues/{id}/attachments/{att_id}

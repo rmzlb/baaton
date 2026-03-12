@@ -170,5 +170,5 @@ Respond ONLY with valid JSON (no markdown, no code blocks):
         ..suggestion
     };
 
-    Ok(Json(ApiResponse { data: result }))
+    Ok(Json(ApiResponse::new(result)))
 }
