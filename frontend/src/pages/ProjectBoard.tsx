@@ -6,6 +6,11 @@ import { ListView } from '@/components/list/ListView';
 import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { CreateIssueModal } from '@/components/issues/CreateIssueModal';
 import { PublicLinkModal } from '@/components/projects/PublicLinkModal';
+import { ImportModal } from '@/components/projects/ImportExportModal';
+import { TemplatesSection } from '@/components/settings/TemplatesSection';
+import { SlaSection } from '@/components/settings/SlaSection';
+import { RecurringSection } from '@/components/settings/RecurringSection';
+import { EmailIntakeSection } from '@/components/settings/EmailIntakeSection';
 import { ShortcutHelp } from '@/components/shared/ShortcutHelp';
 import { KanbanBoardSkeleton, ListViewSkeleton } from '@/components/shared/Skeleton';
 import { useApi } from '@/hooks/useApi';
@@ -13,7 +18,7 @@ import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2, Settings, Github, Star, GitFork, Circle, RefreshCw, ExternalLink, X } from 'lucide-react';
+import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2, Settings, Github, Star, GitFork, Circle, RefreshCw, ExternalLink, X, Download, Upload } from 'lucide-react';
 import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { cn } from '@/lib/utils';
 import type { Issue, IssueStatus, ProjectStatus } from '@/lib/types';
@@ -47,6 +52,8 @@ export function ProjectBoard() {
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [showPublicLink, setShowPublicLink] = useState(false);
   const [showProjectSettings, setShowProjectSettings] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const [, setSearchParams] = useSearchParams();
   // Capture the initial deep-link param ONCE at mount, then forget it
   const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
@@ -170,6 +177,26 @@ export function ProjectBoard() {
     positionMutation.mutate({ id: issueId, status: newStatus, position: newPosition });
   };
 
+  const handleExport = async () => {
+    if (!project) return;
+    setExportLoading(true);
+    try {
+      const data = await apiClient.get<unknown>(`/projects/${project.id}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${project.slug}-export.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addNotification({ type: 'success', title: t('importExport.exportSuccess'), message: '' });
+    } catch {
+      addNotification({ type: 'error', title: t('importExport.exportError'), message: '' });
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   // Stable list of issue IDs for keyboard navigation
   const issueIds = useMemo(() => issuesList.map((i) => i.id), [issuesList]);
 
@@ -281,6 +308,27 @@ export function ProjectBoard() {
             <Settings size={16} />
           </button>
 
+          {/* Export */}
+          <button
+            onClick={handleExport}
+            disabled={exportLoading}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors min-h-[36px] disabled:opacity-50"
+            title={t('importExport.export')}
+          >
+            <Download size={14} />
+            <span className="hidden lg:inline">{t('importExport.export')}</span>
+          </button>
+
+          {/* Import */}
+          <button
+            onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors min-h-[36px]"
+            title={t('importExport.import')}
+          >
+            <Upload size={14} />
+            <span className="hidden lg:inline">{t('importExport.import')}</span>
+          </button>
+
           <button
             onClick={() => setShowPublicLink(true)}
             className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 md:px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors min-h-[36px]"
@@ -355,6 +403,16 @@ export function ProjectBoard() {
         />
       )}
 
+      {showImport && project && (
+        <ImportModal
+          projectId={project.id}
+          projectName={project.name}
+          onClose={() => setShowImport(false)}
+          onSuccess={(msg) => addNotification({ type: 'success', title: msg, message: '' })}
+          onError={(msg) => addNotification({ type: 'error', title: msg, message: '' })}
+        />
+      )}
+
       {/* Keyboard Shortcut Help Overlay */}
       {showShortcutHelp && (
         <ShortcutHelp onClose={() => setShowShortcutHelp(false)} />
@@ -399,17 +457,20 @@ function DensityToggle() {
 
 /* ── Project Settings Modal ─────────────────────── */
 
+type SettingsTab = 'general' | 'templates' | 'sla' | 'recurring' | 'email';
+
 function ProjectSettingsModal({
   project,
   onClose,
   onSaved,
 }: {
-  project: { id: string; name: string; description: string | null; github_repo_url?: string; github_metadata?: { full_name?: string; description?: string; language?: string; stars?: number; forks?: number; open_issues?: number; default_branch?: string; is_private?: boolean; topics?: string[]; updated_at?: string; fetched_at?: string } };
+  project: { id: string; name: string; slug: string; description: string | null; github_repo_url?: string; github_metadata?: { full_name?: string; description?: string; language?: string; stars?: number; forks?: number; open_issues?: number; default_branch?: string; is_private?: boolean; topics?: string[]; updated_at?: string; fetched_at?: string } };
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { t } = useTranslation();
   const apiClient = useApi();
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description || '');
   const [githubUrl, setGithubUrl] = useState(project.github_repo_url || '');
@@ -449,130 +510,145 @@ function ProjectSettingsModal({
     }
   };
 
+  const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
+    { key: 'general', label: 'General' },
+    { key: 'templates', label: t('templates.title') },
+    { key: 'sla', label: t('slaRules.title') },
+    { key: 'recurring', label: t('recurring.title') },
+    { key: 'email', label: t('emailIntake.title') },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-xl border border-border bg-surface p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-primary">{t('settings.title')}</h2>
+      <div className="w-full max-w-2xl rounded-xl border border-border bg-surface shadow-2xl flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border px-6 py-4 shrink-0">
+          <h2 className="text-base font-semibold text-primary">{t('settings.title')} — {project.name}</h2>
           <button onClick={onClose} className="rounded-md p-1 text-secondary hover:bg-surface-hover hover:text-primary transition-colors">
             <X size={18} />
           </button>
         </div>
 
-        <div className="space-y-4">
-          {/* Name */}
-          <div>
-            <label className="block text-xs font-medium text-secondary mb-1">{t('projectList.projectName')}</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-border bg-surface-hover px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none"
-            />
-          </div>
+        {/* Tabs */}
+        <div className="flex items-center gap-0.5 px-6 border-b border-border overflow-x-auto shrink-0">
+          {SETTINGS_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                'px-3 py-2.5 text-xs font-medium transition-colors whitespace-nowrap border-b-2 -mb-px',
+                activeTab === tab.key
+                  ? 'text-primary border-accent'
+                  : 'text-secondary border-transparent hover:text-primary hover:border-border',
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-          {/* Description */}
-          <div>
-            <label className="block text-xs font-medium text-secondary mb-1">{t('projectList.description')}</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              className="w-full rounded-lg border border-border bg-surface-hover px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none resize-none"
-            />
-          </div>
+        {/* Tab Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {activeTab === 'general' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">{t('projectList.projectName')}</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-surface-hover px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none"
+                />
+              </div>
 
-          {/* GitHub URL */}
-          <div>
-            <label className="block text-xs font-medium text-secondary mb-1">
-              <Github size={12} className="inline mr-1" />
-              {t('settings.githubRepo')}
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                value={githubUrl}
-                onChange={(e) => setGithubUrl(e.target.value)}
-                placeholder="https://github.com/owner/repo"
-                className="flex-1 rounded-lg border border-border bg-surface-hover px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none font-mono"
-              />
-              {project.github_repo_url && (
-                <button
-                  onClick={handleRefreshGithub}
-                  disabled={refreshing}
-                  className="rounded-lg border border-border bg-surface-hover px-2.5 py-2 text-secondary hover:text-primary hover:bg-border transition-colors"
-                  title="Refresh GitHub metadata"
-                >
-                  <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">{t('projectList.description')}</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={2}
+                  className="w-full rounded-lg border border-border bg-surface-hover px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-secondary mb-1">
+                  <Github size={12} className="inline mr-1" />
+                  {t('settings.githubRepo')}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={githubUrl}
+                    onChange={(e) => setGithubUrl(e.target.value)}
+                    placeholder="https://github.com/owner/repo"
+                    className="flex-1 rounded-lg border border-border bg-surface-hover px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none font-mono"
+                  />
+                  {project.github_repo_url && (
+                    <button
+                      onClick={handleRefreshGithub}
+                      disabled={refreshing}
+                      className="rounded-lg border border-border bg-surface-hover px-2.5 py-2 text-secondary hover:text-primary hover:bg-border transition-colors"
+                      title="Refresh GitHub metadata"
+                    >
+                      <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {meta && (
+                <div className="rounded-lg border border-border bg-surface-hover p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-secondary">GitHub Info</span>
+                    {meta.full_name && (
+                      <a href={project.github_repo_url} target="_blank" rel="noopener noreferrer"
+                        className="text-[10px] text-accent hover:underline flex items-center gap-1"
+                        onClick={(e) => e.stopPropagation()}>
+                        {meta.full_name} <ExternalLink size={10} />
+                      </a>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-[11px]">
+                    {meta.language && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 font-medium">
+                        <Circle size={7} fill="currentColor" />{meta.language}
+                      </span>
+                    )}
+                    <span className="inline-flex items-center gap-1 text-secondary"><Star size={11} />{meta.stars ?? 0}</span>
+                    <span className="inline-flex items-center gap-1 text-secondary"><GitFork size={11} />{meta.forks ?? 0}</span>
+                    {meta.is_private
+                      ? <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Private</span>
+                      : <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-medium">Public</span>
+                    }
+                    {meta.default_branch && <span className="text-secondary font-mono">{meta.default_branch}</span>}
+                  </div>
+                  {meta.description && <p className="text-xs text-secondary">{meta.description}</p>}
+                  {meta.fetched_at && <p className="text-[9px] text-muted">Last fetched: {new Date(meta.fetched_at!).toLocaleString()}</p>}
+                </div>
+              )}
+
+              {error && <p className="text-xs text-red-400">{error}</p>}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm text-secondary hover:bg-surface-hover transition-colors">
+                  {t('common.cancel')}
                 </button>
-              )}
-            </div>
-          </div>
-
-          {/* GitHub Metadata Preview */}
-          {meta && (
-            <div className="rounded-lg border border-border bg-surface-hover p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-secondary">GitHub Info</span>
-                {meta.full_name && (
-                  <a
-                    href={project.github_repo_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-accent hover:underline flex items-center gap-1"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {meta.full_name} <ExternalLink size={10} />
-                  </a>
-                )}
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !name.trim()}
+                  className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover transition-colors disabled:opacity-50"
+                >
+                  {saving ? '...' : t('common.save')}
+                </button>
               </div>
-              <div className="flex flex-wrap gap-2 text-[11px]">
-                {meta.language && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 font-medium">
-                    <Circle size={7} fill="currentColor" />{meta.language}
-                  </span>
-                )}
-                <span className="inline-flex items-center gap-1 text-secondary">
-                  <Star size={11} />{meta.stars ?? 0}
-                </span>
-                <span className="inline-flex items-center gap-1 text-secondary">
-                  <GitFork size={11} />{meta.forks ?? 0}
-                </span>
-                {meta.is_private ? (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Private</span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-medium">Public</span>
-                )}
-                {meta.default_branch && (
-                  <span className="text-secondary font-mono">{meta.default_branch}</span>
-                )}
-              </div>
-              {meta.description && (
-                <p className="text-xs text-secondary">{meta.description}</p>
-              )}
-              {meta.fetched_at && (
-                <p className="text-[9px] text-muted">Last fetched: {new Date(meta.fetched_at!).toLocaleString()}</p>
-              )}
             </div>
           )}
 
-          {error && <p className="text-xs text-red-400">{error}</p>}
-        </div>
-
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-border px-4 py-2 text-sm text-secondary hover:bg-surface-hover transition-colors"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !name.trim()}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent-hover transition-colors disabled:opacity-50"
-          >
-            {saving ? '...' : t('common.save')}
-          </button>
+          {activeTab === 'templates' && <TemplatesSection projectId={project.id} />}
+          {activeTab === 'sla' && <SlaSection projectId={project.id} />}
+          {activeTab === 'recurring' && <RecurringSection projectId={project.id} />}
+          {activeTab === 'email' && <EmailIntakeSection projectSlug={project.slug} />}
         </div>
       </div>
     </div>

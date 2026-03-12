@@ -6,10 +6,17 @@ import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { cn } from '@/lib/utils';
 import {
   Inbox, Check, ArrowRightLeft, XCircle,
-  ChevronRight, User,
+  ChevronRight, User, Sparkles, Loader2, Tag, AlertTriangle,
 } from 'lucide-react';
-import type { Issue } from '@/lib/types';
+import type { Issue, IssuePriority } from '@/lib/types';
 import { MarkdownView } from '@/components/shared/MarkdownView';
+
+interface AiTriageResult {
+  priority?: IssuePriority;
+  tags?: string[];
+  assignee_id?: string;
+  similar_issues?: { id: string; display_id: string; title: string }[];
+}
 
 export function Triage() {
   const { t } = useTranslation();
@@ -19,6 +26,9 @@ export function Triage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [assignDropdownId, setAssignDropdownId] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<AiTriageResult | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const { data: allIssues = [], isLoading } = useQuery({
     queryKey: ['all-issues'],
@@ -62,6 +72,36 @@ export function Triage() {
     updateMutation.mutate({ id: issueId, body: { assignee_ids: [userId] } });
     setAssignDropdownId(null);
   }, [updateMutation]);
+
+  // Reset AI result when switching issues
+  useEffect(() => {
+    setAiResult(null);
+    setAiError(null);
+  }, [selectedId]);
+
+  const handleAiTriage = useCallback(async (issue: Issue) => {
+    setAiLoading(true);
+    setAiResult(null);
+    setAiError(null);
+    try {
+      const result = await apiClient.post<AiTriageResult>(`/issues/${issue.id}/triage`, {});
+      setAiResult(result);
+    } catch {
+      setAiError(t('triage.aiError'));
+    } finally {
+      setAiLoading(false);
+    }
+  }, [apiClient, t]);
+
+  const handleApplyAiSuggestions = useCallback((issue: Issue) => {
+    if (!aiResult) return;
+    const update: Record<string, unknown> = {};
+    if (aiResult.priority) update.priority = aiResult.priority;
+    if (aiResult.tags && aiResult.tags.length > 0) update.tags = aiResult.tags;
+    if (aiResult.assignee_id) update.assignee_ids = [aiResult.assignee_id];
+    updateMutation.mutate({ id: issue.id, body: update });
+    setAiResult(null);
+  }, [aiResult, updateMutation]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -230,6 +270,96 @@ export function Triage() {
               ) : (
                 <p className="text-sm text-muted italic">{t('triage.noDescription')}</p>
               )}
+
+              {/* AI Triage Panel */}
+              <div className="mt-6">
+                <button
+                  onClick={() => handleAiTriage(selectedIssue)}
+                  disabled={aiLoading}
+                  className="flex items-center gap-2 rounded-lg bg-purple-500/10 border border-purple-500/20 px-4 py-2 text-sm text-purple-400 hover:bg-purple-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {aiLoading ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={16} />
+                  )}
+                  {aiLoading ? t('triage.aiLoading') : t('triage.aiSuggest')}
+                </button>
+
+                {aiError && (
+                  <div className="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-400">
+                    <AlertTriangle size={14} />
+                    {aiError}
+                  </div>
+                )}
+
+                {aiResult && (
+                  <div className="mt-3 rounded-xl border border-purple-500/20 bg-purple-500/5 p-4 space-y-3">
+                    <h4 className="text-sm font-semibold text-purple-300 flex items-center gap-2">
+                      <Sparkles size={14} />
+                      {t('triage.aiSuggestions')}
+                    </h4>
+
+                    {aiResult.priority && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted w-32">{t('triage.suggestedPriority')}</span>
+                        <span className={cn(
+                          'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                          aiResult.priority === 'urgent' ? 'bg-red-500/15 text-red-400' :
+                          aiResult.priority === 'high' ? 'bg-orange-500/15 text-orange-400' :
+                          aiResult.priority === 'medium' ? 'bg-yellow-500/15 text-yellow-400' :
+                          'bg-surface-hover text-muted',
+                        )}>
+                          {aiResult.priority}
+                        </span>
+                      </div>
+                    )}
+
+                    {aiResult.tags && aiResult.tags.length > 0 && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs text-muted w-32 pt-0.5">{t('triage.suggestedTags')}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {aiResult.tags.map((tag) => (
+                            <span key={tag} className="flex items-center gap-1 rounded-full bg-surface-hover px-2 py-0.5 text-[11px] text-secondary">
+                              <Tag size={9} />
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {aiResult.assignee_id && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted w-32">{t('triage.suggestedAssignee')}</span>
+                        <span className="text-xs text-secondary font-mono">{aiResult.assignee_id.slice(0, 12)}…</span>
+                      </div>
+                    )}
+
+                    {aiResult.similar_issues && aiResult.similar_issues.length > 0 && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs text-muted w-32 pt-0.5">{t('triage.similarIssues')}</span>
+                        <div className="space-y-1">
+                          {aiResult.similar_issues.map((si) => (
+                            <div key={si.id} className="text-xs text-secondary">
+                              <span className="font-mono text-muted mr-1">{si.display_id}</span>
+                              {si.title}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => handleApplyAiSuggestions(selectedIssue)}
+                      className="flex items-center gap-2 rounded-lg bg-purple-500/20 border border-purple-500/30 px-3 py-1.5 text-xs text-purple-300 hover:bg-purple-500/30 transition-colors font-medium"
+                    >
+                      <Check size={12} />
+                      {t('triage.aiApply')}
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* Action bar */}
               <div className="flex items-center gap-3 mt-8 pt-4 border-t border-border">

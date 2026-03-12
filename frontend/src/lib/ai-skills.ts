@@ -16,6 +16,8 @@ const SKILL_GROUPS: Record<SkillContext, string[]> = {
     'search_issues', 'create_issue', 'update_issue', 'bulk_update_issues',
     'add_comment', 'get_project_metrics', 'analyze_sprint', 'generate_prd',
     'weekly_recap', 'suggest_priorities', 'plan_milestones',
+    'triage_issue', 'manage_initiatives', 'manage_automations', 'manage_sla',
+    'manage_templates', 'manage_recurring', 'export_project',
   ],
   // Milestone planning: after user asks to plan milestones
   milestone_planning: [
@@ -294,6 +296,113 @@ const ALL_SKILL_DECLARATIONS = [
             },
           },
           required: ['project_id', 'constraint'],
+        },
+      },
+      // ─── New skills (BAA features) ──────────────
+      {
+        name: 'triage_issue',
+        description: 'Use AI to analyze an issue and suggest priority, tags, assignee, and find similar issues. Returns structured suggestions that the user can accept or modify.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            issue_id: { type: 'STRING', description: 'Issue ID to triage' },
+          },
+          required: ['issue_id'],
+        },
+      },
+      {
+        name: 'manage_initiatives',
+        description: 'List, create, or update initiatives (high-level strategic goals that group multiple projects). Use "list" to see all, "create" to make one, "update" to change status/name.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            action: { type: 'STRING', description: 'Action: list, create, update, add_project, remove_project' },
+            initiative_id: { type: 'STRING', description: 'Initiative ID (for update/add_project/remove_project)' },
+            name: { type: 'STRING', description: 'Name (for create/update)' },
+            description: { type: 'STRING', description: 'Description (for create/update)' },
+            status: { type: 'STRING', description: 'Status: active, completed, archived (for update)' },
+            project_id: { type: 'STRING', description: 'Project ID (for add_project/remove_project)' },
+          },
+          required: ['action'],
+        },
+      },
+      {
+        name: 'manage_automations',
+        description: 'List, create, toggle, or delete workflow automations for a project. Automations run when triggers fire (status change, priority change, etc.) and execute actions (set status, assign, add label, etc.).',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            action: { type: 'STRING', description: 'Action: list, create, toggle, delete' },
+            project_id: { type: 'STRING', description: 'Project ID' },
+            automation_id: { type: 'STRING', description: 'Automation ID (for toggle/delete)' },
+            name: { type: 'STRING', description: 'Name (for create)' },
+            trigger_type: { type: 'STRING', description: 'Trigger: status_changed, priority_changed, assignee_changed, label_added, due_date_passed' },
+            trigger_config: { type: 'STRING', description: 'JSON trigger config (e.g. {"from_status":"todo","to_status":"in_progress"})' },
+            action_type: { type: 'STRING', description: 'Action: set_status, set_priority, add_label, assign_user, send_webhook, add_comment' },
+            action_config: { type: 'STRING', description: 'JSON action config (e.g. {"status":"in_review"})' },
+          },
+          required: ['action', 'project_id'],
+        },
+      },
+      {
+        name: 'manage_sla',
+        description: 'List SLA rules for a project, get SLA stats (achievement rate, breached count), or create/delete rules. SLA rules set deadline hours per priority level.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            action: { type: 'STRING', description: 'Action: list_rules, stats, create_rule, delete_rule' },
+            project_id: { type: 'STRING', description: 'Project ID' },
+            rule_id: { type: 'STRING', description: 'Rule ID (for delete)' },
+            priority: { type: 'STRING', description: 'Priority level (for create): urgent, high, medium, low' },
+            deadline_hours: { type: 'NUMBER', description: 'Deadline in hours (for create)' },
+          },
+          required: ['action', 'project_id'],
+        },
+      },
+      {
+        name: 'manage_templates',
+        description: 'List, create, or delete issue templates for a project. Templates pre-fill issue fields for common issue types.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            action: { type: 'STRING', description: 'Action: list, create, delete' },
+            project_id: { type: 'STRING', description: 'Project ID' },
+            template_id: { type: 'STRING', description: 'Template ID (for delete)' },
+            name: { type: 'STRING', description: 'Template name (for create)' },
+            description: { type: 'STRING', description: 'Template description body (for create)' },
+            default_priority: { type: 'STRING', description: 'Default priority (for create)' },
+            default_type: { type: 'STRING', description: 'Default issue type (for create)' },
+          },
+          required: ['action', 'project_id'],
+        },
+      },
+      {
+        name: 'manage_recurring',
+        description: 'List, create, toggle, trigger, or delete recurring issue configurations. Recurring issues auto-create on a cron schedule.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            action: { type: 'STRING', description: 'Action: list, create, toggle, trigger, delete' },
+            project_id: { type: 'STRING', description: 'Project ID' },
+            recurring_id: { type: 'STRING', description: 'Recurring ID (for toggle/trigger/delete)' },
+            title: { type: 'STRING', description: 'Issue title (for create)' },
+            description: { type: 'STRING', description: 'Issue description (for create)' },
+            priority: { type: 'STRING', description: 'Priority (for create)' },
+            issue_type: { type: 'STRING', description: 'Type: bug, feature, improvement, question (for create)' },
+            cron_expression: { type: 'STRING', description: 'Cron expression, e.g. "0 9 * * 1" for every Monday 9am (for create)' },
+          },
+          required: ['action', 'project_id'],
+        },
+      },
+      {
+        name: 'export_project',
+        description: 'Export all issues from a project as JSON. Returns the full export data.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            project_id: { type: 'STRING', description: 'Project ID to export' },
+          },
+          required: ['project_id'],
         },
       },
 ];

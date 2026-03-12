@@ -26,6 +26,8 @@ const AnalyticsPM = lazy(() => import('./pages/AnalyticsPM'));
 const Webhooks = lazy(() => import('./pages/Webhooks'));
 const ApiKeys = lazy(() => import('./pages/ApiKeys'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
+const Initiatives = lazy(() => import('./pages/Initiatives'));
+const Automations = lazy(() => import('./pages/Automations'));
 
 const isAppDomain = window.location.hostname === 'app.baaton.dev';
 
@@ -168,6 +170,8 @@ export function App() {
             <Route path="/webhooks" element={<Webhooks />} />
             <Route path="/api-keys" element={<ApiKeys />} />
             <Route path="/search" element={<SearchPage />} />
+            <Route path="/initiatives" element={<Initiatives />} />
+            <Route path="/projects/:slug/automations" element={<Automations />} />
             <Route path="/projects/:slug/milestones" element={<Milestones />} />
             <Route path="/projects/:slug/sprints" element={<Sprints />} />
             <Route path="/settings" element={<Settings />} />

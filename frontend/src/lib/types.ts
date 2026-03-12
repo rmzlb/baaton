@@ -428,3 +428,76 @@ export interface UpdateRepoMappingRequest {
   status_mapping?: Record<string, string | null>;
   is_active?: boolean;
 }
+
+// ─── Initiatives (BAA-9) ──────────────────────
+export interface Initiative {
+  id: string;
+  org_id: string;
+  name: string;
+  description: string | null;
+  status: 'active' | 'completed' | 'archived';
+  progress: number;
+  created_at: string;
+  updated_at: string;
+  projects?: { project_id: string; project_name?: string }[];
+}
+
+// ─── Automations (BAA-27) ─────────────────────
+export interface Automation {
+  id: string;
+  project_id: string;
+  name: string;
+  trigger_type: string;
+  trigger_config: Record<string, unknown>;
+  action_type: string;
+  action_config: Record<string, unknown>;
+  enabled: boolean;
+  created_at: string;
+}
+
+// ─── SLA Rules (BAA-8) ───────────────────────
+export interface SlaRule {
+  id: string;
+  project_id: string;
+  priority: string;
+  deadline_hours: number;
+  created_at: string;
+}
+
+export interface SlaStats {
+  achievement_pct: number;
+  on_time: number;
+  breached: number;
+  total: number;
+}
+
+// ─── Recurring Issues (BAA-17) ────────────────
+export interface RecurringIssue {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  priority: string | null;
+  issue_type: string | null;
+  cron_expression: string;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  enabled: boolean;
+  created_at: string;
+}
+
+// ─── Cycles (BAA-2) ──────────────────────────
+export interface Cycle {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  start_date: string;
+  end_date: string;
+  status: 'active' | 'completed' | 'planned';
+  total_issues: number;
+  completed_issues: number;
+  total_points: number;
+  completed_points: number;
+  created_at: string;
+}

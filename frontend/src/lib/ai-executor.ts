@@ -6,6 +6,11 @@ import type { Issue, Project, Milestone } from './types';
 import type { SkillResult } from './ai-skills';
 
 type ApiClient = {
+  // Generic methods for new feature skills
+  get: <T = unknown>(path: string) => Promise<T>;
+  post: <T = unknown>(path: string, body: unknown) => Promise<T>;
+  patch: <T = unknown>(path: string, body: unknown) => Promise<T>;
+  delete: (path: string) => Promise<unknown>;
   issues: {
     listByProject: (projectId: string, params?: Record<string, unknown>) => Promise<Issue[]>;
     create: (body: Record<string, unknown>) => Promise<Issue>;
@@ -1184,10 +1189,192 @@ export async function executeSkill(
     case 'adjust_timeline':
       result = await executeAdjustTimeline(args, api, allIssues, projects);
       break;
+    case 'triage_issue':
+      result = await executeTriageIssue(args, api);
+      break;
+    case 'manage_initiatives':
+      result = await executeManageInitiatives(args, api);
+      break;
+    case 'manage_automations':
+      result = await executeManageAutomations(args, api);
+      break;
+    case 'manage_sla':
+      result = await executeManageSla(args, api);
+      break;
+    case 'manage_templates':
+      result = await executeManageTemplates(args, api);
+      break;
+    case 'manage_recurring':
+      result = await executeManageRecurring(args, api);
+      break;
+    case 'export_project':
+      result = await executeExportProject(args, api);
+      break;
     default:
       result = { skill: skillName, success: false, error: `Unknown skill: ${skillName}`, summary: `Unknown skill: ${skillName}` };
   }
 
   // Validate all results before returning to Gemini (Manus pattern)
   return validateSkillResult(result);
+}
+
+// ─── New Feature Executors ────────────────────
+
+async function executeTriageIssue(args: Record<string, unknown>, api: ApiClient): Promise<SkillResult> {
+  const issueId = args.issue_id as string;
+  if (!issueId) return { skill: 'triage_issue', success: false, error: 'issue_id required', summary: 'Missing issue_id' };
+  const result = await api.post(`/issues/${issueId}/triage`, {});
+  return { skill: 'triage_issue', success: true, data: result, summary: `AI triage completed for issue ${issueId}` };
+}
+
+async function executeManageInitiatives(args: Record<string, unknown>, api: ApiClient): Promise<SkillResult> {
+  const action = args.action as string;
+  switch (action) {
+    case 'list': {
+      const data = await api.get('/initiatives');
+      return { skill: 'manage_initiatives', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} initiatives` };
+    }
+    case 'create': {
+      const data = await api.post('/initiatives', { name: args.name, description: args.description });
+      return { skill: 'manage_initiatives', success: true, data, summary: `Created initiative "${args.name}"` };
+    }
+    case 'update': {
+      const body: Record<string, unknown> = {};
+      if (args.name) body.name = args.name;
+      if (args.description) body.description = args.description;
+      if (args.status) body.status = args.status;
+      const data = await api.patch(`/initiatives/${args.initiative_id}`, body);
+      return { skill: 'manage_initiatives', success: true, data, summary: `Updated initiative` };
+    }
+    case 'add_project': {
+      await api.post(`/initiatives/${args.initiative_id}/projects/${args.project_id}`, {});
+      return { skill: 'manage_initiatives', success: true, data: {}, summary: `Added project to initiative` };
+    }
+    case 'remove_project': {
+      await api.delete(`/initiatives/${args.initiative_id}/projects/${args.project_id}`);
+      return { skill: 'manage_initiatives', success: true, data: {}, summary: `Removed project from initiative` };
+    }
+    default:
+      return { skill: 'manage_initiatives', success: false, error: `Unknown action: ${action}`, summary: `Unknown action` };
+  }
+}
+
+async function executeManageAutomations(args: Record<string, unknown>, api: ApiClient): Promise<SkillResult> {
+  const action = args.action as string;
+  const projectId = args.project_id as string;
+  if (!projectId) return { skill: 'manage_automations', success: false, error: 'project_id required', summary: 'Missing project_id' };
+  switch (action) {
+    case 'list': {
+      const data = await api.get(`/projects/${projectId}/automations`);
+      return { skill: 'manage_automations', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} automations` };
+    }
+    case 'create': {
+      const body = {
+        name: args.name,
+        trigger_type: args.trigger_type,
+        trigger_config: args.trigger_config ? JSON.parse(args.trigger_config as string) : {},
+        action_type: args.action_type,
+        action_config: args.action_config ? JSON.parse(args.action_config as string) : {},
+      };
+      const data = await api.post(`/projects/${projectId}/automations`, body);
+      return { skill: 'manage_automations', success: true, data, summary: `Created automation "${args.name}"` };
+    }
+    case 'toggle': {
+      const data = await api.patch(`/automations/${args.automation_id}`, { enabled: args.enabled !== false });
+      return { skill: 'manage_automations', success: true, data, summary: `Toggled automation` };
+    }
+    case 'delete': {
+      await api.delete(`/automations/${args.automation_id}`);
+      return { skill: 'manage_automations', success: true, data: {}, summary: `Deleted automation` };
+    }
+    default:
+      return { skill: 'manage_automations', success: false, error: `Unknown action: ${action}`, summary: `Unknown action` };
+  }
+}
+
+async function executeManageSla(args: Record<string, unknown>, api: ApiClient): Promise<SkillResult> {
+  const action = args.action as string;
+  const projectId = args.project_id as string;
+  if (!projectId) return { skill: 'manage_sla', success: false, error: 'project_id required', summary: 'Missing project_id' };
+  switch (action) {
+    case 'list_rules': {
+      const data = await api.get(`/projects/${projectId}/sla-rules`);
+      return { skill: 'manage_sla', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} SLA rules` };
+    }
+    case 'stats': {
+      const data = await api.get(`/projects/${projectId}/sla-stats`);
+      return { skill: 'manage_sla', success: true, data, summary: `SLA stats retrieved` };
+    }
+    case 'create_rule': {
+      const data = await api.post(`/projects/${projectId}/sla-rules`, { priority: args.priority, deadline_hours: args.deadline_hours });
+      return { skill: 'manage_sla', success: true, data, summary: `Created SLA rule: ${args.priority} = ${args.deadline_hours}h` };
+    }
+    case 'delete_rule': {
+      await api.delete(`/sla-rules/${args.rule_id}`);
+      return { skill: 'manage_sla', success: true, data: {}, summary: `Deleted SLA rule` };
+    }
+    default:
+      return { skill: 'manage_sla', success: false, error: `Unknown action: ${action}`, summary: `Unknown action` };
+  }
+}
+
+async function executeManageTemplates(args: Record<string, unknown>, api: ApiClient): Promise<SkillResult> {
+  const action = args.action as string;
+  const projectId = args.project_id as string;
+  if (!projectId) return { skill: 'manage_templates', success: false, error: 'project_id required', summary: 'Missing project_id' };
+  switch (action) {
+    case 'list': {
+      const data = await api.get(`/projects/${projectId}/templates`);
+      return { skill: 'manage_templates', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} templates` };
+    }
+    case 'create': {
+      const body = { name: args.name, description: args.description, default_priority: args.default_priority, default_type: args.default_type };
+      const data = await api.post(`/projects/${projectId}/templates`, body);
+      return { skill: 'manage_templates', success: true, data, summary: `Created template "${args.name}"` };
+    }
+    case 'delete': {
+      await api.delete(`/templates/${args.template_id}`);
+      return { skill: 'manage_templates', success: true, data: {}, summary: `Deleted template` };
+    }
+    default:
+      return { skill: 'manage_templates', success: false, error: `Unknown action: ${action}`, summary: `Unknown action` };
+  }
+}
+
+async function executeManageRecurring(args: Record<string, unknown>, api: ApiClient): Promise<SkillResult> {
+  const action = args.action as string;
+  const projectId = args.project_id as string;
+  if (!projectId) return { skill: 'manage_recurring', success: false, error: 'project_id required', summary: 'Missing project_id' };
+  switch (action) {
+    case 'list': {
+      const data = await api.get(`/projects/${projectId}/recurring`);
+      return { skill: 'manage_recurring', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} recurring configs` };
+    }
+    case 'create': {
+      const body = { title: args.title, description: args.description, priority: args.priority, issue_type: args.issue_type, cron_expression: args.cron_expression };
+      const data = await api.post(`/projects/${projectId}/recurring`, body);
+      return { skill: 'manage_recurring', success: true, data, summary: `Created recurring issue "${args.title}"` };
+    }
+    case 'toggle': {
+      const data = await api.patch(`/recurring/${args.recurring_id}`, { enabled: args.enabled !== false });
+      return { skill: 'manage_recurring', success: true, data, summary: `Toggled recurring issue` };
+    }
+    case 'trigger': {
+      const data = await api.post(`/recurring/${args.recurring_id}/trigger`, {});
+      return { skill: 'manage_recurring', success: true, data, summary: `Manually triggered recurring issue` };
+    }
+    case 'delete': {
+      await api.delete(`/recurring/${args.recurring_id}`);
+      return { skill: 'manage_recurring', success: true, data: {}, summary: `Deleted recurring config` };
+    }
+    default:
+      return { skill: 'manage_recurring', success: false, error: `Unknown action: ${action}`, summary: `Unknown action` };
+  }
+}
+
+async function executeExportProject(args: Record<string, unknown>, api: ApiClient): Promise<SkillResult> {
+  const projectId = args.project_id as string;
+  if (!projectId) return { skill: 'export_project', success: false, error: 'project_id required', summary: 'Missing project_id' };
+  const data = await api.get(`/projects/${projectId}/export`);
+  return { skill: 'export_project', success: true, data, summary: `Exported project data` };
 }

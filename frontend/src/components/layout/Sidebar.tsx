@@ -6,6 +6,7 @@ import {
   LayoutDashboard, Kanban, PanelLeftClose, PanelLeft, X,
   Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox,
   CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink, KeyRound, Search,
+  Flag, Workflow,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -83,6 +84,7 @@ export function Sidebar() {
     { to: currentProjectSlug ? `/projects/${currentProjectSlug}/milestones` : '/milestones', icon: Target, label: t('sidebar.milestones') },
     { to: '/roadmap', icon: CalendarRange, label: t('sidebar.roadmap') },
     ...(currentProjectSlug ? [{ to: `/projects/${currentProjectSlug}/sprints`, icon: Zap, label: t('sidebar.sprints') }] : []),
+    { to: '/initiatives', icon: Flag, label: t('sidebar.initiatives') },
   ];
 
   const toolItems = [
@@ -90,6 +92,7 @@ export function Sidebar() {
     { to: '/analytics', icon: BarChart3, label: t('sidebar.analytics') },
     { to: '/webhooks', icon: Webhook, label: t('sidebar.webhooks') },
     { to: '/api-keys', icon: KeyRound, label: t('sidebar.apiKeys') },
+    ...(currentProjectSlug ? [{ to: `/projects/${currentProjectSlug}/automations`, icon: Workflow, label: t('sidebar.automations') }] : []),
   ];
 
   /* ─── Render Helpers ─────────────────────── */
