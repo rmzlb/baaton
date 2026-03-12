@@ -9,6 +9,33 @@
 
 ---
 
+## Quick Start
+
+```bash
+# Set your credentials
+export BAATON=https://api.baaton.dev/api/v1
+export KEY=baa_your_api_key_here
+
+# List projects
+curl -s $BAATON/projects -H "Authorization: Bearer $KEY"
+
+# Create an issue
+curl -s -X POST $BAATON/issues -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"project_id":"UUID","title":"Fix login bug","priority":"high","status":"todo"}'
+
+# Update status
+curl -s -X PATCH $BAATON/issues/ISSUE_ID -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" -d '{"status":"in_progress"}'
+
+# Post agent summary
+curl -s -X POST $BAATON/issues/ISSUE_ID/tldr -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_name":"my-agent","summary":"Fixed by refactoring auth module","files_changed":["src/auth.rs"],"tests_status":"passed"}'
+```
+
+---
+
 ## Enums
 
 - **Priority:** `urgent` | `high` | `medium` | `low`
@@ -26,19 +53,18 @@
 
 ### GET /projects
 List all projects in your organization.
-**Response:** `[{ id, name, slug, prefix, description, statuses[], created_at }]`
+
+```bash
+curl -s $BAATON/projects -H "Authorization: Bearer $KEY"
+```
+
+Response: `{ "data": [{ "id": "uuid", "name": "My Project", "slug": "my-project", "prefix": "MP", "description": "...", "statuses": [...], "created_at": "2026-01-01T00:00:00Z" }] }`
 
 ### GET /projects/{id}
-Get a single project with configuration.
+Get a single project with its statuses configuration.
 
 ### POST /projects
-Create a project.
-| Field | Type | Required |
-|-------|------|----------|
-| name | string | ✅ |
-| slug | string | ✅ |
-| prefix | string | ✅ (e.g. "HLM") |
-| description | string | — |
+Create a project: `{ "name": "My Project", "slug": "my-project", "prefix": "MP", "description": "..." }`
 
 ### PATCH /projects/{id}
 Update project name, description, statuses, etc.
@@ -52,11 +78,17 @@ Delete a project and all its issues.
 
 ### GET /issues
 List all issues across all projects.
-**Params:** `status`, `priority`, `type`, `search`, `assignee_id`, `label`, `limit` (default 1000), `offset`
+
+```bash
+# With filters
+curl -s "$BAATON/issues?status=todo&priority=urgent&limit=50" -H "Authorization: Bearer $KEY"
+```
+
+Params: `status`, `priority`, `type`, `search`, `assignee_id`, `label`, `limit` (default 1000), `offset`
 
 ### GET /projects/{id}/issues
 List issues for a specific project.
-**Params:** `status`, `priority`, `type`, `category`, `search`, `limit`, `offset`
+Params: `status`, `priority`, `type`, `category`, `search`, `limit`, `offset`
 
 ### GET /issues/{id}
 Get a single issue with TLDRs, comments, and relations.
@@ -66,32 +98,55 @@ Get issues assigned to the authenticated user.
 
 ### POST /issues
 Create an issue.
+
+```bash
+curl -s -X POST $BAATON/issues -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "uuid-here",
+    "title": "Fix login timeout",
+    "description": "Users report timeout after 30s on slow connections",
+    "issue_type": "bug",
+    "priority": "high",
+    "status": "todo",
+    "tags": ["backend", "auth"],
+    "due_date": "2026-04-01"
+  }'
+```
+
+Response includes `_hints` with recommended next actions.
+
 | Field | Type | Required | Default |
 |-------|------|----------|---------|
-| project_id | UUID | ✅ | — |
-| title | string | ✅ | — |
-| description | string | — | null |
-| issue_type | string | — | feature |
-| status | string | — | backlog |
-| priority | string | — | null |
-| assignee_ids | string[] | — | auto-assign |
-| milestone_id | UUID | — | null |
-| sprint_id | UUID | — | null |
-| parent_id | UUID | — | null |
-| tags | string[] | — | [] |
-| category | string[] | — | [] |
-| due_date | date | — | null |
-| estimate | integer | — | null |
-| attachments | JSON[] | — | [] |
+| project_id | UUID | yes | — |
+| title | string | yes | — |
+| description | string | no | null |
+| issue_type | string | no | feature |
+| status | string | no | backlog |
+| priority | string | no | null |
+| assignee_ids | string[] | no | auto-assign |
+| milestone_id | UUID | no | null |
+| sprint_id | UUID | no | null |
+| parent_id | UUID | no | null |
+| tags | string[] | no | [] |
+| category | string[] | no | [] |
+| due_date | date | no | null |
+| estimate | integer | no | null |
+| attachments | JSON[] | no | [] |
 
 ### PATCH /issues/{id}
-Update an issue. All fields optional.
+Update an issue. Only provided fields are changed.
+
+```bash
+curl -s -X PATCH $BAATON/issues/ISSUE_ID -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" -d '{"status":"done","priority":"low"}'
+```
 
 ### DELETE /issues/{id}
-Delete an issue.
+Delete an issue permanently.
 
 ### PATCH /issues/batch
-Bulk update issues: `{ "ids": ["uuid1","uuid2"], "updates": { "status": "done" } }`
+Bulk update: `{ "ids": ["uuid1","uuid2"], "updates": { "status": "done", "priority": "low" } }`
 
 ### DELETE /issues/batch
 Bulk delete: `{ "ids": ["uuid1","uuid2"] }`
@@ -110,10 +165,18 @@ Reorder issue in board: `{ "status": "todo", "position": 2 }`
 ## Comments
 
 ### GET /issues/{id}/comments
-List comments on an issue.
+List comments on an issue, ordered by creation date.
 
 ### POST /issues/{id}/comments
-Add a comment. Body: `{ "body": "markdown text", "author_id?": "...", "author_name?": "..." }`
+Add a comment (Markdown supported, max 50,000 chars).
+
+```bash
+curl -s -X POST $BAATON/issues/ISSUE_ID/comments -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"body":"## Analysis\nThe root cause is in `auth.rs` line 42.\n\n```rust\nlet timeout = Duration::from_secs(30);\n```"}'
+```
+
+Fields: `body` (required), `author_id` (optional, auto-filled), `author_name` (optional, auto-filled from API key name)
 
 ### DELETE /issues/{issue_id}/comments/{comment_id}
 Delete a comment.
@@ -123,14 +186,27 @@ Delete a comment.
 ## TLDRs (Agent Summaries)
 
 ### POST /issues/{id}/tldr
-Post an agent work summary.
+Post an agent work summary. Designed for CI/CD and coding agents.
+
+```bash
+curl -s -X POST $BAATON/issues/ISSUE_ID/tldr -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_name": "codex",
+    "summary": "Refactored auth module to use async timeouts. Added retry logic for slow connections. All tests pass.",
+    "files_changed": ["src/auth.rs", "src/config.rs", "tests/auth_test.rs"],
+    "tests_status": "passed",
+    "pr_url": "https://github.com/org/repo/pull/42"
+  }'
+```
+
 | Field | Type | Required |
 |-------|------|----------|
-| agent_name | string | ✅ |
-| summary | string | ✅ |
-| files_changed | string[] | — |
-| tests_status | string | — |
-| pr_url | string | — |
+| agent_name | string | yes |
+| summary | string | yes |
+| files_changed | string[] | no |
+| tests_status | string | no |
+| pr_url | string | no |
 
 ---
 
@@ -140,7 +216,7 @@ Post an agent work summary.
 List project labels.
 
 ### POST /projects/{id}/tags
-Create label: `{ "name": "bug", "color": "#ef4444" }`
+Create: `{ "name": "critical", "color": "#ef4444" }`
 
 ### PATCH /tags/{id}
 Update label.
@@ -153,10 +229,10 @@ Delete label.
 ## Milestones
 
 ### GET /projects/{id}/milestones
-List milestones for a project.
+List milestones.
 
 ### POST /projects/{id}/milestones
-Create: `{ "name": "v1.0", "due_date": "2026-04-01", "description": "..." }`
+Create: `{ "name": "v1.0", "due_date": "2026-04-01", "description": "First public release" }`
 
 ### PATCH /milestones/{id}
 Update milestone.
@@ -172,7 +248,7 @@ Delete milestone.
 List sprints.
 
 ### POST /projects/{id}/sprints
-Create sprint: `{ "name": "Sprint 1", "start_date": "...", "end_date": "...", "goal": "..." }`
+Create: `{ "name": "Sprint 1", "start_date": "2026-03-01", "end_date": "2026-03-14", "goal": "Ship auth module" }`
 
 ### PATCH /sprints/{id}
 Update sprint.
@@ -213,7 +289,7 @@ Update initiative.
 Delete initiative.
 
 ### POST /initiatives/{id}/projects
-Link project to initiative: `{ "project_id": "..." }`
+Link project: `{ "project_id": "..." }`
 
 ### DELETE /initiatives/{id}/projects/{project_id}
 Unlink project.
@@ -226,16 +302,22 @@ Unlink project.
 List automations for a project.
 
 ### POST /projects/{id}/automations
-Create automation:
-```json
-{
-  "name": "Auto-close stale issues",
-  "trigger": "due_date_passed",
-  "conditions": [{"field": "status", "operator": "equals", "value": "todo"}],
-  "actions": [{"type": "set_status", "value": "cancelled"}],
-  "enabled": true
-}
+Create an automation rule.
+
+```bash
+curl -s -X POST $BAATON/projects/PROJECT_ID/automations -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Auto-close stale issues",
+    "trigger": "due_date_passed",
+    "conditions": [{"field": "status", "operator": "equals", "value": "todo"}],
+    "actions": [{"type": "set_status", "value": "cancelled"}],
+    "enabled": true
+  }'
 ```
+
+Triggers: `status_changed`, `priority_changed`, `label_added`, `issue_created`, `comment_added`, `assignee_changed`, `due_date_passed`
+Actions: `set_status`, `set_priority`, `add_label`, `assign_user`, `send_webhook`, `add_comment`, `run_agent`
 
 ### PATCH /automations/{id}
 Update automation (name, trigger, conditions, actions, enabled).
@@ -251,7 +333,15 @@ Delete automation.
 List webhook subscriptions.
 
 ### POST /webhooks
-Create: `{ "url": "https://...", "events": ["issue.created", "status.changed"], "secret": "optional" }`
+Create a webhook.
+
+```bash
+curl -s -X POST $BAATON/webhooks -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://your-server.com/webhook","events":["issue.created","status.changed"],"secret":"optional-hmac-secret"}'
+```
+
+Payload sent to your URL: `{ "event": "issue.created", "data": { "issue": {...} }, "timestamp": "2026-03-12T..." }`
 
 ### PATCH /webhooks/{id}
 Update webhook.
@@ -267,16 +357,16 @@ Delete webhook.
 List recurring issue templates.
 
 ### POST /projects/{id}/recurring
-Create: `{ "title": "Weekly review", "cron": "0 9 * * 1", "template": {...} }`
+Create: `{ "title": "Weekly review", "cron": "0 9 * * 1", "template": { "priority": "medium", "status": "todo" } }`
 
 ### PATCH /recurring/{id}
-Update recurring template.
+Update template.
 
 ### DELETE /recurring/{id}
 Delete template.
 
 ### POST /recurring/{id}/trigger
-Manually trigger a recurring issue.
+Manually trigger a recurring issue now.
 
 ---
 
@@ -286,7 +376,7 @@ Manually trigger a recurring issue.
 List SLA rules.
 
 ### POST /projects/{id}/sla-rules
-Create SLA: `{ "name": "Urgent 4h", "priority": "urgent", "response_hours": 4, "resolution_hours": 24 }`
+Create: `{ "name": "Urgent 4h", "priority": "urgent", "response_hours": 4, "resolution_hours": 24 }`
 
 ### PATCH /sla-rules/{id}
 Update rule.
@@ -295,7 +385,7 @@ Update rule.
 Delete rule.
 
 ### GET /projects/{id}/sla-stats
-Get SLA compliance stats.
+Get SLA compliance statistics.
 
 ---
 
@@ -305,7 +395,7 @@ Get SLA compliance stats.
 List issue templates.
 
 ### POST /projects/{id}/templates
-Create template: `{ "name": "Bug Report", "template": { "title": "...", "description": "...", "priority": "high" } }`
+Create: `{ "name": "Bug Report", "template": { "title": "[BUG] ", "description": "## Steps\\n1.\\n\\n## Expected\\n\\n## Actual", "priority": "high", "issue_type": "bug" } }`
 
 ### PATCH /templates/{id}
 Update template.
@@ -360,7 +450,7 @@ List sub-issues of a parent.
 List attachments.
 
 ### POST /issues/{id}/attachments
-Add attachment: `{ "url": "...", "name": "screenshot.png", "size": 1024, "mime_type": "image/png" }`
+Add: `{ "url": "https://...", "name": "screenshot.png", "size": 1024, "mime_type": "image/png" }`
 
 ### DELETE /issues/{id}/attachments/{att_id}
 Remove attachment.
@@ -383,7 +473,7 @@ Get org-wide activity feed.
 List user notifications.
 
 ### GET /notifications/count
-Get unread count.
+Get unread count: `{ "data": { "count": 5 } }`
 
 ### POST /notifications/{id}/read
 Mark as read.
@@ -402,7 +492,11 @@ Update preferences.
 ## Search
 
 ### GET /search?q={query}
-Full-text search within current org. Supports prefix matching (e.g. "HLM" → HLM-* issues).
+Full-text search within current org. Supports prefix matching (e.g. "HLM" finds HLM-* issues).
+
+```bash
+curl -s "$BAATON/search?q=login+bug" -H "Authorization: Bearer $KEY"
+```
 
 ### GET /search/global?q={query}
 Cross-org search across all user organizations.
@@ -412,16 +506,15 @@ Cross-org search across all user organizations.
 ## AI
 
 ### POST /ai/chat
-AI chat. Requires `ai:chat` permission.
-```json
-{
-  "messages": [{"role": "user", "content": "List urgent bugs"}],
-  "model": "gemini-3-flash-preview",
-  "system_instruction": "You are a PM assistant",
-  "tools": []
-}
+AI chat with project context. Requires `ai:chat` permission.
+
+```bash
+curl -s -X POST $BAATON/ai/chat -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"List all urgent bugs in HLM project"}]}'
 ```
-**Quota:** Free=50/mo, Pro=2000/mo, Enterprise=unlimited. Returns 429 when exceeded.
+
+Quota: Free=50 messages/month, Pro=2000, Enterprise=unlimited. Returns HTTP 429 when exceeded with `{ "error": "AI quota exceeded", "upgrade_url": "/billing" }`.
 
 ### GET /ai/key
 Get Gemini API key (for frontend use).
@@ -430,34 +523,52 @@ Get Gemini API key (for frontend use).
 AI-powered full project review.
 
 ### POST /issues/{id}/triage
-AI triage: auto-assign priority, labels, assignee.
+AI triage: auto-assign priority, labels, and assignee.
 
 ---
 
 ## Billing
 
 ### GET /billing
-Get plan, usage across all orgs, limits.
+Get current plan, usage across all orgs, and limits.
+
+```bash
+curl -s $BAATON/billing -H "Authorization: Bearer $KEY"
+```
+
+Response: `{ "data": { "plan": "pro", "usage": { "orgs": { "current": 2, "limit": 5 }, "projects": { "current": 8, "limit": 25 }, "issues": { "current": 342, "limit": -1 }, "ai_messages": { "current": 45, "limit": 2000 } } } }`
+
+Note: `-1` means unlimited.
 
 ### GET /billing/ai-usage?from=YYYY-MM-DD&to=YYYY-MM-DD
-Detailed AI usage: messages, tokens_in/out, by_type, daily breakdown, estimated cost.
+Detailed AI usage: messages, tokens in/out, by type, daily breakdown, estimated cost.
 
 ---
 
 ## API Keys
 
+API keys require Clerk JWT authentication (not API key auth). Keys cannot manage other keys.
+
 ### GET /api-keys
-List org API keys. Requires Clerk JWT (not API key auth).
+List org API keys.
 
 ### POST /api-keys
-Create key: `{ "name": "...", "permissions": ["issues:read","issues:write"], "project_ids": [], "expires_at": null }`
-**Returns plaintext key once.** Store it immediately.
+Create key.
+
+```bash
+# Requires Clerk JWT, not API key
+curl -s -X POST $BAATON/api-keys -H "Authorization: Bearer CLERK_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"CI Agent","permissions":["issues:read","issues:write","comments:write"],"expires_at":"2027-01-01"}'
+```
+
+Returns the plaintext key once. Store it immediately.
 
 ### PATCH /api-keys/{id}
 Update key (name, permissions, project_ids, expires_at).
 
 ### POST /api-keys/{id}/regenerate
-Regenerate key. Old key immediately revoked.
+Regenerate key. Old key is immediately revoked.
 
 ### DELETE /api-keys/{id}
 Revoke key.
@@ -470,7 +581,7 @@ Revoke key.
 List pending invites.
 
 ### POST /invites
-Invite member: `{ "email": "...", "role": "member" }`
+Invite member: `{ "email": "dev@company.com", "role": "member" }`
 
 ### GET /invite/{code}
 Accept invite (public endpoint).
@@ -480,7 +591,7 @@ Accept invite (public endpoint).
 ## Metrics
 
 ### GET /metrics?days=30
-Project metrics: issues created/closed, velocity, burndown data.
+Project metrics: issues created/closed, velocity, burndown, by-status, by-priority breakdowns.
 
 ---
 
@@ -490,7 +601,7 @@ Project metrics: issues created/closed, velocity, burndown data.
 Get autonomous agent settings (Pro plan only).
 
 ### PUT /agent-config
-Update agent settings: `{ "enabled": true, "auto_triage": true, "auto_assign": true, ... }`
+Update: `{ "enabled": true, "auto_triage": true, "auto_assign": true, "auto_label": true }`
 
 ---
 
@@ -504,13 +615,13 @@ Export project data.
 
 ---
 
-## Public Endpoints (No Auth)
+## Public Endpoints (No Auth Required)
 
 ### GET /public/docs
-API documentation in Markdown.
+This document. Full API reference in Markdown.
 
 ### GET /public/skill
-Agent skill file (SKILL.md format).
+Agent skill file (SKILL.md format for OpenClaw, Codex, etc.)
 
 ### POST /public/{slug}/submit
 Public issue submission form.
@@ -570,10 +681,35 @@ Disconnect.
 
 ---
 
-## Admin
+## Admin (Superadmin Only)
 
 ### PATCH /admin/orgs/{id}/plan
-Set org plan (free/pro/enterprise). Admin only.
+Set org plan (also updates all member user plans).
+
+### PATCH /admin/users/{user_id}/plan
+Set user plan directly: `{ "plan": "pro" }`
+Valid plans: `free`, `pro`, `enterprise`, `partner`, `tester`, `unlimited`
+
+### GET /admin/overview
+Platform-wide analytics: totals, AI cost, plan distribution, daily issues, top orgs.
+
+### GET /admin/users
+List all orgs with plans, usage, members.
+
+### GET /admin/superadmin/check
+Check if current user is superadmin.
+
+### GET /admin/superadmins
+List super admins.
+
+### POST /admin/superadmins
+Add super admin: `{ "email": "admin@company.com" }`
+
+### DELETE /admin/superadmins/{email}
+Remove super admin (cannot remove yourself).
+
+### GET /admin/audit-log
+Paginated admin action log.
 
 ---
 
@@ -591,15 +727,61 @@ Set org plan (free/pro/enterprise). Admin only.
 | AI msgs/mo | 50 | 2,000 | Unlimited |
 | API keys | 3 | Unlimited | Unlimited |
 | Automations | 3 | Unlimited | Unlimited |
-| Webhooks | ❌ | ✅ | ✅ |
-| BYOK | ❌ | ✅ | ✅ |
-| SAML | ❌ | ❌ | ✅ |
+| Webhooks | No | Yes | Yes |
+| BYOK | No | Yes | Yes |
+| SAML | No | No | Yes |
 
-## Agent Workflow
+---
 
-1. `GET /projects` → find your project
-2. `POST /issues` → create issue (response includes `_hints` for next steps)
-3. `PATCH /issues/{id}` → update status to `in_progress`
-4. `POST /issues/{id}/comments` → post progress updates
-5. `POST /issues/{id}/tldr` → post completion summary
-6. `PATCH /issues/{id}` → set status to `done`
+## Common Errors & Troubleshooting
+
+### Authentication Failed (401)
+```json
+{"error": "Unauthorized"}
+```
+Check: Is your API key valid? Does the header use `Bearer` prefix? Is the key revoked or expired?
+
+### Invalid Enum Value (400)
+```json
+{"error": "Invalid status 'open'. Accepted values: backlog, todo, in_progress, in_review, done, cancelled", "accepted_values": ["backlog","todo","in_progress","in_review","done","cancelled"], "field": "status"}
+```
+Fix: Use the exact values from `accepted_values`. Statuses are per-project — fetch them via `GET /projects`.
+
+### Plan Limit Exceeded (402)
+```json
+{"error": "Issue limit reached (500). Upgrade to Pro for unlimited issues.", "upgrade_url": "/billing"}
+```
+Fix: Upgrade plan or delete unused issues.
+
+### AI Quota Exceeded (429)
+```json
+{"error": "AI quota exceeded (50/50 this month)", "upgrade_url": "/billing"}
+```
+Fix: Wait for next month, upgrade to Pro (2000/mo), or use BYOK (Pro feature).
+
+### Organization Required (400)
+```json
+{"error": "Organization required"}
+```
+Fix: Ensure your Clerk JWT includes an active organization. API keys are always org-scoped.
+
+### Permission Denied (403)
+```json
+{"error": "Insufficient permissions. Required: issues:write"}
+```
+Fix: Update your API key permissions via the web UI or `PATCH /api-keys/{id}`.
+
+---
+
+## Agent Workflow (Recommended)
+
+```
+1. GET /projects                        → find your project
+2. POST /issues                         → create issue (check _hints in response)
+3. PATCH /issues/{id} status=in_progress → signal you're working on it
+4. POST /issues/{id}/comments           → post progress updates
+5. POST /issues/{id}/tldr               → post completion summary with files_changed
+6. PATCH /issues/{id} status=done       → mark complete
+```
+
+For bulk operations: `PATCH /issues/batch` with `{ "ids": [...], "updates": { "status": "done" } }`
