@@ -9,17 +9,19 @@ import {
   Workflow, Plus, Trash2, Loader2, X, ArrowRight,
   ArrowLeftRight, AlertTriangle, UserPlus, Tag, Clock,
   CheckCircle, User, Globe, MessageSquare, FolderOpen,
-  Zap, ChevronRight, Layers,
+  Zap, ChevronRight, Layers, PlusCircle, Bot,
 } from 'lucide-react';
 import type { Automation, Project } from '@/lib/types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 const TRIGGER_TYPES = [
+  'issue_created',
   'status_changed',
   'priority_changed',
   'assignee_changed',
   'label_added',
+  'comment_added',
   'due_date_passed',
 ] as const;
 
@@ -30,6 +32,7 @@ const ACTION_TYPES = [
   'assign_user',
   'send_webhook',
   'add_comment',
+  'run_agent',
 ] as const;
 
 type TriggerType = typeof TRIGGER_TYPES[number];
@@ -57,10 +60,12 @@ interface TriggerMeta { Icon: LucideIcon; color: string; bg: string; border: str
 interface ActionMeta  { Icon: LucideIcon; color: string; bg: string; border: string }
 
 const TRIGGER_META: Record<TriggerType, TriggerMeta> = {
+  issue_created:   { Icon: PlusCircle,     color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
   status_changed:  { Icon: ArrowLeftRight, color: 'text-blue-400',   bg: 'bg-blue-500/10',   border: 'border-blue-500/20' },
   priority_changed:{ Icon: AlertTriangle,  color: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
   assignee_changed:{ Icon: UserPlus,       color: 'text-green-400',  bg: 'bg-green-500/10',  border: 'border-green-500/20' },
   label_added:     { Icon: Tag,            color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
+  comment_added:   { Icon: MessageSquare,  color: 'text-cyan-400',   bg: 'bg-cyan-500/10',   border: 'border-cyan-500/20' },
   due_date_passed: { Icon: Clock,          color: 'text-red-400',    bg: 'bg-red-500/10',    border: 'border-red-500/20' },
 };
 
@@ -71,6 +76,7 @@ const ACTION_META: Record<ActionType, ActionMeta> = {
   assign_user:  { Icon: User,          color: 'text-sky-400',     bg: 'bg-sky-500/10',     border: 'border-sky-500/20' },
   send_webhook: { Icon: Globe,         color: 'text-indigo-400',  bg: 'bg-indigo-500/10',  border: 'border-indigo-500/20' },
   add_comment:  { Icon: MessageSquare, color: 'text-pink-400',    bg: 'bg-pink-500/10',    border: 'border-pink-500/20' },
+  run_agent:    { Icon: Bot,           color: 'text-accent',      bg: 'bg-accent/10',      border: 'border-accent/20' },
 };
 
 const STATUS_OPTIONS: string[] = ['backlog', 'todo', 'in_progress', 'in_review', 'done'];

@@ -48,8 +48,10 @@ const VALID_TRIGGERS: &[&str] = &[
     "issue_created",
     "status_changed",
     "priority_changed",
+    "assignee_changed",
     "label_added",
     "comment_added",
+    "due_date_passed",
 ];
 
 // ─── Routes ──────────────────────────────────────────
