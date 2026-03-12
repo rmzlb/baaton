@@ -866,7 +866,6 @@ export function Automations() {
   };
 
   const handleDelete = (automation: Automation) => {
-    if (!confirm(t('automations.deleteConfirm', { name: automation.name }))) return;
     setDeletingId(automation.id);
     deleteMutation.mutate(automation.id);
   };

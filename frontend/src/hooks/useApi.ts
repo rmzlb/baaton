@@ -703,19 +703,19 @@ export function useApi() {
       }>): Promise<Automation> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
-          return api.patch<Automation>(`/projects/${projectId}/automations/${id}`, body, token);
+          return api.patch<Automation>(`/automations/${id}`, body, token);
         }),
 
-      toggle: async (projectId: string, id: string, enabled: boolean): Promise<Automation> =>
+      toggle: async (_projectId: string, id: string, enabled: boolean): Promise<Automation> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
-          return api.patch<Automation>(`/projects/${projectId}/automations/${id}`, { enabled }, token);
+          return api.patch<Automation>(`/automations/${id}`, { enabled }, token);
         }),
 
-      delete: async (projectId: string, id: string): Promise<void> =>
+      delete: async (_projectId: string, id: string): Promise<void> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
-          return api.delete(`/projects/${projectId}/automations/${id}`, token);
+          return api.delete(`/automations/${id}`, token);
         }),
     },
 
