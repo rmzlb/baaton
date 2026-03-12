@@ -1127,6 +1127,23 @@ As a [user], I want to [action] so that [benefit].
 'search.filterStatus': 'Status:',
 'search.filterClear': 'Clear',
 
+// ─── Slack Integration ──────────────────
+'slack.title': 'Slack',
+'slack.description': 'Connect Slack workspaces for notifications and slash commands',
+'slack.addWorkspace': 'Add Workspace',
+'slack.slashEndpoint': 'Slash command endpoint (set in your Slack app):',
+'slack.slashHint': 'Configure this URL as a Slash Command in your Slack app settings',
+'slack.noIntegrations': 'No Slack workspaces connected yet',
+'slack.connectedSince': 'Connected since',
+'slack.teamId': 'Team ID',
+'slack.teamName': 'Workspace Name (optional)',
+'slack.botToken': 'Bot Token (xoxb-...)',
+'slack.webhookUrl': 'Webhook URL (optional)',
+'slack.connect': 'Connect',
+'slack.createApp': 'Create a Slack App on api.slack.com',
+'slack.created': 'Slack workspace connected',
+'slack.deleted': 'Slack workspace disconnected',
+
 // ─── All Issues (additional) ──────────────────
 'allIssues.saveView': 'Save view',
 'allIssues.viewNamePlaceholder': 'View name…',

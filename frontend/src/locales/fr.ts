@@ -1127,6 +1127,23 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'search.filterStatus': 'Statut :',
 'search.filterClear': 'Effacer',
 
+// ─── Intégration Slack ──────────────────
+'slack.title': 'Slack',
+'slack.description': 'Connecter des workspaces Slack pour les notifications et commandes slash',
+'slack.addWorkspace': 'Ajouter un workspace',
+'slack.slashEndpoint': 'Endpoint commande slash (à configurer dans votre app Slack) :',
+'slack.slashHint': 'Configurez cette URL comme Slash Command dans les paramètres de votre app Slack',
+'slack.noIntegrations': 'Aucun workspace Slack connecté',
+'slack.connectedSince': 'Connecté depuis le',
+'slack.teamId': 'Team ID',
+'slack.teamName': 'Nom du workspace (optionnel)',
+'slack.botToken': 'Bot Token (xoxb-...)',
+'slack.webhookUrl': 'URL Webhook (optionnel)',
+'slack.connect': 'Connecter',
+'slack.createApp': 'Créer une Slack App sur api.slack.com',
+'slack.created': 'Workspace Slack connecté',
+'slack.deleted': 'Workspace Slack déconnecté',
+
 // ─── All Issues (additional) ──────────────────
 'allIssues.saveView': 'Sauvegarder la vue',
 'allIssues.viewNamePlaceholder': 'Nom de la vue…',

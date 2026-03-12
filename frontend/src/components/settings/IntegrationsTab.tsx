@@ -8,6 +8,7 @@ import { GitHubInstallButton } from '@/components/github/GitHubInstallButton';
 import { GitHubRepoMappingCard } from '@/components/github/GitHubRepoMappingCard';
 import { GitHubRepoSelector } from '@/components/github/GitHubRepoSelector';
 import { OpenClawSettings } from '@/components/integrations/OpenClawSettings';
+import { SlackSettings } from '@/components/integrations/SlackSettings';
 import type { GitHubRepository } from '@/lib/types';
 
 export function IntegrationsTab() {
@@ -74,6 +75,9 @@ export function IntegrationsTab() {
 
       {/* OpenClaw Card */}
       <OpenClawSettings />
+
+      {/* Slack Card */}
+      <SlackSettings />
 
       {/* GitHub Card */}
       <div className="rounded-xl border border-border bg-surface p-6">
