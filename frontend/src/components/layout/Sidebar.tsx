@@ -105,6 +105,7 @@ export function Sidebar() {
     { to: '/search', icon: Search, label: t('sidebar.search') || 'Search' },
     { to: '/ai', icon: Sparkles, label: t('sidebar.aiChat') },
     { to: '/analytics', icon: BarChart3, label: t('sidebar.analytics') },
+
     { to: '/webhooks', icon: Webhook, label: t('sidebar.webhooks') },
     { to: '/api-keys', icon: KeyRound, label: t('sidebar.apiKeys') },
     { to: '/billing', icon: CreditCard, label: t('sidebar.billing') },

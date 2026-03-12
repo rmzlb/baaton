@@ -84,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
         (38, include_str!("../migrations/038_superadmin.sql")),
         (39, include_str!("../migrations/039_admin_audit_log.sql")),
         (40, include_str!("../migrations/040_user_plans.sql")),
+        (41, include_str!("../migrations/041_gamification.sql")),
     ];
 
     for &(version, sql) in migrations {

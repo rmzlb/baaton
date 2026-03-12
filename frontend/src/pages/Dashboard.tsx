@@ -12,6 +12,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
+import { GamificationWidget } from '@/components/gamification/GamificationWidget';
 import { cn } from '@/lib/utils';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import type { Issue, Project } from '@/lib/types';
@@ -560,13 +561,17 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Activity Feed */}
-        <div>
-          <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4">
-            {t('dashboard.recentActivity')}
-          </h2>
-          <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
-            <ActivityFeed limit={15} />
+        {/* Right column: Gamification + Activity Feed */}
+        <div className="space-y-4">
+          <GamificationWidget />
+
+          <div>
+            <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4">
+              {t('dashboard.recentActivity')}
+            </h2>
+            <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
+              <ActivityFeed limit={15} />
+            </div>
           </div>
         </div>
       </div>

@@ -46,5 +46,15 @@ pub async fn create(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
+    // ── Gamification: award XP for TLDR (fire-and-forget) ──
+    {
+        let pool2 = pool.clone();
+        let uid = auth.user_id.clone();
+        let oid = org_id.to_string();
+        tokio::spawn(async move {
+            crate::routes::gamification::record_activity(&pool2, &uid, &oid, "tldr").await;
+        });
+    }
+
     Ok(Json(ApiResponse::new(tldr)))
 }

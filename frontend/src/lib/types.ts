@@ -507,3 +507,29 @@ export interface Cycle {
   completed_points: number;
   created_at: string;
 }
+
+// ─── Activity & Gamification ──────────────────────────
+
+export interface UserActivityStats {
+  current_streak: number;
+  longest_streak: number;
+  velocity_7d: number;
+  velocity_30d: number;
+  velocity_trend: 'up' | 'down' | 'stable';
+  personal_bests: {
+    best_day: number;
+    best_week: number;
+  };
+  today: { actions: number };
+  this_week: { actions: number };
+}
+
+export interface HeatmapCell {
+  date: string;
+  count: number;
+}
+
+export interface HeatmapData {
+  cells: HeatmapCell[];
+  days: number;
+}

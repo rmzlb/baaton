@@ -159,6 +159,48 @@ pub async fn get_metrics(
         .map(|r| json!({"date": r.date.to_string(), "count": r.count}))
         .collect();
 
+    // Velocity: issues closed per day over 7d and 30d
+    let since_7d = chrono::Utc::now() - chrono::Duration::days(7);
+    let since_30d = chrono::Utc::now() - chrono::Duration::days(30);
+
+    let closed_7d: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        WHERE p.org_id = $1 AND i.closed_at IS NOT NULL AND i.closed_at >= $2
+        "#,
+    )
+    .bind(org_id)
+    .bind(since_7d)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    let closed_30d: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        WHERE p.org_id = $1 AND i.closed_at IS NOT NULL AND i.closed_at >= $2
+        "#,
+    )
+    .bind(org_id)
+    .bind(since_30d)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    let velocity_7d = (closed_7d as f64) / 7.0;
+    let velocity_30d = (closed_30d as f64) / 30.0;
+    let velocity_trend = if velocity_7d > velocity_30d * 1.1 {
+        "up"
+    } else if velocity_7d < velocity_30d * 0.9 {
+        "down"
+    } else {
+        "stable"
+    };
+
     Ok(Json(json!({
         "issues_created": issues_created,
         "issues_closed": issues_closed,
@@ -167,5 +209,10 @@ pub async fn get_metrics(
         "issues_by_status": issues_by_status,
         "issues_by_priority": issues_by_priority,
         "period_days": days,
+        "velocity": {
+            "issues_per_day_7d": (velocity_7d * 100.0).round() / 100.0,
+            "issues_per_day_30d": (velocity_30d * 100.0).round() / 100.0,
+            "trend": velocity_trend,
+        },
     })))
 }

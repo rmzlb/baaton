@@ -34,6 +34,7 @@ pub mod slack;
 mod admin;
 mod initiatives;
 mod import_export;
+pub mod gamification;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -165,6 +166,9 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Import/Export (BAA-23)
         .route("/projects/{id}/export", get(import_export::export))
         .route("/projects/{id}/import", post(import_export::import))
+        // Gamification
+        .route("/gamification/me", get(gamification::get_me))
+        .route("/gamification/heatmap", get(gamification::get_heatmap))
         // Slack (BAA-25)
         .route("/integrations/slack", get(slack::list).post(slack::create))
         .route("/integrations/slack/{id}", delete(slack::remove))

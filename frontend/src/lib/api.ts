@@ -1,4 +1,5 @@
 import { resolveApiOrigin } from './api-origin';
+import type { UserActivityStats, HeatmapData } from './types';
 
 const API_BASE = `${resolveApiOrigin()}/api/v1`;
 
@@ -97,6 +98,12 @@ export const api = {
 
   delete: <T>(path: string, token?: string | null) =>
     request<T>(path, { method: 'DELETE', token }),
+
+  // Gamification
+  gamification: {
+    me: (token: string) => request<UserActivityStats>('/gamification/me', { token }),
+    heatmap: (token: string, days = 90) => request<HeatmapData>(`/gamification/heatmap?days=${days}`, { token }),
+  },
 
   // Public endpoints (no auth token needed)
   public: {

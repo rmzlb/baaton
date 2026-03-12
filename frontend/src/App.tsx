@@ -33,6 +33,7 @@ const AgentConfig = lazy(() => import('./pages/AgentConfig'));
 const Admin = lazy(() => import('./pages/Admin'));
 const AIChat = lazy(() => import('./pages/AIChat'));
 
+
 const isAppDomain = window.location.hostname === 'app.baaton.dev';
 
 function RootRoute() {
@@ -184,6 +185,7 @@ export function App() {
             <Route path="/agent-config" element={<AgentConfig />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/ai" element={<AIChat />} />
+
             <Route
               path="/org/*"
               element={

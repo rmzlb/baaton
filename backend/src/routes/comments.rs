@@ -104,6 +104,16 @@ pub async fn create(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
+    // ── Gamification: award XP for comment (fire-and-forget) ──
+    {
+        let pool2 = pool.clone();
+        let uid = author_id.clone();
+        let oid = org_id.to_string();
+        tokio::spawn(async move {
+            crate::routes::gamification::record_activity(&pool2, &uid, &oid, "comment").await;
+        });
+    }
+
     // ── Novu notifications (fire-and-forget) ─────────────
     if let Some(ref novu) = novu {
         let novu = novu.clone();

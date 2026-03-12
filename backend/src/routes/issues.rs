@@ -118,6 +118,34 @@ fn validate_issue_type(issue_type: &str) -> Result<(), (StatusCode, Json<serde_j
     Ok(())
 }
 
+/// Validate a status transition against the workflow state machine.
+/// Returns 400 with allowed_transitions if invalid.
+fn validate_status_transition(from: &str, to: &str) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    let allowed: &[&str] = match from {
+        "backlog"     => &["todo", "in_progress", "cancelled"],
+        "todo"        => &["in_progress", "backlog", "cancelled"],
+        "in_progress" => &["in_review", "done", "todo", "cancelled"],
+        "in_review"   => &["done", "in_progress", "cancelled"],
+        "done"        => &[], // no reopening by default
+        "cancelled"   => &["backlog"],
+        _             => return Ok(()), // custom status — allow anything
+    };
+
+    if allowed.contains(&to) || from == to {
+        return Ok(());
+    }
+
+    Err((
+        StatusCode::BAD_REQUEST,
+        Json(json!({
+            "error": format!("Invalid status transition: '{}' → '{}'", from, to),
+            "from_status": from,
+            "to_status": to,
+            "allowed_transitions": allowed,
+        })),
+    ))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ListParams {
     pub status: Option<String>,
@@ -517,6 +545,16 @@ pub async fn create(
         });
     }
 
+    // ── Gamification: award XP for issue creation (fire-and-forget) ──
+    {
+        let pool2 = pool.clone();
+        let uid = auth.user_id.clone();
+        let oid = org_id.to_string();
+        tokio::spawn(async move {
+            crate::routes::gamification::record_activity(&pool2, &uid, &oid, "issue_create").await;
+        });
+    }
+
     // ── Novu notifications (fire-and-forget) ─────────────
     if let Some(ref novu) = novu {
         let actor_name = auth.display_name.clone().unwrap_or_else(|| auth.user_id.clone());
@@ -718,6 +756,9 @@ pub async fn update(
     if let Some(ref status) = body.status {
         let valid_statuses = get_project_statuses(&pool, existing.project_id, org_id).await?;
         validate_status(status, &valid_statuses)?;
+
+        // State machine: validate transition
+        validate_status_transition(&existing.status, status)?;
     }
 
     if let Some(ref priority_opt) = body.priority {
@@ -875,6 +916,16 @@ pub async fn update(
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    // ── Gamification: award XP for closing an issue (fire-and-forget) ──
+    if status_changed && new_status == "done" {
+        let pool2 = pool.clone();
+        let uid = auth.user_id.clone();
+        let oid = org_id.to_string();
+        tokio::spawn(async move {
+            crate::routes::gamification::record_activity(&pool2, &uid, &oid, "issue_close").await;
+        });
+    }
 
     // ── Activity logging (fire-and-forget) ───────────────
     {
