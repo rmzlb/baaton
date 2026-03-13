@@ -134,9 +134,15 @@ function formatExpiry(expires_at: string | null): string {
   return d.toLocaleDateString();
 }
 
-function PermBadge({ perm, t }: { perm: string; t: (k: string) => string }) {
+function PermBadge({ perm, t, compact }: { perm: string; t: (k: string) => string; compact?: boolean }) {
   const color = PERM_COLOR[perm] ?? 'bg-zinc-500/15 text-zinc-600 border-zinc-500/25';
-  const label = t(`apiKeys.perm.${perm}` as any) ?? perm;
+  const [group, action] = perm.split(':');
+  const groupLabel = t(`apiKeys.permGroup.${group}` as any) ?? group;
+  const actionLabel = t(`apiKeys.perm.${perm}` as any) ?? action ?? perm;
+  // Compact: "Issues:R" — Full: "Issues: Read"
+  const label = compact
+    ? `${groupLabel}:${(action ?? '')[0]?.toUpperCase() ?? '?'}`
+    : `${groupLabel}: ${actionLabel}`;
   return (
     <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${color}`}>
       {label}
@@ -807,7 +813,7 @@ function KeyTableRow({
           ) : (
             <>
               {visiblePerms.map(p => (
-                <PermBadge key={p} perm={p} t={t} />
+                <PermBadge key={p} perm={p} t={t} compact />
               ))}
               {overflowCount > 0 && (
                 <span className="text-[10px] text-muted">+{overflowCount}</span>
