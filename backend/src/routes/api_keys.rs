@@ -147,13 +147,8 @@ pub async fn create(
         &pool, org_id, &auth.user_id, crate::middleware::plan_guard::QuotaKind::ApiKeys
     ).await?;
 
-    // Ensure the org exists
-    let _ = sqlx::query(
-        "INSERT INTO organizations (id, name, slug) VALUES ($1, $1, $1) ON CONFLICT (id) DO NOTHING"
-    )
-    .bind(org_id)
-    .execute(&pool)
-    .await;
+    // Ensure the org exists + resolve name in background
+    crate::routes::admin::upsert_org_background(pool.clone(), org_id.to_string());
 
     let (full_key, prefix, hash) = generate_api_key();
 

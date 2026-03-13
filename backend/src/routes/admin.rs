@@ -355,7 +355,18 @@ pub async fn list_users(
     .await
     .unwrap_or_default();
 
-    // For each org, count projects, issues, api_keys, last activity
+    // Resolve org names from Clerk for any org where name == id
+    for (org_id, name, _, _, _) in &orgs {
+        if name == org_id || name.starts_with("org_") {
+            ensure_org_name(&pool, org_id).await;
+        }
+    }
+    // Re-fetch after resolution to get updated names
+    let orgs = sqlx::query_as::<_, (String, String, String, String, chrono::DateTime<chrono::Utc>)>(
+        r#"SELECT o.id, COALESCE(o.name, o.id), o.slug, COALESCE(o.plan, 'free'), o.created_at
+           FROM organizations o ORDER BY o.created_at DESC LIMIT $1 OFFSET $2"#
+    ).bind(limit).bind(offset).fetch_all(&pool).await.unwrap_or_default();
+
     let mut org_list: Vec<Value> = Vec::new();
 
     for (org_id, name, slug, plan, created_at) in &orgs {
@@ -810,4 +821,61 @@ pub async fn get_audit_log(
             "offset": offset,
         }
     })))
+}
+
+// ─── Org name resolution from Clerk ─────────────────────────────────────
+
+/// Fetch org name from Clerk API and update DB if name is currently the org_id
+pub async fn ensure_org_name(pool: &PgPool, org_id: &str) {
+    // Skip if name is already resolved
+    let current_name: Option<String> = sqlx::query_scalar(
+        "SELECT name FROM organizations WHERE id = $1"
+    ).bind(org_id).fetch_optional(pool).await.ok().flatten();
+
+    match current_name {
+        Some(ref name) if name != org_id && !name.is_empty() => return, // Already resolved
+        _ => {}
+    }
+
+    let clerk_key = std::env::var("CLERK_SECRET_KEY").unwrap_or_default();
+    if clerk_key.is_empty() { return; }
+
+    let resp = reqwest::Client::new()
+        .get(format!("https://api.clerk.com/v1/organizations/{org_id}"))
+        .header("Authorization", format!("Bearer {clerk_key}"))
+        .send()
+        .await;
+
+    if let Ok(r) = resp {
+        if let Ok(body) = r.json::<serde_json::Value>().await {
+            let name = body.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            let slug = body.get("slug").and_then(|s| s.as_str()).unwrap_or("");
+            let logo = body.get("image_url").and_then(|u| u.as_str()).unwrap_or("");
+            if !name.is_empty() {
+                let _ = sqlx::query(
+                    "UPDATE organizations SET name = $2, slug = CASE WHEN slug = id THEN $3 ELSE slug END WHERE id = $1"
+                )
+                .bind(org_id)
+                .bind(name)
+                .bind(if slug.is_empty() { name } else { slug })
+                .execute(pool)
+                .await;
+                tracing::info!(org_id = %org_id, name = %name, "Resolved org name from Clerk");
+            }
+            // Also store logo URL if we have a column (future)
+            let _ = logo;
+        }
+    }
+}
+
+/// Ensure org exists in DB with proper name. Fire-and-forget name resolution.
+pub fn upsert_org_background(pool: PgPool, org_id: String) {
+    tokio::spawn(async move {
+        // Upsert first
+        let _ = sqlx::query(
+            "INSERT INTO organizations (id, name, slug) VALUES ($1, $1, $1) ON CONFLICT (id) DO NOTHING"
+        ).bind(&org_id).execute(&pool).await;
+        // Then resolve name
+        ensure_org_name(&pool, &org_id).await;
+    });
 }

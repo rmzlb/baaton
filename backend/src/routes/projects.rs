@@ -155,13 +155,8 @@ pub async fn create(
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Prefix is required and must be under 10 characters"}))));
     }
 
-    // Ensure the org exists in the organizations table (upsert)
-    let _ = sqlx::query(
-        "INSERT INTO organizations (id, name, slug) VALUES ($1, $1, $1) ON CONFLICT (id) DO NOTHING"
-    )
-    .bind(&effective_org)
-    .execute(&pool)
-    .await;
+    // Ensure the org exists + resolve name from Clerk in background
+    crate::routes::admin::upsert_org_background(pool.clone(), effective_org.clone());
 
     // ── Project limit guard ─────────────────────
     crate::middleware::plan_guard::enforce_quota(
