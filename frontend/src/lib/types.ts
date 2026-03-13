@@ -528,6 +528,7 @@ export interface Cycle {
 // ─── Activity & Gamification ──────────────────────────
 
 export interface UserActivityStats {
+  scope: 'personal' | 'org';
   current_streak: number;
   longest_streak: number;
   velocity_7d: number;
@@ -539,6 +540,23 @@ export interface UserActivityStats {
   };
   today: { actions: number };
   this_week: { actions: number };
+  completion_rate: number;
+  goal: number | null;
+  breakdown: {
+    issues_created: number;
+    issues_closed: number;
+    comments: number;
+    tldrs: number;
+    status_changes: number;
+    updates: number;
+    github: number;
+  };
+  contributors: Array<{
+    user_id: string;
+    name: string;
+    actions: number;
+    is_agent: boolean;
+  }>;
 }
 
 export interface HeatmapCell {

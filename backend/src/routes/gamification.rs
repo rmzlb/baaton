@@ -247,66 +247,95 @@ pub async fn get_me(
         None => (0, 0, 0, 0),
     };
 
-    // Personal velocity: cross-org (all user activity everywhere)
-    let mut velocity_7d  = get_velocity_user(&pool, &auth.user_id, 7).await;
-    let mut velocity_30d = get_velocity_user(&pool, &auth.user_id, 30).await;
-
     let today = Utc::now().date_naive();
     let iso_week_start = today
         - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
 
-    let mut this_week_count: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
-         WHERE user_id = $1 AND activity_date >= $2"
-    )
-    .bind(&auth.user_id)
-    .bind(iso_week_start)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(0);
+    // ── Scope resolution: personal → org-wide (includes agents) ──
+    // Check if user has any personal activity this org
+    let personal_total: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE user_id = $1 AND org_id = $2"
+    ).bind(&auth.user_id).bind(org_id).fetch_one(&pool).await.unwrap_or(0);
 
-    let mut today_count: i64 = sqlx::query_scalar::<_, i64>(
-        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
-         WHERE user_id = $1 AND activity_date = $2"
-    )
-    .bind(&auth.user_id)
-    .bind(today)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(0);
+    // If user has personal data, show personal. Otherwise, show full org (user + agents).
+    let scope = if personal_total > 0 { "personal" } else { "org" };
 
-    // If personal stats are all zero, fall back to org-wide
-    // (useful for founders whose agents do work via API keys)
-    let is_personal_empty = velocity_7d == 0.0 && this_week_count == 0 && streak == 0;
-    if is_personal_empty {
-        velocity_7d  = get_velocity_org(&pool, org_id, 7).await;
-        velocity_30d = get_velocity_org(&pool, org_id, 30).await;
+    let (where_clause, bind_val) = if scope == "personal" {
+        ("user_id = $1", auth.user_id.clone())
+    } else {
+        ("org_id = $1", org_id.to_string())
+    };
 
-        this_week_count = sqlx::query_scalar(
-            "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
-             WHERE org_id = $1 AND activity_date >= $2"
-        )
-        .bind(org_id)
-        .bind(iso_week_start)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(0);
-
-        today_count = sqlx::query_scalar::<_, i64>(
-            "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
-             WHERE org_id = $1 AND activity_date = $2"
-        )
-        .bind(org_id)
-        .bind(today)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(0);
-    }
-
+    // ── Velocity ──
+    let velocity_7d  = get_velocity_scoped(&pool, &where_clause, &bind_val, 7).await;
+    let velocity_30d = get_velocity_scoped(&pool, &where_clause, &bind_val, 30).await;
     let velocity_trend = velocity_trend(velocity_7d, velocity_30d);
+
+    // ── This week / Today ──
+    let this_week_count: i64 = sqlx::query_scalar(&format!(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE {} AND activity_date >= $2", where_clause
+    )).bind(&bind_val).bind(iso_week_start).fetch_one(&pool).await.unwrap_or(0);
+
+    let today_count: i64 = sqlx::query_scalar(&format!(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE {} AND activity_date = $2", where_clause
+    )).bind(&bind_val).bind(today).fetch_one(&pool).await.unwrap_or(0);
+
+    // ── Action breakdown (this week) ──
+    #[derive(sqlx::FromRow)]
+    struct BreakdownRow {
+        issues_created: i64,
+        issues_closed: i64,
+        comments_posted: i64,
+        tldrs_posted: i64,
+        status_changes: i64,
+        assignments: i64,
+        updates: i64,
+        tags_added: i64,
+        github_actions: i64,
+    }
+    let breakdown = sqlx::query_as::<_, BreakdownRow>(&format!(
+        "SELECT COALESCE(SUM(issues_created),0) AS issues_created,
+                COALESCE(SUM(issues_closed),0) AS issues_closed,
+                COALESCE(SUM(comments_posted),0) AS comments_posted,
+                COALESCE(SUM(tldrs_posted),0) AS tldrs_posted,
+                COALESCE(SUM(status_changes),0) AS status_changes,
+                COALESCE(SUM(assignments),0) AS assignments,
+                COALESCE(SUM(updates),0) AS updates,
+                COALESCE(SUM(tags_added),0) AS tags_added,
+                COALESCE(SUM(github_actions),0) AS github_actions
+         FROM user_daily_activity WHERE {} AND activity_date >= $2", where_clause
+    )).bind(&bind_val).bind(iso_week_start).fetch_optional(&pool).await.ok().flatten();
+
+    // ── Top contributors (org scope always, for the widget) ──
+    #[derive(sqlx::FromRow)]
+    struct ContributorRow { user_id: String, user_name: Option<String>, actions: i64 }
+    let contributors = sqlx::query_as::<_, ContributorRow>(
+        "SELECT user_id, MAX(user_name) AS user_name, SUM(total_actions)::bigint AS actions
+         FROM (
+           SELECT d.user_id, a.user_name, d.total_actions
+           FROM user_daily_activity d
+           LEFT JOIN LATERAL (
+             SELECT user_name FROM activity_log WHERE user_id = d.user_id AND org_id = $1 LIMIT 1
+           ) a ON true
+           WHERE d.org_id = $1 AND d.activity_date >= $2
+         ) sub
+         GROUP BY user_id ORDER BY actions DESC LIMIT 5"
+    ).bind(org_id).bind(iso_week_start).fetch_all(&pool).await.unwrap_or_default();
+
+    // ── Completion rate (issues closed / created this week) ──
+    let bd = &breakdown;
+    let created = bd.as_ref().map(|b| b.issues_created).unwrap_or(0);
+    let closed  = bd.as_ref().map(|b| b.issues_closed).unwrap_or(0);
+    let completion_rate = if created > 0 { ((closed as f64 / created as f64) * 100.0).round() } else { 0.0 };
+
+    // ── Goal tracking: beat your best week ──
+    let to_beat_best = if best_week > 0 && this_week_count < best_week as i64 {
+        Some(best_week as i64 - this_week_count)
+    } else { None };
 
     Ok(Json(json!({
         "data": {
+            "scope": scope,
             "current_streak":  streak,
             "longest_streak":  longest,
             "velocity_7d":     (velocity_7d  * 100.0).round() / 100.0,
@@ -315,6 +344,23 @@ pub async fn get_me(
             "personal_bests": { "best_day": best_day, "best_week": best_week },
             "today":     { "actions": today_count },
             "this_week": { "actions": this_week_count },
+            "completion_rate": completion_rate,
+            "goal": to_beat_best,
+            "breakdown": {
+                "issues_created": bd.as_ref().map(|b| b.issues_created).unwrap_or(0),
+                "issues_closed":  bd.as_ref().map(|b| b.issues_closed).unwrap_or(0),
+                "comments":       bd.as_ref().map(|b| b.comments_posted).unwrap_or(0),
+                "tldrs":          bd.as_ref().map(|b| b.tldrs_posted).unwrap_or(0),
+                "status_changes": bd.as_ref().map(|b| b.status_changes).unwrap_or(0),
+                "updates":        bd.as_ref().map(|b| b.updates).unwrap_or(0),
+                "github":         bd.as_ref().map(|b| b.github_actions).unwrap_or(0),
+            },
+            "contributors": contributors.iter().map(|c| json!({
+                "user_id": c.user_id,
+                "name": c.user_name.as_deref().unwrap_or("Agent"),
+                "actions": c.actions,
+                "is_agent": c.user_id.starts_with("apikey:") || c.user_id.starts_with("github:"),
+            })).collect::<Vec<_>>(),
         }
     })))
 }
@@ -600,18 +646,19 @@ async fn get_velocity(pool: &PgPool, user_id: &str, org_id: &str, days: i64) -> 
     (count as f64) / (days as f64)
 }
 
-/// User velocity across ALL orgs — primary metric for the dashboard
-async fn get_velocity_user(pool: &PgPool, user_id: &str, days: i64) -> f64 {
+/// Scoped velocity — works with any WHERE clause (user_id or org_id)
+async fn get_velocity_scoped(pool: &PgPool, where_clause: &str, bind_val: &str, days: i64) -> f64 {
     let since = Utc::now().date_naive() - chrono::Duration::days(days);
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
-         WHERE user_id = $1 AND activity_date >= $2"
-    )
-    .bind(user_id)
-    .bind(since)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    let q = format!(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE {} AND activity_date >= $2",
+        where_clause
+    );
+    let count: i64 = sqlx::query_scalar(&q)
+        .bind(bind_val)
+        .bind(since)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
     (count as f64) / (days as f64)
 }
 
