@@ -228,12 +228,16 @@ pub async fn get_me(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
+    // Aggregate across ALL orgs the user belongs to (not just current)
     let activity = sqlx::query_as::<_, UserActivityRow>(
-        "SELECT current_streak, longest_streak, last_active_date, best_day_count, best_week_count
-         FROM user_activity WHERE user_id = $1 AND org_id = $2"
+        "SELECT COALESCE(MAX(current_streak), 0) AS current_streak,
+                COALESCE(MAX(longest_streak), 0) AS longest_streak,
+                MAX(last_active_date) AS last_active_date,
+                COALESCE(MAX(best_day_count), 0) AS best_day_count,
+                COALESCE(MAX(best_week_count), 0) AS best_week_count
+         FROM user_activity WHERE user_id = $1"
     )
     .bind(&auth.user_id)
-    .bind(org_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -243,10 +247,9 @@ pub async fn get_me(
         None => (0, 0, 0, 0),
     };
 
-    // Try personal stats first; if empty, fall back to org-wide
-    // (useful for founders/admins whose agents do the work via API keys)
-    let mut velocity_7d  = get_velocity(&pool, &auth.user_id, org_id, 7).await;
-    let mut velocity_30d = get_velocity(&pool, &auth.user_id, org_id, 30).await;
+    // Personal velocity: cross-org (all user activity everywhere)
+    let mut velocity_7d  = get_velocity_user(&pool, &auth.user_id, 7).await;
+    let mut velocity_30d = get_velocity_user(&pool, &auth.user_id, 30).await;
 
     let today = Utc::now().date_naive();
     let iso_week_start = today
@@ -254,10 +257,9 @@ pub async fn get_me(
 
     let mut this_week_count: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
-         WHERE user_id = $1 AND org_id = $2 AND activity_date >= $3"
+         WHERE user_id = $1 AND activity_date >= $2"
     )
     .bind(&auth.user_id)
-    .bind(org_id)
     .bind(iso_week_start)
     .fetch_one(&pool)
     .await
@@ -265,16 +267,16 @@ pub async fn get_me(
 
     let mut today_count: i64 = sqlx::query_scalar::<_, i64>(
         "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
-         WHERE user_id = $1 AND org_id = $2 AND activity_date = $3"
+         WHERE user_id = $1 AND activity_date = $2"
     )
     .bind(&auth.user_id)
-    .bind(org_id)
     .bind(today)
     .fetch_one(&pool)
     .await
     .unwrap_or(0);
 
-    // If personal stats are all zero, show org-wide activity instead
+    // If personal stats are all zero, fall back to org-wide
+    // (useful for founders whose agents do work via API keys)
     let is_personal_empty = velocity_7d == 0.0 && this_week_count == 0 && streak == 0;
     if is_personal_empty {
         velocity_7d  = get_velocity_org(&pool, org_id, 7).await;
@@ -330,19 +332,21 @@ pub async fn get_heatmap(
     let days = params.days.unwrap_or(90).clamp(7, 365);
     let since = Utc::now().date_naive() - chrono::Duration::days(days);
 
-    // Try personal heatmap first; if empty, fall back to org-wide
+    // Personal heatmap: cross-org (all user activity everywhere)
     let mut rows = sqlx::query_as::<_, DailyActivityRow>(
-        "SELECT activity_date, total_actions FROM user_daily_activity
-         WHERE user_id = $1 AND org_id = $2 AND activity_date >= $3
+        "SELECT activity_date, SUM(total_actions)::int AS total_actions
+         FROM user_daily_activity
+         WHERE user_id = $1 AND activity_date >= $2
+         GROUP BY activity_date
          ORDER BY activity_date ASC"
     )
     .bind(&auth.user_id)
-    .bind(org_id)
     .bind(since)
     .fetch_all(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
+    // Fallback: org-wide if personal is empty
     if rows.is_empty() {
         rows = sqlx::query_as::<_, DailyActivityRow>(
             "SELECT activity_date, SUM(total_actions)::int AS total_actions
@@ -589,6 +593,21 @@ async fn get_velocity(pool: &PgPool, user_id: &str, org_id: &str, days: i64) -> 
     )
     .bind(user_id)
     .bind(org_id)
+    .bind(since)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    (count as f64) / (days as f64)
+}
+
+/// User velocity across ALL orgs — primary metric for the dashboard
+async fn get_velocity_user(pool: &PgPool, user_id: &str, days: i64) -> f64 {
+    let since = Utc::now().date_naive() - chrono::Duration::days(days);
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
+         WHERE user_id = $1 AND activity_date >= $2"
+    )
+    .bind(user_id)
     .bind(since)
     .fetch_one(pool)
     .await
