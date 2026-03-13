@@ -134,10 +134,8 @@ function SlaBadge({ issue }: { issue: Issue }) {
 function StatusAge({ issue }: { issue: Issue }) {
   if (issue.status === 'backlog') return null;
 
-  const ts = (issue.status === 'done' || issue.status === 'cancelled')
-    ? issue.closed_at
-    : issue.status_changed_at;
-
+  const isDone = issue.status === 'done' || issue.status === 'cancelled';
+  const ts = isDone ? issue.closed_at : issue.status_changed_at;
   if (!ts) return null;
 
   const age = timeAgo(ts);
@@ -151,9 +149,10 @@ function StatusAge({ issue }: { issue: Issue }) {
 
   return (
     <span className={cn(
-      'text-[9px] tabular-nums',
-      isStale ? 'text-orange-400' : 'text-muted/60',
-    )} title={`In ${issue.status.replace('_', ' ')} since ${new Date(ts).toLocaleDateString()}`}>
+      'inline-flex items-center gap-0.5 text-[9px] tabular-nums',
+      isDone ? 'text-emerald-500/70' : isStale ? 'text-orange-400' : 'text-muted',
+    )} title={`${isDone ? 'Closed' : `In ${issue.status.replace('_', ' ')}`} since ${new Date(ts).toLocaleDateString()}`}>
+      <Clock size={9} />
       {age}
     </span>
   );
@@ -364,40 +363,58 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
   }
 
   // ── Default: balanced Linear-style ──
+  // Layout: Header (ID + type + creator + age) → Title → Footer (tags + due | priority + assignee)
   return (
     <div
       ref={provided.innerRef}
       {...provided.draggableProps}
       {...provided.dragHandleProps}
       onClick={onClick}
-        onContextMenu={handleContextMenu}
+      onContextMenu={handleContextMenu}
       role="article"
       aria-roledescription="draggable item"
       aria-label={`${issue.display_id}: ${issue.title}`}
       style={provided.draggableProps.style}
       className={cn(
         'group cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-4 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
-        isDone && 'opacity-75 hover:opacity-100',
+        isDone && 'opacity-90 hover:opacity-100',
         isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
-          selected && 'ring-2 ring-accent/40 border-accent/30',
+        selected && 'ring-2 ring-accent/40 border-accent/30',
       )}
     >
       {SelectCheckbox}
-      {/* Top row: ID + three-dot menu */}
-      <div className="flex justify-between items-start mb-2">
-        <div className="flex items-center gap-1.5">
+      {/* ── Header: ID + type + creator + status age ── */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5 min-w-0">
           <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
+          <TypeBadge type={issue.type} size="xs" />
           {isNew(issue.created_at, issue.updated_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase">NEW</span>}
+          <SlaBadge issue={issue} />
         </div>
-        <div
-          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 dark:text-muted opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <MoreHorizontal className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Creator name */}
+          {(issue.created_by_name || issue.created_by_id) && (() => {
+            const name = resolveUserName(issue.created_by_id, issue.created_by_name);
+            return (
+              <span className="text-[10px] text-muted flex items-center gap-0.5" title={`Created by ${name}`}>
+                <User size={9} />
+                <span className="max-w-[60px] truncate">{name.split(' ')[0]}</span>
+              </span>
+            );
+          })()}
+          {/* Status age — always visible, prominent */}
+          <StatusAge issue={issue} />
+          {/* Menu */}
+          <div
+            className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 dark:text-muted opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MoreHorizontal className="w-3.5 h-3.5" />
+          </div>
         </div>
       </div>
 
-      {/* Title */}
+      {/* ── Title ── */}
       <h3 className={cn(
         'text-sm font-medium mb-3 leading-snug tracking-tight line-clamp-2',
         isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
@@ -405,12 +422,9 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         {issue.title}
       </h3>
 
-      {/* Footer: type + tags left — priority + creator + assignee right */}
+      {/* ── Footer: tags + due left — priority + PR + assignee right ── */}
       <div className="flex items-center justify-between">
-        {/* Left: type badge + tags */}
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-          <TypeBadge type={issue.type} size="xs" />
-          <SlaBadge issue={issue} />
           {issue.tags.slice(0, 2).map((tag) => {
             const style = getTagStyle(getTagColor(tag));
             return (
@@ -419,26 +433,17 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
               </span>
             );
           })}
+          {issue.tags.length > 2 && <span className="text-[10px] text-gray-400">+{issue.tags.length - 2}</span>}
           {issue.due_date && <DueDate date={issue.due_date} />}
         </div>
 
-        {/* Right: priority/done + creator + assignee */}
         <div className="flex items-center gap-2 shrink-0">
-          <StatusAge issue={issue} />
           {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
           {isDone ? (
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
           ) : PriorityConfig ? (
             <PriorityConfig.icon className={cn('w-3.5 h-3.5', PriorityConfig.color)} />
           ) : null}
-          {(issue.created_by_name || issue.created_by_id) && (() => {
-            const name = resolveUserName(issue.created_by_id, issue.created_by_name);
-            return (
-              <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-muted" title={`Created by ${name}`}>
-                <User size={10} />
-              </span>
-            );
-          })()}
           {issue.assignee_ids.length > 0 && (() => {
             const name = resolveUserName(issue.assignee_ids[0]);
             const avatar = resolveUserAvatar(issue.assignee_ids[0]);
