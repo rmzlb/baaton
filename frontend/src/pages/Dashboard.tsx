@@ -279,42 +279,100 @@ function OrgSection({ orgName, orgSlug, orgImageUrl, projects, issuesByProject, 
   );
 }
 
-// ─── Mini Heatmap ──────────────────────────────────────
+// ─── GitHub-Style Contribution Heatmap ─────────────────
+
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''];
+const CELL = 10;
+const GAP = 2;
 
 function MiniHeatmap({ cells, label }: { cells: HeatmapCell[]; label: string }) {
   const countMap = new Map(cells.map(c => [c.date, c.count]));
+
+  // Build 52 weeks of data (full year view, ending today)
   const today = new Date();
   const dates: Date[] = [];
-  for (let i = 89; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); dates.push(d); }
+  for (let i = 363; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); dates.push(d); }
 
-  const weeks: { date: Date; count: number }[][] = [];
-  let cw: { date: Date; count: number }[] = [];
+  // Group into weeks (Mon=0 ... Sun=6)
+  const weeks: { date: Date; count: number; dow: number }[][] = [];
+  let cw: { date: Date; count: number; dow: number }[] = [];
   for (const d of dates) {
-    const dow = d.getDay();
-    const mi = dow === 0 ? 6 : dow - 1;
-    if (mi === 0 && cw.length > 0) { weeks.push(cw); cw = []; }
-    cw.push({ date: d, count: countMap.get(d.toISOString().slice(0, 10)) ?? 0 });
+    const jsDay = d.getDay(); // 0=Sun
+    const dow = jsDay === 0 ? 6 : jsDay - 1; // 0=Mon
+    if (dow === 0 && cw.length > 0) { weeks.push(cw); cw = []; }
+    cw.push({ date: d, count: countMap.get(d.toISOString().slice(0, 10)) ?? 0, dow });
   }
   if (cw.length > 0) weeks.push(cw);
 
   const max = Math.max(...cells.map(c => c.count), 1);
   const lvl = (n: number) => n === 0 ? 0 : n <= max * 0.25 ? 1 : n <= max * 0.5 ? 2 : n <= max * 0.75 ? 3 : 4;
-  const colors = ['bg-border/50', 'bg-amber-500/25', 'bg-amber-500/45', 'bg-amber-500/70', 'bg-amber-500'];
+  const fills = [
+    'var(--color-border, #e4e4e7)', // 0 — empty
+    'rgba(245, 158, 11, 0.25)',     // 1 — light
+    'rgba(245, 158, 11, 0.45)',     // 2 — medium
+    'rgba(245, 158, 11, 0.70)',     // 3 — strong
+    'rgb(245, 158, 11)',            // 4 — max
+  ];
+
+  // Month labels: show at first week where a new month starts
+  const monthMarkers: { weekIdx: number; label: string }[] = [];
+  let lastMonth = -1;
+  weeks.forEach((w, wi) => {
+    const firstDay = w[0]?.date;
+    if (firstDay) {
+      const m = firstDay.getMonth();
+      if (m !== lastMonth) { monthMarkers.push({ weekIdx: wi, label: MONTH_LABELS[m] }); lastMonth = m; }
+    }
+  });
+
+  const leftPad = 28; // space for day labels
+  const svgW = leftPad + weeks.length * (CELL + GAP);
+  const svgH = 14 + 7 * (CELL + GAP); // 14px for month labels
+
+  const totalActions = cells.reduce((s, c) => s + c.count, 0);
 
   return (
     <div className="space-y-1.5">
-      <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">{label}</p>
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">{label}</p>
+        <p className="text-[10px] text-muted">{totalActions} actions this year</p>
+      </div>
       <div className="overflow-x-auto no-scrollbar">
-        <div className="flex gap-[2px]">
-          {weeks.map((w, wi) => (
-            <div key={wi} className="flex flex-col gap-[2px]">
-              {wi === 0 && Array.from({ length: 7 - w.length }).map((_, pi) => <div key={pi} className="w-[8px] h-[8px]" />)}
-              {w.map((d, di) => (
-                <div key={di} title={`${d.date.toISOString().slice(0, 10)}: ${d.count}`} className={cn('w-[8px] h-[8px] rounded-[1px]', colors[lvl(d.count)])} />
-              ))}
-            </div>
+        <svg width={svgW} height={svgH} className="block">
+          {/* Month labels */}
+          {monthMarkers.map(({ weekIdx, label: ml }) => (
+            <text key={weekIdx} x={leftPad + weekIdx * (CELL + GAP)} y={10}
+              className="fill-muted" fontSize={9} fontFamily="Inter, sans-serif">{ml}</text>
           ))}
-        </div>
+          {/* Day labels (Mon, Wed, Fri) */}
+          {DAY_LABELS.map((dl, di) => dl ? (
+            <text key={di} x={0} y={14 + di * (CELL + GAP) + 8}
+              className="fill-muted" fontSize={9} fontFamily="Inter, sans-serif">{dl}</text>
+          ) : null)}
+          {/* Cells */}
+          {weeks.map((w, wi) => w.map((d, _di) => (
+            <rect
+              key={`${wi}-${d.dow}`}
+              x={leftPad + wi * (CELL + GAP)}
+              y={14 + d.dow * (CELL + GAP)}
+              width={CELL}
+              height={CELL}
+              rx={2}
+              fill={fills[lvl(d.count)]}
+              opacity={d.count === 0 ? 0.5 : 1}
+            >
+              <title>{d.date.toISOString().slice(0, 10)}: {d.count} action{d.count !== 1 ? 's' : ''}</title>
+            </rect>
+          )))}
+          {/* Legend */}
+          <text x={svgW - 95} y={svgH - 1} className="fill-muted" fontSize={8} fontFamily="Inter, sans-serif">Less</text>
+          {fills.map((f, i) => (
+            <rect key={i} x={svgW - 70 + i * (CELL + GAP)} y={svgH - 10} width={CELL} height={CELL} rx={2}
+              fill={f} opacity={i === 0 ? 0.5 : 1} />
+          ))}
+          <text x={svgW - 6} y={svgH - 1} className="fill-muted" fontSize={8} fontFamily="Inter, sans-serif">More</text>
+        </svg>
       </div>
     </div>
   );

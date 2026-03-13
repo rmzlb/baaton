@@ -832,8 +832,8 @@ pub async fn get_dashboard(
          LIMIT 20"
     ).bind(&all_org_ids).bind(&auth.user_id).fetch_all(&pool).await.unwrap_or_default();
 
-    // ── 6. Heatmaps (personal cross-org + all-orgs team, last 90 days) ──
-    let hm_since = today - chrono::Duration::days(90);
+    // ── 6. Heatmaps (personal cross-org + all-orgs team, last 365 days) ──
+    let hm_since = today - chrono::Duration::days(365);
 
     let personal_heatmap = sqlx::query_as::<_, DailyActivityRow>(
         "SELECT activity_date, SUM(total_actions)::int AS total_actions
