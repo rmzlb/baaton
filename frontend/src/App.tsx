@@ -32,7 +32,7 @@ const Billing = lazy(() => import('./pages/Billing'));
 const AgentConfig = lazy(() => import('./pages/AgentConfig'));
 const Admin = lazy(() => import('./pages/Admin'));
 const AIChat = lazy(() => import('./pages/AIChat'));
-const TableView = lazy(() => import('./pages/TableView'));
+// TableView integrated into AllIssues as 3rd view mode
 const Integrations = lazy(() => import('./pages/Integrations'));
 
 
@@ -187,7 +187,6 @@ export function App() {
             <Route path="/agent-config" element={<AgentConfig />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/ai" element={<AIChat />} />
-            <Route path="/table" element={<TableView />} />
             <Route path="/integrations" element={<Integrations />} />
 
             <Route

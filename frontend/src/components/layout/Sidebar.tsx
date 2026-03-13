@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Kanban, PanelLeftClose, PanelLeft, X,
   Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox,
   CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink, KeyRound, Search,
-  Flag, Workflow, CreditCard, Bot, Sparkles, Shield, Table2, Plug,
+  Flag, Workflow, CreditCard, Bot, Sparkles, Shield, Plug,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -90,7 +90,6 @@ export function Sidebar() {
     { to: '/dashboard', icon: LayoutDashboard, label: t('sidebar.dashboard') },
     { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks'), tourId: 'my-tasks' },
     { to: '/all-issues', icon: Layers, label: t('sidebar.allIssues') },
-    { to: '/table', icon: Table2, label: t('sidebar.tableView') },
     { to: '/triage', icon: Inbox, label: t('sidebar.triage'), badge: triageCount > 0 ? triageCount : undefined },
     { to: '/projects', icon: Kanban, label: t('sidebar.projects'), tourId: 'projects-list' },
   ];

@@ -3,13 +3,14 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { ListView } from '@/components/list/ListView';
+import { IssuesTable } from '@/components/issues/IssuesTable';
 import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { useApi } from '@/hooks/useApi';
 import { useIssuesStore } from '@/stores/issues';
 import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
-  Layers, Kanban, List, Rows3, Rows4, StretchHorizontal,
+  Layers, Kanban, List, Table2, Rows3, Rows4, StretchHorizontal,
   ChevronDown, X, Search, SlidersHorizontal,
   ArrowUp, ArrowDown, Minus, OctagonAlert,
   Circle, Clock, Eye, CheckCircle2, XCircle, Archive,
@@ -46,7 +47,7 @@ const PRIORITY_CONFIG = [
   { key: 'low', label: 'Low', icon: ArrowDown, color: '#6b7280', textColor: 'text-gray-400' },
 ];
 
-type ViewMode = 'kanban' | 'list';
+type ViewMode = 'kanban' | 'list' | 'table';
 
 // ═══════════════════════════════════════════════
 // Filter Chip — toggleable pill (Linear-style)
@@ -217,7 +218,7 @@ export function AllIssues() {
   // View mode (persisted)
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const saved = localStorage.getItem('baaton-view-all-issues');
-    return (saved === 'list' ? 'list' : 'kanban') as ViewMode;
+    return (['kanban', 'list', 'table'].includes(saved ?? '') ? saved : 'kanban') as ViewMode;
   });
   useEffect(() => {
     localStorage.setItem('baaton-view-all-issues', viewMode);
@@ -549,6 +550,16 @@ export function AllIssues() {
             >
               <List size={16} />
             </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={cn(
+                'rounded-[5px] p-1.5 transition-colors',
+                viewMode === 'table' ? 'bg-surface-hover text-primary' : 'text-muted hover:text-secondary',
+              )}
+              title={t('sidebar.tableView')}
+            >
+              <Table2 size={16} />
+            </button>
           </div>
         </div>
       </div>
@@ -829,6 +840,8 @@ export function AllIssues() {
             onCreateIssue={() => {}}
             projectTags={allTags}
           />
+        ) : viewMode === 'table' ? (
+          <IssuesTable issues={filteredIssues} />
         ) : (
           <ListView
             statuses={STATUSES}

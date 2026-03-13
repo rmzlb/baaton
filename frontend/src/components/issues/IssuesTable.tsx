@@ -1,15 +1,11 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
 import {
   ArrowUp, ArrowDown, Minus, OctagonAlert,
   Circle, Clock, Eye, CheckCircle2, XCircle, Archive,
   Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown,
   Bug, Sparkles, Zap, HelpCircle,
 } from 'lucide-react';
-import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { useIssuesStore } from '@/stores/issues';
 import { cn } from '@/lib/utils';
 import type { Issue } from '@/lib/types';
@@ -97,32 +93,23 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 
 /* ═══════════════════════════════════════════ */
 
-export default function TableView() {
+interface IssuesTableProps {
+  issues: Issue[];
+  isLoading?: boolean;
+}
+
+export function IssuesTable({ issues, isLoading }: IssuesTableProps) {
   const { t } = useTranslation();
-  const apiClient = useApi();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [sortKey, setSortKey] = useState<SortKey>('created_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   const openDetail = useIssuesStore((s) => s.openDetail);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
-  const closeDetail = useIssuesStore((s) => s.closeDetail);
 
-  // Open drawer if ?issue= param is set
-  const issueParam = searchParams.get('issue');
-
-  const { data: issues = [], isLoading } = useQuery({
-    queryKey: ['all-issues'],
-    queryFn: () => apiClient.issues.listAll({ limit: 2000 }),
-    staleTime: 30_000,
-  });
-
-  /* ── Open drawer via URL param ── */
   const handleRowClick = useCallback((issueId: string) => {
-    setSearchParams({ issue: issueId });
     openDetail(issueId);
-  }, [openDetail, setSearchParams]);
+  }, [openDetail]);
 
   /* ── Sorting ── */
   const handleSort = (col: SortKey) => {
@@ -308,75 +295,50 @@ export default function TableView() {
     );
   }
 
-  /* ── Selected issue for drawer ── */
-  const drawerIssueId = selectedIssueId ?? issueParam ?? null;
-
   return (
-    <div className="flex flex-col h-full">
-      {/* Page header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-        <div>
-          <h1 className="text-lg font-semibold text-primary">{t('table.pageTitle')}</h1>
-          <p className="text-xs text-muted mt-0.5">
-            {isLoading ? t('common.loading') : `${sorted.length} ${t('table.issueCount')}`}
-          </p>
+    <div className="flex-1 overflow-auto">
+      {isLoading ? (
+        <div className="flex items-center justify-center h-32 text-sm text-muted">
+          {t('common.loading')}
         </div>
-      </div>
-
-      {/* Table */}
-      <div className="flex-1 overflow-auto">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-32 text-sm text-muted">
-            {t('common.loading')}
-          </div>
-        ) : sorted.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-sm text-muted">
-            {t('list.noIssues')}
-          </div>
-        ) : (
-          <table className="w-full border-collapse min-w-[1100px]">
-            <thead className="sticky top-0 z-10 bg-bg border-b border-border">
-              <tr>
-                <Th col="id" label={t('table.id')} />
-                <Th col="title" label={t('table.title')} />
-                <Th col="status" label={t('table.status')} />
-                <Th col="priority" label={t('table.priority')} />
-                <Th col="type" label={t('table.type')} />
-                <th className="px-3 py-2.5 text-left">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-                    {t('table.assignees')}
-                  </span>
-                </th>
-                <Th col="estimate" label={t('table.estimate')} />
-                <Th col="due_date" label={t('table.dueDate')} />
-                <th className="px-3 py-2.5 text-left">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-                    {t('table.tags')}
-                  </span>
-                </th>
-                <Th col="created_at" label={t('table.created')} />
-                <Th col="updated_at" label={t('table.updated')} />
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((issue) => (
-                <Row key={issue.id} issue={issue} />
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Issue Drawer */}
-      {isDetailOpen && drawerIssueId && (
-        <IssueDrawer
-          issueId={drawerIssueId}
-          onClose={() => {
-            closeDetail();
-            setSearchParams({});
-          }}
-        />
+      ) : sorted.length === 0 ? (
+        <div className="flex items-center justify-center h-32 text-sm text-muted">
+          {t('list.noIssues')}
+        </div>
+      ) : (
+        <table className="w-full border-collapse min-w-[1100px]">
+          <thead className="sticky top-0 z-10 bg-bg border-b border-border">
+            <tr>
+              <Th col="id" label={t('table.id')} />
+              <Th col="title" label={t('table.title')} />
+              <Th col="status" label={t('table.status')} />
+              <Th col="priority" label={t('table.priority')} />
+              <Th col="type" label={t('table.type')} />
+              <th className="px-3 py-2.5 text-left">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  {t('table.assignees')}
+                </span>
+              </th>
+              <Th col="estimate" label={t('table.estimate')} />
+              <Th col="due_date" label={t('table.dueDate')} />
+              <th className="px-3 py-2.5 text-left">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  {t('table.tags')}
+                </span>
+              </th>
+              <Th col="created_at" label={t('table.created')} />
+              <Th col="updated_at" label={t('table.updated')} />
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((issue) => (
+              <Row key={issue.id} issue={issue} />
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
 }
+
+export default IssuesTable;
