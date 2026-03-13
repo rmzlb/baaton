@@ -56,6 +56,18 @@ async fn is_super_admin(pool: &PgPool, auth: &AuthUser) -> bool {
     false
 }
 
+/// Quick super admin check by user_id only (no email resolution).
+/// Used by plan_guard to bypass quotas for platform admins.
+pub async fn is_super_admin_quick(pool: &PgPool, user_id: &str) -> bool {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM super_admins WHERE user_id = $1)"
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false)
+}
+
 fn forbidden() -> (StatusCode, Json<Value>) {
     (StatusCode::FORBIDDEN, Json(json!({"error": "Super admin access required"})))
 }

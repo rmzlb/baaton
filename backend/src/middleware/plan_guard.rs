@@ -9,7 +9,7 @@ use axum::http::StatusCode;
 use serde_json::json;
 use sqlx::PgPool;
 
-use crate::routes::admin::{get_user_plan, plan_limits};
+use crate::routes::admin::{get_user_plan, plan_limits, is_super_admin_quick};
 
 /// What resource is being quota-checked
 #[derive(Debug, Clone, Copy)]
@@ -35,12 +35,18 @@ impl QuotaKind {
 
 /// Check if the org is within its plan quota for the given resource.
 /// Returns Ok(()) if allowed, Err(402) if limit reached.
+/// Super admins always bypass quotas.
 pub async fn enforce_quota(
     pool: &PgPool,
     org_id: &str,
     user_id: &str,
     kind: QuotaKind,
 ) -> Result<(), (StatusCode, axum::Json<serde_json::Value>)> {
+    // Super admins bypass all quotas
+    if is_super_admin_quick(pool, user_id).await {
+        return Ok(());
+    }
+
     let plan = get_user_plan(pool, user_id, Some(org_id)).await;
     let limits = plan_limits(&plan);
 
