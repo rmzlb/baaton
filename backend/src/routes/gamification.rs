@@ -243,15 +243,16 @@ pub async fn get_me(
         None => (0, 0, 0, 0),
     };
 
-    let velocity_7d  = get_velocity(&pool, &auth.user_id, org_id, 7).await;
-    let velocity_30d = get_velocity(&pool, &auth.user_id, org_id, 30).await;
-    let velocity_trend = velocity_trend(velocity_7d, velocity_30d);
+    // Try personal stats first; if empty, fall back to org-wide
+    // (useful for founders/admins whose agents do the work via API keys)
+    let mut velocity_7d  = get_velocity(&pool, &auth.user_id, org_id, 7).await;
+    let mut velocity_30d = get_velocity(&pool, &auth.user_id, org_id, 30).await;
 
     let today = Utc::now().date_naive();
     let iso_week_start = today
         - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
 
-    let this_week_count: i64 = sqlx::query_scalar(
+    let mut this_week_count: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
          WHERE user_id = $1 AND org_id = $2 AND activity_date >= $3"
     )
@@ -262,18 +263,45 @@ pub async fn get_me(
     .await
     .unwrap_or(0);
 
-    let today_count: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(total_actions, 0) FROM user_daily_activity
+    let mut today_count: i64 = sqlx::query_scalar::<_, i64>(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
          WHERE user_id = $1 AND org_id = $2 AND activity_date = $3"
     )
     .bind(&auth.user_id)
     .bind(org_id)
     .bind(today)
-    .fetch_optional(&pool)
+    .fetch_one(&pool)
     .await
-    .ok()
-    .flatten()
     .unwrap_or(0);
+
+    // If personal stats are all zero, show org-wide activity instead
+    let is_personal_empty = velocity_7d == 0.0 && this_week_count == 0 && streak == 0;
+    if is_personal_empty {
+        velocity_7d  = get_velocity_org(&pool, org_id, 7).await;
+        velocity_30d = get_velocity_org(&pool, org_id, 30).await;
+
+        this_week_count = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
+             WHERE org_id = $1 AND activity_date >= $2"
+        )
+        .bind(org_id)
+        .bind(iso_week_start)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0);
+
+        today_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
+             WHERE org_id = $1 AND activity_date = $2"
+        )
+        .bind(org_id)
+        .bind(today)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0);
+    }
+
+    let velocity_trend = velocity_trend(velocity_7d, velocity_30d);
 
     Ok(Json(json!({
         "data": {
@@ -302,7 +330,8 @@ pub async fn get_heatmap(
     let days = params.days.unwrap_or(90).clamp(7, 365);
     let since = Utc::now().date_naive() - chrono::Duration::days(days);
 
-    let rows = sqlx::query_as::<_, DailyActivityRow>(
+    // Try personal heatmap first; if empty, fall back to org-wide
+    let mut rows = sqlx::query_as::<_, DailyActivityRow>(
         "SELECT activity_date, total_actions FROM user_daily_activity
          WHERE user_id = $1 AND org_id = $2 AND activity_date >= $3
          ORDER BY activity_date ASC"
@@ -313,6 +342,21 @@ pub async fn get_heatmap(
     .fetch_all(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    if rows.is_empty() {
+        rows = sqlx::query_as::<_, DailyActivityRow>(
+            "SELECT activity_date, SUM(total_actions)::int AS total_actions
+             FROM user_daily_activity
+             WHERE org_id = $1 AND activity_date >= $2
+             GROUP BY activity_date
+             ORDER BY activity_date ASC"
+        )
+        .bind(org_id)
+        .bind(since)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    }
 
     let cells: Vec<serde_json::Value> = rows.iter().map(|r| json!({
         "date":  r.activity_date.to_string(),
@@ -544,6 +588,21 @@ async fn get_velocity(pool: &PgPool, user_id: &str, org_id: &str, days: i64) -> 
          WHERE user_id = $1 AND org_id = $2 AND activity_date >= $3"
     )
     .bind(user_id)
+    .bind(org_id)
+    .bind(since)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    (count as f64) / (days as f64)
+}
+
+/// Org-wide velocity (all users combined) — fallback when personal data is empty
+async fn get_velocity_org(pool: &PgPool, org_id: &str, days: i64) -> f64 {
+    let since = Utc::now().date_naive() - chrono::Duration::days(days);
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity
+         WHERE org_id = $1 AND activity_date >= $2"
+    )
     .bind(org_id)
     .bind(since)
     .fetch_one(pool)
