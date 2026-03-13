@@ -763,8 +763,9 @@ pub async fn update(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    // Verify issue belongs to org
-    let exists: bool = sqlx::query_scalar(
+    // Verify issue belongs to one of the user's orgs (cross-org support)
+    // First try current org, then check all user's orgs
+    let mut exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
     )
     .bind(id)
@@ -772,6 +773,19 @@ pub async fn update(
     .fetch_one(&pool)
     .await
     .unwrap_or(false);
+
+    // Cross-org fallback: check if issue belongs to ANY org the user is a member of
+    if !exists {
+        let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
+        exists = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2))"
+        )
+        .bind(id)
+        .bind(&all_org_ids)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(false);
+    }
 
     if !exists {
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
