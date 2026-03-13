@@ -549,9 +549,9 @@ pub async fn get_billing(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    use crate::routes::issues::resolve_user_org_ids;
+    use crate::routes::issues::resolve_user_org_ids_from_auth;
 
-    let org_ids = resolve_user_org_ids(&auth).await.map_err(|e| {
+    let org_ids = resolve_user_org_ids_from_auth(&auth).await.map_err(|e| {
         tracing::error!(error = %e, "billing: failed to fetch org memberships");
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to resolve organizations"})))
     })?;

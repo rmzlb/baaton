@@ -180,7 +180,6 @@ fn validate_status_transition(from: &str, to: &str, force: bool) -> Result<Vec<s
     Ok(warnings)
 }
 
-#[derive(Debug, Deserialize)]
 /// Resolve all org IDs accessible to a user.
 /// For Clerk users: fetches memberships from Clerk API (all orgs).
 /// Fallback: current org + orgs discovered via activity data.
@@ -202,6 +201,7 @@ async fn resolve_user_org_ids(_pool: &PgPool, current_org_id: &str, user_id: &st
     vec![current_org_id.to_string()]
 }
 
+#[derive(Debug, Deserialize)]
 pub struct ListParams {
     pub status: Option<String>,
     pub priority: Option<String>,
@@ -1561,7 +1561,7 @@ pub async fn search_global(
     }
 
     // Get all org IDs this user belongs to (API key → direct, Clerk user → API call)
-    let org_ids = resolve_user_org_ids(&auth).await.map_err(|e| {
+    let org_ids = resolve_user_org_ids_from_auth(&auth).await.map_err(|e| {
         tracing::error!(error = %e, "Failed to fetch user org memberships");
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to resolve organizations"})))
     })?;
@@ -1636,7 +1636,7 @@ pub async fn search_global(
 /// Resolve all organization IDs for an authenticated user.
 /// For API key users, returns the org_id from the auth middleware directly.
 /// For Clerk users, fetches memberships from Clerk API.
-pub async fn resolve_user_org_ids(auth: &super::super::middleware::AuthUser) -> Result<Vec<String>, String> {
+pub async fn resolve_user_org_ids_from_auth(auth: &super::super::middleware::AuthUser) -> Result<Vec<String>, String> {
     if auth.user_id.starts_with("apikey:") {
         // API key auth: org_id already resolved by middleware
         return Ok(auth.org_id.iter().cloned().collect());
