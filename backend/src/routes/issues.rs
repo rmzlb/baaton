@@ -181,6 +181,38 @@ fn validate_status_transition(from: &str, to: &str, force: bool) -> Result<Vec<s
 }
 
 #[derive(Debug, Deserialize)]
+/// Resolve all org IDs accessible to a user (current org + orgs with activity).
+/// Used for cross-org views (all-issues, my-tasks, dashboard).
+async fn resolve_user_org_ids(pool: &PgPool, current_org_id: &str, user_id: &str) -> Vec<String> {
+    let mut org_ids = vec![current_org_id.to_string()];
+
+    // Collect all API key identities for this org
+    let api_key_ids: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT 'apikey:' || id::text FROM api_keys WHERE org_id = $1"
+    ).bind(current_org_id).fetch_all(pool).await.unwrap_or_default();
+
+    let mut all_user_ids = vec![user_id.to_string()];
+    all_user_ids.extend(api_key_ids);
+
+    // Find other orgs where these identities have activity
+    let extra_orgs: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT org_id FROM user_daily_activity WHERE user_id = ANY($1) AND org_id != $2"
+    ).bind(&all_user_ids).bind(current_org_id).fetch_all(pool).await.unwrap_or_default();
+    org_ids.extend(extra_orgs);
+
+    // Also find orgs from projects (the user might have orgs without gamification data)
+    let project_orgs: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT p.org_id FROM projects p
+         JOIN issues i ON i.project_id = p.id
+         WHERE $1 = ANY(i.assignee_ids) AND p.org_id != $2"
+    ).bind(user_id).bind(current_org_id).fetch_all(pool).await.unwrap_or_default();
+    for oid in project_orgs {
+        if !org_ids.contains(&oid) { org_ids.push(oid); }
+    }
+
+    org_ids
+}
+
 pub struct ListParams {
     pub status: Option<String>,
     pub priority: Option<String>,
@@ -287,6 +319,9 @@ pub async fn list_all(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
+    // Collect all orgs accessible to this user (cross-org view)
+    let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
+
     let limit = params.limit.unwrap_or(1000).min(2000);
 
     let issues = sqlx::query_as::<_, Issue>(
@@ -294,12 +329,12 @@ pub async fn list_all(
         SELECT i.*
         FROM issues i
         JOIN projects p ON p.id = i.project_id
-        WHERE p.org_id = $1
+        WHERE p.org_id = ANY($1)
         ORDER BY i.created_at DESC
         LIMIT $2
         "#,
     )
-    .bind(org_id)
+    .bind(&all_org_ids)
     .bind(limit)
     .fetch_all(&pool)
     .await
@@ -1264,12 +1299,15 @@ pub async fn list_mine(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
+    // Cross-org: show tasks assigned to user from ALL orgs
+    let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
+
     let issues = sqlx::query_as::<_, Issue>(
         r#"
         SELECT i.*
         FROM issues i
         JOIN projects p ON p.id = i.project_id
-        WHERE $1 = ANY(i.assignee_ids) AND p.org_id = $2
+        WHERE $1 = ANY(i.assignee_ids) AND p.org_id = ANY($2)
         ORDER BY
             CASE i.priority
                 WHEN 'urgent' THEN 0
@@ -1282,7 +1320,7 @@ pub async fn list_mine(
         "#,
     )
     .bind(&params.assignee_id)
-    .bind(org_id)
+    .bind(&all_org_ids)
     .fetch_all(&pool)
     .await
     .unwrap_or_else(|e| {
