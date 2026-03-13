@@ -1775,6 +1775,55 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'admin.auditLog': 'Journal d\'audit',
   'admin.noAuditEntries': 'Aucune action admin enregistrée.',
 
+  // ─── Sidebar additions (table, integrations) ────────
+  'sidebar.tableView': 'Vue Tableau',
+  'sidebar.integrations': 'Intégrations',
+
+  // ─── Table View ──────────────────────────────────────
+  'table.pageTitle': 'Vue Tableau',
+  'table.issueCount': 'issues',
+  'table.id': 'ID',
+  'table.title': 'Titre',
+  'table.status': 'Statut',
+  'table.priority': 'Priorité',
+  'table.type': 'Type',
+  'table.assignees': 'Assignés',
+  'table.estimate': 'Est.',
+  'table.dueDate': 'Échéance',
+  'table.tags': 'Tags',
+  'table.created': 'Créé',
+  'table.updated': 'Modifié',
+  'table.sortAsc': 'Trier croissant',
+  'table.sortDesc': 'Trier décroissant',
+
+  // ─── Estimates ───────────────────────────────────────
+  'estimates.xs': 'XS — 0.5pt',
+  'estimates.s': 'S — 1pt',
+  'estimates.m': 'M — 2pt',
+  'estimates.l': 'L — 3pt',
+  'estimates.xl': 'XL — 5pt',
+  'estimates.xxl': 'XXL — 8pt',
+  'estimates.label': 'Estimation',
+  'estimates.none': 'Pas d\'estimation',
+
+  // ─── Page Intégrations ───────────────────────────────
+  'integrations.title': 'Intégrations',
+  'integrations.subtitle': 'Connectez Baaton aux outils que vous utilisez déjà.',
+  'integrations.connect': 'Connecter',
+  'integrations.disconnect': 'Déconnecter',
+  'integrations.comingSoon': 'Bientôt',
+  'integrations.github.description': 'Synchronisez les issues, PRs et commits avec vos dépôts GitHub.',
+  'integrations.slack.description': 'Recevez les notifications Baaton et utilisez des commandes Slack.',
+  'integrations.slack.workspaces': 'espace(s) de travail connecté(s)',
+  'integrations.agentmail.description': 'Connectez votre boîte AgentMail pour recevoir les notifications d\'issues par e-mail.',
+  'integrations.agentmail.concept': 'AgentMail relie votre boîte e-mail à Baaton — les nouveaux e-mails deviennent des issues, et les mises à jour d\'issues déclenchent des notifications.',
+  'integrations.agentmail.flowEmail': 'E-mail',
+  'integrations.agentmail.flowBaaton': 'Baaton',
+  'integrations.agentmail.feature1Title': 'E-mail → Issue',
+  'integrations.agentmail.feature1Desc': 'Les e-mails entrants créent automatiquement des issues dans votre projet.',
+  'integrations.agentmail.feature2Title': 'Issue → E-mail',
+  'integrations.agentmail.feature2Desc': 'Les changements de statut et commentaires déclenchent des notifications par e-mail.',
+
   // ─── Raccourcis Clavier ────────────────────────────
   'shortcut.title': 'Raccourcis Clavier',
   'shortcut.bindings': 'raccourcis',

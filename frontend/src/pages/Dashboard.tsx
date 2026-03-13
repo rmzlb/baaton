@@ -299,7 +299,7 @@ function MiniHeatmap({ cells, label }: { cells: HeatmapCell[]; label: string }) 
 
   const max = Math.max(...cells.map(c => c.count), 1);
   const lvl = (n: number) => n === 0 ? 0 : n <= max * 0.25 ? 1 : n <= max * 0.5 ? 2 : n <= max * 0.75 ? 3 : 4;
-  const colors = ['bg-surface-hover', 'bg-amber-900/40', 'bg-amber-700/50', 'bg-amber-500/60', 'bg-amber-400'];
+  const colors = ['bg-border/50', 'bg-amber-500/25', 'bg-amber-500/45', 'bg-amber-500/70', 'bg-amber-500'];
 
   return (
     <div className="space-y-1.5">
