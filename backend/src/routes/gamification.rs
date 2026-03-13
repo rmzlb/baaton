@@ -696,31 +696,58 @@ pub async fn get_dashboard(
     let week_start = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
     let thirty_days_ago = today - chrono::Duration::days(30);
 
-    // ── 1. Personal stats (cross-org) ──
+    // ── Resolve all user identities ──
+    // A Clerk user might also have activity under API key identities (apikey:xxx).
+    // Collect all user_ids that belong to this person so personal stats are complete.
+    let mut user_ids: Vec<String> = vec![auth.user_id.clone()];
+
+    // Find all API keys in this user's orgs → they map to activity as "apikey:{id}"
+    // (API keys don't have created_by, so we include all keys in accessible orgs)
+    let api_key_ids: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT 'apikey:' || id::text FROM api_keys WHERE org_id = $1"
+    ).bind(org_id).fetch_all(&pool).await.unwrap_or_default();
+    user_ids.extend(api_key_ids);
+
+    // ── Collect all orgs this user has access to (via user_daily_activity) ──
+    let mut all_org_ids: Vec<String> = vec![org_id.to_string()];
+    let extra_orgs: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT org_id FROM user_daily_activity WHERE user_id = ANY($1) AND org_id != $2"
+    ).bind(&user_ids).bind(org_id).fetch_all(&pool).await.unwrap_or_default();
+    all_org_ids.extend(extra_orgs);
+
+    // ── 1. Personal stats (cross-org, all identities) ──
     let personal_week: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE user_id = $1 AND activity_date >= $2"
-    ).bind(&auth.user_id).bind(week_start).fetch_one(&pool).await.unwrap_or(0);
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE user_id = ANY($1) AND activity_date >= $2"
+    ).bind(&user_ids).bind(week_start).fetch_one(&pool).await.unwrap_or(0);
 
     let personal_today: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE user_id = $1 AND activity_date = $2"
-    ).bind(&auth.user_id).bind(today).fetch_one(&pool).await.unwrap_or(0);
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE user_id = ANY($1) AND activity_date = $2"
+    ).bind(&user_ids).bind(today).fetch_one(&pool).await.unwrap_or(0);
 
-    let personal_v7 = get_velocity_scoped(&pool, "user_id = $1", &auth.user_id, 7).await;
-    let personal_v30 = get_velocity_scoped(&pool, "user_id = $1", &auth.user_id, 30).await;
+    // Velocity: cross-org, all identities
+    let personal_v7: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_actions)::float / GREATEST($2, 1), 0.0)
+         FROM user_daily_activity WHERE user_id = ANY($1) AND activity_date >= CURRENT_DATE - $2"
+    ).bind(&user_ids).bind(7i32).fetch_one(&pool).await.unwrap_or(0.0);
 
-    // Streak
+    let personal_v30: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_actions)::float / GREATEST($2, 1), 0.0)
+         FROM user_daily_activity WHERE user_id = ANY($1) AND activity_date >= CURRENT_DATE - $2"
+    ).bind(&user_ids).bind(30i32).fetch_one(&pool).await.unwrap_or(0.0);
+
+    // Streak (best across all identities)
     let streak_row = sqlx::query_as::<_, UserActivityRow>(
         "SELECT COALESCE(MAX(current_streak),0) AS current_streak, COALESCE(MAX(longest_streak),0) AS longest_streak,
                 MAX(last_active_date) AS last_active_date, COALESCE(MAX(best_day_count),0) AS best_day_count,
                 COALESCE(MAX(best_week_count),0) AS best_week_count
-         FROM user_activity WHERE user_id = $1"
-    ).bind(&auth.user_id).fetch_optional(&pool).await.ok().flatten();
+         FROM user_activity WHERE user_id = ANY($1)"
+    ).bind(&user_ids).fetch_optional(&pool).await.ok().flatten();
     let (streak, longest, best_day, best_week) = match &streak_row {
         Some(a) => (a.current_streak, a.longest_streak, a.best_day_count, a.best_week_count),
         None => (0, 0, 0, 0),
     };
 
-    // Personal breakdown this week
+    // Personal breakdown this week (cross-org, all identities)
     #[derive(sqlx::FromRow)]
     struct Bd { ic: i64, ix: i64, co: i64, tl: i64, sc: i64, up: i64, gh: i64 }
     let pbd = sqlx::query_as::<_, Bd>(
@@ -728,68 +755,61 @@ pub async fn get_dashboard(
                 COALESCE(SUM(comments_posted),0) AS co, COALESCE(SUM(tldrs_posted),0) AS tl,
                 COALESCE(SUM(status_changes),0) AS sc, COALESCE(SUM(updates),0) AS up,
                 COALESCE(SUM(github_actions),0) AS gh
-         FROM user_daily_activity WHERE user_id = $1 AND activity_date >= $2"
-    ).bind(&auth.user_id).bind(week_start).fetch_optional(&pool).await.ok().flatten();
+         FROM user_daily_activity WHERE user_id = ANY($1) AND activity_date >= $2"
+    ).bind(&user_ids).bind(week_start).fetch_optional(&pool).await.ok().flatten();
 
-    // ── 2. Org-wide stats (all projects in this org) ──
+    // ── 2. All-orgs stats (cross all orgs the user has access to) ──
     let org_week: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE org_id = $1 AND activity_date >= $2"
-    ).bind(org_id).bind(week_start).fetch_one(&pool).await.unwrap_or(0);
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE org_id = ANY($1) AND activity_date >= $2"
+    ).bind(&all_org_ids).bind(week_start).fetch_one(&pool).await.unwrap_or(0);
 
     let org_today: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE org_id = $1 AND activity_date = $2"
-    ).bind(org_id).bind(today).fetch_one(&pool).await.unwrap_or(0);
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE org_id = ANY($1) AND activity_date = $2"
+    ).bind(&all_org_ids).bind(today).fetch_one(&pool).await.unwrap_or(0);
 
-    let org_v7 = get_velocity_org(&pool, org_id, 7).await;
+    let org_v7: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_actions)::float / GREATEST($2, 1), 0.0)
+         FROM user_daily_activity WHERE org_id = ANY($1) AND activity_date >= CURRENT_DATE - $2"
+    ).bind(&all_org_ids).bind(7i32).fetch_one(&pool).await.unwrap_or(0.0);
 
-    // Org breakdown this week
+    // Org breakdown this week (all orgs)
     let obd = sqlx::query_as::<_, Bd>(
         "SELECT COALESCE(SUM(issues_created),0) AS ic, COALESCE(SUM(issues_closed),0) AS ix,
                 COALESCE(SUM(comments_posted),0) AS co, COALESCE(SUM(tldrs_posted),0) AS tl,
                 COALESCE(SUM(status_changes),0) AS sc, COALESCE(SUM(updates),0) AS up,
                 COALESCE(SUM(github_actions),0) AS gh
-         FROM user_daily_activity WHERE org_id = $1 AND activity_date >= $2"
-    ).bind(org_id).bind(week_start).fetch_optional(&pool).await.ok().flatten();
+         FROM user_daily_activity WHERE org_id = ANY($1) AND activity_date >= $2"
+    ).bind(&all_org_ids).bind(week_start).fetch_optional(&pool).await.ok().flatten();
 
-    // ── 3. Per-project activity (this org, last 30 days) ──
+    // ── 3. Per-project activity (ALL orgs, last 30 days) ──
     #[derive(sqlx::FromRow)]
     struct ProjectActivity { project_id: Uuid, name: String, prefix: String, actions: i64 }
-    let project_stats = sqlx::query_as::<_, ProjectActivity>(
-        "SELECT p.id AS project_id, p.name, p.prefix,
-                COALESCE(SUM(d.total_actions), 0)::bigint AS actions
-         FROM projects p
-         LEFT JOIN activity_log a ON a.project_id = p.id AND a.created_at >= $2
-         LEFT JOIN user_daily_activity d ON d.org_id = p.org_id AND d.activity_date >= $3::date
-         WHERE p.org_id = $1
-         GROUP BY p.id, p.name, p.prefix
-         ORDER BY actions DESC"
-    ).bind(org_id).bind(thirty_days_ago).bind(thirty_days_ago).fetch_all(&pool).await.unwrap_or_default();
+    // Unused first query removed — using activity_log count directly
 
-    // Per-project with proper count from activity_log
     let project_activity = sqlx::query_as::<_, ProjectActivity>(
         "SELECT p.id AS project_id, p.name, p.prefix,
                 COUNT(a.id)::bigint AS actions
          FROM projects p
          LEFT JOIN activity_log a ON a.project_id = p.id AND a.created_at >= $2
-         WHERE p.org_id = $1
+         WHERE p.org_id = ANY($1)
          GROUP BY p.id, p.name, p.prefix
          ORDER BY actions DESC"
-    ).bind(org_id).bind(thirty_days_ago).fetch_all(&pool).await.unwrap_or_default();
+    ).bind(&all_org_ids).bind(thirty_days_ago).fetch_all(&pool).await.unwrap_or_default();
 
-    // ── 4. Top contributors (org-wide this week) ──
+    // ── 4. Top contributors (all orgs this week) ──
     #[derive(sqlx::FromRow)]
     struct ContribRow { user_id: String, user_name: Option<String>, actions: i64 }
     let contributors = sqlx::query_as::<_, ContribRow>(
         "SELECT d.user_id, MAX(a.user_name) AS user_name, SUM(d.total_actions)::bigint AS actions
          FROM user_daily_activity d
          LEFT JOIN LATERAL (
-           SELECT user_name FROM activity_log WHERE user_id = d.user_id AND org_id = $1 LIMIT 1
+           SELECT user_name FROM activity_log WHERE user_id = d.user_id AND org_id = ANY($1) LIMIT 1
          ) a ON true
-         WHERE d.org_id = $1 AND d.activity_date >= $2
+         WHERE d.org_id = ANY($1) AND d.activity_date >= $2
          GROUP BY d.user_id ORDER BY actions DESC LIMIT 8"
-    ).bind(org_id).bind(week_start).fetch_all(&pool).await.unwrap_or_default();
+    ).bind(&all_org_ids).bind(week_start).fetch_all(&pool).await.unwrap_or_default();
 
-    // ── 5. Assigned issues (open, assigned to user in this org) ──
+    // ── 5. Assigned issues (open, assigned to user, ALL orgs) ──
     #[derive(sqlx::FromRow)]
     struct AssignedIssue {
         id: Uuid, display_id: String, title: String, status: String,
@@ -800,29 +820,29 @@ pub async fn get_dashboard(
                 p.prefix AS project_prefix, p.name AS project_name
          FROM issues i
          JOIN projects p ON p.id = i.project_id
-         WHERE i.org_id = $1
+         WHERE p.org_id = ANY($1)
            AND $2 = ANY(i.assignee_ids)
            AND i.status NOT IN ('done', 'cancelled')
          ORDER BY
            CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
            i.created_at DESC
          LIMIT 20"
-    ).bind(org_id).bind(&auth.user_id).fetch_all(&pool).await.unwrap_or_default();
+    ).bind(&all_org_ids).bind(&auth.user_id).fetch_all(&pool).await.unwrap_or_default();
 
-    // ── 6. Heatmaps (personal + org, last 90 days) ──
+    // ── 6. Heatmaps (personal cross-org + all-orgs team, last 90 days) ──
     let hm_since = today - chrono::Duration::days(90);
 
     let personal_heatmap = sqlx::query_as::<_, DailyActivityRow>(
         "SELECT activity_date, SUM(total_actions)::int AS total_actions
-         FROM user_daily_activity WHERE user_id = $1 AND activity_date >= $2
+         FROM user_daily_activity WHERE user_id = ANY($1) AND activity_date >= $2
          GROUP BY activity_date ORDER BY activity_date ASC"
-    ).bind(&auth.user_id).bind(hm_since).fetch_all(&pool).await.unwrap_or_default();
+    ).bind(&user_ids).bind(hm_since).fetch_all(&pool).await.unwrap_or_default();
 
     let org_heatmap = sqlx::query_as::<_, DailyActivityRow>(
         "SELECT activity_date, SUM(total_actions)::int AS total_actions
-         FROM user_daily_activity WHERE org_id = $1 AND activity_date >= $2
+         FROM user_daily_activity WHERE org_id = ANY($1) AND activity_date >= $2
          GROUP BY activity_date ORDER BY activity_date ASC"
-    ).bind(org_id).bind(hm_since).fetch_all(&pool).await.unwrap_or_default();
+    ).bind(&all_org_ids).bind(hm_since).fetch_all(&pool).await.unwrap_or_default();
 
     fn bd_json(b: &Option<Bd>) -> serde_json::Value {
         json!({
