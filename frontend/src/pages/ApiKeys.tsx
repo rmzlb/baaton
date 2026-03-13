@@ -17,62 +17,62 @@ const PERMISSION_GROUPS = [
   {
     key: 'issues',
     perms: ['issues:read', 'issues:write', 'issues:delete'],
-    color: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+    color: 'bg-blue-500/15 text-blue-600 border-blue-500/25',
   },
   {
     key: 'projects',
     perms: ['projects:read', 'projects:write', 'projects:delete'],
-    color: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+    color: 'bg-purple-500/15 text-purple-600 border-purple-500/25',
   },
   {
     key: 'comments',
     perms: ['comments:read', 'comments:write', 'comments:delete'],
-    color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+    color: 'bg-cyan-500/15 text-cyan-600 border-cyan-500/25',
   },
   {
     key: 'labels',
     perms: ['labels:read', 'labels:write'],
-    color: 'bg-pink-500/20 text-pink-300 border-pink-500/30',
+    color: 'bg-pink-500/15 text-pink-600 border-pink-500/25',
   },
   {
     key: 'milestones',
     perms: ['milestones:read', 'milestones:write'],
-    color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+    color: 'bg-indigo-500/15 text-indigo-600 border-indigo-500/25',
   },
   {
     key: 'sprints',
     perms: ['sprints:read', 'sprints:write'],
-    color: 'bg-violet-500/20 text-violet-300 border-violet-500/30',
+    color: 'bg-violet-500/15 text-violet-600 border-violet-500/25',
   },
   {
     key: 'automations',
     perms: ['automations:read', 'automations:write'],
-    color: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+    color: 'bg-orange-500/15 text-orange-600 border-orange-500/25',
   },
   {
     key: 'webhooks',
     perms: ['webhooks:read', 'webhooks:write'],
-    color: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
+    color: 'bg-teal-500/15 text-teal-600 border-teal-500/25',
   },
   {
     key: 'members',
     perms: ['members:read', 'members:invite'],
-    color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+    color: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/25',
   },
   {
     key: 'ai',
     perms: ['ai:chat', 'ai:triage'],
-    color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+    color: 'bg-amber-500/15 text-amber-600 border-amber-500/25',
   },
   {
     key: 'billing',
     perms: ['billing:read'],
-    color: 'bg-lime-500/20 text-lime-300 border-lime-500/30',
+    color: 'bg-lime-500/15 text-lime-600 border-lime-500/25',
   },
   {
     key: 'admin',
     perms: ['admin:full'],
-    color: 'bg-red-500/20 text-red-300 border-red-500/30',
+    color: 'bg-red-500/15 text-red-600 border-red-500/25',
   },
 ] as const;
 
@@ -135,7 +135,7 @@ function formatExpiry(expires_at: string | null): string {
 }
 
 function PermBadge({ perm, t }: { perm: string; t: (k: string) => string }) {
-  const color = PERM_COLOR[perm] ?? 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30';
+  const color = PERM_COLOR[perm] ?? 'bg-zinc-500/15 text-zinc-600 border-zinc-500/25';
   const label = t(`apiKeys.perm.${perm}` as any) ?? perm;
   return (
     <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${color}`}>
