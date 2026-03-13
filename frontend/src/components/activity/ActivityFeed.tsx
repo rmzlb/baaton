@@ -1,75 +1,70 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import {
-  PlusCircle,
-  MessageSquare,
-  ArrowRightLeft,
-  UserPlus,
-  Tag,
-  Pencil,
-  Activity,
-  Clock,
-  GitCommit,
-  GitPullRequest,
-  ExternalLink,
-} from 'lucide-react';
+import { Activity } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { timeAgo } from '@/lib/utils';
-import { cn } from '@/lib/utils';
+import { timeAgo, cn } from '@/lib/utils';
 import type { ActivityEntry } from '@/lib/types';
 
-/* ── Action config ─────────────────────────────── */
+/* ── Action → dot color mapping ────────────────── */
 
-const ACTION_CONFIG: Record<string, {
-  icon: typeof PlusCircle;
-  color: string;
-  labelKey: string;
-}> = {
-  created:          { icon: PlusCircle,      color: 'text-green-400',  labelKey: 'activity.created' },
-  issue_created:    { icon: PlusCircle,      color: 'text-green-400',  labelKey: 'activity.created' },
-  updated:          { icon: Pencil,          color: 'text-blue-400',   labelKey: 'activity.updated' },
-  commented:        { icon: MessageSquare,   color: 'text-purple-400', labelKey: 'activity.commented' },
-  comment_added:    { icon: MessageSquare,   color: 'text-purple-400', labelKey: 'activity.commented' },
-  status_changed:   { icon: ArrowRightLeft,  color: 'text-amber-400',  labelKey: 'activity.statusChanged' },
-  priority_changed: { icon: ArrowRightLeft,  color: 'text-orange-400', labelKey: 'activity.updated' },
-  assigned:         { icon: UserPlus,        color: 'text-cyan-400',   labelKey: 'activity.assigned' },
-  assignee_changed: { icon: UserPlus,        color: 'text-cyan-400',   labelKey: 'activity.assigned' },
-  tagged:           { icon: Tag,             color: 'text-pink-400',   labelKey: 'activity.tagged' },
-  tag_added:        { icon: Tag,             color: 'text-pink-400',   labelKey: 'activity.tagged' },
-  github_push:      { icon: GitCommit,       color: 'text-gray-400',   labelKey: 'activity.githubPush' },
-  github_pr_opened: { icon: GitPullRequest,  color: 'text-violet-400', labelKey: 'activity.githubPrOpened' },
-  github_pr_merged: { icon: GitPullRequest,  color: 'text-green-400',  labelKey: 'activity.githubPrMerged' },
+const DOT_COLORS: Record<string, string> = {
+  created:          'bg-emerald-500',
+  issue_created:    'bg-emerald-500',
+  issue_closed:     'bg-emerald-500',
+  issue_archived:   'bg-emerald-500',
+  commented:        'bg-orange-400',
+  comment_added:    'bg-orange-400',
+  status_changed:   'bg-blue-500',
+  priority_changed: 'bg-blue-500',
+  updated:          'bg-blue-500',
+  assigned:         'bg-cyan-500',
+  assignee_changed: 'bg-cyan-500',
+  tagged:           'bg-pink-500',
+  tag_added:        'bg-pink-500',
+  github_push:      'bg-gray-400',
+  github_pr_opened: 'bg-violet-500',
+  github_pr_merged: 'bg-emerald-500',
 };
+
+/* ── Action label ──────────────────────────────── */
+
+function actionVerb(action: string, t: (k: string) => string): string {
+  const map: Record<string, string> = {
+    created: 'created', issue_created: 'created',
+    issue_closed: 'closed', issue_archived: 'archived',
+    commented: 'commented on', comment_added: 'commented on',
+    status_changed: 'updated status of', priority_changed: 'updated priority of',
+    updated: 'updated', assigned: 'assigned', assignee_changed: 'reassigned',
+    tagged: 'tagged', tag_added: 'tagged',
+    github_push: 'pushed to', github_pr_opened: 'opened PR for',
+    github_pr_merged: 'merged PR for',
+  };
+  return map[action] || t('activity.updated') || 'updated';
+}
 
 /* ── Props ─────────────────────────────────────── */
 
 interface ActivityFeedProps {
-  /** If provided, show activity for a specific issue */
   issueId?: string;
-  /** Maximum entries to show */
   limit?: number;
-  /** Compact mode for sidebar/cards */
   compact?: boolean;
 }
 
 /* ── Component ─────────────────────────────────── */
 
-export function ActivityFeed({ issueId, limit = 20, compact = false }: ActivityFeedProps) {
+export function ActivityFeed({ issueId, limit = 20 }: ActivityFeedProps) {
   const { t } = useTranslation();
   const apiClient = useApi();
 
   const { data: entries = [], isLoading } = useQuery({
     queryKey: issueId ? ['activity', issueId] : ['activity'],
-    queryFn: () =>
-      issueId
-        ? apiClient.activity.listByIssue(issueId)
-        : apiClient.activity.listRecent(),
+    queryFn: () => issueId ? apiClient.activity.listByIssue(issueId) : apiClient.activity.listRecent(),
     staleTime: 15_000,
     refetchInterval: 30_000,
   });
 
-  const displayEntries = entries.slice(0, limit);
+  const items = entries.slice(0, limit);
 
   if (isLoading) {
     return (
@@ -80,7 +75,7 @@ export function ActivityFeed({ issueId, limit = 20, compact = false }: ActivityF
     );
   }
 
-  if (displayEntries.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-6 text-center">
         <Activity size={20} className="text-muted mb-1.5" />
@@ -90,141 +85,78 @@ export function ActivityFeed({ issueId, limit = 20, compact = false }: ActivityF
   }
 
   return (
-    <div className="space-y-0">
-      {displayEntries.map((entry, idx) => (
-        <ActivityItem
-          key={entry.id}
-          entry={entry}
-          isLast={idx === displayEntries.length - 1}
-          compact={compact}
-          t={t}
-        />
-      ))}
+    <div className="relative pl-3">
+      {/* Continuous vertical line */}
+      <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
+
+      <div className="space-y-5">
+        {items.map((entry) => (
+          <TimelineItem key={entry.id} entry={entry} t={t} />
+        ))}
+      </div>
     </div>
   );
 }
 
-/* ── Single Activity Item ──────────────────────── */
+/* ── Timeline Item ─────────────────────────────── */
 
-function ActivityItem({
-  entry,
-  isLast,
-  compact,
-  t,
-}: {
-  entry: ActivityEntry;
-  isLast: boolean;
-  compact: boolean;
-  t: (key: string, vars?: Record<string, string | number>) => string;
-}) {
+function TimelineItem({ entry, t }: { entry: ActivityEntry; t: (k: string) => string }) {
   const navigate = useNavigate();
-
-  const config = ACTION_CONFIG[entry.action] || {
-    icon: Activity,
-    color: 'text-muted',
-    labelKey: 'activity.updated',
-  };
-  const Icon = config.icon;
-  const actionLabel = t(config.labelKey);
+  const dotColor = DOT_COLORS[entry.action] || 'bg-gray-400';
+  const verb = actionVerb(entry.action, t);
 
   const displayName = entry.user_name
     ? entry.user_name.replace(/^@/, '')
     : entry.user_id.startsWith('github:')
       ? entry.user_id.slice(7)
-      : entry.user_id.slice(0, 12);
+      : entry.user_id.startsWith('apikey:')
+        ? 'agent'
+        : entry.user_id.slice(0, 12);
 
-  const isGitHub = entry.user_id.startsWith('github:');
-
-  // Navigate to the issue via /all-issues?issue=BAA-42
-  const handleClick = () => {
-    if (!entry.issue_display_id) return;
-    navigate(`/all-issues?issue=${entry.issue_display_id}`);
+  const handleIssueClick = () => {
+    if (entry.issue_display_id) navigate(`/all-issues?issue=${entry.issue_display_id}`);
   };
 
-  const isClickable = !!entry.issue_display_id;
-
   return (
-    <div className="flex gap-2.5 group">
-      {/* Timeline line + icon */}
-      <div className="flex flex-col items-center shrink-0">
-        <div className={cn(
-          'flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface',
-          config.color,
-        )}>
-          <Icon size={compact ? 10 : 12} />
-        </div>
-        {!isLast && (
-          <div className="w-px flex-1 bg-border min-h-[16px]" />
-        )}
-      </div>
+    <div className="relative flex gap-3.5 group">
+      {/* Dot with ring */}
+      <div className={cn(
+        'w-2.5 h-2.5 rounded-full ring-4 ring-surface mt-1.5 shrink-0 relative z-10',
+        dotColor,
+      )} />
 
       {/* Content */}
-      <div className={cn('flex-1 min-w-0', compact ? 'pb-2' : 'pb-3')}>
-        <div className="flex items-baseline gap-1.5 flex-wrap">
-          {/* Author */}
-          <span className={cn(
-            'text-[11px] font-medium text-primary truncate max-w-[120px]',
-            isGitHub && 'text-gray-400',
-          )}>
-            {displayName}
-          </span>
-          <span className="text-[11px] text-secondary">{actionLabel}</span>
-          {entry.field && entry.action !== 'commented' && entry.action !== 'comment_added' && (
-            <span className="text-[10px] text-muted font-mono">{entry.field}</span>
-          )}
-        </div>
-
-        {/* Issue link — the main value-add */}
-        {entry.issue_display_id && (
-          <button
-            onClick={handleClick}
-            className={cn(
-              'mt-0.5 flex items-center gap-1 group/link',
-              isClickable && 'cursor-pointer',
-            )}
-            title={entry.issue_title ?? entry.issue_display_id}
-          >
-            <span className="text-[10px] font-mono text-amber-500/80 group-hover/link:text-amber-400 transition-colors">
+      <div className="flex-1 min-w-0 pb-0.5">
+        <p className="text-sm text-primary leading-snug">
+          <span className="font-medium">{displayName}</span>
+          {' '}{verb}{' '}
+          {entry.issue_display_id && (
+            <button
+              onClick={handleIssueClick}
+              className="text-muted font-medium hover:text-accent transition-colors"
+            >
               {entry.issue_display_id}
-            </span>
-            {entry.issue_title && (
-              <span className="text-[10px] text-muted truncate max-w-[160px] group-hover/link:text-secondary transition-colors">
-                {entry.issue_title}
-              </span>
-            )}
-            <ExternalLink size={8} className="text-muted/50 group-hover/link:text-muted shrink-0" />
-          </button>
-        )}
+            </button>
+          )}
+        </p>
 
-        {/* Field change detail */}
+        {/* Metadata snippet (status change, commit message) */}
         {entry.new_value && entry.action !== 'created' && entry.action !== 'issue_created' &&
-         entry.action !== 'commented' && entry.action !== 'comment_added' &&
-         !entry.action.startsWith('github_') && (
-          <div className="mt-0.5 text-[10px] text-muted truncate">
+         entry.action !== 'commented' && entry.action !== 'comment_added' && (
+          <div className="mt-1.5 px-2.5 py-1.5 bg-surface-hover border border-border rounded text-xs text-secondary line-clamp-1">
             {entry.old_value ? (
-              <>
-                <span className="line-through">{entry.old_value}</span>
-                <span className="mx-1">→</span>
-                <span className="text-secondary">{entry.new_value}</span>
-              </>
-            ) : (
-              <span className="text-secondary">{entry.new_value}</span>
-            )}
+              <><span className="text-muted line-through">{entry.old_value}</span> → <span>{entry.new_value}</span></>
+            ) : entry.new_value}
           </div>
         )}
 
-        {/* GitHub metadata preview */}
         {entry.action === 'github_push' && typeof entry.metadata?.message === 'string' && (
-          <div className="mt-0.5 text-[10px] text-muted font-mono truncate max-w-[200px]">
+          <div className="mt-1.5 px-2.5 py-1.5 bg-surface-hover border border-border rounded text-xs text-secondary font-mono line-clamp-1">
             {(entry.metadata.message as string).split('\n')[0]}
           </div>
         )}
 
-        {/* Timestamp */}
-        <div className="flex items-center gap-1 mt-0.5">
-          <Clock size={9} className="text-muted" />
-          <span className="text-[9px] text-muted">{timeAgo(entry.created_at)}</span>
-        </div>
+        <p className="text-xs text-muted mt-1">{timeAgo(entry.created_at)}</p>
       </div>
     </div>
   );
