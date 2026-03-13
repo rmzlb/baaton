@@ -1,5 +1,5 @@
 use axum::{extract::{Path, State}, http::StatusCode, Json};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -12,14 +12,8 @@ pub struct EmailPayload {
     pub from_email: Option<String>,
     pub subject: Option<String>,
     pub body: Option<String>,
+    #[allow(dead_code)]
     pub html: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct EmailIntakeResponse {
-    pub issue_id: String,
-    pub display_id: String,
-    pub title: String,
 }
 
 pub async fn intake(

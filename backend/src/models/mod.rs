@@ -356,6 +356,7 @@ impl<T: Serialize> ApiResponse<T> {
 }
 
 impl ActionHint {
+    #[allow(dead_code)]
     pub fn required(action: &str, reason: &str, endpoint: Option<&str>) -> Self {
         Self {
             action: action.to_string(),

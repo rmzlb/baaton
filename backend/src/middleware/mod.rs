@@ -1,4 +1,5 @@
 pub mod security;
+#[allow(dead_code)]
 pub mod rate_limit;
 
 use axum::{
@@ -340,6 +341,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             id: uuid::Uuid,
             org_id: String,
             name: String,
+            #[allow(dead_code)]
             permissions: Vec<String>,
             expires_at: Option<chrono::DateTime<chrono::Utc>>,
             project_ids: Vec<uuid::Uuid>,
