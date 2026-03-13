@@ -480,7 +480,8 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
 
     let mut email = claims.email;
 
-    if display_name.is_none() && email.is_none() {
+    // Always try to resolve email (needed for super_admin lookup by email)
+    if display_name.is_none() || email.is_none() {
         if let Some((fetched_name, fetched_email)) = resolve_profile_cached(&claims.sub).await {
             if display_name.is_none() { display_name = fetched_name; }
             if email.is_none() { email = fetched_email; }

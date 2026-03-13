@@ -22,9 +22,10 @@ async fn is_super_admin(pool: &PgPool, auth: &AuthUser) -> bool {
     if by_id { return true; }
 
     // Check by email (for initial setup before user_id is known)
+    // Handles both NULL and empty string '' for user_id (migration seed uses '')
     if let Some(ref email) = auth.email {
         let by_email: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM super_admins WHERE email = $1 AND user_id IS NULL)"
+            "SELECT EXISTS(SELECT 1 FROM super_admins WHERE email = $1 AND (user_id IS NULL OR user_id = ''))"
         )
         .bind(email)
         .fetch_one(pool)
@@ -33,13 +34,21 @@ async fn is_super_admin(pool: &PgPool, auth: &AuthUser) -> bool {
 
         if by_email {
             // Auto-fill user_id for future lookups
+            // user_id is PK so we need DELETE + INSERT (can't UPDATE PK)
             let _ = sqlx::query(
-                "UPDATE super_admins SET user_id = $1 WHERE email = $2 AND user_id IS NULL"
+                "DELETE FROM super_admins WHERE email = $1 AND (user_id IS NULL OR user_id = '')"
+            )
+            .bind(email)
+            .execute(pool)
+            .await;
+            let _ = sqlx::query(
+                "INSERT INTO super_admins (user_id, email, granted_by) VALUES ($1, $2, 'auto') ON CONFLICT (user_id) DO NOTHING"
             )
             .bind(&auth.user_id)
             .bind(email)
             .execute(pool)
             .await;
+            tracing::info!(user_id = %auth.user_id, email = %email, "Auto-linked super admin by email");
             return true;
         }
     }
