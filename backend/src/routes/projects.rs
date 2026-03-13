@@ -158,9 +158,9 @@ pub async fn create(
     // Ensure the org exists + resolve name from Clerk in background
     crate::routes::admin::upsert_org_background(pool.clone(), effective_org.clone());
 
-    // ── Project limit guard ─────────────────────
+    // ── Project limit guard (per-user, cross-org) ─────────
     crate::middleware::plan_guard::enforce_quota(
-        &pool, &effective_org, &auth.user_id, crate::middleware::plan_guard::QuotaKind::Projects
+        &pool, &auth, crate::middleware::plan_guard::QuotaKind::Projects
     ).await?;
 
     let auto_assign_mode = body.auto_assign_mode.as_deref().unwrap_or("off");

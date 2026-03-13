@@ -408,9 +408,9 @@ pub async fn create(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    // ── Plan enforcement: check issue limit ─────────────
+    // ── Plan enforcement: check issue limit (per-user, cross-org) ─────────
     crate::middleware::plan_guard::enforce_quota(
-        &pool, org_id, &auth.user_id, crate::middleware::plan_guard::QuotaKind::Issues
+        &pool, &auth, crate::middleware::plan_guard::QuotaKind::Issues
     ).await?;
 
     // ── Project access check (API key scoping) ─────────

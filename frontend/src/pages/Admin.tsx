@@ -104,7 +104,7 @@ export default function Admin() {
   });
 
   // Org list
-  const { data: orgData, isLoading: orgsLoading } = useQuery<{ organizations: OrgEntry[]; total: number }>({
+  const { data: orgData, isLoading: orgsLoading } = useQuery<{ organizations: OrgEntry[]; user_plans: Record<string, string>; total: number }>({
     queryKey: ['admin-users', planFilter],
     queryFn: async () => {
       const token = await apiClient._getToken();
@@ -395,14 +395,10 @@ export default function Admin() {
                       <span>{org.api_keys}k</span>
                       <span>{org.ai_messages_this_month} AI</span>
                     </div>
-                    {/* Plan selector */}
-                    <select
-                      value={org.plan}
-                      onClick={e => e.stopPropagation()}
-                      onChange={e => setPlanMut.mutate({ orgId: org.org_id, plan: e.target.value })}
-                      className="text-xs px-2 py-1 bg-transparent border border-border rounded text-primary">
-                      {VALID_PLANS.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                    {/* Plan badge (plans are per-user now, this shows legacy org plan) */}
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border border-border ${
+                      org.plan === 'pro' ? 'text-blue-400' : org.plan === 'enterprise' ? 'text-purple-400' : org.plan === 'partner' ? 'text-amber-400' : 'text-muted'
+                    }`}>{org.plan}</span>
                     <ChevronDown size={16} className={`text-muted transition-transform ${expandedOrg === org.org_id ? 'rotate-180' : ''}`} />
                   </div>
 
@@ -464,7 +460,7 @@ export default function Admin() {
       )}
 
       {/* ─── Users Tab ─────────────────────────────────────────────── */}
-      {tab === 'users' && <UsersTab orgs={orgData?.organizations ?? []} apiClient={apiClient} t={t} />}
+      {tab === 'users' && <UsersTab orgs={orgData?.organizations} userPlans={orgData?.user_plans} apiClient={apiClient} t={t} />}
 
       {/* ─── Super Admins Tab ─────────────────────────────────────── */}
       {tab === 'superadmins' && (
@@ -530,20 +526,32 @@ interface UserRow {
   email: string;
   name: string;
   image_url: string;
-  orgs: { org_id: string; name: string; plan: string; role: string }[];
+  plan: string;
+  orgs: { org_id: string; name: string; role: string }[];
 }
 
-function UsersTab({ orgs, apiClient, t }: { orgs: OrgEntry[] | undefined; apiClient: any; t: (k: string) => string }) {
-  const [search, setSearch] = useState('');
+const PLAN_OPTIONS = ['free', 'pro', 'enterprise', 'partner', 'tester', 'unlimited'] as const;
+const PLAN_COLORS: Record<string, string> = {
+  free: 'text-muted',
+  pro: 'text-blue-400',
+  enterprise: 'text-purple-400',
+  partner: 'text-amber-400',
+  tester: 'text-green-400',
+  unlimited: 'text-red-400',
+};
 
-  // Deduplicate users across all orgs
+function UsersTab({ orgs, userPlans, apiClient, t }: { orgs: OrgEntry[] | undefined; userPlans: Record<string, string> | undefined; apiClient: any; t: (k: string) => string }) {
+  const [search, setSearch] = useState('');
+  const qc = useQueryClient();
+
+  // Deduplicate users across all orgs, attach user plan
   const users = useMemo(() => {
     if (!orgs) return [];
     const map = new Map<string, UserRow>();
     for (const org of orgs) {
       for (const m of org.members) {
         const existing = map.get(m.user_id);
-        const orgInfo = { org_id: org.org_id, name: org.name, plan: org.plan, role: m.role };
+        const orgInfo = { org_id: org.org_id, name: org.name, role: m.role };
         if (existing) {
           existing.orgs.push(orgInfo);
         } else {
@@ -552,13 +560,28 @@ function UsersTab({ orgs, apiClient, t }: { orgs: OrgEntry[] | undefined; apiCli
             email: m.email,
             name: `${m.first_name} ${m.last_name}`.trim() || m.email,
             image_url: m.image_url,
+            plan: userPlans?.[m.user_id] || 'free',
             orgs: [orgInfo],
           });
         }
       }
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [orgs]);
+  }, [orgs, userPlans]);
+
+  const handlePlanChange = async (userId: string, newPlan: string) => {
+    try {
+      const token = await apiClient._getToken();
+      await fetch(`${import.meta.env.VITE_API_URL || 'https://api.baaton.dev'}/api/v1/admin/users/${userId}/plan`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: newPlan }),
+      });
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    } catch (e) {
+      console.error('Failed to set plan', e);
+    }
+  };
 
   const filtered = useMemo(() => {
     if (!search) return users;
@@ -585,8 +608,8 @@ function UsersTab({ orgs, apiClient, t }: { orgs: OrgEntry[] | undefined; apiCli
             <tr className="border-b border-border">
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">User</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Email</th>
+              <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Plan</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Organizations</th>
-              <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">ID</th>
             </tr>
           </thead>
           <tbody>
@@ -608,22 +631,25 @@ function UsersTab({ orgs, apiClient, t }: { orgs: OrgEntry[] | undefined; apiCli
                   <span className="text-xs text-secondary font-mono">{user.email}</span>
                 </td>
                 <td className="px-4 py-3">
+                  <select
+                    value={user.plan}
+                    onChange={e => handlePlanChange(user.user_id, e.target.value)}
+                    className={`rounded-md border border-border bg-bg px-2 py-1 text-xs font-medium ${PLAN_COLORS[user.plan] || 'text-primary'} cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent`}
+                  >
+                    {PLAN_OPTIONS.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </td>
+                <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1.5">
                     {user.orgs.map(o => (
                       <span key={o.org_id} className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px]">
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          o.plan === 'enterprise' ? 'bg-purple-400' :
-                          o.plan === 'pro' ? 'bg-blue-400' :
-                          o.plan === 'partner' ? 'bg-amber-400' : 'bg-muted'
-                        }`} />
                         <span className="text-secondary font-medium">{o.name.startsWith('org_') ? o.org_id.slice(0, 12) + '…' : o.name}</span>
                         <span className="text-muted">({o.role.replace('org:', '')})</span>
                       </span>
                     ))}
                   </div>
-                </td>
-                <td className="px-4 py-3">
-                  <span className="text-[10px] text-muted font-mono">{user.user_id.slice(0, 16)}…</span>
                 </td>
               </tr>
             ))}

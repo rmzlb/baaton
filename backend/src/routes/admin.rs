@@ -443,9 +443,44 @@ pub async fn list_users(
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM organizations")
         .fetch_one(&pool).await.unwrap_or(0);
 
+    // Collect all unique user_ids and fetch their plans
+    let mut all_user_ids: Vec<String> = Vec::new();
+    for org in &org_list {
+        if let Some(members) = org.get("members").and_then(|m| m.as_array()) {
+            for m in members {
+                if let Some(uid) = m.get("user_id").and_then(|u| u.as_str()) {
+                    if !uid.is_empty() && !all_user_ids.contains(&uid.to_string()) {
+                        all_user_ids.push(uid.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Batch-fetch user plans
+    let user_plans_map: std::collections::HashMap<String, String> = if !all_user_ids.is_empty() {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT user_id, plan FROM user_plans WHERE user_id = ANY($1)"
+        )
+        .bind(&all_user_ids)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .collect()
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    // Convert to JSON map (missing = "free")
+    let plans_json: serde_json::Map<String, Value> = all_user_ids.iter().map(|uid| {
+        (uid.clone(), json!(user_plans_map.get(uid).cloned().unwrap_or_else(|| "free".to_string())))
+    }).collect();
+
     Ok(Json(json!({
         "data": {
             "organizations": org_list,
+            "user_plans": plans_json,
             "total": total,
             "limit": limit,
             "offset": offset,
@@ -684,10 +719,9 @@ pub async fn get_billing(
 
 // ─── User plan lookup (single source of truth) ──────────────────────────
 
-/// Get a user's plan. Checks user_plans table first, falls back to org plan.
+/// Get a user's plan from user_plans table. Plans are per-user, not per-org.
 /// This is the ONLY function that should determine a user's plan.
-pub async fn get_user_plan(pool: &PgPool, user_id: &str, org_id: Option<&str>) -> String {
-    // 1. Check user_plans table (authoritative)
+pub async fn get_user_plan(pool: &PgPool, user_id: &str, _org_id: Option<&str>) -> String {
     let user_plan: Option<String> = sqlx::query_scalar(
         "SELECT plan FROM user_plans WHERE user_id = $1"
     )
@@ -697,27 +731,7 @@ pub async fn get_user_plan(pool: &PgPool, user_id: &str, org_id: Option<&str>) -
     .ok()
     .flatten();
 
-    if let Some(p) = user_plan {
-        return p;
-    }
-
-    // 2. Fallback: check org plan (legacy, for migration period)
-    if let Some(oid) = org_id {
-        let org_plan: Option<String> = sqlx::query_scalar(
-            "SELECT COALESCE(plan, 'free') FROM organizations WHERE id = $1"
-        )
-        .bind(oid)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-
-        if let Some(p) = org_plan {
-            return p;
-        }
-    }
-
-    "free".to_string()
+    user_plan.unwrap_or_else(|| "free".to_string())
 }
 
 // ─── Plan limits helper ──────────────────────────────────────────────────

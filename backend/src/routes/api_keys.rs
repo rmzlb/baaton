@@ -142,9 +142,9 @@ pub async fn create(
     validate_permissions(&body.permissions)
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
 
-    // Plan quota check
+    // Plan quota check (per-user, cross-org)
     crate::middleware::plan_guard::enforce_quota(
-        &pool, org_id, &auth.user_id, crate::middleware::plan_guard::QuotaKind::ApiKeys
+        &pool, &auth, crate::middleware::plan_guard::QuotaKind::ApiKeys
     ).await?;
 
     // Ensure the org exists + resolve name in background

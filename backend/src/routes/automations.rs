@@ -98,9 +98,9 @@ pub async fn create(
         }))));
     }
 
-    // Plan quota check
+    // Plan quota check (per-user, cross-org)
     crate::middleware::plan_guard::enforce_quota(
-        &pool, org_id, &auth.user_id, crate::middleware::plan_guard::QuotaKind::Automations
+        &pool, &auth, crate::middleware::plan_guard::QuotaKind::Automations
     ).await?;
 
     let exists: bool = sqlx::query_scalar(
