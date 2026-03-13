@@ -682,3 +682,208 @@ fn velocity_trend(v7: f64, v30: f64) -> &'static str {
     else if v7 < v30 * 0.9 { "down" }
     else { "stable" }
 }
+
+// ─── GET /gamification/dashboard ──────────────────────
+// Combined endpoint: personal stats + per-project activity + assigned issues
+
+pub async fn get_dashboard(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let today = Utc::now().date_naive();
+    let week_start = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
+    let thirty_days_ago = today - chrono::Duration::days(30);
+
+    // ── 1. Personal stats (cross-org) ──
+    let personal_week: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE user_id = $1 AND activity_date >= $2"
+    ).bind(&auth.user_id).bind(week_start).fetch_one(&pool).await.unwrap_or(0);
+
+    let personal_today: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE user_id = $1 AND activity_date = $2"
+    ).bind(&auth.user_id).bind(today).fetch_one(&pool).await.unwrap_or(0);
+
+    let personal_v7 = get_velocity_scoped(&pool, "user_id = $1", &auth.user_id, 7).await;
+    let personal_v30 = get_velocity_scoped(&pool, "user_id = $1", &auth.user_id, 30).await;
+
+    // Streak
+    let streak_row = sqlx::query_as::<_, UserActivityRow>(
+        "SELECT COALESCE(MAX(current_streak),0) AS current_streak, COALESCE(MAX(longest_streak),0) AS longest_streak,
+                MAX(last_active_date) AS last_active_date, COALESCE(MAX(best_day_count),0) AS best_day_count,
+                COALESCE(MAX(best_week_count),0) AS best_week_count
+         FROM user_activity WHERE user_id = $1"
+    ).bind(&auth.user_id).fetch_optional(&pool).await.ok().flatten();
+    let (streak, longest, best_day, best_week) = match &streak_row {
+        Some(a) => (a.current_streak, a.longest_streak, a.best_day_count, a.best_week_count),
+        None => (0, 0, 0, 0),
+    };
+
+    // Personal breakdown this week
+    #[derive(sqlx::FromRow)]
+    struct Bd { ic: i64, ix: i64, co: i64, tl: i64, sc: i64, up: i64, gh: i64 }
+    let pbd = sqlx::query_as::<_, Bd>(
+        "SELECT COALESCE(SUM(issues_created),0) AS ic, COALESCE(SUM(issues_closed),0) AS ix,
+                COALESCE(SUM(comments_posted),0) AS co, COALESCE(SUM(tldrs_posted),0) AS tl,
+                COALESCE(SUM(status_changes),0) AS sc, COALESCE(SUM(updates),0) AS up,
+                COALESCE(SUM(github_actions),0) AS gh
+         FROM user_daily_activity WHERE user_id = $1 AND activity_date >= $2"
+    ).bind(&auth.user_id).bind(week_start).fetch_optional(&pool).await.ok().flatten();
+
+    // ── 2. Org-wide stats (all projects in this org) ──
+    let org_week: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE org_id = $1 AND activity_date >= $2"
+    ).bind(org_id).bind(week_start).fetch_one(&pool).await.unwrap_or(0);
+
+    let org_today: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_actions), 0) FROM user_daily_activity WHERE org_id = $1 AND activity_date = $2"
+    ).bind(org_id).bind(today).fetch_one(&pool).await.unwrap_or(0);
+
+    let org_v7 = get_velocity_org(&pool, org_id, 7).await;
+
+    // Org breakdown this week
+    let obd = sqlx::query_as::<_, Bd>(
+        "SELECT COALESCE(SUM(issues_created),0) AS ic, COALESCE(SUM(issues_closed),0) AS ix,
+                COALESCE(SUM(comments_posted),0) AS co, COALESCE(SUM(tldrs_posted),0) AS tl,
+                COALESCE(SUM(status_changes),0) AS sc, COALESCE(SUM(updates),0) AS up,
+                COALESCE(SUM(github_actions),0) AS gh
+         FROM user_daily_activity WHERE org_id = $1 AND activity_date >= $2"
+    ).bind(org_id).bind(week_start).fetch_optional(&pool).await.ok().flatten();
+
+    // ── 3. Per-project activity (this org, last 30 days) ──
+    #[derive(sqlx::FromRow)]
+    struct ProjectActivity { project_id: Uuid, name: String, prefix: String, actions: i64 }
+    let project_stats = sqlx::query_as::<_, ProjectActivity>(
+        "SELECT p.id AS project_id, p.name, p.prefix,
+                COALESCE(SUM(d.total_actions), 0)::bigint AS actions
+         FROM projects p
+         LEFT JOIN activity_log a ON a.project_id = p.id AND a.created_at >= $2
+         LEFT JOIN user_daily_activity d ON d.org_id = p.org_id AND d.activity_date >= $3::date
+         WHERE p.org_id = $1
+         GROUP BY p.id, p.name, p.prefix
+         ORDER BY actions DESC"
+    ).bind(org_id).bind(thirty_days_ago).bind(thirty_days_ago).fetch_all(&pool).await.unwrap_or_default();
+
+    // Per-project with proper count from activity_log
+    let project_activity = sqlx::query_as::<_, ProjectActivity>(
+        "SELECT p.id AS project_id, p.name, p.prefix,
+                COUNT(a.id)::bigint AS actions
+         FROM projects p
+         LEFT JOIN activity_log a ON a.project_id = p.id AND a.created_at >= $2
+         WHERE p.org_id = $1
+         GROUP BY p.id, p.name, p.prefix
+         ORDER BY actions DESC"
+    ).bind(org_id).bind(thirty_days_ago).fetch_all(&pool).await.unwrap_or_default();
+
+    // ── 4. Top contributors (org-wide this week) ──
+    #[derive(sqlx::FromRow)]
+    struct ContribRow { user_id: String, user_name: Option<String>, actions: i64 }
+    let contributors = sqlx::query_as::<_, ContribRow>(
+        "SELECT d.user_id, MAX(a.user_name) AS user_name, SUM(d.total_actions)::bigint AS actions
+         FROM user_daily_activity d
+         LEFT JOIN LATERAL (
+           SELECT user_name FROM activity_log WHERE user_id = d.user_id AND org_id = $1 LIMIT 1
+         ) a ON true
+         WHERE d.org_id = $1 AND d.activity_date >= $2
+         GROUP BY d.user_id ORDER BY actions DESC LIMIT 8"
+    ).bind(org_id).bind(week_start).fetch_all(&pool).await.unwrap_or_default();
+
+    // ── 5. Assigned issues (open, assigned to user in this org) ──
+    #[derive(sqlx::FromRow)]
+    struct AssignedIssue {
+        id: Uuid, display_id: String, title: String, status: String,
+        priority: Option<String>, project_prefix: String, project_name: String,
+    }
+    let assigned = sqlx::query_as::<_, AssignedIssue>(
+        "SELECT i.id, i.display_id, i.title, i.status, i.priority,
+                p.prefix AS project_prefix, p.name AS project_name
+         FROM issues i
+         JOIN projects p ON p.id = i.project_id
+         WHERE i.org_id = $1
+           AND $2 = ANY(i.assignee_ids)
+           AND i.status NOT IN ('done', 'cancelled')
+         ORDER BY
+           CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+           i.created_at DESC
+         LIMIT 20"
+    ).bind(org_id).bind(&auth.user_id).fetch_all(&pool).await.unwrap_or_default();
+
+    // ── 6. Heatmaps (personal + org, last 90 days) ──
+    let hm_since = today - chrono::Duration::days(90);
+
+    let personal_heatmap = sqlx::query_as::<_, DailyActivityRow>(
+        "SELECT activity_date, SUM(total_actions)::int AS total_actions
+         FROM user_daily_activity WHERE user_id = $1 AND activity_date >= $2
+         GROUP BY activity_date ORDER BY activity_date ASC"
+    ).bind(&auth.user_id).bind(hm_since).fetch_all(&pool).await.unwrap_or_default();
+
+    let org_heatmap = sqlx::query_as::<_, DailyActivityRow>(
+        "SELECT activity_date, SUM(total_actions)::int AS total_actions
+         FROM user_daily_activity WHERE org_id = $1 AND activity_date >= $2
+         GROUP BY activity_date ORDER BY activity_date ASC"
+    ).bind(org_id).bind(hm_since).fetch_all(&pool).await.unwrap_or_default();
+
+    fn bd_json(b: &Option<Bd>) -> serde_json::Value {
+        json!({
+            "issues_created": b.as_ref().map(|x| x.ic).unwrap_or(0),
+            "issues_closed":  b.as_ref().map(|x| x.ix).unwrap_or(0),
+            "comments":       b.as_ref().map(|x| x.co).unwrap_or(0),
+            "tldrs":          b.as_ref().map(|x| x.tl).unwrap_or(0),
+            "status_changes": b.as_ref().map(|x| x.sc).unwrap_or(0),
+            "updates":        b.as_ref().map(|x| x.up).unwrap_or(0),
+            "github":         b.as_ref().map(|x| x.gh).unwrap_or(0),
+        })
+    }
+
+    let goal = if best_week > 0 && personal_week < best_week as i64 {
+        Some(best_week as i64 - personal_week)
+    } else { None };
+
+    Ok(Json(json!({
+        "data": {
+            "personal": {
+                "velocity_7d": (personal_v7 * 100.0).round() / 100.0,
+                "velocity_30d": (personal_v30 * 100.0).round() / 100.0,
+                "velocity_trend": velocity_trend(personal_v7, personal_v30),
+                "this_week": personal_week,
+                "today": personal_today,
+                "streak": streak,
+                "longest_streak": longest,
+                "best_day": best_day,
+                "best_week": best_week,
+                "goal": goal,
+                "breakdown": bd_json(&pbd),
+                "heatmap": personal_heatmap.iter().map(|r| json!({"date": r.activity_date, "count": r.total_actions})).collect::<Vec<_>>(),
+            },
+            "org": {
+                "velocity_7d": (org_v7 * 100.0).round() / 100.0,
+                "this_week": org_week,
+                "today": org_today,
+                "breakdown": bd_json(&obd),
+                "heatmap": org_heatmap.iter().map(|r| json!({"date": r.activity_date, "count": r.total_actions})).collect::<Vec<_>>(),
+            },
+            "projects": project_activity.iter().map(|p| json!({
+                "id": p.project_id,
+                "name": p.name,
+                "prefix": p.prefix,
+                "actions_30d": p.actions,
+            })).collect::<Vec<_>>(),
+            "contributors": contributors.iter().map(|c| json!({
+                "user_id": c.user_id,
+                "name": c.user_name.as_deref().unwrap_or("Agent"),
+                "actions": c.actions,
+                "is_agent": c.user_id.starts_with("apikey:") || c.user_id.starts_with("github:"),
+            })).collect::<Vec<_>>(),
+            "assigned": assigned.iter().map(|i| json!({
+                "id": i.id,
+                "display_id": i.display_id,
+                "title": i.title,
+                "status": i.status,
+                "priority": i.priority,
+                "project_prefix": i.project_prefix,
+                "project_name": i.project_name,
+            })).collect::<Vec<_>>(),
+        }
+    })))
+}

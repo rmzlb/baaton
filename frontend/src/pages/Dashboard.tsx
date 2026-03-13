@@ -12,7 +12,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
-import { GamificationWidget } from '@/components/gamification/GamificationWidget';
+import { GamificationDashboard } from '@/components/gamification/GamificationDashboard';
 import { cn } from '@/lib/utils';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import type { Issue, Project } from '@/lib/types';
@@ -563,7 +563,7 @@ export function Dashboard() {
 
         {/* Right column: Gamification + Activity Feed */}
         <div className="space-y-4">
-          <GamificationWidget />
+          <GamificationDashboard />
 
           <div>
             <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4">

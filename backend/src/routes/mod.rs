@@ -170,6 +170,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/gamification/me", get(gamification::get_me))
         .route("/gamification/heatmap", get(gamification::get_heatmap))
         .route("/gamification/stats", get(gamification::get_stats))
+        .route("/gamification/dashboard", get(gamification::get_dashboard))
         .route("/projects/{id}/gamification", get(gamification::get_project_gamification))
         // Slack (BAA-25)
         .route("/integrations/slack", get(slack::list).post(slack::create))
