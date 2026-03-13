@@ -24,6 +24,7 @@ mod api_keys;
 mod docs;
 pub mod webhooks;
 mod metrics;
+mod custom_fields;
 pub mod relations;
 pub mod recurring;
 pub mod triage;
@@ -140,8 +141,13 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/projects/{id}/recurring", get(recurring::list).post(recurring::create))
         .route("/recurring/{id}", patch(recurring::update).delete(recurring::remove))
         .route("/recurring/{id}/trigger", post(recurring::trigger))
-        // Metrics
+        // Metrics & burndown
         .route("/metrics", get(metrics::get_metrics))
+        .route("/projects/{id}/burndown", get(metrics::burndown))
+        // Custom fields
+        .route("/projects/{id}/custom-fields", get(custom_fields::list).post(custom_fields::create))
+        .route("/custom-fields/{id}", patch(custom_fields::update).delete(custom_fields::remove))
+        .route("/issues/{id}/custom-values", get(custom_fields::get_values).put(custom_fields::set_values))
         .route("/issues/{id}/triage", post(triage::analyze))
         .route("/public/{slug}/email-intake", post(email_intake::intake))
         .route("/issues/{id}/attachments", get(attachments::list).post(attachments::create))
