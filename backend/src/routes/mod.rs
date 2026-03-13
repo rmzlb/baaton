@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use crate::middleware::{auth_middleware, JwksKeys};
 
 mod projects;
-mod issues;
+pub(crate) mod issues;
 mod comments;
 mod tldrs;
 mod tags;

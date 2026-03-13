@@ -181,36 +181,25 @@ fn validate_status_transition(from: &str, to: &str, force: bool) -> Result<Vec<s
 }
 
 #[derive(Debug, Deserialize)]
-/// Resolve all org IDs accessible to a user (current org + orgs with activity).
-/// Used for cross-org views (all-issues, my-tasks, dashboard).
-async fn resolve_user_org_ids(pool: &PgPool, current_org_id: &str, user_id: &str) -> Vec<String> {
-    let mut org_ids = vec![current_org_id.to_string()];
-
-    // Collect all API key identities for this org
-    let api_key_ids: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT 'apikey:' || id::text FROM api_keys WHERE org_id = $1"
-    ).bind(current_org_id).fetch_all(pool).await.unwrap_or_default();
-
-    let mut all_user_ids = vec![user_id.to_string()];
-    all_user_ids.extend(api_key_ids);
-
-    // Find other orgs where these identities have activity
-    let extra_orgs: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT org_id FROM user_daily_activity WHERE user_id = ANY($1) AND org_id != $2"
-    ).bind(&all_user_ids).bind(current_org_id).fetch_all(pool).await.unwrap_or_default();
-    org_ids.extend(extra_orgs);
-
-    // Also find orgs from projects (the user might have orgs without gamification data)
-    let project_orgs: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT p.org_id FROM projects p
-         JOIN issues i ON i.project_id = p.id
-         WHERE $1 = ANY(i.assignee_ids) AND p.org_id != $2"
-    ).bind(user_id).bind(current_org_id).fetch_all(pool).await.unwrap_or_default();
-    for oid in project_orgs {
-        if !org_ids.contains(&oid) { org_ids.push(oid); }
+/// Resolve all org IDs accessible to a user.
+/// For Clerk users: fetches memberships from Clerk API (all orgs).
+/// Fallback: current org + orgs discovered via activity data.
+async fn resolve_user_org_ids(_pool: &PgPool, current_org_id: &str, user_id: &str) -> Vec<String> {
+    // For Clerk users, fetch all org memberships directly
+    if !user_id.starts_with("apikey:") {
+        if let Ok(clerk_orgs) = fetch_user_org_ids(user_id).await {
+            if !clerk_orgs.is_empty() {
+                let mut org_ids = clerk_orgs;
+                if !org_ids.contains(&current_org_id.to_string()) {
+                    org_ids.push(current_org_id.to_string());
+                }
+                return org_ids;
+            }
+        }
     }
 
-    org_ids
+    // Fallback: just current org (for API key auth)
+    vec![current_org_id.to_string()]
 }
 
 pub struct ListParams {

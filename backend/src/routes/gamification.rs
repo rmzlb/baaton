@@ -696,24 +696,27 @@ pub async fn get_dashboard(
     let week_start = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
     let thirty_days_ago = today - chrono::Duration::days(30);
 
-    // ── Resolve all user identities ──
-    // A Clerk user might also have activity under API key identities (apikey:xxx).
-    // Collect all user_ids that belong to this person so personal stats are complete.
+    // ── Resolve ALL orgs via Clerk memberships ──
+    let all_org_ids: Vec<String> = if !auth.user_id.starts_with("apikey:") {
+        match crate::routes::issues::fetch_user_org_ids(&auth.user_id).await {
+            Ok(mut orgs) => {
+                if !orgs.contains(&org_id.to_string()) {
+                    orgs.push(org_id.to_string());
+                }
+                orgs
+            }
+            Err(_) => vec![org_id.to_string()],
+        }
+    } else {
+        vec![org_id.to_string()]
+    };
+
+    // ── Resolve all user identities (Clerk user_id + all API key identities across all orgs) ──
     let mut user_ids: Vec<String> = vec![auth.user_id.clone()];
-
-    // Find all API keys in this user's orgs → they map to activity as "apikey:{id}"
-    // (API keys don't have created_by, so we include all keys in accessible orgs)
     let api_key_ids: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT 'apikey:' || id::text FROM api_keys WHERE org_id = $1"
-    ).bind(org_id).fetch_all(&pool).await.unwrap_or_default();
+        "SELECT DISTINCT 'apikey:' || id::text FROM api_keys WHERE org_id = ANY($1)"
+    ).bind(&all_org_ids).fetch_all(&pool).await.unwrap_or_default();
     user_ids.extend(api_key_ids);
-
-    // ── Collect all orgs this user has access to (via user_daily_activity) ──
-    let mut all_org_ids: Vec<String> = vec![org_id.to_string()];
-    let extra_orgs: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT org_id FROM user_daily_activity WHERE user_id = ANY($1) AND org_id != $2"
-    ).bind(&user_ids).bind(org_id).fetch_all(&pool).await.unwrap_or_default();
-    all_org_ids.extend(extra_orgs);
 
     // ── 1. Personal stats (cross-org, all identities) ──
     let personal_week: i64 = sqlx::query_scalar(
