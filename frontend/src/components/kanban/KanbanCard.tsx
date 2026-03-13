@@ -4,7 +4,7 @@ import {
   ArrowUp, ArrowDown, Minus, OctagonAlert,
   Clock, MoreHorizontal, CheckCircle2, User,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, timeAgo } from '@/lib/utils';
 import { useUIStore } from '@/stores/ui';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { GitHubPrBadge } from '@/components/github/GitHubPrBadge';
@@ -130,6 +130,35 @@ function SlaBadge({ issue }: { issue: Issue }) {
   );
 }
 
+/** Show when the issue entered its current status. Backlog = hidden. */
+function StatusAge({ issue }: { issue: Issue }) {
+  if (issue.status === 'backlog') return null;
+
+  const ts = (issue.status === 'done' || issue.status === 'cancelled')
+    ? issue.closed_at
+    : issue.status_changed_at;
+
+  if (!ts) return null;
+
+  const age = timeAgo(ts);
+  const isStale = (() => {
+    const days = (Date.now() - new Date(ts).getTime()) / (1000 * 60 * 60 * 24);
+    if (issue.status === 'in_progress' && days > 7) return true;
+    if (issue.status === 'in_review' && days > 3) return true;
+    if (issue.status === 'todo' && days > 14) return true;
+    return false;
+  })();
+
+  return (
+    <span className={cn(
+      'text-[9px] tabular-nums',
+      isStale ? 'text-orange-400' : 'text-muted/60',
+    )} title={`In ${issue.status.replace('_', ' ')} since ${new Date(ts).toLocaleDateString()}`}>
+      {age}
+    </span>
+  );
+}
+
 function isNew(created_at: string, updated_at?: string): boolean {
   const age = Date.now() - new Date(created_at).getTime();
   if (age > 24 * 60 * 60 * 1000) return false;
@@ -203,6 +232,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
           <CopyableId id={issue.display_id} className="text-[10px] text-gray-400 dark:text-muted shrink-0" iconSize={8} />
           {isNew(issue.created_at, issue.updated_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
           <SlaBadge issue={issue} />
+          <StatusAge issue={issue} />
           <span className={cn(
             'text-xs font-medium truncate flex-1',
             isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
@@ -293,6 +323,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
 
           {/* Right: priority + due + creator + assignee */}
           <div className="flex items-center gap-2 shrink-0">
+            <StatusAge issue={issue} />
             {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
             {issue.due_date && <DueDate date={issue.due_date} />}
             {isDone ? (
@@ -393,6 +424,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
 
         {/* Right: priority/done + creator + assignee */}
         <div className="flex items-center gap-2 shrink-0">
+          <StatusAge issue={issue} />
           {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
           {isDone ? (
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
