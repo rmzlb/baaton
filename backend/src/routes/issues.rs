@@ -409,31 +409,9 @@ pub async fn create(
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     // ── Plan enforcement: check issue limit ─────────────
-    {
-        let plan = crate::routes::admin::get_user_plan(&pool, &auth.user_id, Some(org_id)).await;
-        let limits = crate::routes::admin::plan_limits(&plan);
-        let issue_limit: Option<i64> = if limits.issue_limit < 0 { None } else { Some(limits.issue_limit) };
-
-        if let Some(limit) = issue_limit {
-            let count: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1"
-            )
-            .bind(org_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap_or(0);
-
-            if count >= limit {
-                return Err((StatusCode::PAYMENT_REQUIRED, Json(json!({
-                    "error": "Issue limit reached for your plan",
-                    "limit": limit,
-                    "current": count,
-                    "plan": plan,
-                    "upgrade_url": "https://baaton.dev/billing"
-                }))));
-            }
-        }
-    }
+    crate::middleware::plan_guard::enforce_quota(
+        &pool, org_id, &auth.user_id, crate::middleware::plan_guard::QuotaKind::Issues
+    ).await?;
 
     // ── Project access check (API key scoping) ─────────
     if !auth.has_project_access(body.project_id) {

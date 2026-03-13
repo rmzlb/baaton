@@ -32,7 +32,7 @@ pub mod email_intake;
 pub mod attachments;
 pub mod agent_config;
 pub mod slack;
-mod admin;
+pub(crate) mod admin;
 mod initiatives;
 mod import_export;
 pub mod gamification;

@@ -142,6 +142,11 @@ pub async fn create(
     validate_permissions(&body.permissions)
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
 
+    // Plan quota check
+    crate::middleware::plan_guard::enforce_quota(
+        &pool, org_id, &auth.user_id, crate::middleware::plan_guard::QuotaKind::ApiKeys
+    ).await?;
+
     // Ensure the org exists
     let _ = sqlx::query(
         "INSERT INTO organizations (id, name, slug) VALUES ($1, $1, $1) ON CONFLICT (id) DO NOTHING"

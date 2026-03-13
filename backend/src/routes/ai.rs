@@ -100,11 +100,13 @@ pub async fn chat(
 
     if ai_count >= ai_limit {
         return (
-            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::PAYMENT_REQUIRED,
             Json(serde_json::json!({
                 "error": "AI message quota exceeded for this month",
-                "usage": { "current": ai_count, "limit": ai_limit },
-                "upgrade_url": "/billing"
+                "limit": ai_limit,
+                "current": ai_count,
+                "plan": plan,
+                "upgrade_url": "https://baaton.dev/#pricing"
             })),
         ).into_response();
     }

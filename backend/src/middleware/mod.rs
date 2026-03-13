@@ -1,6 +1,7 @@
 pub mod security;
 #[allow(dead_code)]
 pub mod rate_limit;
+pub mod plan_guard;
 
 use axum::{
     extract::Request,

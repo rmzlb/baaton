@@ -98,6 +98,11 @@ pub async fn create(
         }))));
     }
 
+    // Plan quota check
+    crate::middleware::plan_guard::enforce_quota(
+        &pool, org_id, &auth.user_id, crate::middleware::plan_guard::QuotaKind::Automations
+    ).await?;
+
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
     )

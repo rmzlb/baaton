@@ -163,46 +163,10 @@ pub async fn create(
     .execute(&pool)
     .await;
 
-    // ── Project limit guard (BAA-1) ─────────────────────
-    #[derive(sqlx::FromRow)]
-    struct OrgPlanRow { plan: Option<String>, project_count: i64 }
-    let plan_row = sqlx::query_as::<_, OrgPlanRow>(
-        r#"
-        SELECT o.plan, COUNT(p.id) AS project_count
-        FROM organizations o
-        LEFT JOIN projects p ON p.org_id = o.id
-        WHERE o.id = $1
-        GROUP BY o.plan
-        "#,
-    )
-    .bind(&effective_org)
-    .fetch_optional(&pool)
-    .await
-    .ok()
-    .flatten();
-
-    if let Some(row) = plan_row {
-        let plan = row.plan.as_deref().unwrap_or("free");
-        let limit: Option<i64> = match plan {
-            "free" => Some(3),
-            "pro" => Some(10),
-            "enterprise" => None,
-            _ => Some(3),
-        };
-        if let Some(lim) = limit {
-            if row.project_count >= lim {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({
-                        "error": "Project limit reached",
-                        "limit": lim,
-                        "plan": plan,
-                        "upgrade_url": "https://baaton.dev/#pricing"
-                    })),
-                ));
-            }
-        }
-    }
+    // ── Project limit guard ─────────────────────
+    crate::middleware::plan_guard::enforce_quota(
+        &pool, &effective_org, &auth.user_id, crate::middleware::plan_guard::QuotaKind::Projects
+    ).await?;
 
     let auto_assign_mode = body.auto_assign_mode.as_deref().unwrap_or("off");
     if !matches!(auto_assign_mode, "off" | "default_assignee" | "round_robin") {
