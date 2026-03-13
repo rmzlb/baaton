@@ -2,7 +2,7 @@ import type { DraggableProvided } from '@hello-pangea/dnd';
 import {
   Bug, Sparkles, Zap, HelpCircle,
   ArrowUp, ArrowDown, Minus, OctagonAlert,
-  Clock, MoreHorizontal, CheckCircle2, User,
+  Clock, MoreHorizontal, CheckCircle2,
 } from 'lucide-react';
 import { cn, timeAgo } from '@/lib/utils';
 import { useUIStore } from '@/stores/ui';
@@ -12,22 +12,35 @@ import { CopyableId } from '@/components/shared/CopyableId';
 import { evaluateIssueSla } from '@/lib/sla';
 import type { Issue, IssuePriority, IssueType, ProjectTag, GitHubPrLink } from '@/lib/types';
 
-/** Strip HTML tags and collapse whitespace for clean text preview */
+/* ─── Helpers ───────────────────────────────────────── */
+
 function stripHtml(html: string): string {
-  const text = html
+  return html
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<\/?(p|div|h[1-6]|li|ul|ol|blockquote|tr)[\s>]/gi, ' ')
     .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-  return text;
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ').trim();
 }
+
+/** Filter out system-generated tags (auto:*) — only show human tags */
+function userTags(tags: string[]): string[] {
+  return tags.filter((t) => !t.startsWith('auto:'));
+}
+
+/** Shorten a display name: handle apikey IDs, emails, long names */
+function shortName(raw: string): string {
+  if (!raw) return '';
+  // apikey:xxxx → "agent"
+  if (raw.startsWith('apikey:')) return 'agent';
+  // email → first part before @
+  if (raw.includes('@')) return raw.split('@')[0];
+  // "Rmz lb" → "Rmz"
+  return raw.split(' ')[0].slice(0, 10);
+}
+
+/* ─── Type config ───────────────────────────────────── */
 
 interface KanbanCardProps {
   issue: Issue;
@@ -41,23 +54,22 @@ interface KanbanCardProps {
   githubPrs?: GitHubPrLink[];
 }
 
-// ── Type config ──
 const typeConfig: Record<IssueType, { icon: typeof Bug; color: string; bg: string; label: string }> = {
-  bug:         { icon: Bug,        color: 'text-red-600 dark:text-red-400',     bg: 'bg-red-50 dark:bg-red-500/10',     label: 'Bug' },
+  bug:         { icon: Bug,        color: 'text-red-600 dark:text-red-400',       bg: 'bg-red-50 dark:bg-red-500/10',       label: 'Bug' },
   feature:     { icon: Sparkles,   color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-500/10', label: 'Feature' },
-  improvement: { icon: Zap,        color: 'text-blue-600 dark:text-blue-400',   bg: 'bg-blue-50 dark:bg-blue-500/10',   label: 'Improvement' },
-  question:    { icon: HelpCircle, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10', label: 'Question' },
+  improvement: { icon: Zap,        color: 'text-blue-600 dark:text-blue-400',     bg: 'bg-blue-50 dark:bg-blue-500/10',     label: 'Improvement' },
+  question:    { icon: HelpCircle, color: 'text-amber-600 dark:text-amber-400',   bg: 'bg-amber-50 dark:bg-amber-500/10',   label: 'Question' },
 };
 
-// ── Priority config ──
 const priorityConfig: Record<IssuePriority, { icon: typeof ArrowUp; color: string; label: string }> = {
-  urgent: { icon: OctagonAlert,     color: 'text-red-500',    label: 'Urgent' },
-  high:   { icon: ArrowUp,   color: 'text-orange-500', label: 'High' },
-  medium: { icon: Minus,     color: 'text-yellow-500', label: 'Medium' },
-  low:    { icon: ArrowDown, color: 'text-gray-400',   label: 'Low' },
+  urgent: { icon: OctagonAlert, color: 'text-red-500',    label: 'Urgent' },
+  high:   { icon: ArrowUp,     color: 'text-orange-500', label: 'High' },
+  medium: { icon: Minus,       color: 'text-yellow-500', label: 'Medium' },
+  low:    { icon: ArrowDown,   color: 'text-gray-400',   label: 'Low' },
 };
 
-// ── Tag pastel styles ──
+/* ─── Tag styles ────────────────────────────────────── */
+
 function getTagStyle(color: string) {
   const MAP: Record<string, { bg: string; text: string; border: string }> = {
     '#3b82f6': { bg: 'bg-blue-50 dark:bg-blue-500/10',       text: 'text-blue-700 dark:text-blue-400',       border: 'border-blue-100 dark:border-blue-500/20' },
@@ -73,7 +85,8 @@ function getTagStyle(color: string) {
   return MAP[color] || { bg: 'bg-gray-100 dark:bg-gray-500/10', text: 'text-gray-600 dark:text-gray-400', border: 'border-gray-200 dark:border-gray-500/20' };
 }
 
-// ── Due date helper ──
+/* ─── Sub-components ────────────────────────────────── */
+
 function DueDate({ date }: { date: string }) {
   const due = new Date(date);
   const now = new Date();
@@ -82,7 +95,7 @@ function DueDate({ date }: { date: string }) {
   const isSoon = diffDays >= 0 && diffDays <= 3;
   return (
     <span className={cn(
-      'inline-flex items-center gap-0.5 text-[10px]',
+      'inline-flex items-center gap-0.5 text-[10px] whitespace-nowrap shrink-0',
       isOverdue ? 'text-red-500' : isSoon ? 'text-amber-500' : 'text-gray-400 dark:text-muted',
     )}>
       <Clock size={10} />
@@ -91,20 +104,31 @@ function DueDate({ date }: { date: string }) {
   );
 }
 
-// ── Type badge (icon + label) ──
-function TypeBadge({ type, size = 'sm' }: { type: IssueType; size?: 'sm' | 'xs' }) {
+/** Type icon only (no text label) — for compact/default header */
+function TypeIcon({ type }: { type: IssueType }) {
   const cfg = typeConfig[type] ?? typeConfig.feature;
   const Icon = cfg.icon;
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium border', cfg.bg, cfg.color,
-      size === 'xs' ? 'text-[9px]' : 'text-[10px]',
-      // border matching the bg
+    <span className={cn('shrink-0', cfg.color)} title={cfg.label}>
+      <Icon size={12} />
+    </span>
+  );
+}
+
+/** Type badge with text — spacious footer only */
+function TypeBadge({ type }: { type: IssueType }) {
+  const cfg = typeConfig[type] ?? typeConfig.feature;
+  const Icon = cfg.icon;
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium border shrink-0',
+      cfg.bg, cfg.color,
       type === 'bug' ? 'border-red-100 dark:border-red-500/20' :
       type === 'feature' ? 'border-purple-100 dark:border-purple-500/20' :
       type === 'improvement' ? 'border-blue-100 dark:border-blue-500/20' :
       'border-amber-100 dark:border-amber-500/20',
     )}>
-      <Icon size={size === 'xs' ? 10 : 11} />
+      <Icon size={11} />
       {cfg.label}
     </span>
   );
@@ -112,28 +136,18 @@ function TypeBadge({ type, size = 'sm' }: { type: IssueType; size?: 'sm' | 'xs' 
 
 function SlaBadge({ issue }: { issue: Issue }) {
   const sla = evaluateIssueSla(issue);
-  if ((issue.priority !== 'urgent' && issue.priority !== 'high') || sla.status === 'completed' || sla.status === 'ok') {
-    return null;
-  }
-
+  if ((issue.priority !== 'urgent' && issue.priority !== 'high') || sla.status === 'completed' || sla.status === 'ok') return null;
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wide',
-        sla.status === 'breached' && 'bg-red-500/15 text-red-400',
-        sla.status === 'at_risk' && 'bg-amber-500/15 text-amber-400',
-      )}
-      title={`SLA ${sla.status}`}
-    >
-      SLA
-    </span>
+    <span className={cn(
+      'inline-flex items-center rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wide shrink-0',
+      sla.status === 'breached' && 'bg-red-500/15 text-red-400',
+      sla.status === 'at_risk' && 'bg-amber-500/15 text-amber-400',
+    )} title={`SLA ${sla.status}`}>SLA</span>
   );
 }
 
-/** Show when the issue entered its current status. Backlog = hidden. */
 function StatusAge({ issue }: { issue: Issue }) {
   if (issue.status === 'backlog') return null;
-
   const isDone = issue.status === 'done' || issue.status === 'cancelled';
   const ts = isDone ? issue.closed_at : issue.status_changed_at;
   if (!ts) return null;
@@ -149,7 +163,7 @@ function StatusAge({ issue }: { issue: Issue }) {
 
   return (
     <span className={cn(
-      'inline-flex items-center gap-0.5 text-[9px] tabular-nums',
+      'inline-flex items-center gap-0.5 text-[9px] tabular-nums whitespace-nowrap shrink-0',
       isDone ? 'text-emerald-500/70' : isStale ? 'text-orange-400' : 'text-muted',
     )} title={`${isDone ? 'Closed' : `In ${issue.status.replace('_', ' ')}`} since ${new Date(ts).toLocaleDateString()}`}>
       <Clock size={9} />
@@ -161,58 +175,75 @@ function StatusAge({ issue }: { issue: Issue }) {
 function isNew(created_at: string, updated_at?: string): boolean {
   const age = Date.now() - new Date(created_at).getTime();
   if (age > 24 * 60 * 60 * 1000) return false;
-  if (updated_at) {
-    const gap = Math.abs(new Date(updated_at).getTime() - new Date(created_at).getTime());
-    if (gap > 60 * 60 * 1000) return false;
-  }
+  if (updated_at && Math.abs(new Date(updated_at).getTime() - new Date(created_at).getTime()) > 60 * 60 * 1000) return false;
   return true;
 }
 
+/* Assignee avatar helper */
+function AssigneeAvatar({ id, size = 5, resolveUserName, resolveUserAvatar }: {
+  id: string; size?: number;
+  resolveUserName: (id: string) => string;
+  resolveUserAvatar: (id: string) => string | undefined;
+}) {
+  const name = resolveUserName(id);
+  const avatar = resolveUserAvatar(id);
+  const px = size === 4 ? 'w-4 h-4' : 'w-5 h-5';
+  return (
+    <img
+      src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
+      className={cn(px, 'rounded-full ring-1 ring-white dark:ring-surface shrink-0')}
+      alt={name}
+      title={name}
+    />
+  );
+}
+
+/** Tag pill with max-width truncation */
+function TagPill({ tag, color, maxW = 'max-w-[80px]' }: { tag: string; color: string; maxW?: string }) {
+  const style = getTagStyle(color);
+  return (
+    <span
+      className={cn('inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border truncate', maxW, style.bg, style.text, style.border)}
+      title={tag}
+    >
+      {tag}
+    </span>
+  );
+}
+
+/* ─── Main Component ────────────────────────────────── */
+
 export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, selected = false, onSelect, projectTags = [], githubPrs = [] }: KanbanCardProps) {
   const handleContextMenu = (e: React.MouseEvent) => {
-    if (onContextMenu) {
-      e.preventDefault();
-      e.stopPropagation();
-      onContextMenu(e, issue);
-    }
+    if (onContextMenu) { e.preventDefault(); e.stopPropagation(); onContextMenu(e, issue); }
   };
 
-  // Selection checkbox overlay
   const SelectCheckbox = onSelect ? (
     <span
       onClick={(e) => { e.stopPropagation(); onSelect(issue.id, e.shiftKey); }}
       className={cn(
         'absolute top-1.5 left-1.5 z-10 flex items-center justify-center w-4 h-4 rounded border cursor-pointer transition-all',
-        selected
-          ? 'bg-accent border-accent text-black opacity-100'
-          : 'border-gray-300 dark:border-border bg-white dark:bg-surface opacity-0 group-hover/card:opacity-100',
+        selected ? 'bg-accent border-accent text-black opacity-100' : 'border-gray-300 dark:border-border bg-white dark:bg-surface opacity-0 group-hover/card:opacity-100',
       )}
     >
       {selected && <span className="text-[9px] font-bold">✓</span>}
     </span>
   ) : null;
+
   const density = useUIStore((s) => s.density);
   const { resolveUserName, resolveUserAvatar } = useClerkMembers();
   const PriorityConfig = issue.priority ? (priorityConfig[issue.priority] ?? null) : null;
   const isDone = issue.status === 'done' || issue.status === 'cancelled';
+  const tags = userTags(issue.tags);
+  const getTagColor = (tagName: string) => projectTags.find((t) => t.name === tagName)?.color || '#6b7280';
 
-  const getTagColor = (tagName: string): string => {
-    const found = projectTags.find((t) => t.name === tagName);
-    return found?.color || '#6b7280';
-  };
-
-  // ── Compact: single line ──
+  /* ── COMPACT ─────────────────────────────────────── */
   if (density === 'compact') {
     return (
       <div
-        ref={provided.innerRef}
-        {...provided.draggableProps}
-        {...provided.dragHandleProps}
-        onClick={onClick}
-        onContextMenu={handleContextMenu}
-        role="article"
-        aria-roledescription="draggable item"
-        aria-label={`${issue.display_id}: ${issue.title}`}
+        ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
+        onClick={onClick} onContextMenu={handleContextMenu}
+        role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
         style={provided.draggableProps.style}
         className={cn(
           'group group/card relative cursor-pointer rounded-md border border-gray-200 dark:border-border bg-white dark:bg-surface px-2.5 py-1.5 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
@@ -222,69 +253,64 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         )}
       >
         {SelectCheckbox}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {/* Priority or done icon */}
           {isDone ? (
             <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
           ) : PriorityConfig ? (
-            <PriorityConfig.icon size={12} className={PriorityConfig.color} />
+            <PriorityConfig.icon size={12} className={cn(PriorityConfig.color, 'shrink-0')} />
           ) : null}
-          <CopyableId id={issue.display_id} className="text-[10px] text-gray-400 dark:text-muted shrink-0" iconSize={8} />
-          {isNew(issue.created_at, issue.updated_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
+
+          {/* ID — never wraps */}
+          <CopyableId id={issue.display_id} className="text-[10px] text-gray-400 dark:text-muted shrink-0 whitespace-nowrap" iconSize={8} />
+
           <SlaBadge issue={issue} />
           <StatusAge issue={issue} />
+
+          {/* Title — fills remaining space */}
           <span className={cn(
-            'text-xs font-medium truncate flex-1',
+            'text-xs font-medium truncate flex-1 min-w-0',
             isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
           )}>{issue.title}</span>
-          {issue.tags.slice(0, 1).map((tag) => {
-            const style = getTagStyle(getTagColor(tag));
-            return <span key={tag} className={cn('shrink-0 px-1.5 py-0 rounded text-[9px] font-medium border', style.bg, style.text, style.border)}>{tag}</span>;
-          })}
-          {issue.assignee_ids.length > 0 && (() => {
-            const name = resolveUserName(issue.assignee_ids[0]);
-            const avatar = resolveUserAvatar(issue.assignee_ids[0]);
-            return (
-              <img
-                src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
-                className="w-4 h-4 rounded-full ring-1 ring-white dark:ring-surface shrink-0"
-                alt={name}
-                title={name}
-              />
-            );
-          })()}
+
+          {/* One tag max (user tags only), truncated */}
+          {tags.slice(0, 1).map((tag) => (
+            <TagPill key={tag} tag={tag} color={getTagColor(tag)} maxW="max-w-[60px]" />
+          ))}
+
+          {/* Assignee avatar */}
+          {issue.assignee_ids.length > 0 && (
+            <AssigneeAvatar id={issue.assignee_ids[0]} size={4} resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar} />
+          )}
         </div>
       </div>
     );
   }
 
-  // ── Spacious: full details ──
+  /* ── SPACIOUS ────────────────────────────────────── */
   if (density === 'spacious') {
     return (
       <div
-        ref={provided.innerRef}
-        {...provided.draggableProps}
-        {...provided.dragHandleProps}
-        onClick={onClick}
-        onContextMenu={handleContextMenu}
-        role="article"
-        aria-roledescription="draggable item"
-        aria-label={`${issue.display_id}: ${issue.title}`}
+        ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
+        onClick={onClick} onContextMenu={handleContextMenu}
+        role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
         style={provided.draggableProps.style}
         className={cn(
           'group cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-4 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
-          isDone && 'opacity-60 hover:opacity-90',
+          isDone && 'opacity-70 hover:opacity-100',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
           selected && 'ring-2 ring-accent/40 border-accent/30',
         )}
       >
-        {/* Header: ID + menu */}
         {SelectCheckbox}
-        <div className="flex justify-between items-start mb-2">
-          <div className="flex items-center gap-1.5">
-            <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
-            {isNew(issue.created_at, issue.updated_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase">NEW</span>}
+        {/* Header: ID + status age — right: menu */}
+        <div className="flex justify-between items-center mb-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted whitespace-nowrap" />
+            {isNew(issue.created_at, issue.updated_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
+            <StatusAge issue={issue} />
           </div>
-          <div className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+          <div className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
             <MoreHorizontal className="w-3.5 h-3.5" />
           </div>
         </div>
@@ -293,118 +319,80 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         <h3 className={cn(
           'text-sm font-medium leading-snug tracking-tight mb-2',
           isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
-        )}>
-          {issue.title}
-        </h3>
+        )}>{issue.title}</h3>
 
-        {/* Description preview (not for done) */}
+        {/* Description preview */}
         {issue.description && !isDone && (() => {
           const preview = stripHtml(issue.description);
-          return preview ? (
-            <p className="text-xs text-gray-500 dark:text-muted leading-relaxed line-clamp-2 mb-3">
-              {preview}
-            </p>
-          ) : null;
+          return preview ? <p className="text-xs text-gray-500 dark:text-muted leading-relaxed line-clamp-2 mb-3">{preview}</p> : null;
         })()}
 
-        {/* Footer: type + tags + metadata */}
-        <div className="flex items-center justify-between pt-2.5 border-t border-gray-100 dark:border-border/50">
-          {/* Left: type badge + tags */}
-          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-            <TypeBadge type={issue.type} />
-            <SlaBadge issue={issue} />
-            {issue.tags.slice(0, 2).map((tag) => {
-              const style = getTagStyle(getTagColor(tag));
-              return <span key={tag} className={cn('inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border', style.bg, style.text, style.border)}>{tag}</span>;
-            })}
-            {issue.tags.length > 2 && <span className="text-[10px] text-gray-400">+{issue.tags.length - 2}</span>}
-          </div>
+        {/* Row 1: Type + tags */}
+        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+          <TypeBadge type={issue.type} />
+          <SlaBadge issue={issue} />
+          {tags.slice(0, 3).map((tag) => (
+            <TagPill key={tag} tag={tag} color={getTagColor(tag)} maxW="max-w-[100px]" />
+          ))}
+          {tags.length > 3 && <span className="text-[10px] text-gray-400">+{tags.length - 3}</span>}
+        </div>
 
-          {/* Right: priority + due + creator + assignee */}
-          <div className="flex items-center gap-2 shrink-0">
-            <StatusAge issue={issue} />
-            {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
+        {/* Row 2: due + priority + assignees (separator line) */}
+        <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-border/50">
+          <div className="flex items-center gap-2">
             {issue.due_date && <DueDate date={issue.due_date} />}
+            {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
             {isDone ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
             ) : PriorityConfig ? (
               <PriorityConfig.icon className={cn('w-3.5 h-3.5', PriorityConfig.color)} />
             ) : null}
-            {(issue.created_by_name || issue.created_by_id) && (() => {
-              const name = resolveUserName(issue.created_by_id, issue.created_by_name);
-              return (
-                <span className="text-[10px] text-gray-400 dark:text-muted flex items-center gap-0.5" title={`Created by ${name}`}>
-                  <User size={10} />
-                  {name.split(' ')[0]}
-                </span>
-              );
-            })()}
-            {issue.assignee_ids.length > 0 ? (
+            {issue.assignee_ids.length > 0 && (
               <div className="flex -space-x-1.5">
-                {issue.assignee_ids.slice(0, 2).map((id) => {
-                  const name = resolveUserName(id);
-                  const avatar = resolveUserAvatar(id);
-                  return (
-                    <img
-                      key={id}
-                      src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
-                      className="w-5 h-5 rounded-full ring-1 ring-white dark:ring-surface"
-                      alt={name}
-                      title={name}
-                    />
-                  );
-                })}
+                {issue.assignee_ids.slice(0, 3).map((id) => (
+                  <AssigneeAvatar key={id} id={id} resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar} />
+                ))}
+                {issue.assignee_ids.length > 3 && <span className="text-[9px] text-muted ml-1">+{issue.assignee_ids.length - 3}</span>}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       </div>
     );
   }
 
-  // ── Default: balanced Linear-style ──
-  // Layout: Header (ID + type + creator + age) → Title → Footer (tags + due | priority + assignee)
+  /* ── DEFAULT ─────────────────────────────────────── */
   return (
     <div
-      ref={provided.innerRef}
-      {...provided.draggableProps}
-      {...provided.dragHandleProps}
-      onClick={onClick}
-      onContextMenu={handleContextMenu}
-      role="article"
-      aria-roledescription="draggable item"
-      aria-label={`${issue.display_id}: ${issue.title}`}
+      ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
+      onClick={onClick} onContextMenu={handleContextMenu}
+      role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
       style={provided.draggableProps.style}
       className={cn(
-        'group cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-4 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
-        isDone && 'opacity-90 hover:opacity-100',
+        'group cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-3.5 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
+        isDone && 'opacity-85 hover:opacity-100',
         isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
         selected && 'ring-2 ring-accent/40 border-accent/30',
       )}
     >
       {SelectCheckbox}
-      {/* ── Header: ID + type + creator + status age ── */}
+      {/* Header: priority + ID + type icon | status age + menu */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted" />
-          <TypeBadge type={issue.type} size="xs" />
-          {isNew(issue.created_at, issue.updated_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase">NEW</span>}
+          {isDone ? (
+            <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />
+          ) : PriorityConfig ? (
+            <PriorityConfig.icon size={13} className={cn(PriorityConfig.color, 'shrink-0')} />
+          ) : null}
+          <CopyableId id={issue.display_id} className="text-[11px] text-gray-400 dark:text-muted whitespace-nowrap" />
+          <TypeIcon type={issue.type} />
+          {isNew(issue.created_at, issue.updated_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
           <SlaBadge issue={issue} />
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Creator name */}
-          {(issue.created_by_name || issue.created_by_id) && (() => {
-            const name = resolveUserName(issue.created_by_id, issue.created_by_name);
-            return (
-              <span className="text-[10px] text-muted flex items-center gap-0.5" title={`Created by ${name}`}>
-                <User size={9} />
-                <span className="max-w-[60px] truncate">{name.split(' ')[0]}</span>
-              </span>
-            );
-          })()}
-          {/* Status age — always visible, prominent */}
           <StatusAge issue={issue} />
-          {/* Menu */}
           <div
             className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 dark:text-muted opacity-0 group-hover:opacity-100 transition-opacity"
             onClick={(e) => e.stopPropagation()}
@@ -414,48 +402,26 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         </div>
       </div>
 
-      {/* ── Title ── */}
+      {/* Title */}
       <h3 className={cn(
-        'text-sm font-medium mb-3 leading-snug tracking-tight line-clamp-2',
+        'text-sm font-medium mb-2.5 leading-snug tracking-tight line-clamp-2',
         isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
-      )}>
-        {issue.title}
-      </h3>
+      )}>{issue.title}</h3>
 
-      {/* ── Footer: tags + due left — priority + PR + assignee right ── */}
+      {/* Footer: tags + due | PR + assignee */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-          {issue.tags.slice(0, 2).map((tag) => {
-            const style = getTagStyle(getTagColor(tag));
-            return (
-              <span key={tag} className={cn('inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border', style.bg, style.text, style.border)}>
-                {tag}
-              </span>
-            );
-          })}
-          {issue.tags.length > 2 && <span className="text-[10px] text-gray-400">+{issue.tags.length - 2}</span>}
+          {tags.slice(0, 2).map((tag) => (
+            <TagPill key={tag} tag={tag} color={getTagColor(tag)} maxW="max-w-[80px]" />
+          ))}
+          {tags.length > 2 && <span className="text-[10px] text-gray-400">+{tags.length - 2}</span>}
           {issue.due_date && <DueDate date={issue.due_date} />}
         </div>
-
         <div className="flex items-center gap-2 shrink-0">
           {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
-          {isDone ? (
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-          ) : PriorityConfig ? (
-            <PriorityConfig.icon className={cn('w-3.5 h-3.5', PriorityConfig.color)} />
-          ) : null}
-          {issue.assignee_ids.length > 0 && (() => {
-            const name = resolveUserName(issue.assignee_ids[0]);
-            const avatar = resolveUserAvatar(issue.assignee_ids[0]);
-            return (
-              <img
-                src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
-                className="w-5 h-5 rounded-full ring-1 ring-white dark:ring-surface"
-                alt={name}
-                title={name}
-              />
-            );
-          })()}
+          {issue.assignee_ids.length > 0 && (
+            <AssigneeAvatar id={issue.assignee_ids[0]} resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar} />
+          )}
         </div>
       </div>
     </div>
