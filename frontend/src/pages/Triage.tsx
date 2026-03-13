@@ -52,6 +52,20 @@ export function Triage() {
     }
   }, [triageIssues, selectedId]);
 
+  // Optimistic removal: remove triaged issue from cache immediately
+  const removeFromCache = useCallback((issueId: string) => {
+    queryClient.setQueryData<Issue[]>(['all-issues'], (old) =>
+      old ? old.filter((i) => i.id !== issueId) : []
+    );
+    // Auto-select next issue
+    setSelectedId((prev) => {
+      if (prev !== issueId) return prev;
+      const idx = triageIssues.findIndex((i) => i.id === issueId);
+      const next = triageIssues[idx + 1] || triageIssues[idx - 1];
+      return next?.id || null;
+    });
+  }, [queryClient, triageIssues]);
+
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
       apiClient.issues.update(id, body as any),
@@ -61,17 +75,20 @@ export function Triage() {
   });
 
   const handleAccept = useCallback((issue: Issue) => {
+    removeFromCache(issue.id);
     updateMutation.mutate({ id: issue.id, body: { status: 'todo' } });
-  }, [updateMutation]);
+  }, [updateMutation, removeFromCache]);
 
   const handleDecline = useCallback((issue: Issue) => {
+    removeFromCache(issue.id);
     updateMutation.mutate({ id: issue.id, body: { status: 'cancelled' } });
-  }, [updateMutation]);
+  }, [updateMutation, removeFromCache]);
 
   const handleAssign = useCallback((issueId: string, userId: string) => {
-    updateMutation.mutate({ id: issueId, body: { assignee_ids: [userId] } });
+    removeFromCache(issueId);
+    updateMutation.mutate({ id: issueId, body: { assignee_ids: [userId], status: 'todo' } });
     setAssignDropdownId(null);
-  }, [updateMutation]);
+  }, [updateMutation, removeFromCache]);
 
   // Reset AI result when switching issues
   useEffect(() => {
@@ -107,13 +124,36 @@ export function Triage() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!selectedIssue || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // When assign dropdown is open: number keys pick a member, Escape closes
+      if (assignDropdownId) {
+        if (e.key === 'Escape') { e.preventDefault(); setAssignDropdownId(null); return; }
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= orgMembers.length) {
+          e.preventDefault();
+          const member = orgMembers[num - 1] as any;
+          const userId = member?.publicUserData?.userId;
+          if (userId) handleAssign(selectedIssue.id, userId);
+        }
+        return; // Don't process other shortcuts while dropdown open
+      }
+
+      // j/k to navigate issue list
+      if (e.key === 'j' || e.key === 'k') {
+        e.preventDefault();
+        const idx = triageIssues.findIndex((i) => i.id === selectedIssue.id);
+        const next = e.key === 'j' ? triageIssues[idx + 1] : triageIssues[idx - 1];
+        if (next) setSelectedId(next.id);
+        return;
+      }
+
       if (e.key === '1') { e.preventDefault(); handleAccept(selectedIssue); }
-      if (e.key === '2') { e.preventDefault(); setAssignDropdownId(assignDropdownId === selectedIssue.id ? null : selectedIssue.id); }
+      if (e.key === '2') { e.preventDefault(); setAssignDropdownId(selectedIssue.id); }
       if (e.key === '3') { e.preventDefault(); handleDecline(selectedIssue); }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [selectedIssue, handleAccept, handleDecline, assignDropdownId]);
+  }, [selectedIssue, handleAccept, handleDecline, handleAssign, assignDropdownId, orgMembers, triageIssues]);
 
   if (isLoading) {
     return (
@@ -204,17 +244,24 @@ export function Triage() {
                       <ArrowRightLeft size={16} />
                     </button>
                     {assignDropdownId === issue.id && (
-                      <div className="absolute right-0 top-full mt-1 z-50 rounded-xl border border-border bg-surface shadow-2xl py-1.5 min-w-[180px]">
-                        {orgMembers.map((m: any) => {
+                      <div className="absolute right-0 top-full mt-1 z-50 rounded-xl border border-border bg-surface shadow-2xl py-1.5 min-w-[200px]">
+                        <p className="px-3 py-1 text-[9px] font-semibold text-muted uppercase tracking-wider">{t('triage.assignTo')}</p>
+                        {orgMembers.map((m: any, idx: number) => {
                           const userId = m.publicUserData?.userId;
                           const name = `${m.publicUserData?.firstName || ''} ${m.publicUserData?.lastName || ''}`.trim() || userId?.slice(0, 12);
+                          const avatar = m.publicUserData?.imageUrl;
                           return (
                             <button
                               key={userId}
                               onClick={(e) => { e.stopPropagation(); handleAssign(issue.id, userId); }}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-secondary hover:bg-surface-hover hover:text-primary"
+                              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
                             >
-                              <User size={14} />
+                              <kbd className="rounded bg-surface-hover px-1 py-0.5 text-[9px] font-mono text-muted min-w-[16px] text-center">{idx + 1}</kbd>
+                              {avatar ? (
+                                <img src={avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
+                              ) : (
+                                <User size={14} />
+                              )}
                               <span>{name}</span>
                             </button>
                           );

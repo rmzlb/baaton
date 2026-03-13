@@ -1282,6 +1282,7 @@ As a [user], I want to [action] so that [benefit].
 'triage.issuesNeedAttention': 'issues need attention',
 'triage.accept': 'Accept',
 'triage.assign': 'Assign',
+  'triage.assignTo': 'Assign to...',
 'triage.decline': 'Decline',
 'triage.empty': 'All caught up!',
 'triage.emptyDesc': 'No issues need triage right now.',

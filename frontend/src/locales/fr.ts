@@ -1282,6 +1282,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'triage.issuesNeedAttention': 'issues à traiter',
 'triage.accept': 'Accepter',
 'triage.assign': 'Assigner',
+  'triage.assignTo': 'Assigner à...',
 'triage.decline': 'Refuser',
 'triage.empty': 'Tout est à jour !',
 'triage.emptyDesc': 'Aucune issue à trier pour le moment.',
