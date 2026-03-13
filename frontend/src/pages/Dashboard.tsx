@@ -245,7 +245,7 @@ function OrgSection({ orgName, orgSlug, orgImageUrl, projects, issuesByProject, 
       <button onClick={() => setCollapsed(!collapsed)} className="flex items-center gap-2.5 mb-3 group w-full text-left">
         <ChevronRight size={14} className={cn('text-muted transition-transform', !collapsed && 'rotate-90')} />
         {orgImageUrl
-          ? <img src={orgImageUrl} alt="" className="h-6 w-6 rounded-md" />
+          ? <img src={orgImageUrl} alt="" className="h-6 w-6 rounded-md object-contain" />
           : <div className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/10"><Building2 size={12} className="text-accent" /></div>
         }
         <div className="flex items-center gap-2 flex-1 min-w-0">

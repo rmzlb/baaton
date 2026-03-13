@@ -140,7 +140,7 @@ function GlobalCreateModal({ onClose }: { onClose: () => void }) {
                     className="flex items-center gap-3 w-full rounded-xl px-3 py-3 hover:bg-surface-hover transition-colors group text-left"
                   >
                     {(org as any).imageUrl ? (
-                      <img src={(org as any).imageUrl} alt="" className="h-9 w-9 rounded-lg shrink-0" />
+                      <img src={(org as any).imageUrl} alt="" className="h-9 w-9 rounded-lg shrink-0 object-contain" />
                     ) : (
                       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent/10 shrink-0">
                         <Building2 size={16} className="text-accent" />
