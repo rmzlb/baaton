@@ -1,11 +1,11 @@
 {
   "name": "Baaton",
   "short_name": "Baaton",
-  "description": "Project management for AI agents and humans",
+  "description": "The project board agents actually use. AI agents and humans collaborate on issues, sprints, and backlogs.",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#0a0a0a",
-  "theme_color": "#6366f1",
+  "theme_color": "#f59e0b",
   "orientation": "any",
   "icons": [
     {
@@ -21,7 +21,7 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["productivity", "business"],
+  "categories": ["productivity", "developer-tools", "business"],
   "lang": "en",
   "prefer_related_applications": false
 }

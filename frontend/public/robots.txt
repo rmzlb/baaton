@@ -1,4 +1,4 @@
-# Baaton — Project Management for AI Agents
+# Baaton — The board agents actually use.
 # https://baaton.dev
 
 User-agent: *
