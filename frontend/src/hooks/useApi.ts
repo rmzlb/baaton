@@ -27,6 +27,7 @@ import type {
   IssueTemplate,
   SavedView,
   Automation,
+  ProjectGamificationStats,
 } from '@/lib/types';
 
 /**
@@ -189,6 +190,13 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.delete(`/projects/${id}`, token);
+        }),
+
+      getGamification: async (id: string): Promise<ProjectGamificationStats> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          const res = await api.get<{ data: ProjectGamificationStats }>(`/projects/${id}/gamification`, token);
+          return res.data;
         }),
 
       getAutoAssign: async (id: string): Promise<ProjectAutoAssignSettings> =>
@@ -524,6 +532,15 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.get<ActivityEntry[]>('/activity', token);
+        }),
+    },
+
+    // ─── Gamification (extended) ───────────────
+    gamificationStats: {
+      get: async (): Promise<any> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<any>('/gamification/stats', token);
         }),
     },
 

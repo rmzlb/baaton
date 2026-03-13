@@ -24,6 +24,7 @@ import { ActivityTimeline } from '@/components/issues/ActivityTimeline';
 import { IssueRelations } from '@/components/issues/IssueRelations';
 import { GitHubSection } from '@/components/github/GitHubSection';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
+import { IssueActivitySummary } from '@/components/issues/IssueActivitySummary';
 import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
 import { IssueDrawerSkeleton } from '@/components/shared/Skeleton';
 import { CopyableId } from '@/components/shared/CopyableId';
@@ -783,6 +784,13 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                   childIssues={childIssues}
                   projectId={resolvedProjectId!}
                   t={t}
+                />
+
+                {/* Activity summary: contributors + timing */}
+                <IssueActivitySummary
+                  issueId={issueId}
+                  createdAt={issue.created_at}
+                  closedAt={issue.closed_at ?? null}
                 />
 
                 {/* Activity log timeline */}

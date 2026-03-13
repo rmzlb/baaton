@@ -342,6 +342,10 @@ const fr = {
   'issueDrawer.createdTime': 'Créé {{time}}',
   'issueDrawer.updatedTime': 'Mis à jour {{time}}',
   'issueDrawer.qualifiedTime': 'Qualifié {{time}}',
+  'issueDrawer.contributors': 'Contributeurs',
+  'issueDrawer.timeline': 'Chronologie',
+  'issueDrawer.firstResponse': 'Première réponse :',
+  'issueDrawer.timeToClose': 'Temps de résolution :',
   'issueDrawer.loading': 'Chargement…',
   'issueDrawer.none': 'Aucune',
   'issueDrawer.removeTag': 'Cliquez pour retirer',
@@ -641,6 +645,9 @@ const fr = {
   'activity.title': 'Activité',
   'activity.empty': 'Pas encore d\'activité',
   'activity.recentActivity': 'Activité récente',
+  'activity.githubPush': 'a poussé un commit',
+  'activity.githubPrOpened': 'a ouvert une pull request',
+  'activity.githubPrMerged': 'a mergé une pull request',
 
   // ─── Notifications ─────────────────────────
   'notification.assigned': 'Vous avez été assigné à une issue',
@@ -1691,6 +1698,15 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'agentConfig.allowedProjects.noProjects': 'Aucun projet trouvé',
 
   // Activity Log
+  'gamification.projectActivity': 'Activité du projet',
+  'gamification.contributors': '{{count}} contributeurs',
+  'gamification.velocity': 'vélocité',
+  'gamification.done': 'terminé',
+  'gamification.created7d': 'créés (7j)',
+  'gamification.closed7d': 'fermés (7j)',
+  'gamification.topContributors': 'Top contributeurs',
+  'gamification.actions': 'actions',
+  'gamification.last30days': '30 derniers jours',
   'agentConfig.activity.title': 'Journal d\'activité',
   'agentConfig.activity.lastHeartbeat': 'Dernier heartbeat',
   'agentConfig.activity.lastTriage': 'Dernier triage',

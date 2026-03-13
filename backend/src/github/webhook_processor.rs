@@ -1,6 +1,47 @@
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::models::github::{GitHubRepoMapping, GitHubWebhookEvent};
+
+// ─── Activity helper ──────────────────────────────────
+
+/// Look up the org_id for a project and record a GitHub-sourced activity entry.
+/// Uses "github:<sender_login>" as the synthetic user_id so it shows in the feed
+/// without polluting personal streaks (log_activity skips gamification for github: users).
+async fn record_github_activity(
+    pool: &PgPool,
+    project_id: Uuid,
+    issue_id: Option<Uuid>,
+    sender_login: &str,
+    action: &str,
+    metadata: serde_json::Value,
+) {
+    let org_id: Option<String> = sqlx::query_scalar(
+        "SELECT org_id FROM projects WHERE id = $1"
+    )
+    .bind(project_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    let Some(org_id) = org_id else { return };
+
+    let user_id   = format!("github:{}", sender_login);
+    let user_name = format!("@{}", sender_login);
+
+    crate::routes::activity::log_activity(
+        pool,
+        &org_id,
+        Some(project_id),
+        issue_id,
+        &user_id,
+        Some(&user_name),
+        action,
+        None, None, None,
+        Some(metadata),
+    ).await;
+}
 
 /// Process a webhook event that was previously stored in github_webhook_events.
 ///
@@ -316,6 +357,29 @@ async fn handle_pull_request_event(
         .await?;
     }
 
+    // Record PR activity (opened or merged only — not every draft update)
+    let gh_action = match (action, pr["merged"].as_bool()) {
+        ("opened", _)         => Some("github_pr_opened"),
+        ("closed", Some(true)) => Some("github_pr_merged"),
+        _ => None,
+    };
+    if let Some(gh_action) = gh_action {
+        let sender_login = event.sender_login.as_deref().unwrap_or("unknown");
+        record_github_activity(
+            pool,
+            mapping.project_id,
+            Some(issue_id),
+            sender_login,
+            gh_action,
+            serde_json::json!({
+                "repo":      pr["base"]["repo"]["full_name"].as_str().unwrap_or(""),
+                "pr_number": pr_number,
+                "pr_title":  pr_title,
+                "branch":    head_branch,
+            }),
+        ).await;
+    }
+
     Ok(())
 }
 
@@ -419,6 +483,22 @@ async fn handle_push_event(
         .bind(url)
         .execute(pool)
         .await?;
+
+        // Record GitHub push activity
+        let sender_login = event.sender_login.as_deref().unwrap_or("unknown");
+        record_github_activity(
+            pool,
+            mapping.project_id,
+            Some(issue_id),
+            sender_login,
+            "github_push",
+            serde_json::json!({
+                "repo":         repo["full_name"].as_str().unwrap_or(""),
+                "branch":       branch,
+                "sha":          sha,
+                "message":      message,
+            }),
+        ).await;
     }
 
     Ok(())

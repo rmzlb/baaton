@@ -342,6 +342,10 @@ const en = {
   'issueDrawer.createdTime': 'Created {{time}}',
   'issueDrawer.updatedTime': 'Updated {{time}}',
   'issueDrawer.qualifiedTime': 'Qualified {{time}}',
+  'issueDrawer.contributors': 'Contributors',
+  'issueDrawer.timeline': 'Timeline',
+  'issueDrawer.firstResponse': 'First response:',
+  'issueDrawer.timeToClose': 'Time to close:',
   'issueDrawer.loading': 'Loading…',
   'issueDrawer.none': 'None',
   'issueDrawer.removeTag': 'Click to remove',
@@ -641,6 +645,9 @@ const en = {
   'activity.title': 'Activity',
   'activity.empty': 'No activity yet',
   'activity.recentActivity': 'Recent Activity',
+  'activity.githubPush': 'pushed a commit',
+  'activity.githubPrOpened': 'opened a pull request',
+  'activity.githubPrMerged': 'merged a pull request',
 
   // ─── Notifications ─────────────────────────
   'notification.assigned': 'You were assigned to an issue',
@@ -1691,6 +1698,15 @@ As a [user], I want to [action] so that [benefit].
   'agentConfig.allowedProjects.noProjects': 'No projects found',
 
   // Activity Log
+  'gamification.projectActivity': 'Project Activity',
+  'gamification.contributors': '{{count}} contributors',
+  'gamification.velocity': 'velocity',
+  'gamification.done': 'done',
+  'gamification.created7d': 'created (7d)',
+  'gamification.closed7d': 'closed (7d)',
+  'gamification.topContributors': 'Top Contributors',
+  'gamification.actions': 'actions',
+  'gamification.last30days': 'Last 30 days',
   'agentConfig.activity.title': 'Activity Log',
   'agentConfig.activity.lastHeartbeat': 'Last heartbeat',
   'agentConfig.activity.lastTriage': 'Last triage',

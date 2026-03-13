@@ -23,9 +23,13 @@ pub async fn list_by_issue(
 
     let entries = sqlx::query_as::<_, ActivityEntry>(
         r#"
-        SELECT * FROM activity_log
-        WHERE issue_id = $1 AND org_id = $2
-        ORDER BY created_at DESC
+        SELECT al.*,
+               i.title      AS issue_title,
+               i.display_id AS issue_display_id
+        FROM activity_log al
+        LEFT JOIN issues i ON i.id = al.issue_id
+        WHERE al.issue_id = $1 AND al.org_id = $2
+        ORDER BY al.created_at DESC
         LIMIT $3
         "#,
     )
@@ -53,9 +57,13 @@ pub async fn list_recent(
 
     let entries = sqlx::query_as::<_, ActivityEntry>(
         r#"
-        SELECT * FROM activity_log
-        WHERE org_id = $1
-        ORDER BY created_at DESC
+        SELECT al.*,
+               i.title      AS issue_title,
+               i.display_id AS issue_display_id
+        FROM activity_log al
+        LEFT JOIN issues i ON i.id = al.issue_id
+        WHERE al.org_id = $1
+        ORDER BY al.created_at DESC
         LIMIT $2
         "#,
     )
@@ -71,7 +79,11 @@ pub async fn list_recent(
     Json(ApiResponse::new(entries))
 }
 
-/// Helper: log an activity entry (used from issues.rs, comments.rs, etc.)
+/// Helper: log an activity entry AND fire gamification counters.
+///
+/// This is the single authoritative entry point for all activity recording.
+/// Called from issues.rs, comments.rs, relations.rs, recurring.rs, etc.
+/// Never fails the calling operation — errors are logged and swallowed.
 #[allow(dead_code)]
 pub async fn log_activity(
     pool: &PgPool,
@@ -89,7 +101,8 @@ pub async fn log_activity(
     let meta = metadata.unwrap_or(serde_json::json!({}));
     let _ = sqlx::query(
         r#"
-        INSERT INTO activity_log (org_id, project_id, issue_id, user_id, user_name, action, field, old_value, new_value, metadata)
+        INSERT INTO activity_log
+            (org_id, project_id, issue_id, user_id, user_name, action, field, old_value, new_value, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
     )
@@ -102,7 +115,14 @@ pub async fn log_activity(
     .bind(field)
     .bind(old_value)
     .bind(new_value)
-    .bind(meta)
+    .bind(&meta)
     .execute(pool)
     .await;
+
+    // Mirror every action into the gamification counters so velocity is always accurate.
+    // API-key users (user_id starts with "apikey:") are skipped since they don't have
+    // personal streaks, but org-level velocity still benefits from the activity_log row.
+    if !user_id.starts_with("apikey:") && !user_id.starts_with("github:") {
+        crate::routes::gamification::record_activity(pool, user_id, org_id, action).await;
+    }
 }

@@ -186,6 +186,23 @@ export interface ActivityEntry {
   new_value: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
+  /** Enriched by backend JOIN — present in list_recent / list_by_issue responses */
+  issue_title: string | null;
+  issue_display_id: string | null;
+}
+
+export interface ProjectGamificationStats {
+  velocity_7d: number;
+  completion_rate: number;
+  contributor_count: number;
+  issues_created_7d: number;
+  issues_closed_7d: number;
+  top_contributors: Array<{
+    user_id: string;
+    user_name: string | null;
+    action_count: number;
+  }>;
+  heatmap_30d: Array<{ date: string; count: number }>;
 }
 
 export type SSEEventType = 'issue_created' | 'issue_updated' | 'comment_created';

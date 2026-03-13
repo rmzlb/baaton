@@ -292,6 +292,12 @@ pub struct ActivityEntry {
     pub new_value: Option<String>,
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
+    /// Enriched fields — populated by JOIN in list_recent / list_by_issue.
+    /// Absent in simple SELECT * queries; defaults to None via #[sqlx(default)].
+    #[sqlx(default)]
+    pub issue_title: Option<String>,
+    #[sqlx(default)]
+    pub issue_display_id: Option<String>,
 }
 
 // ─── API Response Wrapper ─────────────────────────────
