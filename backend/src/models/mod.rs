@@ -156,6 +156,9 @@ pub struct UpdateIssue {
     pub estimate: Option<Option<i32>>,
     pub sprint_id: Option<Option<Uuid>>,
     pub snoozed_until: Option<Option<NaiveDate>>,
+    /// When true, skip workflow transition warnings (agent confirmed the move).
+    #[serde(default)]
+    pub force: bool,
 }
 
 // ─── Issue Relation ───────────────────────────────────
@@ -323,6 +326,9 @@ pub struct ApiResponse<T: Serialize> {
     /// AI-first action hints: contextual next steps for agents
     #[serde(rename = "_hints", skip_serializing_if = "Vec::is_empty")]
     pub hints: Vec<ActionHint>,
+    /// Warnings about non-standard operations (e.g. skipped workflow steps)
+    #[serde(rename = "_warnings", skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<serde_json::Value>,
 }
 
 #[allow(dead_code)]
@@ -346,12 +352,17 @@ pub struct ApiErrorBody {
 
 impl<T: Serialize> ApiResponse<T> {
     pub fn new(data: T) -> Self {
-        Self { data, hints: vec![] }
+        Self { data, hints: vec![], warnings: vec![] }
     }
 
     /// Add AI-first action hints to the response
     pub fn with_hints(data: T, hints: Vec<ActionHint>) -> Self {
-        Self { data, hints }
+        Self { data, hints, warnings: vec![] }
+    }
+
+    /// Add hints + warnings (for workflow transitions)
+    pub fn with_hints_and_warnings(data: T, hints: Vec<ActionHint>, warnings: Vec<serde_json::Value>) -> Self {
+        Self { data, hints, warnings }
     }
 }
 

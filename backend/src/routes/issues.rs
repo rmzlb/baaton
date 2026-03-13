@@ -118,32 +118,66 @@ fn validate_issue_type(issue_type: &str) -> Result<(), (StatusCode, Json<serde_j
     Ok(())
 }
 
-/// Validate a status transition against the workflow state machine.
-/// Returns 400 with allowed_transitions if invalid.
-fn validate_status_transition(from: &str, to: &str) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    let allowed: &[&str] = match from {
+/// Workflow state machine — defines the "natural" (recommended) transitions.
+/// Non-natural transitions are ALLOWED but return warnings.
+fn natural_transitions(status: &str) -> &[&str] {
+    match status {
         "backlog"     => &["todo", "in_progress", "cancelled"],
         "todo"        => &["in_progress", "backlog", "cancelled"],
         "in_progress" => &["in_review", "done", "todo", "cancelled"],
         "in_review"   => &["done", "in_progress", "cancelled"],
-        "done"        => &[], // no reopening by default
-        "cancelled"   => &["backlog"],
-        _             => return Ok(()), // custom status — allow anything
-    };
+        "done"        => &["backlog", "todo"],  // reopening allowed
+        "cancelled"   => &["backlog", "todo"],  // recovery allowed
+        _             => &[],  // custom status — anything goes
+    }
+}
 
-    if allowed.contains(&to) || from == to {
-        return Ok(());
+/// Intermediate steps that were skipped in a non-natural transition.
+fn skipped_steps(from: &str, to: &str) -> Vec<&'static str> {
+    match (from, to) {
+        ("backlog", "done")      => vec!["todo", "in_progress", "in_review"],
+        ("backlog", "in_review") => vec!["todo", "in_progress"],
+        ("todo", "done")         => vec!["in_progress", "in_review"],
+        ("todo", "in_review")    => vec!["in_progress"],
+        ("in_progress", "done")  => vec![],  // natural (can skip review)
+        _ => vec![],
+    }
+}
+
+/// Check a status transition. Returns Ok(warnings) — always allows the move.
+/// `force` = true suppresses warnings (agent explicitly confirmed).
+fn validate_status_transition(from: &str, to: &str, force: bool) -> Result<Vec<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if from == to {
+        return Ok(vec![]);
     }
 
-    Err((
-        StatusCode::BAD_REQUEST,
-        Json(json!({
-            "error": format!("Invalid status transition: '{}' → '{}'", from, to),
-            "from_status": from,
-            "to_status": to,
-            "allowed_transitions": allowed,
-        })),
-    ))
+    let natural = natural_transitions(from);
+    let mut warnings = Vec::new();
+
+    // If not a natural transition, warn but allow
+    if !natural.contains(&to) && !natural.is_empty() {
+        let skipped = skipped_steps(from, to);
+
+        if !force {
+            let mut w = json!({
+                "type": "non_standard_transition",
+                "message": format!(
+                    "Transition '{}' → '{}' skips intermediate steps. This is allowed but unusual.",
+                    from, to
+                ),
+                "from_status": from,
+                "to_status": to,
+                "natural_transitions": natural,
+                "action_hint": "Verify that the user explicitly requested this status. Add \"force\": true to suppress this warning.",
+            });
+            if !skipped.is_empty() {
+                w["skipped_steps"] = json!(skipped);
+            }
+            warnings.push(w);
+        }
+    }
+
+    Ok(warnings)
 }
 
 #[derive(Debug, Deserialize)]
@@ -757,8 +791,8 @@ pub async fn update(
         let valid_statuses = get_project_statuses(&pool, existing.project_id, org_id).await?;
         validate_status(status, &valid_statuses)?;
 
-        // State machine: validate transition
-        validate_status_transition(&existing.status, status)?;
+        // Note: workflow transition is now permissive — warnings are returned in the response, not 400 errors.
+        // The actual validation + warning collection happens at the end of the function.
     }
 
     if let Some(ref priority_opt) = body.priority {
@@ -1155,7 +1189,14 @@ pub async fn update(
         ));
     }
 
-    Ok(Json(ApiResponse::with_hints(issue, hints)))
+    // Collect transition warnings (set earlier during validation)
+    let transition_warnings = if let Some(ref status) = body.status {
+        validate_status_transition(&existing.status, status, body.force).unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    Ok(Json(ApiResponse::with_hints_and_warnings(issue, hints, transition_warnings)))
 }
 
 pub async fn update_position(

@@ -312,6 +312,8 @@ Keys are org-scoped — one key accesses all projects in the organization.
 - Use `description` and `comments` in **Markdown format** for rich content
 - Include code blocks, links, and structured data in descriptions
 - Use `tldr` for machine-generated summaries (separate from human comments)
+- Status transitions are **permissive**: any status → any status is allowed, but non-standard jumps return `_warnings` with guidance. Use `\"force\": true` to suppress warnings when the agent has confirmed with the user.
+- Natural workflow: backlog → todo → in_progress → in_review → done. Skipping steps (e.g. todo → done) works but warns.
 - Status transitions auto-set `due_date` and add `auto:status:*` tags
 - The `created_by_name` field shows the API key name — name your keys descriptively
 
