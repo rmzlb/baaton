@@ -67,7 +67,7 @@ export default function Admin() {
   const { t } = useTranslation();
   const apiClient = useApi();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'overview' | 'orgs' | 'superadmins' | 'audit'>('overview');
+  const [tab, setTab] = useState<'overview' | 'orgs' | 'users' | 'superadmins' | 'audit'>('overview');
   const [search, setSearch] = useState('');
   const [planFilter, setPlanFilter] = useState('');
   const [sortBy, setSortBy] = useState<'issues' | 'projects' | 'created'>('issues');
@@ -226,10 +226,10 @@ export default function Admin() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-surface rounded-lg p-1 w-fit">
-        {(['overview', 'orgs', 'superadmins', 'audit'] as const).map(t => (
+        {(['overview', 'orgs', 'users', 'superadmins', 'audit'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === t ? 'bg-surface-hover text-primary' : 'text-muted hover:text-secondary'}`}>
-            {t === 'overview' ? '📊 Overview' : t === 'orgs' ? '🏢 Organizations' : t === 'superadmins' ? '🛡️ Super Admins' : '📋 Audit Log'}
+            {t === 'overview' ? '📊 Overview' : t === 'orgs' ? '🏢 Organizations' : t === 'users' ? '👥 Users' : t === 'superadmins' ? '🛡️ Super Admins' : '📋 Audit Log'}
           </button>
         ))}
       </div>
@@ -463,6 +463,9 @@ export default function Admin() {
         </div>
       )}
 
+      {/* ─── Users Tab ─────────────────────────────────────────────── */}
+      {tab === 'users' && <UsersTab orgs={orgData?.organizations ?? []} apiClient={apiClient} t={t} />}
+
       {/* ─── Super Admins Tab ─────────────────────────────────────── */}
       {tab === 'superadmins' && (
         <div className="space-y-4">
@@ -596,5 +599,129 @@ function CopyButton({ text }: { text: string }) {
       className="p-0.5 rounded hover:bg-surface-hover text-muted hover:text-primary">
       {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
     </button>
+  );
+}
+
+
+// ─── Users Tab ──────────────────────────────────────────────────────
+
+interface UniqueUser {
+  user_id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  image_url: string;
+  orgs: { org_id: string; name: string; plan: string; role: string }[];
+}
+
+function UsersTab({ orgs, apiClient, t }: { orgs: OrgEntry[]; apiClient: any; t: (k: string) => string }) {
+  const [search, setSearch] = useState('');
+
+  // Deduplicate users across orgs
+  const users = useMemo(() => {
+    const map = new Map<string, UniqueUser>();
+    for (const org of orgs) {
+      for (const m of org.members) {
+        const existing = map.get(m.user_id);
+        const orgInfo = { org_id: org.org_id, name: org.name, plan: org.plan, role: m.role };
+        if (existing) {
+          existing.orgs.push(orgInfo);
+        } else {
+          map.set(m.user_id, {
+            user_id: m.user_id,
+            email: m.email,
+            first_name: m.first_name,
+            last_name: m.last_name,
+            image_url: m.image_url,
+            orgs: [orgInfo],
+          });
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [orgs]);
+
+  const filtered = useMemo(() => {
+    if (!search) return users;
+    const q = search.toLowerCase();
+    return users.filter(u =>
+      u.email.toLowerCase().includes(q) ||
+      `${u.first_name} ${u.last_name}`.toLowerCase().includes(q) ||
+      u.user_id.toLowerCase().includes(q) ||
+      u.orgs.some(o => o.name.toLowerCase().includes(q))
+    );
+  }, [users, search]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted">{users.length} users across {orgs.length} organizations</p>
+        <input
+          type="text"
+          placeholder="Search users..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="px-3 py-1.5 rounded-lg border border-border bg-bg text-sm text-primary placeholder:text-muted focus:outline-none focus:border-accent w-64"
+        />
+      </div>
+
+      <div className="bg-surface rounded-xl border border-border overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted">User</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted">Email</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted">Organizations</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted">User ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(user => (
+              <tr key={user.user_id} className="border-b border-border/50 hover:bg-surface-hover/50 transition-colors">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2.5">
+                    {user.image_url ? (
+                      <img src={user.image_url} alt="" className="w-7 h-7 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-surface-hover flex items-center justify-center text-[10px] font-bold text-muted">
+                        {(user.first_name?.[0] || user.email?.[0] || '?').toUpperCase()}
+                      </div>
+                    )}
+                    <span className="text-sm font-medium text-primary">
+                      {`${user.first_name} ${user.last_name}`.trim() || user.email.split('@')[0]}
+                    </span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-sm text-secondary">{user.email}</td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    {user.orgs.map(o => (
+                      <span key={o.org_id} className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px]">
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          o.plan === 'enterprise' ? 'bg-purple-400' :
+                          o.plan === 'pro' ? 'bg-blue-400' :
+                          o.plan === 'partner' ? 'bg-amber-400' :
+                          'bg-gray-400'
+                        }`} />
+                        <span className="text-secondary font-medium">{o.name}</span>
+                        <span className="text-muted">({o.role.replace('org:', '')})</span>
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="font-mono text-[10px] text-muted">{user.user_id.slice(0, 16)}…</span>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-sm text-muted">No users found</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
