@@ -50,7 +50,7 @@ export function SlackSettings() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiClient.delete(`/integrations/slack/${id}`),
+    mutationFn: (id: string) => apiClient.del(`/integrations/slack/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['slack-integrations'] });
       addNotification({ type: 'success', title: t('slack.deleted'), message: '' });

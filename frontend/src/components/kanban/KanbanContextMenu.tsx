@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Trash2, ArrowRight, Copy, ExternalLink,
-  Bug, Sparkles, Zap, HelpCircle,
   ArrowUp, ArrowDown, Minus, OctagonAlert,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';

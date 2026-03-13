@@ -1,7 +1,7 @@
 import type { DraggableProvided } from '@hello-pangea/dnd';
 import {
   Bug, Sparkles, Zap, HelpCircle,
-  ArrowUp, ArrowDown, Minus, OctagonAlert, Bot,
+  ArrowUp, ArrowDown, Minus, OctagonAlert,
   Clock, MoreHorizontal, CheckCircle2, User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';

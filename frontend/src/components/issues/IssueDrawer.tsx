@@ -109,7 +109,6 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   });
 
   // ── Queries ──
-  const drawerStart = performance.now();
   const { data: issue, isLoading } = useQuery({
     queryKey: ['issue', issueId],
     queryFn: async () => {
@@ -1584,7 +1583,7 @@ function AttachmentSection({
   imageAttachments,
   nonImageAttachments,
   pendingFiles,
-  isUploading,
+  isUploading: _isUploading,
   isDragging,
   onDragEnter,
   onDragOver,
@@ -2153,13 +2152,13 @@ function ImageLightbox({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
-      onClick={() => descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose()}
+      onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={`Image viewer: ${images[currentIndex]?.name || 'Image'}`}
     >
       <button
-        onClick={() => descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose()}
+        onClick={onClose}
         aria-label="Close image viewer"
         className="absolute top-4 right-4 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
       >
