@@ -287,81 +287,89 @@ const CELL = 10;
 const GAP = 2;
 
 function MiniHeatmap({ cells, label }: { cells: HeatmapCell[]; label: string }) {
+  const [year, setYear] = useState(new Date().getFullYear());
   const countMap = new Map(cells.map(c => [c.date, c.count]));
-
-  // Build 52 weeks of data (full year view, ending today)
+  const currentYear = new Date().getFullYear();
   const today = new Date();
+
+  // Build dates for the selected calendar year (Jan 1 → Dec 31 or today)
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = year === currentYear ? today : new Date(year, 11, 31);
   const dates: Date[] = [];
-  for (let i = 363; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); dates.push(d); }
+  for (let d = new Date(yearStart); d <= yearEnd; d.setDate(d.getDate() + 1)) {
+    dates.push(new Date(d));
+  }
 
   // Group into weeks (Mon=0 ... Sun=6)
   const weeks: { date: Date; count: number; dow: number }[][] = [];
   let cw: { date: Date; count: number; dow: number }[] = [];
   for (const d of dates) {
-    const jsDay = d.getDay(); // 0=Sun
-    const dow = jsDay === 0 ? 6 : jsDay - 1; // 0=Mon
+    const jsDay = d.getDay();
+    const dow = jsDay === 0 ? 6 : jsDay - 1; // Mon=0
     if (dow === 0 && cw.length > 0) { weeks.push(cw); cw = []; }
     cw.push({ date: d, count: countMap.get(d.toISOString().slice(0, 10)) ?? 0, dow });
   }
   if (cw.length > 0) weeks.push(cw);
 
-  const max = Math.max(...cells.map(c => c.count), 1);
+  // Filter cells for this year to compute stats
+  const yearCells = cells.filter(c => c.date.startsWith(String(year)));
+  const max = Math.max(...yearCells.map(c => c.count), 1);
   const lvl = (n: number) => n === 0 ? 0 : n <= max * 0.25 ? 1 : n <= max * 0.5 ? 2 : n <= max * 0.75 ? 3 : 4;
   const fills = [
-    'var(--color-border, #e4e4e7)', // 0 — empty
-    'rgba(245, 158, 11, 0.25)',     // 1 — light
-    'rgba(245, 158, 11, 0.45)',     // 2 — medium
-    'rgba(245, 158, 11, 0.70)',     // 3 — strong
-    'rgb(245, 158, 11)',            // 4 — max
+    'var(--color-border, #e4e4e7)',
+    'rgba(245, 158, 11, 0.25)',
+    'rgba(245, 158, 11, 0.45)',
+    'rgba(245, 158, 11, 0.70)',
+    'rgb(245, 158, 11)',
   ];
 
-  // Month labels: show at first week where a new month starts
+  // Month labels at first week of each month
   const monthMarkers: { weekIdx: number; label: string }[] = [];
   let lastMonth = -1;
   weeks.forEach((w, wi) => {
-    const firstDay = w[0]?.date;
-    if (firstDay) {
-      const m = firstDay.getMonth();
-      if (m !== lastMonth) { monthMarkers.push({ weekIdx: wi, label: MONTH_LABELS[m] }); lastMonth = m; }
-    }
+    const m = w[0]?.date.getMonth();
+    if (m !== undefined && m !== lastMonth) { monthMarkers.push({ weekIdx: wi, label: MONTH_LABELS[m] }); lastMonth = m; }
   });
 
-  const leftPad = 28; // space for day labels
+  const leftPad = 28;
   const svgW = leftPad + weeks.length * (CELL + GAP);
-  const svgH = 14 + 7 * (CELL + GAP); // 14px for month labels
-
-  const totalActions = cells.reduce((s, c) => s + c.count, 0);
+  const svgH = 14 + 7 * (CELL + GAP);
+  const totalActions = yearCells.reduce((s, c) => s + c.count, 0);
+  // Earliest data year (for nav lower bound)
+  const minYear = cells.length > 0 ? Math.min(...cells.map(c => parseInt(c.date.slice(0, 4)))) : currentYear;
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">{label}</p>
-        <p className="text-[10px] text-muted">{totalActions} actions this year</p>
+        <div className="flex items-center gap-2">
+          <p className="text-[10px] text-muted">{totalActions} actions</p>
+          <div className="flex items-center gap-0.5">
+            <button onClick={() => setYear(y => Math.max(minYear, y - 1))} disabled={year <= minYear}
+              className="w-5 h-5 flex items-center justify-center rounded text-muted hover:bg-surface-hover hover:text-primary disabled:opacity-30 disabled:cursor-default transition-colors text-xs">
+              ‹
+            </button>
+            <span className="text-[10px] font-semibold text-secondary tabular-nums min-w-[30px] text-center">{year}</span>
+            <button onClick={() => setYear(y => Math.min(currentYear, y + 1))} disabled={year >= currentYear}
+              className="w-5 h-5 flex items-center justify-center rounded text-muted hover:bg-surface-hover hover:text-primary disabled:opacity-30 disabled:cursor-default transition-colors text-xs">
+              ›
+            </button>
+          </div>
+        </div>
       </div>
       <div className="overflow-x-auto no-scrollbar">
         <svg width={svgW} height={svgH} className="block">
-          {/* Month labels */}
           {monthMarkers.map(({ weekIdx, label: ml }) => (
             <text key={weekIdx} x={leftPad + weekIdx * (CELL + GAP)} y={10}
               className="fill-muted" fontSize={9} fontFamily="Inter, sans-serif">{ml}</text>
           ))}
-          {/* Day labels (Mon, Wed, Fri) */}
           {DAY_LABELS.map((dl, di) => dl ? (
             <text key={di} x={0} y={14 + di * (CELL + GAP) + 8}
               className="fill-muted" fontSize={9} fontFamily="Inter, sans-serif">{dl}</text>
           ) : null)}
-          {/* Cells */}
-          {weeks.map((w, wi) => w.map((d, _di) => (
-            <rect
-              key={`${wi}-${d.dow}`}
-              x={leftPad + wi * (CELL + GAP)}
-              y={14 + d.dow * (CELL + GAP)}
-              width={CELL}
-              height={CELL}
-              rx={2}
-              fill={fills[lvl(d.count)]}
-              opacity={d.count === 0 ? 0.5 : 1}
-            >
+          {weeks.map((w, wi) => w.map((d) => (
+            <rect key={`${wi}-${d.dow}`} x={leftPad + wi * (CELL + GAP)} y={14 + d.dow * (CELL + GAP)}
+              width={CELL} height={CELL} rx={2} fill={fills[lvl(d.count)]} opacity={d.count === 0 ? 0.5 : 1}>
               <title>{d.date.toISOString().slice(0, 10)}: {d.count} action{d.count !== 1 ? 's' : ''}</title>
             </rect>
           )))}
