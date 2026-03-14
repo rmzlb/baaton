@@ -673,6 +673,44 @@ Update: `{ "enabled": true, "auto_triage": true, "auto_assign": true, "auto_labe
 
 ---
 
+## Approval Workflow
+
+### POST /issues/{id}/approval-request
+Create an approval request on an issue. Used by agents to ask for human review before proceeding.
+
+**Body:**
+```json
+{
+  "action": "deploy_to_production",
+  "description": "PR #42 merged, all tests pass. Ready to deploy.",
+  "confidence": 0.85,
+  "options": ["approve", "reject", "request_changes"]
+}
+```
+
+**Response:** The created comment with `comment_type: "approval_request"` and `approval_status: "pending"`.
+
+### POST /issues/{id}/approval-response
+Respond to a pending approval request.
+
+**Body:**
+```json
+{
+  "approval_comment_id": "uuid-of-the-approval-comment",
+  "decision": "approved",
+  "comment": "LGTM, ship it"
+}
+```
+
+Valid decisions: `approved`, `rejected`, `request_changes`.
+
+**Side effects:**
+- Updates the original approval comment with decision metadata
+- Dispatches `issue.approval_decision` webhook event
+- Logs activity
+
+---
+
 ## Import / Export
 
 ### POST /projects/{id}/import

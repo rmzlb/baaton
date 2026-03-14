@@ -38,6 +38,8 @@ Response format: `{ "data": ... }` — errors: `{ "error": "...", "accepted_valu
 | Bulk delete | DELETE | `/issues/batch` with `{ ids[] }` |
 | My issues | GET | `/issues/mine` |
 | Add comment | POST | `/issues/{id}/comments` |
+| Request approval | POST | `/issues/{id}/approval-request` with `{ action, description, confidence?, options? }` |
+| Respond to approval | POST | `/issues/{id}/approval-response` with `{ approval_comment_id, decision, comment? }` |
 | Post TLDR | POST | `/issues/{id}/tldr` |
 | Search | GET | `/search?q=keyword` |
 | Global search | GET | `/search/global?q=keyword` |
@@ -128,7 +130,7 @@ Actions: `set_status`, `set_priority`, `add_label`, `assign_user`, `send_webhook
 
 ## Webhook Events
 
-`issue.created`, `issue.updated`, `issue.deleted`, `status.changed`, `comment.created`, `comment.deleted`
+`issue.created`, `issue.updated`, `issue.deleted`, `status.changed`, `comment.created`, `comment.deleted`, `issue.approval_requested`, `issue.approval_decision`
 
 Payload: `{ event, data: { issue }, timestamp }`
 

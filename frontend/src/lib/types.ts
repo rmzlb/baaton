@@ -151,12 +151,30 @@ export interface TLDR {
   created_at: string;
 }
 
+export type CommentType = 'comment' | 'approval_request';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'request_changes';
+
+export interface ApprovalMetadata {
+  action?: string;
+  description?: string;
+  confidence?: number;
+  options?: string[];
+  decision?: string;
+  decided_by?: string;
+  decided_by_name?: string;
+  decided_at?: string;
+  decision_comment?: string;
+}
+
 export interface Comment {
   id: string;
   issue_id: string;
   author_id: string;
   author_name: string;
   body: string;
+  comment_type: CommentType;
+  approval_status: ApprovalStatus | null;
+  approval_metadata: ApprovalMetadata | null;
   created_at: string;
   updated_at: string;
 }

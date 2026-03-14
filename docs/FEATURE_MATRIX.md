@@ -186,6 +186,15 @@
 21. **Issue templates** — reusable templates
 22. **Issue estimates** — T-shirt sizing
 
+### Phase 6 — Agent Governance (2026-03)
+22. **Approval workflow** — structured approval requests from agents, approve/reject in-app ✅
+23. **Agent status indicators** — green/gray dots on kanban cards for agent activity ✅
+24. **Sub-status filters** — filter chips inside kanban columns (in_review, in_progress) ✅
+25. **Left border attention states** — SLA breach/at risk/blocked/stale/new visual cues ✅
+26. **System health indicator** — sidebar footer status dot ✅
+27. **Risk scoring** — confidence/risk on approval requests (backlog)
+28. **Guard policies** — configurable rules per project (backlog)
+
 ---
 
-*Generated 2026-02-11 — Based on Linear, GitHub Projects, Notion, Plane, Huly analysis*
+*Generated 2026-02-11 — Updated 2026-03-14 — Based on Linear, GitHub Projects, Notion, Plane, Huly, DashClaw, OpenClaw Mission Control analysis*

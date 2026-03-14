@@ -21,6 +21,7 @@ import { evaluateIssueSla } from '@/lib/sla';
 import { NotionEditor } from '@/components/shared/NotionEditor';
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 import { ActivityTimeline } from '@/components/issues/ActivityTimeline';
+import { ApprovalCard } from '@/components/issues/ApprovalCard';
 import { IssueRelations } from '@/components/issues/IssueRelations';
 import { GitHubSection } from '@/components/github/GitHubSection';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
@@ -746,6 +747,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     onSubmit={handleSubmitComment}
                     isPending={commentMutation.isPending}
                     t={t}
+                    issueId={issue.id}
                   />
                 ) : (
                   <ActivityTimeline issueId={issue.id} />
@@ -1811,9 +1813,10 @@ interface CommentSectionProps {
   onSubmit: () => void;
   isPending: boolean;
   t: (key: string, vars?: Record<string, string | number>) => string;
+  issueId: string;
 }
 
-function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, isPending, t }: CommentSectionProps) {
+function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, isPending, t, issueId }: CommentSectionProps) {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -1831,7 +1834,11 @@ function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, 
       </label>
       <div className="space-y-2">
         {comments.map((comment: Comment) => (
-          <CommentCard key={comment.id} comment={comment} />
+          comment.comment_type === 'approval_request' ? (
+            <ApprovalCard key={comment.id} comment={comment} issueId={issueId} />
+          ) : (
+            <CommentCard key={comment.id} comment={comment} />
+          )
         ))}
       </div>
 

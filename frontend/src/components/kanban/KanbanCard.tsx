@@ -179,22 +179,45 @@ function isNew(created_at: string, updated_at?: string): boolean {
   return true;
 }
 
+/** Check if an assignee name looks like an agent */
+function isAgent(name: string): boolean {
+  return name.startsWith('apikey:') || name.toLowerCase().startsWith('agent');
+}
+
 /* Assignee avatar helper */
-function AssigneeAvatar({ id, size = 5, resolveUserName, resolveUserAvatar }: {
+function AssigneeAvatar({ id, size = 5, resolveUserName, resolveUserAvatar, issueUpdatedAt }: {
   id: string; size?: number;
   resolveUserName: (id: string) => string;
   resolveUserAvatar: (id: string) => string | undefined;
+  issueUpdatedAt?: string;
 }) {
   const name = resolveUserName(id);
   const avatar = resolveUserAvatar(id);
   const px = size === 4 ? 'w-4 h-4' : 'w-5 h-5';
+  const agentFlag = isAgent(name);
+  const agentActive = agentFlag && issueUpdatedAt
+    ? (Date.now() - new Date(issueUpdatedAt).getTime()) < 5 * 60 * 1000
+    : false;
+
   return (
-    <img
-      src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
-      className={cn(px, 'rounded-full ring-1 ring-white dark:ring-surface shrink-0')}
-      alt={name}
-      title={name}
-    />
+    <span className="relative inline-flex shrink-0">
+      <img
+        src={avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=f0f0f0&textColor=666666`}
+        className={cn(px, 'rounded-full ring-1 ring-white dark:ring-surface')}
+        alt={name}
+        title={name}
+      />
+      {agentFlag && (
+        <span
+          className={cn(
+            'absolute -bottom-0.5 -right-0.5 block rounded-full ring-1 ring-white dark:ring-surface',
+            size === 4 ? 'h-1.5 w-1.5' : 'h-2 w-2',
+            agentActive ? 'bg-emerald-500' : 'bg-gray-400',
+          )}
+          title={agentActive ? 'Agent active' : 'Agent inactive'}
+        />
+      )}
+    </span>
   );
 }
 
@@ -209,6 +232,30 @@ function TagPill({ tag, color, maxW = 'max-w-[80px]' }: { tag: string; color: st
       {tag}
     </span>
   );
+}
+
+/* ─── Left border state ─────────────────────────────── */
+
+function getLeftBorderClass(issue: Issue): string {
+  // SLA breach (highest priority)
+  const sla = evaluateIssueSla(issue);
+  if (sla.status === 'breached') return 'border-l-[3px] border-l-red-500';
+  if (sla.status === 'at_risk') return 'border-l-[3px] border-l-amber-500';
+
+  // Blocked tag
+  if (issue.tags.some((t) => t.toLowerCase().includes('blocked'))) return 'border-l-[3px] border-l-orange-400';
+
+  // Stale: in_progress > 7d, in_review > 3d
+  if (issue.status_changed_at) {
+    const days = (Date.now() - new Date(issue.status_changed_at).getTime()) / (1000 * 60 * 60 * 24);
+    if (issue.status === 'in_progress' && days > 7) return 'border-l-[3px] border-l-gray-400';
+    if (issue.status === 'in_review' && days > 3) return 'border-l-[3px] border-l-gray-400';
+  }
+
+  // NEW (< 24h)
+  if (isNew(issue.created_at, issue.updated_at)) return 'border-l-[3px] border-l-emerald-400';
+
+  return '';
 }
 
 /* ─── Main Component ────────────────────────────────── */
@@ -236,6 +283,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
   const isDone = issue.status === 'done' || issue.status === 'cancelled';
   const tags = userTags(issue.tags);
   const getTagColor = (tagName: string) => projectTags.find((t) => t.name === tagName)?.color || '#6b7280';
+  const leftBorder = isDone ? '' : getLeftBorderClass(issue);
 
   /* ── COMPACT ─────────────────────────────────────── */
   if (density === 'compact') {
@@ -250,6 +298,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
           isDone && 'opacity-60 hover:opacity-90',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
           selected && 'ring-2 ring-accent/40 border-accent/30',
+          leftBorder,
         )}
       >
         {SelectCheckbox}
@@ -280,7 +329,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
 
           {/* Assignee avatar */}
           {issue.assignee_ids.length > 0 && (
-            <AssigneeAvatar id={issue.assignee_ids[0]} size={4} resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar} />
+            <AssigneeAvatar id={issue.assignee_ids[0]} size={4} resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar} issueUpdatedAt={issue.updated_at} />
           )}
         </div>
       </div>
@@ -300,6 +349,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
           isDone && 'opacity-70 hover:opacity-100',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
           selected && 'ring-2 ring-accent/40 border-accent/30',
+          leftBorder,
         )}
       >
         {SelectCheckbox}
@@ -352,7 +402,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
             {issue.assignee_ids.length > 0 && (
               <div className="flex -space-x-1.5">
                 {issue.assignee_ids.slice(0, 3).map((id) => (
-                  <AssigneeAvatar key={id} id={id} resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar} />
+                  <AssigneeAvatar key={id} id={id} resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar} issueUpdatedAt={issue.updated_at} />
                 ))}
                 {issue.assignee_ids.length > 3 && <span className="text-[9px] text-muted ml-1">+{issue.assignee_ids.length - 3}</span>}
               </div>
@@ -375,6 +425,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         isDone && 'opacity-85 hover:opacity-100',
         isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
         selected && 'ring-2 ring-accent/40 border-accent/30',
+        leftBorder,
       )}
     >
       {SelectCheckbox}
@@ -420,7 +471,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         <div className="flex items-center gap-2 shrink-0">
           {githubPrs.length > 0 && <GitHubPrBadge prs={githubPrs} />}
           {issue.assignee_ids.length > 0 && (
-            <AssigneeAvatar id={issue.assignee_ids[0]} resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar} />
+            <AssigneeAvatar id={issue.assignee_ids[0]} resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar} issueUpdatedAt={issue.updated_at} />
           )}
         </div>
       </div>

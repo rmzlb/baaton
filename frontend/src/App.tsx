@@ -184,7 +184,8 @@ export function App() {
             <Route path="/projects/:slug/sprints" element={<Sprints />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/billing" element={<Billing />} />
-            <Route path="/agent-config" element={<AgentConfig />} />
+            <Route path="/agents" element={<AgentConfig />} />
+            <Route path="/agent-config" element={<Navigate to="/agents" replace />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/ai" element={<AIChat />} />
             <Route path="/integrations" element={<Integrations />} />

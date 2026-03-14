@@ -228,6 +228,9 @@ pub struct Comment {
     pub author_id: String,
     pub author_name: String,
     pub body: String,
+    pub comment_type: String,
+    pub approval_status: Option<String>,
+    pub approval_metadata: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

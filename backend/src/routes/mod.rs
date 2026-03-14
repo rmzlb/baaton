@@ -6,6 +6,7 @@ use crate::middleware::{auth_middleware, JwksKeys};
 mod projects;
 pub(crate) mod issues;
 mod comments;
+mod approvals;
 mod tldrs;
 mod tags;
 mod invites;
@@ -68,6 +69,9 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/issues/{id}/unarchive", post(issues::unarchive))
         .route("/issues/{id}/comments", get(comments::list_by_issue).post(comments::create))
         .route("/issues/{issue_id}/comments/{comment_id}", delete(comments::remove))
+        // Approval workflow
+        .route("/issues/{id}/approval-request", post(approvals::create_approval_request))
+        .route("/issues/{id}/approval-response", post(approvals::create_approval_response))
         .route("/issues/{id}/tldr", post(tldrs::create))
         // Sub-issues (children)
         .route("/issues/{id}/children", get(issues::list_children))

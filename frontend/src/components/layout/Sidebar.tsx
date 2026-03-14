@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { NavLink, useLocation, Link } from 'react-router-dom';
 import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
@@ -109,7 +109,7 @@ export function Sidebar() {
     { to: '/webhooks', icon: Webhook, label: t('sidebar.webhooks') },
     { to: '/api-keys', icon: KeyRound, label: t('sidebar.apiKeys') },
     { to: '/billing', icon: CreditCard, label: t('sidebar.billing') },
-    { to: '/agent-config', icon: Bot, label: t('sidebar.agentConfig') },
+    { to: '/agents', icon: Bot, label: t('sidebar.agentConfig') },
     ...(isSuperAdmin ? [{ to: '/admin', icon: Shield, label: t('sidebar.admin') }] : []),
     { to: currentProjectSlug ? `/projects/${currentProjectSlug}/automations` : '/automations', icon: Workflow, label: t('sidebar.automations') },
     { to: '/integrations', icon: Plug, label: t('sidebar.integrations') },
@@ -283,6 +283,9 @@ export function Sidebar() {
           <ExtLink href="mailto:haros@agentmail.to?subject=Baaton Feedback" icon={MessageSquare} label={t('sidebar.feedback')} isExternal />
         </div>
 
+        {/* ─── System Status ─── */}
+        {!isCompact && <SystemStatus />}
+
         {/* ─── Footer ─── */}
         <div className="border-t border-border p-2">
           <div className={cn('flex items-center', isCompact ? 'flex-col gap-2' : 'gap-1 px-1')}>
@@ -313,5 +316,43 @@ export function Sidebar() {
         </div>
       </aside>
     </>
+  );
+}
+
+/* ─── System Status Indicator ─────────────────── */
+
+function SystemStatus() {
+  const [healthy, setHealthy] = useState<boolean | null>(null);
+
+  const checkHealth = useCallback(async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://api.baaton.dev';
+      const res = await fetch(`${apiUrl}/health`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+      setHealthy(res.ok);
+    } catch {
+      setHealthy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkHealth();
+    const interval = setInterval(checkHealth, 30_000);
+    return () => clearInterval(interval);
+  }, [checkHealth]);
+
+  if (healthy === null) return null;
+
+  return (
+    <div className="px-3 py-1.5">
+      <div className="flex items-center gap-2">
+        <span className={cn(
+          'h-1.5 w-1.5 rounded-full shrink-0',
+          healthy ? 'bg-emerald-500' : 'bg-red-500',
+        )} />
+        <span className="text-[10px] text-muted">
+          {healthy ? 'All systems operational' : 'System degraded'}
+        </span>
+      </div>
+    </div>
   );
 }
