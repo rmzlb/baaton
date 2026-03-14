@@ -72,6 +72,24 @@ Update project name, description, statuses, etc.
 ### DELETE /projects/{id}
 Delete a project and all its issues.
 
+### GET /projects/{id}/auto-assign
+Get auto-assign settings: `{ "mode": "round_robin", "default_assignee_id": "..." }`
+
+### PATCH /projects/{id}/auto-assign
+Update: `{ "mode": "off" | "default_assignee" | "round_robin", "default_assignee_id": "..." }`
+
+### GET /projects/{id}/public-submit
+Get public issue submission settings.
+
+### PATCH /projects/{id}/public-submit
+Update public submit settings.
+
+### GET /projects/by-slug/{slug}/board
+Get project board view by slug (kanban columns with issues).
+
+### GET /projects/{id}/burndown
+Burndown chart data. Params: `sprint_id`, `days` (default 14).
+
 ---
 
 ## Issues
@@ -218,9 +236,6 @@ List project labels.
 ### POST /projects/{id}/tags
 Create: `{ "name": "critical", "color": "#ef4444" }`
 
-### PATCH /tags/{id}
-Update label.
-
 ### DELETE /tags/{id}
 Delete label.
 
@@ -234,8 +249,11 @@ List milestones.
 ### POST /projects/{id}/milestones
 Create: `{ "name": "v1.0", "due_date": "2026-04-01", "description": "First public release" }`
 
-### PATCH /milestones/{id}
-Update milestone.
+### GET /milestones/{id}
+Get a single milestone.
+
+### PUT /milestones/{id}
+Update milestone (full replace).
 
 ### DELETE /milestones/{id}
 Delete milestone.
@@ -250,8 +268,8 @@ List sprints.
 ### POST /projects/{id}/sprints
 Create: `{ "name": "Sprint 1", "start_date": "2026-03-01", "end_date": "2026-03-14", "goal": "Ship auth module" }`
 
-### PATCH /sprints/{id}
-Update sprint.
+### PUT /sprints/{id}
+Update sprint (full replace).
 
 ### DELETE /sprints/{id}
 Delete sprint.
@@ -262,6 +280,12 @@ Delete sprint.
 
 ### GET /projects/{id}/cycles
 List cycles.
+
+### POST /projects/{id}/cycles
+Create a cycle: `{ "name": "Cycle 1", "start_date": "2026-03-01", "end_date": "2026-03-28" }`
+
+### GET /cycles/{id}
+Get a single cycle.
 
 ### PATCH /cycles/{id}
 Update cycle.
@@ -343,6 +367,9 @@ curl -s -X POST $BAATON/webhooks -H "Authorization: Bearer $KEY" \
 
 Payload sent to your URL: `{ "event": "issue.created", "data": { "issue": {...} }, "timestamp": "2026-03-12T..." }`
 
+### GET /webhooks/{id}
+Get webhook details.
+
 ### PATCH /webhooks/{id}
 Update webhook.
 
@@ -378,9 +405,6 @@ List SLA rules.
 ### POST /projects/{id}/sla-rules
 Create: `{ "name": "Urgent 4h", "priority": "urgent", "response_hours": 4, "resolution_hours": 24 }`
 
-### PATCH /sla-rules/{id}
-Update rule.
-
 ### DELETE /sla-rules/{id}
 Delete rule.
 
@@ -397,11 +421,55 @@ List issue templates.
 ### POST /projects/{id}/templates
 Create: `{ "name": "Bug Report", "template": { "title": "[BUG] ", "description": "## Steps\\n1.\\n\\n## Expected\\n\\n## Actual", "priority": "high", "issue_type": "bug" } }`
 
+### GET /templates/{id}
+Get a single template.
+
 ### PATCH /templates/{id}
 Update template.
 
 ### DELETE /templates/{id}
 Delete template.
+
+---
+
+## Custom Fields
+
+### GET /projects/{id}/custom-fields
+List custom field definitions for a project.
+
+### POST /projects/{id}/custom-fields
+Create: `{ "name": "Environment", "field_type": "select", "options": ["staging", "production"] }`
+
+### PATCH /custom-fields/{id}
+Update custom field definition.
+
+### DELETE /custom-fields/{id}
+Delete custom field.
+
+### GET /issues/{id}/custom-values
+Get custom field values for an issue.
+
+### PUT /issues/{id}/custom-values
+Set custom field values: `{ "fields": { "field_id": "value" } }`
+
+---
+
+## Gamification
+
+### GET /gamification/me
+Get current user's XP, level, streak, and badges.
+
+### GET /gamification/stats
+Leaderboard: top contributors by XP.
+
+### GET /gamification/heatmap
+Activity heatmap (GitHub-style contribution grid).
+
+### GET /gamification/dashboard
+Full gamification dashboard: leaderboard, recent activity, achievements.
+
+### GET /projects/{id}/gamification
+Project-level gamification stats.
 
 ---
 
@@ -475,7 +543,7 @@ List user notifications.
 ### GET /notifications/count
 Get unread count: `{ "data": { "count": 5 } }`
 
-### POST /notifications/{id}/read
+### PATCH /notifications/{id}/read
 Mark as read.
 
 ### POST /notifications/read-all
@@ -600,7 +668,7 @@ Project metrics: issues created/closed, velocity, burndown, by-status, by-priori
 ### GET /agent-config
 Get autonomous agent settings (Pro plan only).
 
-### PUT /agent-config
+### PATCH /agent-config
 Update: `{ "enabled": true, "auto_triage": true, "auto_assign": true, "auto_label": true }`
 
 ---
@@ -636,8 +704,8 @@ Resolve a public action token.
 
 ## GitHub Integration
 
-### POST /github/install
-Start GitHub App installation.
+### GET /github/install
+Start GitHub App installation (redirects to GitHub).
 
 ### GET /github/callback
 OAuth callback.
@@ -648,11 +716,17 @@ Get installation status.
 ### GET /github/repos
 List connected repositories.
 
+### POST /github/disconnect
+Disconnect GitHub integration.
+
 ### GET /github/mappings
 List project-repo mappings.
 
 ### POST /github/mappings
 Create mapping: `{ "project_id": "...", "repo_full_name": "owner/repo" }`
+
+### PATCH /github/mappings/{id}
+Update mapping.
 
 ### DELETE /github/mappings/{id}
 Remove mapping.
@@ -667,14 +741,14 @@ Sync GitHub issues.
 
 ## Slack Integration
 
+### GET /integrations/slack
+List Slack integrations.
+
 ### POST /integrations/slack
 Connect Slack workspace.
 
-### GET /integrations/slack/{id}
-Get Slack integration.
-
-### GET /integrations/slack/{id}/channels
-List Slack channels.
+### PATCH /integrations/slack/{id}/channels
+Update Slack channel mappings.
 
 ### DELETE /integrations/slack/{id}
 Disconnect.
