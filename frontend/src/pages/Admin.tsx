@@ -531,7 +531,7 @@ interface UserRow {
 }
 
 const PLAN_OPTIONS = ['free', 'pro', 'enterprise', 'partner', 'tester', 'unlimited'] as const;
-const PLAN_COLORS: Record<string, string> = {
+const PLAN_TEXT_COLORS: Record<string, string> = {
   free: 'text-muted',
   pro: 'text-blue-400',
   enterprise: 'text-purple-400',
@@ -634,7 +634,7 @@ function UsersTab({ orgs, userPlans, apiClient, t }: { orgs: OrgEntry[] | undefi
                   <select
                     value={user.plan}
                     onChange={e => handlePlanChange(user.user_id, e.target.value)}
-                    className={`rounded-md border border-border bg-bg px-2 py-1 text-xs font-medium ${PLAN_COLORS[user.plan] || 'text-primary'} cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent`}
+                    className={`rounded-md border border-border bg-bg px-2 py-1 text-xs font-medium ${PLAN_TEXT_COLORS[user.plan] || 'text-primary'} cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent`}
                   >
                     {PLAN_OPTIONS.map(p => (
                       <option key={p} value={p}>{p}</option>
