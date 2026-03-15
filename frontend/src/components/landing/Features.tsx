@@ -37,18 +37,18 @@ const stagger: Variants = {
 const painPoints = [
   {
     icon: AlertCircle,
-    problem: 'AI agents run unsupervised',
-    solution: 'Every agent task is a tracked issue with status, logs, and human review gates.',
+    problem: 'Your agent ships code at 3am',
+    solution: 'Nobody knows what changed until something breaks. Baaton tracks every action with status, TLDRs, and human review gates.',
   },
   {
     icon: Clock,
-    problem: 'Context lost across tools',
-    solution: 'One board connects your code, PRs, and AI conversations in a single view.',
+    problem: 'Jira doesn\'t speak API',
+    solution: 'Every PM tool was built for humans who click. Your agent can\'t drag a card. Baaton was built API-first so agents work natively.',
   },
   {
     icon: Puzzle,
-    problem: 'No structure for AI workflows',
-    solution: 'Purpose-built columns, assignments, and API-first design for human + AI teams.',
+    problem: '10 repos, zero visibility',
+    solution: 'We had agents across 4 servers shipping to 10 projects. The board was the missing piece. Now every project, every agent, one view.',
   },
 ];
 
@@ -147,10 +147,10 @@ const useCases = [
 
 /* ─── Stats ─────────────────────────────────── */
 const stats = [
-  { value: '10ms', label: 'Median API response' },
-  { value: '99.9%', label: 'Uptime SLA' },
-  { value: '6', label: 'Webhook event types' },
-  { value: '∞', label: 'Issues per project' },
+  { value: '<100ms', label: 'API response time' },
+  { value: 'API-First', label: 'Built for agents, not just humans' },
+  { value: 'Real-time', label: 'Webhooks on every state change' },
+  { value: 'Open Source', label: 'Self-host or use our cloud' },
 ];
 
 /* ─── AI Demo messages ──────────────────────── */
@@ -226,9 +226,9 @@ export function Features() {
               The Problem
             </motion.p>
             <motion.h2 variants={fadeUp} custom={1} className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-16">
-              AI is powerful.
+              You gave your agent superpowers.
               <br />
-              <span className="text-secondary">Managing it isn't.</span>
+              <span className="text-secondary">But no accountability.</span>
             </motion.h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {painPoints.map((point, i) => (
@@ -265,9 +265,9 @@ export function Features() {
               Features
             </motion.p>
             <motion.h2 variants={fadeUp} custom={1} className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-16">
-              Everything your agent needs.
+              Your agent needs a board.
               <br />
-              <span className="text-secondary">Nothing it doesn't.</span>
+              <span className="text-secondary">Not another dashboard.</span>
             </motion.h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {features.map((feature, i) => (
