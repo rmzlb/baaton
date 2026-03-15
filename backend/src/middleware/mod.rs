@@ -407,12 +407,19 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
                 let headers = rate_limit::hourly_rate_limit_headers(&rl);
                 return (StatusCode::TOO_MANY_REQUESTS, headers, r#"{"error":"Rate limit exceeded. See X-RateLimit-Requests-* headers."}"#).into_response();
             }
-            // Store for response header injection
-            req.extensions_mut().insert(rate_limit::RateLimitExtension {
-                limit: rl.limit,
-                remaining: rl.remaining,
-                reset_epoch_ms: rl.reset_epoch_ms,
-            });
+            // Inject rate limit headers directly into response
+            let mut response = next.run(req).await;
+            let hdrs = response.headers_mut();
+            if let Ok(v) = axum::http::HeaderValue::from_str(&rl.limit.to_string()) {
+                hdrs.insert("x-ratelimit-requests-limit", v);
+            }
+            if let Ok(v) = axum::http::HeaderValue::from_str(&rl.remaining.to_string()) {
+                hdrs.insert("x-ratelimit-requests-remaining", v);
+            }
+            if let Ok(v) = axum::http::HeaderValue::from_str(&rl.reset_epoch_ms.to_string()) {
+                hdrs.insert("x-ratelimit-requests-reset", v);
+            }
+            return response;
         }
 
         return next.run(req).await;
