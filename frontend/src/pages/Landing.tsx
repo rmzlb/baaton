@@ -314,6 +314,9 @@ export function Landing() {
             </div>
           </div>
         </div>
+
+        {/* ── Code Snippet (below board) ──────────── */}
+        <CodeTabs />
       </main>
 
       {/* ── Features ───────────────────────────── */}
