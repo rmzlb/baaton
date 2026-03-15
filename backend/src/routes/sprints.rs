@@ -106,7 +106,21 @@ pub async fn create(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Ok(Json(ApiResponse::new(sprint)))
+    // Webhook dispatch
+    crate::routes::webhooks::dispatch_event(
+        pool.clone(), org_id.to_string(), "sprint.created",
+        serde_json::to_value(&sprint).unwrap_or_default(),
+    ).await;
+
+    let hints = vec![
+        crate::models::ActionHint::recommended(
+            "assign_issues",
+            "Sprint created. Move issues into this sprint by updating their sprint_id.",
+            Some(&format!("PATCH /issues/{{id}} with sprint_id={}", sprint.id)),
+        ),
+    ];
+
+    Ok(Json(ApiResponse::with_hints(sprint, hints)))
 }
 
 /// PUT /sprints/:id
@@ -151,7 +165,23 @@ pub async fn update(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     match sprint {
-        Some(s) => Ok(Json(ApiResponse::new(s))),
+        Some(s) => {
+            let event = if s.status == "completed" { "sprint.completed" } else { "sprint.updated" };
+            crate::routes::webhooks::dispatch_event(
+                pool.clone(), org_id.to_string(), event,
+                serde_json::to_value(&s).unwrap_or_default(),
+            ).await;
+
+            let mut hints = vec![];
+            if s.status == "completed" {
+                hints.push(crate::models::ActionHint::recommended(
+                    "review_sprint",
+                    "Sprint completed. Review open issues and move them to the next sprint or backlog.",
+                    Some(&format!("GET /projects/{{project_id}}/issues?sprint_id={}", s.id)),
+                ));
+            }
+            Ok(Json(ApiResponse::with_hints(s, hints)))
+        }
         None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Sprint not found"})))),
     }
 }

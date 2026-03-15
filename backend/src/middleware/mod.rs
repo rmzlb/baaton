@@ -400,6 +400,22 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         );
 
         req.extensions_mut().insert(auth_user);
+
+        // ── Hourly rate limit for API key ────────────
+        let rate_key = format!("apikey:{}", key_row.id);
+        if let Ok(rl) = rate_limit::check_hourly(&pool, &rate_key, rate_limit::HOURLY_LIMIT_API_KEY).await {
+            if !rl.allowed {
+                let headers = rate_limit::hourly_rate_limit_headers(&rl);
+                return (StatusCode::TOO_MANY_REQUESTS, headers, r#"{"error":"Rate limit exceeded. See X-RateLimit-Requests-* headers."}"#).into_response();
+            }
+            // Store for response header injection
+            req.extensions_mut().insert(rate_limit::RateLimitExtension {
+                limit: rl.limit,
+                remaining: rl.remaining,
+                reset_epoch_ms: rl.reset_epoch_ms,
+            });
+        }
+
         return next.run(req).await;
     }
 
@@ -505,6 +521,23 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         "Authenticated request"
     );
 
-    req.extensions_mut().insert(auth_user);
+    req.extensions_mut().insert(auth_user.clone());
+
+    // ── Hourly rate limit for JWT users ────────────
+    if let Some(pool) = req.extensions().get::<PgPool>().cloned() {
+        let rate_key = format!("user:{}", auth_user.user_id);
+        if let Ok(rl) = rate_limit::check_hourly(&pool, &rate_key, rate_limit::HOURLY_LIMIT_JWT).await {
+            if !rl.allowed {
+                let headers = rate_limit::hourly_rate_limit_headers(&rl);
+                return (StatusCode::TOO_MANY_REQUESTS, headers, r#"{"error":"Rate limit exceeded. See X-RateLimit-Requests-* headers."}"#).into_response();
+            }
+            req.extensions_mut().insert(rate_limit::RateLimitExtension {
+                limit: rl.limit,
+                remaining: rl.remaining,
+                reset_epoch_ms: rl.reset_epoch_ms,
+            });
+        }
+    }
+
     next.run(req).await
 }

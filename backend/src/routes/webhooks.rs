@@ -17,12 +17,33 @@ use crate::models::ApiResponse;
 // ─── Event types ────────────────────────────────────
 
 pub const VALID_EVENT_TYPES: &[&str] = &[
+    // Issues
     "issue.created",
     "issue.updated",
     "issue.deleted",
+    "issue.archived",
+    "issue.unarchived",
+    // Comments
     "comment.created",
     "comment.deleted",
+    // Status
     "status.changed",
+    // Projects
+    "project.created",
+    "project.updated",
+    "project.deleted",
+    // Milestones
+    "milestone.created",
+    "milestone.updated",
+    "milestone.completed",
+    // Sprints
+    "sprint.created",
+    "sprint.completed",
+    // TLDRs
+    "tldr.created",
+    // Approval
+    "approval.requested",
+    "approval.responded",
 ];
 
 // ─── Models ─────────────────────────────────────────
@@ -94,10 +115,22 @@ fn validate_event_types(types: &[String]) -> Result<(), (StatusCode, Json<serde_
     Ok(())
 }
 
-// ─── Dispatcher ─────────────────────────────────────
+// ─── Retry backoff ──────────────────────────────────
+
+/// Retry intervals: 1 min, 15 min, 1 hour, 6 hours
+fn retry_delay_seconds(attempt: i32) -> i64 {
+    match attempt {
+        1 => 60,           // 1 minute
+        2 => 900,          // 15 minutes
+        3 => 3600,         // 1 hour
+        _ => 21600,        // 6 hours
+    }
+}
+
+// ─── Dispatcher (with delivery log + retry) ─────────
 
 /// Dispatch an event to all enabled webhooks for the org.
-/// Fire-and-forget: errors are logged but not propagated.
+/// Creates delivery records for each webhook for retry tracking.
 pub async fn dispatch_event(pool: PgPool, org_id: String, event_type: &str, payload: serde_json::Value) {
     let event_type = event_type.to_string();
     tokio::spawn(async move {
@@ -121,19 +154,36 @@ pub async fn dispatch_event(pool: PgPool, org_id: String, event_type: &str, payl
             return;
         }
 
+        let delivery_id = Uuid::new_v4();
+        let body = json!({
+            "event": event_type,
+            "data": payload,
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "delivery_id": delivery_id.to_string(),
+        });
+
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap_or_default();
 
-        let body = json!({
-            "event": event_type,
-            "data": payload,
-            "timestamp": chrono::Utc::now().to_rfc3339(),
-        });
         let body_str = serde_json::to_string(&body).unwrap_or_default();
 
         for (hook_id, url, secret) in hooks {
+            let per_hook_delivery_id = Uuid::new_v4();
+
+            // Create delivery record
+            let _ = sqlx::query(
+                r#"INSERT INTO webhook_deliveries (webhook_id, event_type, payload, delivery_id, status, attempts)
+                   VALUES ($1, $2, $3, $4, 'pending', 0)"#,
+            )
+            .bind(hook_id)
+            .bind(&event_type)
+            .bind(&body)
+            .bind(per_hook_delivery_id)
+            .execute(&pool)
+            .await;
+
             // Compute HMAC-SHA256 signature
             let signature = compute_signature(&secret, &body_str);
 
@@ -142,23 +192,46 @@ pub async fn dispatch_event(pool: PgPool, org_id: String, event_type: &str, payl
                 .header("Content-Type", "application/json")
                 .header("X-Baaton-Signature", &signature)
                 .header("X-Baaton-Event", &event_type)
+                .header("X-Baaton-Delivery", per_hook_delivery_id.to_string())
                 .body(body_str.clone())
                 .send()
                 .await;
 
             match result {
                 Ok(resp) if resp.status().is_success() => {
+                    // Mark delivered
+                    let _ = sqlx::query(
+                        r#"UPDATE webhook_deliveries SET status = 'delivered', attempts = 1, last_attempt_at = now()
+                           WHERE delivery_id = $1"#,
+                    )
+                    .bind(per_hook_delivery_id)
+                    .execute(&pool)
+                    .await;
+
                     let _ = sqlx::query(
                         "UPDATE webhooks SET last_delivered_at = now(), failure_count = 0, last_error = NULL, updated_at = now() WHERE id = $1"
                     )
                     .bind(hook_id)
                     .execute(&pool)
                     .await;
-                    tracing::debug!(hook_id = %hook_id, url = %url, "webhooks.dispatch: delivered");
+                    tracing::debug!(hook_id = %hook_id, url = %url, delivery_id = %per_hook_delivery_id, "webhooks.dispatch: delivered");
                 }
                 Ok(resp) => {
                     let status = resp.status().as_u16();
                     let err_msg = format!("HTTP {}", status);
+                    let next_retry = chrono::Utc::now() + chrono::Duration::seconds(retry_delay_seconds(1));
+
+                    let _ = sqlx::query(
+                        r#"UPDATE webhook_deliveries SET status = 'retrying', attempts = 1,
+                           last_attempt_at = now(), next_retry_at = $2, last_error = $3
+                           WHERE delivery_id = $1"#,
+                    )
+                    .bind(per_hook_delivery_id)
+                    .bind(next_retry)
+                    .bind(&err_msg)
+                    .execute(&pool)
+                    .await;
+
                     let _ = sqlx::query(
                         "UPDATE webhooks SET failure_count = failure_count + 1, last_error = $2, updated_at = now() WHERE id = $1"
                     )
@@ -166,10 +239,23 @@ pub async fn dispatch_event(pool: PgPool, org_id: String, event_type: &str, payl
                     .bind(&err_msg)
                     .execute(&pool)
                     .await;
-                    tracing::warn!(hook_id = %hook_id, url = %url, status = status, "webhooks.dispatch: non-2xx");
+                    tracing::warn!(hook_id = %hook_id, url = %url, status = status, "webhooks.dispatch: non-2xx, scheduled retry");
                 }
                 Err(e) => {
                     let err_msg = e.to_string();
+                    let next_retry = chrono::Utc::now() + chrono::Duration::seconds(retry_delay_seconds(1));
+
+                    let _ = sqlx::query(
+                        r#"UPDATE webhook_deliveries SET status = 'retrying', attempts = 1,
+                           last_attempt_at = now(), next_retry_at = $2, last_error = $3
+                           WHERE delivery_id = $1"#,
+                    )
+                    .bind(per_hook_delivery_id)
+                    .bind(next_retry)
+                    .bind(&err_msg)
+                    .execute(&pool)
+                    .await;
+
                     let _ = sqlx::query(
                         "UPDATE webhooks SET failure_count = failure_count + 1, last_error = $2, updated_at = now() WHERE id = $1"
                     )
@@ -177,11 +263,152 @@ pub async fn dispatch_event(pool: PgPool, org_id: String, event_type: &str, payl
                     .bind(&err_msg)
                     .execute(&pool)
                     .await;
-                    tracing::warn!(hook_id = %hook_id, url = %url, error = %e, "webhooks.dispatch: network error");
+                    tracing::warn!(hook_id = %hook_id, url = %url, error = %e, "webhooks.dispatch: network error, scheduled retry");
                 }
             }
         }
     });
+}
+
+/// Background worker: retry failed webhook deliveries with exponential backoff.
+/// Runs every 30 seconds.
+pub async fn retry_worker(pool: PgPool) {
+    tracing::info!("Webhook retry worker started");
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+        // Find deliveries ready for retry
+        let deliveries = sqlx::query_as::<_, (Uuid, Uuid, String, serde_json::Value, i32)>(
+            r#"SELECT d.delivery_id, d.webhook_id, w.url, d.payload, d.attempts
+               FROM webhook_deliveries d
+               JOIN webhooks w ON w.id = d.webhook_id
+               WHERE d.status = 'retrying'
+                 AND d.next_retry_at <= now()
+                 AND d.attempts < d.max_attempts
+                 AND w.enabled = true
+               ORDER BY d.next_retry_at ASC
+               LIMIT 50"#,
+        )
+        .fetch_all(&pool)
+        .await;
+
+        let deliveries = match deliveries {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::error!(error = %e, "webhook_retry: query failed");
+                continue;
+            }
+        };
+
+        if deliveries.is_empty() {
+            continue;
+        }
+
+        tracing::debug!(count = deliveries.len(), "webhook_retry: processing retries");
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
+
+        for (delivery_id, webhook_id, url, payload, attempts) in deliveries {
+            let body_str = serde_json::to_string(&payload).unwrap_or_default();
+
+            // Get secret for this webhook
+            let secret: Option<String> = sqlx::query_scalar("SELECT secret FROM webhooks WHERE id = $1")
+                .bind(webhook_id)
+                .fetch_optional(&pool)
+                .await
+                .ok()
+                .flatten();
+            let secret = secret.unwrap_or_default();
+
+            let event_type = payload.get("event").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let signature = compute_signature(&secret, &body_str);
+
+            let result = client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .header("X-Baaton-Signature", &signature)
+                .header("X-Baaton-Event", event_type)
+                .header("X-Baaton-Delivery", delivery_id.to_string())
+                .body(body_str)
+                .send()
+                .await;
+
+            let new_attempts = attempts + 1;
+
+            match result {
+                Ok(resp) if resp.status().is_success() => {
+                    let _ = sqlx::query(
+                        "UPDATE webhook_deliveries SET status = 'delivered', attempts = $2, last_attempt_at = now(), next_retry_at = NULL WHERE delivery_id = $1"
+                    )
+                    .bind(delivery_id)
+                    .bind(new_attempts)
+                    .execute(&pool)
+                    .await;
+
+                    let _ = sqlx::query(
+                        "UPDATE webhooks SET last_delivered_at = now(), failure_count = 0, last_error = NULL, updated_at = now() WHERE id = $1"
+                    )
+                    .bind(webhook_id)
+                    .execute(&pool)
+                    .await;
+
+                    tracing::info!(delivery_id = %delivery_id, attempt = new_attempts, "webhook_retry: delivered on retry");
+                }
+                Ok(resp) => {
+                    let err_msg = format!("HTTP {}", resp.status().as_u16());
+                    if new_attempts >= 4 {
+                        // Max retries exhausted
+                        let _ = sqlx::query(
+                            "UPDATE webhook_deliveries SET status = 'failed', attempts = $2, last_attempt_at = now(), last_error = $3 WHERE delivery_id = $1"
+                        )
+                        .bind(delivery_id)
+                        .bind(new_attempts)
+                        .bind(&err_msg)
+                        .execute(&pool)
+                        .await;
+                    } else {
+                        let next_retry = chrono::Utc::now() + chrono::Duration::seconds(retry_delay_seconds(new_attempts));
+                        let _ = sqlx::query(
+                            "UPDATE webhook_deliveries SET attempts = $2, last_attempt_at = now(), next_retry_at = $3, last_error = $4 WHERE delivery_id = $1"
+                        )
+                        .bind(delivery_id)
+                        .bind(new_attempts)
+                        .bind(next_retry)
+                        .bind(&err_msg)
+                        .execute(&pool)
+                        .await;
+                    }
+                }
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if new_attempts >= 4 {
+                        let _ = sqlx::query(
+                            "UPDATE webhook_deliveries SET status = 'failed', attempts = $2, last_attempt_at = now(), last_error = $3 WHERE delivery_id = $1"
+                        )
+                        .bind(delivery_id)
+                        .bind(new_attempts)
+                        .bind(&err_msg)
+                        .execute(&pool)
+                        .await;
+                    } else {
+                        let next_retry = chrono::Utc::now() + chrono::Duration::seconds(retry_delay_seconds(new_attempts));
+                        let _ = sqlx::query(
+                            "UPDATE webhook_deliveries SET attempts = $2, last_attempt_at = now(), next_retry_at = $3, last_error = $4 WHERE delivery_id = $1"
+                        )
+                        .bind(delivery_id)
+                        .bind(new_attempts)
+                        .bind(next_retry)
+                        .bind(&err_msg)
+                        .execute(&pool)
+                        .await;
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn compute_signature(secret: &str, body: &str) -> String {
@@ -238,7 +465,6 @@ pub async fn create(
 
     tracing::info!(user_id = %auth.user_id, org_id = org_id, hook_id = %hook.id, "webhooks.create");
 
-    // Return with the secret on creation only
     Ok(Json(json!({
         "data": {
             "id": hook.id,
@@ -252,7 +478,20 @@ pub async fn create(
             "last_delivered_at": hook.last_delivered_at,
             "created_at": hook.created_at,
             "updated_at": hook.updated_at,
-        }
+        },
+        "_hints": [
+            {
+                "action": "store_secret",
+                "reason": "The webhook secret is shown ONLY on creation. Store it securely for signature verification (X-Baaton-Signature header).",
+                "priority": "required"
+            },
+            {
+                "action": "verify_endpoint",
+                "reason": "Send a test event to verify your endpoint receives and processes webhooks correctly.",
+                "endpoint": format!("POST /webhooks/{}/test", hook.id),
+                "priority": "recommended"
+            }
+        ]
     })))
 }
 
@@ -307,7 +546,6 @@ pub async fn update(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    // Verify ownership
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM webhooks WHERE id = $1 AND org_id = $2)")
         .bind(id)
         .bind(org_id)

@@ -195,7 +195,31 @@ pub async fn create(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Ok(Json(ApiResponse::new(project)))
+    // Webhook dispatch
+    crate::routes::webhooks::dispatch_event(
+        pool.clone(), effective_org.clone(), "project.created",
+        serde_json::to_value(&project).unwrap_or_default(),
+    ).await;
+
+    let hints = vec![
+        crate::models::ActionHint::recommended(
+            "create_api_key",
+            "Project created. Generate an API key to let agents interact with this project.",
+            Some("POST /api-keys"),
+        ),
+        crate::models::ActionHint::recommended(
+            "create_first_issue",
+            "Create your first issue to start tracking work.",
+            Some(&format!("POST /issues with project_id={}", project.id)),
+        ),
+        crate::models::ActionHint::optional(
+            "configure_webhooks",
+            "Set up webhooks to receive real-time notifications about issue changes.",
+            Some("POST /webhooks"),
+        ),
+    ];
+
+    Ok(Json(ApiResponse::with_hints(project, hints)))
 }
 
 /// Get one project — must belong to user's active org.
@@ -272,7 +296,14 @@ pub async fn update(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     match project {
-        Some(p) => Ok(Json(ApiResponse::new(p))),
+        Some(p) => {
+            // Webhook dispatch
+            crate::routes::webhooks::dispatch_event(
+                pool.clone(), org_id.to_string(), "project.updated",
+                serde_json::to_value(&p).unwrap_or_default(),
+            ).await;
+            Ok(Json(ApiResponse::new(p)))
+        }
         None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
     }
 }
@@ -469,6 +500,10 @@ pub async fn remove(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     if result.rows_affected() > 0 {
+        crate::routes::webhooks::dispatch_event(
+            pool.clone(), org_id.to_string(), "project.deleted",
+            serde_json::json!({"id": id.to_string()}),
+        ).await;
         Ok(Json(ApiResponse::new(())))
     } else {
         Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))

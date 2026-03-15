@@ -160,7 +160,7 @@ pub async fn create(
         name: row.name,
         description: row.description,
         target_date: row.target_date,
-        status: row.status,
+        status: row.status.clone(),
         order: row.order,
         estimated_days: row.estimated_days,
         org_id: row.org_id,
@@ -172,7 +172,26 @@ pub async fn create(
         improvement_count: Some(0),
     };
 
-    Ok(Json(ApiResponse::new(milestone)))
+    // Webhook dispatch
+    crate::routes::webhooks::dispatch_event(
+        pool.clone(), org_id.to_string(), "milestone.created",
+        serde_json::to_value(&milestone).unwrap_or_default(),
+    ).await;
+
+    let hints = vec![
+        crate::models::ActionHint::recommended(
+            "create_issues",
+            "Milestone created. Create issues and assign them to this milestone to track progress.",
+            Some(&format!("POST /issues with milestone_id={}", milestone.id)),
+        ),
+        crate::models::ActionHint::optional(
+            "set_target_date",
+            "Set a target_date to enable deadline tracking and SLA compliance.",
+            Some(&format!("PUT /milestones/{}", milestone.id)),
+        ),
+    ];
+
+    Ok(Json(ApiResponse::with_hints(milestone, hints)))
 }
 
 /// PUT /milestones/:id
@@ -246,7 +265,7 @@ pub async fn update(
                 name: row.name,
                 description: row.description,
                 target_date: row.target_date,
-                status: row.status,
+                status: row.status.clone(),
                 order: row.order,
                 estimated_days: row.estimated_days,
                 org_id: row.org_id,
@@ -258,7 +277,32 @@ pub async fn update(
                 improvement_count: counts.improvement_count,
             };
 
-            Ok(Json(ApiResponse::new(milestone)))
+            // Webhook dispatch
+            let event = if row.status == "completed" { "milestone.completed" } else { "milestone.updated" };
+            crate::routes::webhooks::dispatch_event(
+                pool.clone(), org_id.to_string(), event,
+                serde_json::to_value(&milestone).unwrap_or_default(),
+            ).await;
+
+            let mut hints = vec![];
+            let total = counts.total_issues.unwrap_or(0);
+            let done = counts.done_issues.unwrap_or(0);
+            if total > 0 && done == total && row.status != "completed" {
+                hints.push(crate::models::ActionHint::recommended(
+                    "complete_milestone",
+                    "All issues are done. Mark this milestone as completed.",
+                    Some(&format!("PUT /milestones/{} with status=completed", id)),
+                ));
+            }
+            if total == 0 {
+                hints.push(crate::models::ActionHint::recommended(
+                    "add_issues",
+                    "Milestone has no issues. Assign issues to track progress.",
+                    Some(&format!("PATCH /issues/{{id}} with milestone_id={}", id)),
+                ));
+            }
+
+            Ok(Json(ApiResponse::with_hints(milestone, hints)))
         }
         None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Milestone not found"})))),
     }

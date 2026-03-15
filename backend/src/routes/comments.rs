@@ -268,7 +268,21 @@ pub async fn create(
     // ── Webhook dispatch (fire-and-forget) ───────────
     dispatch_event(pool.clone(), org_id.to_string(), "comment.created", serde_json::to_value(&comment).unwrap_or_default()).await;
 
-    Ok(Json(ApiResponse::new(comment)))
+    // AI-first: action hints
+    let hints = vec![
+        crate::models::ActionHint::recommended(
+            "update_status",
+            "Comment added. If this comment resolves the issue or unblocks work, update the issue status.",
+            Some(&format!("PATCH /issues/{}", issue_id)),
+        ),
+        crate::models::ActionHint::optional(
+            "add_tldr",
+            "If this comment summarizes completed work, consider adding a structured TLDR instead.",
+            Some(&format!("POST /issues/{}/tldr", issue_id)),
+        ),
+    ];
+
+    Ok(Json(ApiResponse::with_hints(comment, hints)))
 }
 
 /// DELETE /api/v1/issues/{issue_id}/comments/{comment_id}

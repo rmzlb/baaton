@@ -212,6 +212,16 @@ pub struct ListParams {
     pub offset: Option<i64>,
     pub include_snoozed: Option<bool>,
     pub include_archived: Option<bool>,
+    /// JSON filter: {"priority":{"in":["urgent","high"]},"due_date":{"lt":"2026-04-01"}}
+    pub filter: Option<String>,
+    /// Order by: "created_at" (default), "updated_at", "priority", "position"
+    pub order_by: Option<String>,
+    /// Order direction: "asc" or "desc" (default)
+    pub order_direction: Option<String>,
+    /// Cursor pagination: base64 cursor from previous response
+    pub after: Option<String>,
+    /// Cursor pagination: base64 cursor for backwards pagination
+    pub before: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -304,35 +314,107 @@ pub async fn list_all(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Query(params): Query<ListParams>,
-) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    // Collect all orgs accessible to this user (cross-org view)
     let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
 
-    let limit = params.limit.unwrap_or(1000).min(2000);
+    let limit = params.limit.unwrap_or(100).min(500);
+    let offset = params.offset.unwrap_or(0);
 
-    let issues = sqlx::query_as::<_, Issue>(
+    // Order
+    let order_col = match params.order_by.as_deref() {
+        Some("updated_at") => "i.updated_at",
+        Some("priority") => "CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END",
+        Some("position") => "i.position",
+        Some("due_date") => "i.due_date",
+        Some("created_at") | None => "i.created_at",
+        Some(other) => {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({
+                "error": format!("Invalid order_by: '{}'", other),
+                "accepted_values": ["created_at", "updated_at", "priority", "position", "due_date"]
+            }))));
+        }
+    };
+    let order_dir = match params.order_direction.as_deref() {
+        Some("asc") => "ASC",
+        Some("desc") | None => "DESC",
+        Some(other) => {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({
+                "error": format!("Invalid order_direction: '{}'", other)
+            }))));
+        }
+    };
+
+    // Cursor
+    let cursor_condition = if let Some(ref cursor) = params.after {
+        if let Some((ts, _id)) = crate::filter::decode_cursor(cursor) {
+            let op = if order_dir == "DESC" { "<" } else { ">" };
+            format!(" AND i.created_at {} '{}'", op, ts)
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    let include_archived = params.include_archived.unwrap_or(false);
+    let fetch_limit = limit + 1;
+
+    let query = format!(
         r#"
         SELECT i.*
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE p.org_id = ANY($1)
-        ORDER BY i.created_at DESC
-        LIMIT $2
+          AND ($2::text IS NULL OR i.status = $2)
+          AND ($3::text IS NULL OR i.priority = $3)
+          AND ($4::text IS NULL OR i.type = $4)
+          AND ($5::text IS NULL OR i.title ILIKE '%' || $5 || '%')
+          AND (i.archived = false OR $8::boolean)
+          {}
+        ORDER BY {} {}
+        LIMIT $6 OFFSET $7
         "#,
-    )
-    .bind(&all_org_ids)
-    .bind(limit)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!(error = %e, "issues.list_all query failed");
-        vec![]
-    });
+        cursor_condition,
+        order_col,
+        order_dir,
+    );
 
-    Ok(Json(ApiResponse::new(issues)))
+    let mut issues = sqlx::query_as::<_, Issue>(&query)
+        .bind(&all_org_ids)        // $1
+        .bind(&params.status)      // $2
+        .bind(&params.priority)    // $3
+        .bind(&params.r#type)      // $4
+        .bind(&params.search)      // $5
+        .bind(fetch_limit)         // $6
+        .bind(offset)              // $7
+        .bind(include_archived)    // $8
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "issues.list_all query failed");
+            vec![]
+        });
+
+    let has_next_page = issues.len() > limit as usize;
+    if has_next_page {
+        issues.truncate(limit as usize);
+    }
+
+    let page_info = crate::filter::PageInfo {
+        has_next_page,
+        has_previous_page: params.after.is_some() || offset > 0,
+        start_cursor: issues.first().map(|i| crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())),
+        end_cursor: issues.last().map(|i| crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())),
+        total_count: None,
+    };
+
+    Ok(Json(json!({
+        "data": issues,
+        "page_info": page_info,
+    })))
 }
 
 pub async fn list_by_project(
@@ -340,7 +422,7 @@ pub async fn list_by_project(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
     Query(params): Query<ListParams>,
-) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
@@ -358,45 +440,169 @@ pub async fn list_by_project(
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
     }
 
-    let limit = params.limit.unwrap_or(100);
+    let limit = params.limit.unwrap_or(100).min(500);
     let offset = params.offset.unwrap_or(0);
 
     let include_archived = params.include_archived.unwrap_or(false);
     let include_snoozed = params.include_snoozed.unwrap_or(false);
 
-    let issues = sqlx::query_as::<_, Issue>(
+    // Determine order column and direction
+    let order_col = match params.order_by.as_deref() {
+        Some("updated_at") => "i.updated_at",
+        Some("priority") => "CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END",
+        Some("created_at") => "i.created_at",
+        Some("due_date") => "i.due_date",
+        Some("position") | None => "i.position",
+        Some(other) => {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({
+                "error": format!("Invalid order_by: '{}'. Valid values: created_at, updated_at, priority, position, due_date", other),
+                "accepted_values": ["created_at", "updated_at", "priority", "position", "due_date"]
+            }))));
+        }
+    };
+    let order_dir = match params.order_direction.as_deref() {
+        Some("asc") => "ASC",
+        Some("desc") | None => if params.order_by.as_deref() == Some("position") { "ASC" } else { "DESC" },
+        Some(other) => {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({
+                "error": format!("Invalid order_direction: '{}'. Use 'asc' or 'desc'", other)
+            }))));
+        }
+    };
+
+    // Build cursor condition if present
+    let cursor_condition = if let Some(ref cursor) = params.after {
+        if let Some((ts, _id)) = crate::filter::decode_cursor(cursor) {
+            let op = if order_dir == "DESC" { "<" } else { ">" };
+            format!(" AND i.{} {} '{}'", 
+                if order_col.contains("CASE") { "created_at" } else { 
+                    order_col.trim_start_matches("i.")
+                },
+                op, ts)
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    // Parse advanced filter if provided
+    let filter_clause = if let Some(ref filter_str) = params.filter {
+        if let Ok(filter_val) = serde_json::from_str::<serde_json::Value>(filter_str) {
+            crate::filter::parse_filter(&filter_val, 10) // offset after base params
+        } else {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({
+                "error": "Invalid filter JSON",
+                "hint": "Example: {\"priority\":{\"in\":[\"urgent\",\"high\"]},\"due_date\":{\"lt\":\"2026-04-01\"}}"
+            }))));
+        }
+    } else {
+        None
+    };
+
+    let extra_where = filter_clause.as_ref().map(|f| format!(" AND ({})", f.sql)).unwrap_or_default();
+
+    // Fetch limit+1 to detect hasNextPage
+    let fetch_limit = limit + 1;
+
+    let query = format!(
         r#"
-        SELECT * FROM issues
-        WHERE project_id = $1
-          AND ($2::text IS NULL OR status = $2)
-          AND ($3::text IS NULL OR priority = $3)
-          AND ($4::text IS NULL OR type = $4)
-          AND ($5::text IS NULL OR title ILIKE '%' || $5 || '%')
-          AND ($6::text IS NULL OR $6 = ANY(category))
-          AND (archived = false OR $9::boolean)
-          AND (snoozed_until IS NULL OR snoozed_until <= CURRENT_DATE OR $10::boolean)
-        ORDER BY position ASC
+        SELECT i.* FROM issues i
+        WHERE i.project_id = $1
+          AND ($2::text IS NULL OR i.status = $2)
+          AND ($3::text IS NULL OR i.priority = $3)
+          AND ($4::text IS NULL OR i.type = $4)
+          AND ($5::text IS NULL OR i.title ILIKE '%' || $5 || '%')
+          AND ($6::text IS NULL OR $6 = ANY(i.category))
+          AND (i.archived = false OR $9::boolean)
+          AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE OR $10::boolean)
+          {}
+          {}
+        ORDER BY {} {}
         LIMIT $7 OFFSET $8
         "#,
-    )
-    .bind(project_id)
-    .bind(&params.status)
-    .bind(&params.priority)
-    .bind(&params.r#type)
-    .bind(&params.search)
-    .bind(&params.category)
-    .bind(limit)
-    .bind(offset)
-    .bind(include_archived)
-    .bind(include_snoozed)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!(error = %e, "issues.list_by_project query failed");
-        vec![]
+        cursor_condition,
+        extra_where,
+        order_col,
+        order_dir,
+    );
+
+    let q = sqlx::query_as::<_, Issue>(&query)
+        .bind(project_id)          // $1
+        .bind(&params.status)      // $2
+        .bind(&params.priority)    // $3
+        .bind(&params.r#type)      // $4
+        .bind(&params.search)      // $5
+        .bind(&params.category)    // $6
+        .bind(fetch_limit)         // $7
+        .bind(offset)              // $8
+        .bind(include_archived)    // $9
+        .bind(include_snoozed);    // $10
+
+    // Bind filter params (starting at $11+)
+    // Note: sqlx dynamic binds need to use the same type
+    // For simplicity with dynamic filters, we use raw SQL string interpolation
+    // (filter values are already escaped in the SQL generation)
+    let _ = &filter_clause; // suppress unused warning
+
+    let mut issues = q
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "issues.list_by_project query failed");
+            vec![]
+        });
+
+    // Cursor pagination info
+    let has_next_page = issues.len() > limit as usize;
+    if has_next_page {
+        issues.truncate(limit as usize);
+    }
+    let has_previous_page = params.after.is_some() || offset > 0;
+
+    let start_cursor = issues.first().map(|i| {
+        crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())
+    });
+    let end_cursor = issues.last().map(|i| {
+        crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())
     });
 
-    Ok(Json(ApiResponse::new(issues)))
+    // Get total count (only if requested via offset pagination)
+    let total_count = if params.after.is_none() && params.before.is_none() {
+        let count: Option<i64> = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) FROM issues i
+            WHERE i.project_id = $1
+              AND ($2::text IS NULL OR i.status = $2)
+              AND ($3::text IS NULL OR i.priority = $3)
+              AND (i.archived = false OR $4::boolean)
+            "#,
+        )
+        .bind(project_id)
+        .bind(&params.status)
+        .bind(&params.priority)
+        .bind(include_archived)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten();
+        count
+    } else {
+        None
+    };
+
+    let page_info = crate::filter::PageInfo {
+        has_next_page,
+        has_previous_page,
+        start_cursor,
+        end_cursor,
+        total_count,
+    };
+
+    Ok(Json(json!({
+        "data": issues,
+        "page_info": page_info,
+    })))
 }
 
 pub async fn create(
@@ -746,11 +952,55 @@ pub async fn get_one(
         "issues.get_one"
     );
 
-    Ok(Json(ApiResponse::new(IssueDetail {
+    // AI-first: contextual hints based on issue state
+    let mut hints = vec![];
+
+    if issue.status == "backlog" || issue.status == "todo" {
+        if issue.assignee_ids.is_empty() {
+            hints.push(crate::models::ActionHint::recommended(
+                "assign",
+                "Issue has no assignee. Assign someone to start work.",
+                Some(&format!("PATCH /issues/{}", id)),
+            ));
+        }
+        if issue.priority.is_none() {
+            hints.push(crate::models::ActionHint::recommended(
+                "set_priority",
+                "Issue has no priority set. Set priority to help with triage.",
+                Some(&format!("PATCH /issues/{}", id)),
+            ));
+        }
+    }
+
+    if issue.status == "in_progress" && tldrs.is_empty() {
+        hints.push(crate::models::ActionHint::recommended(
+            "add_tldr",
+            "Issue is in progress but has no TLDR. Post a summary when work is complete.",
+            Some(&format!("POST /issues/{}/tldr", id)),
+        ));
+    }
+
+    if issue.status == "in_review" && tldrs.is_empty() {
+        hints.push(crate::models::ActionHint::recommended(
+            "add_tldr",
+            "Issue is in review without a TLDR. Add one to help reviewers understand what was done.",
+            Some(&format!("POST /issues/{}/tldr", id)),
+        ));
+    }
+
+    if issue.description.as_ref().map(|d| d.trim().is_empty()).unwrap_or(true) {
+        hints.push(crate::models::ActionHint::optional(
+            "add_description",
+            "Issue has no description. Add details to improve context for agents and humans.",
+            Some(&format!("PATCH /issues/{}", id)),
+        ));
+    }
+
+    Ok(Json(ApiResponse::with_hints(IssueDetail {
         issue,
         tldrs,
         comments,
-    })))
+    }, hints)))
 }
 
 pub async fn update(

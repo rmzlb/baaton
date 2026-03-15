@@ -42,7 +42,7 @@ curl -s -X POST $BAATON/issues/ISSUE_ID/tldr -H "Authorization: Bearer $KEY" \
 - **Issue Type:** `bug` | `feature` | `improvement` | `question`
 - **Status:** per-project (default: `backlog` | `todo` | `in_progress` | `in_review` | `done` | `cancelled`)
 - **Tests Status:** `passed` | `failed` | `skipped` | `none`
-- **Webhook Events:** `issue.created` | `issue.updated` | `issue.deleted` | `status.changed` | `comment.created` | `comment.deleted`
+- **Webhook Events:** `issue.created` | `issue.updated` | `issue.deleted` | `issue.archived` | `issue.unarchived` | `status.changed` | `comment.created` | `comment.deleted` | `project.created` | `project.updated` | `project.deleted` | `milestone.created` | `milestone.updated` | `milestone.completed` | `sprint.created` | `sprint.completed` | `tldr.created` | `approval.requested` | `approval.responded`
 - **Automation Triggers:** `status_changed` | `priority_changed` | `label_added` | `issue_created` | `comment_added` | `assignee_changed` | `due_date_passed`
 - **Automation Actions:** `set_status` | `set_priority` | `add_label` | `assign_user` | `send_webhook` | `add_comment` | `run_agent`
 - **Permissions:** `issues:read` | `issues:write` | `issues:delete` | `projects:read` | `projects:write` | `projects:delete` | `comments:read` | `comments:write` | `comments:delete` | `labels:read` | `labels:write` | `milestones:read` | `milestones:write` | `sprints:read` | `sprints:write` | `automations:read` | `automations:write` | `webhooks:read` | `webhooks:write` | `members:read` | `members:invite` | `ai:chat` | `ai:triage` | `billing:read` | `admin:full`
@@ -98,15 +98,71 @@ Burndown chart data. Params: `sprint_id`, `days` (default 14).
 List all issues across all projects.
 
 ```bash
-# With filters
+# Simple filters
 curl -s "$BAATON/issues?status=todo&priority=urgent&limit=50" -H "Authorization: Bearer $KEY"
+
+# Advanced filter (JSON)
+curl -s "$BAATON/issues?filter=%7B%22priority%22%3A%7B%22in%22%3A%5B%22urgent%22%2C%22high%22%5D%7D%2C%22due_date%22%3A%7B%22lt%22%3A%222026-04-01%22%7D%7D" \
+  -H "Authorization: Bearer $KEY"
+
+# Cursor pagination
+curl -s "$BAATON/issues?limit=20&order_by=updated_at" -H "Authorization: Bearer $KEY"
+# → use page_info.end_cursor from response as ?after= in next request
 ```
 
-Params: `status`, `priority`, `type`, `search`, `assignee_id`, `label`, `limit` (default 1000), `offset`
+Params: `status`, `priority`, `type`, `search`, `assignee_id`, `label`, `limit` (default 100, max 500), `offset`
+
+#### Ordering
+`order_by`: `created_at` (default) | `updated_at` | `priority` | `position` | `due_date`
+`order_direction`: `asc` | `desc` (default)
+
+#### Cursor Pagination
+All list endpoints return `page_info` alongside `data`:
+```json
+{
+  "data": [...],
+  "page_info": {
+    "has_next_page": true,
+    "has_previous_page": false,
+    "start_cursor": "MjAyNi0wMy0xNVQwNTowMDowMFp8YWJjLTEyMw",
+    "end_cursor": "MjAyNi0wMy0xNFQxMDowMDowMFp8ZGVmLTQ1Ng",
+    "total_count": 142
+  }
+}
+```
+Use `?after=<end_cursor>` for next page. Cursors are stable across inserts.
+
+#### Advanced Filtering
+Pass `filter` as URL-encoded JSON. Supports:
+
+| Operator | Example | Description |
+|----------|---------|-------------|
+| `eq` | `{"status": {"eq": "done"}}` | Equals |
+| `neq` | `{"status": {"neq": "cancelled"}}` | Not equals |
+| `in` | `{"priority": {"in": ["urgent", "high"]}}` | In list |
+| `nin` | `{"status": {"nin": ["done", "cancelled"]}}` | Not in list |
+| `lt` / `lte` | `{"due_date": {"lt": "2026-04-01"}}` | Less than / ≤ |
+| `gt` / `gte` | `{"created_at": {"gt": "2026-01-01T00:00:00Z"}}` | Greater than / ≥ |
+| `contains` | `{"title": {"contains": "login"}}` | Text ILIKE / array includes |
+| `startsWith` | `{"display_id": {"startsWith": "BUG"}}` | Starts with |
+| `null` | `{"due_date": {"null": true}}` | Is null / not null |
+
+**Logical operators:**
+```json
+{
+  "status": {"neq": "done"},
+  "or": [
+    {"priority": {"eq": "urgent"}},
+    {"due_date": {"lt": "2026-03-20"}}
+  ]
+}
+```
+
+**Filterable fields:** `status`, `priority`, `issue_type`, `title`, `description`, `display_id`, `source`, `tags`, `category`, `assignee_ids`, `due_date`, `created_at`, `updated_at`, `closed_at`, `estimate`, `archived`, `created_by_id`, `reporter_name`, `reporter_email`
 
 ### GET /projects/{id}/issues
 List issues for a specific project.
-Params: `status`, `priority`, `type`, `category`, `search`, `limit`, `offset`
+Params: `status`, `priority`, `type`, `category`, `search`, `limit`, `offset`, `filter`, `order_by`, `order_direction`, `after`
 
 ### GET /issues/{id}
 Get a single issue with TLDRs, comments, and relations.
@@ -362,19 +418,79 @@ Create a webhook.
 ```bash
 curl -s -X POST $BAATON/webhooks -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://your-server.com/webhook","events":["issue.created","status.changed"],"secret":"optional-hmac-secret"}'
+  -d '{"url":"https://your-server.com/webhook","event_types":["issue.created","status.changed"]}'
 ```
 
-Payload sent to your URL: `{ "event": "issue.created", "data": { "issue": {...} }, "timestamp": "2026-03-12T..." }`
+Secret is auto-generated and returned **only on creation**. Store it securely for signature verification.
+
+### Webhook Payload Format
+
+```json
+{
+  "event": "issue.created",
+  "data": { ... },
+  "timestamp": "2026-03-15T05:00:00Z",
+  "delivery_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+### Headers
+| Header | Description |
+|--------|-------------|
+| `X-Baaton-Signature` | HMAC-SHA256 signature: `sha256=<hex>` |
+| `X-Baaton-Event` | Event type (e.g. `issue.created`) |
+| `X-Baaton-Delivery` | Unique delivery UUID (use for deduplication) |
+
+### Signature Verification
+```python
+import hmac, hashlib
+expected = 'sha256=' + hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+assert hmac.compare_digest(expected, request.headers['X-Baaton-Signature'])
+```
+
+### Retry Policy
+Failed deliveries (non-2xx or network error) are retried with exponential backoff:
+- **Attempt 1**: Immediate (on first dispatch)
+- **Attempt 2**: +1 minute
+- **Attempt 3**: +15 minutes
+- **Attempt 4**: +1 hour
+- **Attempt 5**: +6 hours (final)
+
+After 4 consecutive failures, delivery is marked as `failed`. Webhook `failure_count` increments on each failure and resets to 0 on success.
+
+### Event Types (20)
+`issue.created` | `issue.updated` | `issue.deleted` | `issue.archived` | `issue.unarchived` | `status.changed` | `comment.created` | `comment.deleted` | `project.created` | `project.updated` | `project.deleted` | `milestone.created` | `milestone.updated` | `milestone.completed` | `sprint.created` | `sprint.completed` | `tldr.created` | `approval.requested` | `approval.responded`
 
 ### GET /webhooks/{id}
-Get webhook details.
+Get webhook details (secret is masked).
 
 ### PATCH /webhooks/{id}
-Update webhook.
+Update webhook URL, event_types, or enabled status.
 
 ### DELETE /webhooks/{id}
-Delete webhook.
+Delete webhook and all associated delivery records.
+
+---
+
+## Rate Limiting
+
+All API requests include rate limit headers:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Requests-Limit` | Max requests per hour (default: 5000) |
+| `X-RateLimit-Requests-Remaining` | Remaining requests this hour |
+| `X-RateLimit-Requests-Reset` | Unix timestamp (ms) when the window resets |
+
+When exceeded, you'll receive `429 Too Many Requests`:
+```json
+{"error": "Rate limit exceeded. See X-RateLimit-Requests-* headers."}
+```
+
+**Limits:**
+- API Key: 5,000 requests/hour
+- JWT (web app): 5,000 requests/hour
+- Unauthenticated (public endpoints): 60 requests/hour
 
 ---
 

@@ -56,5 +56,27 @@ pub async fn create(
         });
     }
 
-    Ok(Json(ApiResponse::new(tldr)))
+    // ── Webhook dispatch (fire-and-forget) ───────────
+    crate::routes::webhooks::dispatch_event(
+        pool.clone(),
+        org_id.to_string(),
+        "tldr.created",
+        serde_json::to_value(&tldr).unwrap_or_default(),
+    ).await;
+
+    // AI-first: action hints
+    let hints = vec![
+        crate::models::ActionHint::recommended(
+            "move_to_review",
+            "TLDR posted. Move the issue to in_review so a human can verify the work.",
+            Some(&format!("PATCH /issues/{} with status=in_review", issue_id)),
+        ),
+        crate::models::ActionHint::optional(
+            "add_comment",
+            "Add a comment with any additional context, blockers, or follow-up items.",
+            Some(&format!("POST /issues/{}/comments", issue_id)),
+        ),
+    ];
+
+    Ok(Json(ApiResponse::with_hints(tldr, hints)))
 }

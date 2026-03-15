@@ -11,6 +11,7 @@ mod models;
 mod middleware;
 mod github;
 mod novu;
+mod filter;
 
 use middleware::{JwksKeys, fetch_jwks_keys, jwks_refresh_task};
 
@@ -90,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
         (44, include_str!("../migrations/044_custom_fields_estimates.sql")),
         (45, include_str!("../migrations/045_plans_per_user.sql")),
         (46, include_str!("../migrations/046_approval_workflow.sql")),
+        (47, include_str!("../migrations/047_advanced_api.sql")),
     ];
 
     for &(version, sql) in migrations {
@@ -136,6 +138,12 @@ async fn main() -> anyhow::Result<()> {
     let job_pool = pool.clone();
     tokio::spawn(async move {
         github::jobs::start_job_runner(job_pool).await;
+    });
+
+    // Start webhook retry worker
+    let webhook_pool = pool.clone();
+    tokio::spawn(async move {
+        routes::webhooks::retry_worker(webhook_pool).await;
     });
 
     // Novu notifications (None if NOVU_SECRET_KEY unset)
