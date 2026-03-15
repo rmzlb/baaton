@@ -1,5 +1,4 @@
 pub mod security;
-#[allow(dead_code)]
 pub mod rate_limit;
 pub mod plan_guard;
 
@@ -539,5 +538,24 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         }
     }
 
-    next.run(req).await
+    // Extract rate limit info before passing request to next handler
+    let rl_ext = req.extensions().get::<rate_limit::RateLimitExtension>().cloned();
+
+    let mut response = next.run(req).await;
+
+    // Inject rate limit headers into response
+    if let Some(rl) = rl_ext {
+        let headers = response.headers_mut();
+        if let Ok(v) = axum::http::HeaderValue::from_str(&rl.limit.to_string()) {
+            headers.insert("x-ratelimit-requests-limit", v);
+        }
+        if let Ok(v) = axum::http::HeaderValue::from_str(&rl.remaining.to_string()) {
+            headers.insert("x-ratelimit-requests-remaining", v);
+        }
+        if let Ok(v) = axum::http::HeaderValue::from_str(&rl.reset_epoch_ms.to_string()) {
+            headers.insert("x-ratelimit-requests-reset", v);
+        }
+    }
+
+    response
 }
