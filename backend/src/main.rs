@@ -147,6 +147,10 @@ async fn main() -> anyhow::Result<()> {
         routes::webhooks::retry_worker(webhook_pool).await;
     });
 
+    // ── SSE broadcast channel ───────────────────────────
+    // Buffer 256 events — slow clients get a Lagged notification
+    let (sse_tx, _) = tokio::sync::broadcast::channel::<routes::sse::SseEvent>(256);
+
     // Novu notifications (None if NOVU_SECRET_KEY unset)
     let novu_client = novu::NovuClient::from_env();
 
@@ -161,6 +165,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(|| async { "ok" }))
         .nest("/api/v1", routes::api_router(pool.clone(), jwks_state.clone()))
         .layer(axum::Extension(novu_client))
+        .layer(axum::Extension(sse_tx))
         .layer(axum::Extension(pool.clone()))
         .layer(axum_mw::from_fn(middleware::security::security_headers))
         .layer(cors)

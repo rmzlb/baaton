@@ -17,6 +17,7 @@ use crate::models::{
     CreateAgentSession, CreateAgentStep, UpdateAgentSession,
 };
 use crate::routes::activity::log_activity;
+use crate::routes::sse::{EventSender, broadcast_event};
 
 const VALID_STATUSES: &[&str] = &["pending", "active", "awaiting_input", "completed", "error"];
 const VALID_STEP_TYPES: &[&str] = &["info", "action", "thought", "error", "tool_call", "tool_result"];
@@ -25,6 +26,7 @@ const VALID_STEP_TYPES: &[&str] = &["info", "action", "thought", "error", "tool_
 
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Json(body): Json<CreateAgentSession>,
 ) -> Result<Json<ApiResponse<AgentSession>>, (StatusCode, Json<serde_json::Value>)> {
@@ -110,6 +112,9 @@ pub async fn create(
         pool.clone(), org_id.to_string(), "agent_session.started",
         serde_json::to_value(&session).unwrap_or_default(),
     ).await;
+
+    // SSE broadcast
+    broadcast_event(&sse_tx, org_id, "agent_session.started", &serde_json::to_string(&session).unwrap_or_default());
 
     let hints = vec![
         ActionHint::recommended(
@@ -237,6 +242,7 @@ pub async fn list_by_issue(
 
 pub async fn update(
     Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(session_id): Path<Uuid>,
     Json(body): Json<UpdateAgentSession>,
@@ -359,6 +365,14 @@ pub async fn update(
         ).await;
     }
 
+    // SSE broadcast
+    let sse_event = if is_completing {
+        if new_status == "completed" { "agent_session.completed" } else { "agent_session.error" }
+    } else {
+        "agent_session.updated"
+    };
+    broadcast_event(&sse_tx, org_id, sse_event, &serde_json::to_string(&session).unwrap_or_default());
+
     let mut hints = vec![];
     if new_status == "completed" {
         hints.push(ActionHint::recommended(
@@ -386,6 +400,7 @@ pub async fn update(
 
 pub async fn create_step(
     Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(session_id): Path<Uuid>,
     Json(body): Json<CreateAgentStep>,
@@ -449,6 +464,9 @@ pub async fn create_step(
         .bind(session.issue_id)
         .execute(&pool)
         .await;
+
+    // SSE broadcast — enables live stream without DB polling
+    broadcast_event(&sse_tx, org_id, "agent_session.step", &serde_json::to_string(&step).unwrap_or_default());
 
     Ok(Json(ApiResponse::new(step)))
 }

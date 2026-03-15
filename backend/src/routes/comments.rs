@@ -8,6 +8,7 @@ use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment};
 use crate::routes::activity::log_activity;
 use crate::routes::notifications::create_notification;
+use crate::routes::sse::{EventSender, broadcast_event};
 use crate::routes::webhooks::dispatch_event;
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +64,7 @@ pub async fn list_by_issue(
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
     Extension(novu): Extension<Option<crate::novu::NovuClient>>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
     Json(body): Json<CreateComment>,
@@ -268,6 +270,9 @@ pub async fn create(
     // ── Webhook dispatch (fire-and-forget) ───────────
     dispatch_event(pool.clone(), org_id.to_string(), "comment.created", serde_json::to_value(&comment).unwrap_or_default()).await;
 
+    // ── SSE broadcast ────────────────────────────────
+    broadcast_event(&sse_tx, org_id, "comment.created", &serde_json::to_string(&comment).unwrap_or_default());
+
     // AI-first: action hints
     let hints = vec![
         crate::models::ActionHint::recommended(
@@ -288,6 +293,7 @@ pub async fn create(
 /// DELETE /api/v1/issues/{issue_id}/comments/{comment_id}
 pub async fn remove(
     Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path((issue_id, comment_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
@@ -318,6 +324,9 @@ pub async fn remove(
 
     // ── Webhook dispatch (fire-and-forget) ───────────
     dispatch_event(pool.clone(), org_id.to_string(), "comment.deleted", serde_json::json!({"id": comment_id.to_string(), "issue_id": issue_id.to_string()})).await;
+
+    // ── SSE broadcast ────────────────────────────────
+    broadcast_event(&sse_tx, org_id, "comment.deleted", &format!(r#"{{"id":"{}","issue_id":"{}"}}"#, comment_id, issue_id));
 
     Ok(Json(ApiResponse::new(())))
 }

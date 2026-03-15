@@ -10,6 +10,7 @@ use crate::routes::activity::log_activity;
 use crate::routes::automations::evaluate_automations;
 use crate::routes::notifications::create_notification;
 use crate::routes::sla::apply_sla_deadline;
+use crate::routes::sse::{EventSender, broadcast_event};
 use crate::routes::webhooks::dispatch_event;
 
 // ─── Sub-Issues ───────────────────────────────────────
@@ -608,6 +609,7 @@ pub async fn list_by_project(
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
     Extension(novu): Extension<Option<crate::novu::NovuClient>>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Json(body): Json<CreateIssue>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
@@ -888,6 +890,9 @@ pub async fn create(
     // ── Webhook dispatch (fire-and-forget) ───────────
     dispatch_event(pool.clone(), org_id.to_string(), "issue.created", serde_json::to_value(&issue).unwrap_or_default()).await;
 
+    // ── SSE broadcast ────────────────────────────────
+    broadcast_event(&sse_tx, org_id, "issue.created", &serde_json::to_string(&issue).unwrap_or_default());
+
     // AI-first: action hints for agents
     let hints = vec![
         crate::models::ActionHint::recommended(
@@ -1029,6 +1034,7 @@ pub async fn get_one(
 pub async fn update(
     Extension(auth): Extension<AuthUser>,
     Extension(novu): Extension<Option<crate::novu::NovuClient>>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateIssue>,
@@ -1454,6 +1460,10 @@ pub async fn update(
     let event = if status_changed { "status.changed" } else { "issue.updated" };
     dispatch_event(pool.clone(), org_id.to_string(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
 
+    // ── SSE broadcast ────────────────────────────────
+    let sse_event = if status_changed { "issue.status_changed" } else { "issue.updated" };
+    broadcast_event(&sse_tx, org_id, sse_event, &serde_json::to_string(&issue).unwrap_or_default());
+
     // AI-first: contextual action hints
     let mut hints = vec![];
     if status_changed {
@@ -1587,6 +1597,7 @@ pub async fn list_mine(
 
 pub async fn remove(
     Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
@@ -1605,6 +1616,8 @@ pub async fn remove(
     if result.rows_affected() > 0 {
         // ── Webhook dispatch (fire-and-forget) ───────────
         dispatch_event(pool.clone(), org_id.to_string(), "issue.deleted", serde_json::json!({"id": id.to_string()})).await;
+        // ── SSE broadcast ────────────────────────────────
+        broadcast_event(&sse_tx, org_id, "issue.deleted", &format!(r#"{{"id":"{}"}}"#, id));
         Ok(Json(ApiResponse::new(())))
     } else {
         Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))
@@ -1634,6 +1647,7 @@ pub struct BatchDeleteBody {
 
 pub async fn batch_update(
     Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Json(body): Json<BatchUpdateBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
@@ -1697,6 +1711,8 @@ pub async fn batch_update(
             updated_count += 1;
             let event = if body.changes.status.is_some() { "status.changed" } else { "issue.updated" };
             dispatch_event(pool.clone(), org_id.to_string(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
+            let sse_event = if body.changes.status.is_some() { "issue.status_changed" } else { "issue.updated" };
+            broadcast_event(&sse_tx, org_id, sse_event, &serde_json::to_string(&issue).unwrap_or_default());
         }
     }
 
@@ -2099,6 +2115,7 @@ pub async fn public_submit(
 
 pub async fn archive(
     Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
@@ -2139,12 +2156,14 @@ pub async fn archive(
     }
 
     dispatch_event(pool.clone(), org_id.to_string(), "issue.archived", serde_json::to_value(&issue).unwrap_or_default()).await;
+    broadcast_event(&sse_tx, org_id, "issue.archived", &serde_json::to_string(&issue).unwrap_or_default());
 
     Ok(Json(ApiResponse::new(issue)))
 }
 
 pub async fn unarchive(
     Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
@@ -2185,6 +2204,7 @@ pub async fn unarchive(
     }
 
     dispatch_event(pool.clone(), org_id.to_string(), "issue.unarchived", serde_json::to_value(&issue).unwrap_or_default()).await;
+    broadcast_event(&sse_tx, org_id, "issue.unarchived", &serde_json::to_string(&issue).unwrap_or_default());
 
     Ok(Json(ApiResponse::new(issue)))
 }

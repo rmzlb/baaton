@@ -38,6 +38,8 @@ pub(crate) mod admin;
 mod initiatives;
 mod import_export;
 pub mod gamification;
+pub mod sse;
+pub mod event_bus;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -189,6 +191,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/agent-sessions/{id}/steps", get(agent_sessions::list_steps).post(agent_sessions::create_step))
         .route("/agent-sessions/{id}/stream", get(agent_sessions::stream_steps))
         .route("/issues/{id}/agent-sessions", get(agent_sessions::list_by_issue))
+        // SSE real-time events
+        .route("/events", get(sse::event_stream))
         // Slack (BAA-25)
         .route("/integrations/slack", get(slack::list).post(slack::create))
         .route("/integrations/slack/{id}", delete(slack::remove))
