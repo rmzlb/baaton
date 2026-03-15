@@ -52,3 +52,5 @@ aes-gcm = "0.10"
 strip = true
 lto = true
 codegen-units = 1
+
+# build: 20260315T064124
