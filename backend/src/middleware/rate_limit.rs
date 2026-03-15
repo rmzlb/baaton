@@ -185,7 +185,7 @@ pub async fn check_hourly(
         VALUES ($1, $2, 1)
         ON CONFLICT (rate_key, time_window)
         DO UPDATE SET count = api_rate_limits.count + 1
-        RETURNING count
+        RETURNING count::bigint
         "#,
     )
     .bind(rate_key)
