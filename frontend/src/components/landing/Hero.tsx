@@ -217,7 +217,7 @@ export function Hero() {
           initial="hidden"
           animate="visible"
           custom={5}
-          className="w-full max-w-4xl mx-auto mb-12"
+          className="w-full max-w-5xl mx-auto mb-12"
         >
           <div className="rounded-xl border border-border bg-surface/60 backdrop-blur-sm overflow-hidden shadow-2xl">
             {/* Window chrome */}
@@ -225,80 +225,150 @@ export function Hero() {
               <span className="w-2.5 h-2.5 rounded-full bg-red-500/40" />
               <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/40" />
               <span className="w-2.5 h-2.5 rounded-full bg-green-500/40" />
-              <span className="ml-3 text-xs text-muted font-mono">baaton.dev/project/acme</span>
+              <span className="ml-3 text-xs text-muted font-mono">baaton.dev / acme-app</span>
+              <span className="ml-auto text-[10px] text-muted">Kanban view</span>
             </div>
-            {/* Kanban columns */}
-            <div className="grid grid-cols-4 gap-0 divide-x divide-border min-h-[220px]">
+            {/* Kanban columns — 5 columns like the real product */}
+            <div className="grid grid-cols-5 gap-0 divide-x divide-border min-h-[260px] overflow-x-auto">
               {/* Backlog */}
-              <div className="p-3">
-                <div className="flex items-center gap-1.5 mb-3">
+              <div className="p-2.5 min-w-[150px]">
+                <div className="flex items-center gap-1.5 mb-2.5">
                   <span className="w-2 h-2 rounded-full bg-zinc-500" />
                   <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Backlog</span>
-                  <span className="text-[10px] text-muted ml-auto">3</span>
+                  <span className="text-[10px] text-muted ml-auto">4</span>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]">
-                    <p className="text-[10px] font-medium text-primary truncate">ACM-12 Add dark mode</p>
-                    <p className="text-[9px] text-muted mt-0.5">Feature · Low</p>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] text-muted font-mono">ACM-15</span>
+                      <span className="text-[9px] px-1 rounded bg-purple-500/10 text-purple-400">Feature</span>
+                    </div>
+                    <p className="text-[10px] font-medium text-primary truncate">Add dark mode toggle</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-[9px] text-zinc-500">↓ Low</span>
+                    </div>
                   </div>
                   <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]">
-                    <p className="text-[10px] font-medium text-primary truncate">ACM-15 i18n support</p>
-                    <p className="text-[9px] text-muted mt-0.5">Feature · Medium</p>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] text-muted font-mono">ACM-16</span>
+                      <span className="text-[9px] px-1 rounded bg-blue-500/10 text-blue-400">Improvement</span>
+                    </div>
+                    <p className="text-[10px] font-medium text-primary truncate">Optimize bundle size</p>
+                  </div>
+                </div>
+              </div>
+              {/* Todo */}
+              <div className="p-2.5 min-w-[150px]">
+                <div className="flex items-center gap-1.5 mb-2.5">
+                  <span className="w-2 h-2 rounded-full bg-violet-500" />
+                  <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Todo</span>
+                  <span className="text-[10px] text-muted ml-auto">2</span>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05] border-l-[2px] border-l-emerald-400">
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] text-muted font-mono">ACM-14</span>
+                      <span className="text-[9px] px-1 rounded bg-red-500/10 text-red-400">Bug</span>
+                      <span className="text-[8px] font-bold text-emerald-500 ml-auto">NEW</span>
+                    </div>
+                    <p className="text-[10px] font-medium text-primary truncate">Webhook retry on 5xx</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-[9px] text-orange-500">↑ High</span>
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] text-muted font-mono">ACM-13</span>
+                      <span className="text-[9px] px-1 rounded bg-purple-500/10 text-purple-400">Feature</span>
+                    </div>
+                    <p className="text-[10px] font-medium text-primary truncate">Email intake endpoint</p>
                   </div>
                 </div>
               </div>
               {/* In Progress — agent working */}
-              <div className="p-3">
-                <div className="flex items-center gap-1.5 mb-3">
+              <div className="p-2.5 min-w-[150px]">
+                <div className="flex items-center gap-1.5 mb-2.5">
                   <span className="w-2 h-2 rounded-full bg-amber-500" />
                   <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">In Progress</span>
                   <span className="text-[10px] text-muted ml-auto">1</span>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="p-2 rounded-lg bg-amber-500/[0.06] border border-amber-500/[0.12]">
-                    <p className="text-[10px] font-medium text-primary truncate">ACM-08 Fix login timeout</p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">🤖 agent</span>
-                      <span className="text-[9px] text-amber-400/70">High</span>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] text-muted font-mono">ACM-08</span>
+                      <span className="text-[9px] px-1 rounded bg-red-500/10 text-red-400">Bug</span>
+                      <span className="text-[9px] text-red-500 font-semibold ml-auto">SLA</span>
+                    </div>
+                    <p className="text-[10px] font-medium text-primary truncate">Fix login timeout</p>
+                    <div className="flex items-center justify-between mt-1.5">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] text-red-400">⊘ Urgent</span>
+                        <span className="text-[9px] text-muted">· 2h</span>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <span className="relative flex">
+                          <img src="https://api.dicebear.com/9.x/initials/svg?seed=agent&backgroundColor=f0f0f0&textColor=666666" className="w-4 h-4 rounded-full ring-1 ring-surface" alt="agent" />
+                          <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-surface" />
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
               {/* In Review */}
-              <div className="p-3">
-                <div className="flex items-center gap-1.5 mb-3">
+              <div className="p-2.5 min-w-[150px]">
+                <div className="flex items-center gap-1.5 mb-2.5">
                   <span className="w-2 h-2 rounded-full bg-blue-500" />
-                  <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Review</span>
+                  <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">In Review</span>
                   <span className="text-[10px] text-muted ml-auto">2</span>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="p-2 rounded-lg bg-blue-500/[0.06] border border-blue-500/[0.12]">
-                    <p className="text-[10px] font-medium text-primary truncate">ACM-05 API rate limiting</p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 font-medium">✅ TLDR posted</span>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] text-muted font-mono">ACM-05</span>
+                      <span className="text-[9px] px-1 rounded bg-purple-500/10 text-purple-400">Feature</span>
+                    </div>
+                    <p className="text-[10px] font-medium text-primary truncate">API rate limiting</p>
+                    <div className="flex items-center justify-between mt-1.5">
+                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 font-medium">✅ TLDR posted</span>
+                      <span className="text-[9px] text-muted">· 45m</span>
                     </div>
                   </div>
                   <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]">
-                    <p className="text-[10px] font-medium text-primary truncate">ACM-06 Webhook retry</p>
-                    <p className="text-[9px] text-muted mt-0.5">Bug · Urgent</p>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] text-muted font-mono">ACM-06</span>
+                      <span className="text-[9px] px-1 rounded bg-blue-500/10 text-blue-400">Improvement</span>
+                    </div>
+                    <p className="text-[10px] font-medium text-primary truncate">Cache invalidation</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-[9px] px-1 rounded bg-amber-500/10 text-amber-400 text-[8px]">backend</span>
+                    </div>
                   </div>
                 </div>
               </div>
               {/* Done */}
-              <div className="p-3">
-                <div className="flex items-center gap-1.5 mb-3">
+              <div className="p-2.5 min-w-[150px]">
+                <div className="flex items-center gap-1.5 mb-2.5">
                   <span className="w-2 h-2 rounded-full bg-green-500" />
                   <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Done</span>
-                  <span className="text-[10px] text-muted ml-auto">5</span>
+                  <span className="text-[10px] text-muted ml-auto">7</span>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05] opacity-60">
-                    <p className="text-[10px] font-medium text-primary truncate">ACM-03 Auth middleware</p>
-                    <p className="text-[9px] text-muted mt-0.5">Closed 2h ago</p>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] text-muted font-mono">ACM-03</span>
+                      <span className="text-emerald-500"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5"/></svg></span>
+                    </div>
+                    <p className="text-[10px] font-medium text-muted truncate line-through">Auth middleware</p>
+                    <span className="text-[9px] text-muted">Closed 2h ago</span>
                   </div>
                   <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05] opacity-60">
-                    <p className="text-[10px] font-medium text-primary truncate">ACM-01 Setup CI/CD</p>
-                    <p className="text-[9px] text-muted mt-0.5">Closed 1d ago</p>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] text-muted font-mono">ACM-01</span>
+                      <span className="text-emerald-500"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5"/></svg></span>
+                    </div>
+                    <p className="text-[10px] font-medium text-muted truncate line-through">Setup CI/CD pipeline</p>
+                    <span className="text-[9px] text-muted">Closed 1d ago</span>
                   </div>
                 </div>
               </div>
