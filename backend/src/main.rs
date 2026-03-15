@@ -92,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
         (45, include_str!("../migrations/045_plans_per_user.sql")),
         (46, include_str!("../migrations/046_approval_workflow.sql")),
         (47, include_str!("../migrations/047_advanced_api.sql")),
+        (48, include_str!("../migrations/048_agent_sessions.sql")),
     ];
 
     for &(version, sql) in migrations {
