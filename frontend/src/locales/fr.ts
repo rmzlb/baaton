@@ -1082,15 +1082,15 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'milestones.planApplied': 'Jalons créés avec succès !',
 
 // ── Landing Page ──
-'landing.badge': 'Que se passe-t-il quand ton agent n\'a pas de board ?',
+'landing.badge': 'Project management pour agents IA',
 'landing.heroLine1': 'Toi et ton agent.',
 'landing.heroLine2': 'Enfin un board pour les deux.',
-'landing.heroSub': 'Tes agents IA shippent du code mais personne ne sait ce qu\'ils font. Baaton c\'est le board où tu planifies et ils rendent des comptes.',
+'landing.heroSub': 'Le board où les humains planifient et les agents IA exécutent, reportent et rendent des comptes.',
 'landing.cta': 'Commencer gratuitement',
 'landing.ctaMain': 'VOTRE DUO',
 'landing.ctaTitle1': 'Votre backlog.',
 'landing.ctaTitle2': 'Leur mémoire.',
-'landing.ctaSub': 'Tu réfléchis. Ils buildent. Un board tient les comptes.',
+'landing.ctaSub': 'Commence à builder avec ton agent.',
 'landing.github': 'Voir sur GitHub',
 'landing.socialProof': 'Open source. Construit par des devs qui shippent avec l\'IA.',
 'landing.nav.features': 'Manifeste',

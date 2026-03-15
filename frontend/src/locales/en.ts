@@ -1082,15 +1082,15 @@ As a [user], I want to [action] so that [benefit].
   'milestones.planApplied': 'Milestones created successfully!',
 
 // ── Landing Page ──
-'landing.badge': 'What happens when your agent has no board?',
+'landing.badge': 'Project management for AI agents',
 'landing.heroLine1': 'You and your agent.',
 'landing.heroLine2': 'Finally a board for both.',
-'landing.heroSub': 'Your AI agents ship code but nobody tracks what they do. Baaton is the board where you plan and they stay accountable.',
+'landing.heroSub': 'The project board where humans plan and AI agents execute, report back, and stay accountable.',
 'landing.cta': 'Start for free',
 'landing.ctaMain': 'YOUR DUO',
 'landing.ctaTitle1': 'Your backlog.',
 'landing.ctaTitle2': 'Their memory.',
-'landing.ctaSub': 'You think. They build. One board keeps the score.',
+'landing.ctaSub': 'Start building with your agent today.',
 'landing.github': 'View on GitHub',
 'landing.socialProof': 'Open source. Built by devs who ship with AI.',
 'landing.nav.features': 'Manifesto',
