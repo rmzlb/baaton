@@ -112,6 +112,8 @@ pub struct Issue {
     pub archived_at: Option<DateTime<Utc>>,
     pub sla_deadline: Option<DateTime<Utc>>,
     pub sla_breached: Option<bool>,
+    pub agent_status: Option<String>,
+    pub agent_session_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -159,6 +161,77 @@ pub struct UpdateIssue {
     /// When true, skip workflow transition warnings (agent confirmed the move).
     #[serde(default)]
     pub force: bool,
+}
+
+// ─── Agent Session ────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct AgentSession {
+    pub id: Uuid,
+    pub org_id: String,
+    pub project_id: Uuid,
+    pub issue_id: Uuid,
+    pub agent_name: String,
+    pub agent_id: Option<String>,
+    pub status: String,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub error_message: Option<String>,
+    pub summary: Option<String>,
+    pub files_changed: Vec<String>,
+    pub tests_status: String,
+    pub pr_url: Option<String>,
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateAgentSession {
+    pub issue_id: Uuid,
+    pub agent_name: String,
+    pub agent_id: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateAgentSession {
+    pub status: Option<String>,
+    pub summary: Option<String>,
+    pub files_changed: Option<Vec<String>>,
+    pub tests_status: Option<String>,
+    pub pr_url: Option<String>,
+    pub error_message: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+// ─── Agent Step ───────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct AgentStep {
+    pub id: Uuid,
+    pub session_id: Uuid,
+    pub issue_id: Uuid,
+    pub step_type: String,
+    pub message: String,
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateAgentStep {
+    pub step_type: Option<String>,
+    pub message: String,
+    pub metadata: Option<serde_json::Value>,
+}
+
+// ─── Agent Session Detail (with steps) ────────────────
+
+#[derive(Debug, Serialize)]
+pub struct AgentSessionDetail {
+    #[serde(flatten)]
+    pub session: AgentSession,
+    pub steps: Vec<AgentStep>,
 }
 
 // ─── Issue Relation ───────────────────────────────────
@@ -243,6 +316,7 @@ pub struct IssueDetail {
     pub issue: Issue,
     pub tldrs: Vec<Tldr>,
     pub comments: Vec<Comment>,
+    pub agent_session: Option<AgentSession>,
 }
 
 // ─── Project Tag ──────────────────────────────────────

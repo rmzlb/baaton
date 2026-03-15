@@ -46,12 +46,25 @@ pub async fn create(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    // ── Gamification: award XP for TLDR (fire-and-forget) ──
+    // ── Activity log + Gamification ──
     {
         let pool2 = pool.clone();
         let uid = auth.user_id.clone();
+        let uname = auth.display_name.clone();
         let oid = org_id.to_string();
+        let iid = issue_id;
+        let aname = body.agent_name.clone();
+        // Get project_id for activity log
+        let pid: Option<Uuid> = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
+            .bind(iid)
+            .fetch_optional(&pool)
+            .await
+            .unwrap_or(None);
         tokio::spawn(async move {
+            crate::routes::activity::log_activity(
+                &pool2, &oid, pid, Some(iid), &uid, uname.as_deref(),
+                "tldr_posted", Some("agent_name"), None, Some(&aname), None,
+            ).await;
             crate::routes::gamification::record_activity(&pool2, &uid, &oid, "tldr").await;
         });
     }

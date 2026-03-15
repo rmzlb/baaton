@@ -10,6 +10,7 @@ axum = { version = "0.8", features = ["macros", "multipart"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "limit"] }
 tower = { version = "0.5", features = ["limit"] }
 futures = "0.3"
+async-stream = "0.3"
 tokio-stream = "0.1"
 
 # Auth (Clerk JWT validation)

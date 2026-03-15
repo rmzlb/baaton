@@ -32,6 +32,7 @@ pub mod triage;
 pub mod email_intake;
 pub mod attachments;
 pub mod agent_config;
+pub mod agent_sessions;
 pub mod slack;
 pub(crate) mod admin;
 mod initiatives;
@@ -182,6 +183,12 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/gamification/stats", get(gamification::get_stats))
         .route("/gamification/dashboard", get(gamification::get_dashboard))
         .route("/projects/{id}/gamification", get(gamification::get_project_gamification))
+        // Agent Sessions (live AI tracking)
+        .route("/agent-sessions", post(agent_sessions::create))
+        .route("/agent-sessions/{id}", get(agent_sessions::get_one).patch(agent_sessions::update))
+        .route("/agent-sessions/{id}/steps", get(agent_sessions::list_steps).post(agent_sessions::create_step))
+        .route("/agent-sessions/{id}/stream", get(agent_sessions::stream_steps))
+        .route("/issues/{id}/agent-sessions", get(agent_sessions::list_by_issue))
         // Slack (BAA-25)
         .route("/integrations/slack", get(slack::list).post(slack::create))
         .route("/integrations/slack/{id}", delete(slack::remove))

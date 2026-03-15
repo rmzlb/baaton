@@ -928,8 +928,8 @@ pub async fn get_one(
     .await
     .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
 
-    // Fetch TLDRs and comments in parallel
-    let (tldrs, comments) = tokio::join!(
+    // Fetch TLDRs, comments, and active agent session in parallel
+    let (tldrs, comments, agent_session) = tokio::join!(
         sqlx::query_as::<_, Tldr>(
             "SELECT * FROM tldrs WHERE issue_id = $1 ORDER BY created_at DESC",
         )
@@ -940,10 +940,16 @@ pub async fn get_one(
         )
         .bind(id)
         .fetch_all(&pool),
+        sqlx::query_as::<_, crate::models::AgentSession>(
+            "SELECT * FROM agent_sessions WHERE issue_id = $1 AND status IN ('pending', 'active', 'awaiting_input') ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&pool),
     );
 
     let tldrs = tldrs.unwrap_or_default();
     let comments = comments.unwrap_or_default();
+    let agent_session = agent_session.unwrap_or(None);
 
     tracing::info!(
         issue_id = %id,
@@ -996,10 +1002,27 @@ pub async fn get_one(
         ));
     }
 
+    // Agent-specific hints
+    if issue.agent_status.is_none() && (issue.status == "todo" || issue.status == "backlog") {
+        hints.push(crate::models::ActionHint::recommended(
+            "start_agent_session",
+            "No agent is working on this issue. Start an agent session to begin.",
+            Some("POST /agent-sessions"),
+        ));
+    }
+    if let Some(ref as_ref) = agent_session {
+        hints.push(crate::models::ActionHint::optional(
+            "view_agent_progress",
+            &format!("Agent '{}' is {} on this issue. View live progress.", as_ref.agent_name, as_ref.status),
+            Some(&format!("GET /agent-sessions/{}/stream", as_ref.id)),
+        ));
+    }
+
     Ok(Json(ApiResponse::with_hints(IssueDetail {
         issue,
         tldrs,
         comments,
+        agent_session,
     }, hints)))
 }
 

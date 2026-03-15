@@ -325,4 +325,84 @@ Use standard Markdown image syntax:
 ```
 
 Upload images to your own storage (S3, Supabase Storage, etc.) and reference them by URL.
+
+---
+
+## Agent Sessions (Live AI Tracking)
+
+Agent sessions track AI agents working on issues in real-time. Each session has a lifecycle (`pending` → `active` → `awaiting_input` → `completed` | `error`) and a stream of progress steps.
+
+### POST /agent-sessions
+Start a new agent session on an issue.
+
+```bash
+curl -s -X POST $BAATON/agent-sessions -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"issue_id":"UUID","agent_name":"my-agent","agent_id":"openclaw:haroz"}'
+```
+
+Response includes `_hints` directing the agent to post progress steps. The issue's `agent_status` is automatically set to `active`.
+
+**Constraints:** Only one active session per issue. Complete or cancel the existing session before starting a new one.
+
+### GET /agent-sessions/{id}
+Get session detail with all steps.
+
+### PATCH /agent-sessions/{id}
+Update session status, summary, files_changed, etc.
+
+```bash
+# Complete a session
+curl -s -X PATCH $BAATON/agent-sessions/UUID -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"completed","summary":"Refactored auth module","files_changed":["src/auth.rs","src/middleware.rs"],"tests_status":"passed","pr_url":"https://github.com/org/repo/pull/42"}'
+```
+
+**Status values:** `pending` | `active` | `awaiting_input` | `completed` | `error`
+
+When completed/error, the issue's `agent_status` is cleared automatically.
+
+### POST /agent-sessions/{id}/steps
+Post a progress step (live updates).
+
+```bash
+curl -s -X POST $BAATON/agent-sessions/UUID/steps -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"step_type":"action","message":"Reading issue context and related files"}'
+```
+
+**Step types:** `info` | `action` | `thought` | `error` | `tool_call` | `tool_result`
+
+### GET /agent-sessions/{id}/steps
+List all steps for a session. Supports `?after=ISO_TIMESTAMP` for polling new steps only.
+
+### GET /agent-sessions/{id}/stream
+**SSE (Server-Sent Events)** — Real-time stream of agent progress.
+
+```bash
+curl -N $BAATON/agent-sessions/UUID/stream -H "Authorization: Bearer $KEY"
+```
+
+Events:
+- `step` — New progress step (JSON payload)
+- `heartbeat` — Keep-alive ping
+- `done` — Session completed or errored (stream ends)
+
+### GET /issues/{id}/agent-sessions
+List all sessions for an issue. Filter with `?status=active`.
+
+### Agent Workflow (Recommended)
+
+```
+1. POST /agent-sessions              → start session (issue.agent_status = "active")
+2. POST /agent-sessions/{id}/steps   → post progress: "Reading issue context..."
+3. PATCH /issues/{id} status=in_progress → signal work started
+4. POST /agent-sessions/{id}/steps   → "Writing fix for auth timeout..."
+5. POST /agent-sessions/{id}/steps   → "Running tests... 12/12 passed"
+6. POST /issues/{id}/tldr            → post completion summary
+7. PATCH /agent-sessions/{id}        → complete session (agent_status cleared)
+8. PATCH /issues/{id} status=in_review → ready for human review
+```
+
+The issue detail (`GET /issues/{id}`) includes `agent_session` (the active session) and `agent_status` field. Kanban boards can use `agent_status` to show which issues have agents actively working on them.
 "##;
