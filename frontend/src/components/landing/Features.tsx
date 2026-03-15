@@ -225,11 +225,14 @@ export function Features() {
             <motion.p variants={fadeUp} custom={0} className="text-sm font-medium text-amber-500 tracking-wide uppercase mb-3">
               The Problem
             </motion.p>
-            <motion.h2 variants={fadeUp} custom={1} className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-16">
+            <motion.h2 variants={fadeUp} custom={1} className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary tracking-tight mb-4">
               You gave your agent superpowers.
               <br />
               <span className="text-secondary">But no accountability.</span>
             </motion.h2>
+            <motion.p variants={fadeUp} custom={1.5} className="text-secondary mb-16 max-w-2xl">
+              We were running 10 projects with AI agents across 4 servers. They shipped PRs at 3am but we had no idea what changed until something broke. So we built the board we needed.
+            </motion.p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {painPoints.map((point, i) => (
                 <motion.div
