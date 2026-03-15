@@ -211,12 +211,107 @@ export function Hero() {
           </a>
         </motion.div>
 
-        {/* Code snippet */}
+        {/* Board preview — product first, code second */}
         <motion.div
           variants={fadeUp}
           initial="hidden"
           animate="visible"
           custom={5}
+          className="w-full max-w-4xl mx-auto mb-12"
+        >
+          <div className="rounded-xl border border-border bg-surface/60 backdrop-blur-sm overflow-hidden shadow-2xl">
+            {/* Window chrome */}
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-surface/80">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500/40" />
+              <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/40" />
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500/40" />
+              <span className="ml-3 text-xs text-muted font-mono">baaton.dev/project/acme</span>
+            </div>
+            {/* Kanban columns */}
+            <div className="grid grid-cols-4 gap-0 divide-x divide-border min-h-[220px]">
+              {/* Backlog */}
+              <div className="p-3">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <span className="w-2 h-2 rounded-full bg-zinc-500" />
+                  <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Backlog</span>
+                  <span className="text-[10px] text-muted ml-auto">3</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                    <p className="text-[10px] font-medium text-primary truncate">ACM-12 Add dark mode</p>
+                    <p className="text-[9px] text-muted mt-0.5">Feature · Low</p>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                    <p className="text-[10px] font-medium text-primary truncate">ACM-15 i18n support</p>
+                    <p className="text-[9px] text-muted mt-0.5">Feature · Medium</p>
+                  </div>
+                </div>
+              </div>
+              {/* In Progress — agent working */}
+              <div className="p-3">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">In Progress</span>
+                  <span className="text-[10px] text-muted ml-auto">1</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="p-2 rounded-lg bg-amber-500/[0.06] border border-amber-500/[0.12]">
+                    <p className="text-[10px] font-medium text-primary truncate">ACM-08 Fix login timeout</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">🤖 agent</span>
+                      <span className="text-[9px] text-amber-400/70">High</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* In Review */}
+              <div className="p-3">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Review</span>
+                  <span className="text-[10px] text-muted ml-auto">2</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="p-2 rounded-lg bg-blue-500/[0.06] border border-blue-500/[0.12]">
+                    <p className="text-[10px] font-medium text-primary truncate">ACM-05 API rate limiting</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 font-medium">✅ TLDR posted</span>
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                    <p className="text-[10px] font-medium text-primary truncate">ACM-06 Webhook retry</p>
+                    <p className="text-[9px] text-muted mt-0.5">Bug · Urgent</p>
+                  </div>
+                </div>
+              </div>
+              {/* Done */}
+              <div className="p-3">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Done</span>
+                  <span className="text-[10px] text-muted ml-auto">5</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05] opacity-60">
+                    <p className="text-[10px] font-medium text-primary truncate">ACM-03 Auth middleware</p>
+                    <p className="text-[9px] text-muted mt-0.5">Closed 2h ago</p>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.05] opacity-60">
+                    <p className="text-[10px] font-medium text-primary truncate">ACM-01 Setup CI/CD</p>
+                    <p className="text-[9px] text-muted mt-0.5">Closed 1d ago</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Code snippet */}
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={6}
           className="w-full"
         >
           <p className="text-xs text-muted mb-3 uppercase tracking-wider">
@@ -230,7 +325,7 @@ export function Hero() {
           variants={fadeUp}
           initial="hidden"
           animate="visible"
-          custom={6}
+          custom={7}
           className="mt-12 flex items-center gap-3 text-muted text-sm"
         >
           <svg className="w-5 h-5 text-amber-500/70" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
