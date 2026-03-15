@@ -181,9 +181,9 @@ pub async fn check_hourly(
 
     let count: i64 = sqlx::query_scalar(
         r#"
-        INSERT INTO api_rate_limits (key, window, count)
+        INSERT INTO api_rate_limits (rate_key, time_window, count)
         VALUES ($1, $2, 1)
-        ON CONFLICT (key, window)
+        ON CONFLICT (rate_key, time_window)
         DO UPDATE SET count = api_rate_limits.count + 1
         RETURNING count
         "#,

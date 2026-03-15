@@ -28,15 +28,15 @@ CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook
 -- ─── Hourly rate limit table ──────────────────────────
 CREATE TABLE IF NOT EXISTS api_rate_limits (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    key TEXT NOT NULL, -- "user:<user_id>" or "ip:<addr>"
-    window TEXT NOT NULL, -- "2026-03-15T14" (hourly window)
+    rate_key TEXT NOT NULL, -- "user:<user_id>" or "ip:<addr>"
+    time_window TEXT NOT NULL, -- "2026-03-15T14" (hourly window)
     count INT NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(key, window)
+    UNIQUE(rate_key, time_window)
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_rate_limits_key_window
-    ON api_rate_limits (key, window);
+    ON api_rate_limits (rate_key, time_window);
 
 -- ─── Add more webhook event types to documentation ────
 -- (No schema change needed — event types are validated in Rust code)
