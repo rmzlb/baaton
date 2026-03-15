@@ -6,6 +6,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm install --legacy-peer-deps
 
+# Cache bust — forces re-copy when code changes
+ARG CACHE_BUST=unknown
+RUN echo "build: ${CACHE_BUST}"
+
 # Copy source + build
 COPY . .
 
