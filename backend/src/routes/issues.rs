@@ -365,7 +365,7 @@ pub async fn list_all(
 
     let query = format!(
         r#"
-        SELECT i.*
+        SELECT i.*, p.org_id
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE p.org_id = ANY($1)
@@ -921,7 +921,7 @@ pub async fn get_one(
 
     let issue = sqlx::query_as::<_, Issue>(
         r#"
-        SELECT i.*
+        SELECT i.*, p.org_id
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE i.id = $1 AND p.org_id = $2
@@ -1568,7 +1568,7 @@ pub async fn list_mine(
 
     let issues = sqlx::query_as::<_, Issue>(
         r#"
-        SELECT i.*
+        SELECT i.*, p.org_id
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE $1 = ANY(i.assignee_ids) AND p.org_id = ANY($2)

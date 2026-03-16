@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useUser, useOrganization } from '@clerk/clerk-react';
+import { useUser } from '@clerk/clerk-react';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
+import { useOrgMembers } from '@/hooks/useOrgMembers';
 import DOMPurify from 'dompurify';
 import {
   X, ChevronDown, Tag, User, Calendar,
@@ -78,8 +79,6 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const { user } = useUser();
-  const { memberships } = useOrganization({ memberships: { infinite: true } });
-  const orgMembers = memberships?.data ?? [];
   const { resolveUserName } = useClerkMembers();
 
   const updateIssue = useIssuesStore((s) => s.updateIssue);
@@ -121,6 +120,9 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     },
     staleTime: 10_000,
   });
+
+  // Fetch members for the issue's org (not the sidebar active org)
+  const { members: orgMembers } = useOrgMembers(issue?.org_id);
 
   const resolvedProjectId = projectId || issue?.project_id;
   const { data: projectTags = [] } = useQuery({
@@ -1360,10 +1362,12 @@ function MetadataSidebar({
         {showAssigneePicker && (
           <div className="mt-1.5 rounded-lg border border-border bg-surface p-1.5 max-h-40 overflow-y-auto">
             {orgMembers.length > 0 ? orgMembers.map((m: any) => {
-              const userId = m.publicUserData?.userId;
+              const userId = m.user_id || m.publicUserData?.userId;
               if (!userId) return null;
               const isAssigned = issue.assignee_ids.includes(userId);
-              const name = resolveUserName(userId);
+              const name = m.first_name
+                ? `${m.first_name} ${m.last_name || ''}`.trim()
+                : resolveUserName(userId);
               return (
                 <button
                   key={userId}

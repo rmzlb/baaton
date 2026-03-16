@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useClerkMembers } from '@/hooks/useClerkMembers';
+import { useOrgMembers } from '@/hooks/useOrgMembers';
 import { cn } from '@/lib/utils';
 import {
   Inbox, Check, ArrowRightLeft, XCircle,
   ChevronRight, User, Sparkles, Loader2, Tag, AlertTriangle,
+  Filter,
 } from 'lucide-react';
 import type { Issue, IssuePriority } from '@/lib/types';
 import { MarkdownView } from '@/components/shared/MarkdownView';
@@ -22,10 +23,10 @@ export function Triage() {
   const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
-  const { orgMembers } = useClerkMembers();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [assignDropdownId, setAssignDropdownId] = useState<string | null>(null);
+  const [orgFilter, setOrgFilter] = useState<string>('all');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<AiTriageResult | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -36,14 +37,43 @@ export function Triage() {
     staleTime: 30_000,
   });
 
-  const triageIssues = useMemo(() =>
+  const allTriageIssues = useMemo(() =>
     allIssues.filter(
       (i: Issue) => i.source === 'form' || (i.assignee_ids.length === 0 && i.status === 'backlog')
     ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     [allIssues],
   );
 
+  // Unique org IDs from triage issues (for the filter dropdown)
+  const availableOrgs = useMemo(() => {
+    const orgs = new Map<string, string>();
+    for (const issue of allTriageIssues) {
+      if (issue.org_id) {
+        // Use display_id prefix as org label fallback (e.g. "LEG" from "LEG-5")
+        const prefix = issue.display_id?.split('-')[0] || issue.org_id.slice(0, 8);
+        if (!orgs.has(issue.org_id)) {
+          orgs.set(issue.org_id, prefix);
+        }
+      }
+    }
+    return Array.from(orgs.entries()).map(([id, label]) => ({ id, label }));
+  }, [allTriageIssues]);
+
+  // Apply org filter
+  const triageIssues = useMemo(() =>
+    orgFilter === 'all'
+      ? allTriageIssues
+      : allTriageIssues.filter((i) => i.org_id === orgFilter),
+    [allTriageIssues, orgFilter],
+  );
+
   const selectedIssue = triageIssues.find((i) => i.id === selectedId) || triageIssues[0] || null;
+
+  // Determine which issue's org to fetch members for:
+  // Use the assign dropdown issue if open, otherwise the selected issue
+  const assignDropdownIssue = triageIssues.find((i) => i.id === assignDropdownId);
+  const activeOrgId = assignDropdownIssue?.org_id || selectedIssue?.org_id;
+  const { members: issueOrgMembers } = useOrgMembers(activeOrgId);
 
   // Auto-select first
   useEffect(() => {
@@ -129,11 +159,10 @@ export function Triage() {
       if (assignDropdownId) {
         if (e.key === 'Escape') { e.preventDefault(); setAssignDropdownId(null); return; }
         const num = parseInt(e.key);
-        if (num >= 1 && num <= orgMembers.length) {
+        if (num >= 1 && num <= issueOrgMembers.length) {
           e.preventDefault();
-          const member = orgMembers[num - 1] as any;
-          const userId = member?.publicUserData?.userId;
-          if (userId) handleAssign(selectedIssue.id, userId);
+          const member = issueOrgMembers[num - 1];
+          if (member?.user_id) handleAssign(selectedIssue.id, member.user_id);
         }
         return; // Don't process other shortcuts while dropdown open
       }
@@ -153,7 +182,7 @@ export function Triage() {
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [selectedIssue, handleAccept, handleDecline, handleAssign, assignDropdownId, orgMembers, triageIssues]);
+  }, [selectedIssue, handleAccept, handleDecline, handleAssign, assignDropdownId, issueOrgMembers, triageIssues]);
 
   if (isLoading) {
     return (
@@ -176,10 +205,33 @@ export function Triage() {
             {triageIssues.length} {t('triage.issuesNeedAttention')}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-muted">
-          <kbd className="rounded bg-surface-hover px-1.5 py-0.5 font-mono">1</kbd> {t('triage.accept')}
-          <kbd className="rounded bg-surface-hover px-1.5 py-0.5 font-mono">2</kbd> {t('triage.assign')}
-          <kbd className="rounded bg-surface-hover px-1.5 py-0.5 font-mono">3</kbd> {t('triage.decline')}
+        <div className="flex items-center gap-3">
+          {/* Org filter */}
+          {availableOrgs.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <Filter size={12} className="text-muted" />
+              <select
+                value={orgFilter}
+                onChange={(e) => { setOrgFilter(e.target.value); setSelectedId(null); }}
+                className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-secondary focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                <option value="all">{t('triage.allOrgs') || 'All orgs'} ({allTriageIssues.length})</option>
+                {availableOrgs.map((org) => {
+                  const count = allTriageIssues.filter((i) => i.org_id === org.id).length;
+                  return (
+                    <option key={org.id} value={org.id}>
+                      {org.label} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+          <div className="flex items-center gap-2 text-[10px] text-muted">
+            <kbd className="rounded bg-surface-hover px-1.5 py-0.5 font-mono">1</kbd> {t('triage.accept')}
+            <kbd className="rounded bg-surface-hover px-1.5 py-0.5 font-mono">2</kbd> {t('triage.assign')}
+            <kbd className="rounded bg-surface-hover px-1.5 py-0.5 font-mono">3</kbd> {t('triage.decline')}
+          </div>
         </div>
       </div>
 
@@ -246,19 +298,17 @@ export function Triage() {
                     {assignDropdownId === issue.id && (
                       <div className="absolute right-0 top-full mt-1 z-50 rounded-xl border border-border bg-surface shadow-2xl py-1.5 min-w-[200px]">
                         <p className="px-3 py-1 text-[9px] font-semibold text-muted uppercase tracking-wider">{t('triage.assignTo')}</p>
-                        {orgMembers.map((m: any, idx: number) => {
-                          const userId = m.publicUserData?.userId;
-                          const name = `${m.publicUserData?.firstName || ''} ${m.publicUserData?.lastName || ''}`.trim() || userId?.slice(0, 12);
-                          const avatar = m.publicUserData?.imageUrl;
+                        {issueOrgMembers.map((m, idx) => {
+                          const name = `${m.first_name} ${m.last_name}`.trim() || m.email || m.user_id.slice(0, 12);
                           return (
                             <button
-                              key={userId}
-                              onClick={(e) => { e.stopPropagation(); handleAssign(issue.id, userId); }}
+                              key={m.user_id}
+                              onClick={(e) => { e.stopPropagation(); handleAssign(issue.id, m.user_id); }}
                               className="flex w-full items-center gap-2 px-3 py-2 text-xs text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
                             >
                               <kbd className="rounded bg-surface-hover px-1 py-0.5 text-[9px] font-mono text-muted min-w-[16px] text-center">{idx + 1}</kbd>
-                              {avatar ? (
-                                <img src={avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
+                              {m.image_url ? (
+                                <img src={m.image_url} alt="" className="w-5 h-5 rounded-full object-cover" />
                               ) : (
                                 <User size={14} />
                               )}

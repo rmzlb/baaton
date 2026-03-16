@@ -35,6 +35,7 @@ pub mod agent_config;
 pub mod agent_sessions;
 pub mod slack;
 pub(crate) mod admin;
+mod orgs;
 mod initiatives;
 mod import_export;
 pub mod gamification;
@@ -159,6 +160,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/public/{slug}/email-intake", post(email_intake::intake))
         .route("/issues/{id}/attachments", get(attachments::list).post(attachments::create))
         .route("/issues/{id}/attachments/{att_id}", delete(attachments::remove))
+        // Org members
+        .route("/orgs/{org_id}/members", get(orgs::list_members))
         // Admin (BAA-1)
         .route("/admin/orgs/{id}/plan", patch(admin::set_plan))
         .route("/admin/superadmin/check", get(admin::check_superadmin))

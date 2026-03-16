@@ -100,6 +100,8 @@ export interface Sprint {
 export interface Issue {
   id: string;
   project_id: string;
+  /** Populated by list_all / list_mine / get_one endpoints via JOIN */
+  org_id?: string;
   milestone_id: string | null;
   sprint_id: string | null;
   parent_id: string | null;

@@ -81,6 +81,10 @@ pub struct Milestone {
 pub struct Issue {
     pub id: Uuid,
     pub project_id: Uuid,
+    /// Populated via JOIN on projects.org_id in list endpoints; not stored on issues table.
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub org_id: Option<String>,
     pub milestone_id: Option<Uuid>,
     pub parent_id: Option<Uuid>,
     pub display_id: String,

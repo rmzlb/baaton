@@ -489,7 +489,7 @@ pub async fn list_users(
 }
 
 /// Fetch org members from Clerk API
-async fn fetch_org_members(org_id: &str) -> Vec<Value> {
+pub async fn fetch_org_members(org_id: &str) -> Vec<Value> {
     let clerk_key = std::env::var("CLERK_SECRET_KEY").unwrap_or_default();
     if clerk_key.is_empty() { return vec![]; }
 
