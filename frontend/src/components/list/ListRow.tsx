@@ -5,6 +5,7 @@ import {
 import { cn } from '@/lib/utils';
 import { timeAgo } from '@/lib/utils';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
+import { useMemberResolutionContext } from '@/contexts/MemberResolutionContext';
 import { CopyableId } from '@/components/shared/CopyableId';
 import { evaluateIssueSla } from '@/lib/sla';
 import type { Issue, IssuePriority, IssueType, ProjectStatus, ProjectTag } from '@/lib/types';
@@ -58,7 +59,10 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
   const priority = issue.priority ? priorityConfig[issue.priority] : null;
   const PriorityIcon = priority?.icon;
   const isDone = issue.status === 'done' || issue.status === 'cancelled';
-  const { resolveUserName, resolveUserAvatar } = useClerkMembers();
+  const crossOrg = useMemberResolutionContext();
+  const clerk = useClerkMembers();
+  const resolveUserName = crossOrg?.resolveUserName ?? clerk.resolveUserName;
+  const resolveUserAvatar = crossOrg?.resolveUserAvatar ?? clerk.resolveUserAvatar;
 
   const getTagColor = (tagName: string): string => {
     const found = projectTags.find((t) => t.name === tagName);

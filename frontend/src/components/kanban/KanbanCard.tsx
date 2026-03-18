@@ -7,6 +7,7 @@ import {
 import { cn, timeAgo } from '@/lib/utils';
 import { useUIStore } from '@/stores/ui';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
+import { useMemberResolutionContext } from '@/contexts/MemberResolutionContext';
 import { GitHubPrBadge } from '@/components/github/GitHubPrBadge';
 import { CopyableId } from '@/components/shared/CopyableId';
 import { evaluateIssueSla } from '@/lib/sla';
@@ -278,7 +279,10 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
   ) : null;
 
   const density = useUIStore((s) => s.density);
-  const { resolveUserName, resolveUserAvatar } = useClerkMembers();
+  const crossOrg = useMemberResolutionContext();
+  const clerk = useClerkMembers();
+  const resolveUserName = crossOrg?.resolveUserName ?? clerk.resolveUserName;
+  const resolveUserAvatar = crossOrg?.resolveUserAvatar ?? clerk.resolveUserAvatar;
   const PriorityConfig = issue.priority ? (priorityConfig[issue.priority] ?? null) : null;
   const isDone = issue.status === 'done' || issue.status === 'cancelled';
   const tags = userTags(issue.tags);

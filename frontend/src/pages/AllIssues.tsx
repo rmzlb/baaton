@@ -17,9 +17,10 @@ import {
   FolderOpen, User, Tag, Bookmark,
 } from 'lucide-react';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
-import { useClerkMembers } from '@/hooks/useClerkMembers';
+import { useCrossOrgMembers } from '@/hooks/useCrossOrgMembers';
+import { MemberResolutionProvider } from '@/contexts/MemberResolutionContext';
 import { cn } from '@/lib/utils';
-import type { Issue, IssueStatus, ProjectStatus, ProjectTag, SavedView } from '@/lib/types';
+import type { IssueStatus, ProjectStatus, ProjectTag, SavedView } from '@/lib/types';
 
 // ─── Statuses (global) ───────────────────────
 const STATUSES: ProjectStatus[] = [
@@ -224,8 +225,6 @@ export function AllIssues() {
     localStorage.setItem('baaton-view-all-issues', viewMode);
   }, [viewMode]);
 
-  const { resolveUserName, resolveUserAvatar } = useClerkMembers();
-
   // Filters
   const [projectFilter, setProjectFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
@@ -254,6 +253,14 @@ export function AllIssues() {
     },
     staleTime: 60_000,
   });
+
+  // Cross-org member resolution — collect all org IDs from issues
+  const issueOrgIds = useMemo(() => {
+    const ids = new Set<string>();
+    allIssuesRaw.forEach((i) => { if (i.org_id) ids.add(i.org_id); });
+    return Array.from(ids);
+  }, [allIssuesRaw]);
+  const { resolveUserName, resolveUserAvatar } = useCrossOrgMembers(issueOrgIds);
 
   const effectiveProjects = useMemo(() => {
     if (projects.length > 0) return projects;
@@ -508,6 +515,7 @@ export function AllIssues() {
   }
 
   return (
+    <MemberResolutionProvider resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar}>
     <div className="flex h-full flex-col">
       {/* ═══ Header ═══ */}
       <div className="flex items-center justify-between border-b border-border px-3 md:px-6 py-3 gap-2">
@@ -864,6 +872,7 @@ export function AllIssues() {
         />
       )}
     </div>
+    </MemberResolutionProvider>
   );
 }
 
