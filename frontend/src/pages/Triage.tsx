@@ -39,7 +39,7 @@ export function Triage() {
 
   const allTriageIssues = useMemo(() =>
     allIssues.filter(
-      (i: Issue) => i.source === 'form' || (i.assignee_ids.length === 0 && i.status === 'backlog')
+      (i: Issue) => i.status === 'backlog' && (i.source === 'form' || i.assignee_ids.length === 0)
     ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     [allIssues],
   );
@@ -99,7 +99,21 @@ export function Triage() {
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
       apiClient.issues.update(id, body as any),
-    onSuccess: () => {
+    onMutate: async ({ id }) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: ['all-issues'] });
+      // Snapshot the previous value for rollback
+      const previous = queryClient.getQueryData<Issue[]>(['all-issues']);
+      return { previous, removedId: id };
+    },
+    onError: (_err, _vars, context) => {
+      // Rollback to the previous state on error
+      if (context?.previous) {
+        queryClient.setQueryData(['all-issues'], context.previous);
+      }
+    },
+    onSettled: () => {
+      // Always refetch after mutation settles to ensure server state
       queryClient.invalidateQueries({ queryKey: ['all-issues'] });
     },
   });
