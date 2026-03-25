@@ -192,6 +192,7 @@ export function App() {
             <Route path="/ai" element={<AIChat />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/projects/:slug/context" element={<ProjectContext />} />
+            <Route path="/context" element={<ProjectContext />} />
             <Route path="/templates" element={<ProjectTemplates />} />
 
             <Route

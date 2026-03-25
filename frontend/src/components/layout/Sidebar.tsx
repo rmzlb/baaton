@@ -6,14 +6,14 @@ import {
   LayoutDashboard, Kanban, PanelLeftClose, PanelLeft, X,
   Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox,
   CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink, KeyRound, Search,
-  Flag, Workflow, CreditCard, Bot, Sparkles, Shield, Plug, Brain, LayoutTemplate, ChevronDown,
+  Flag, Workflow, CreditCard, Bot, Sparkles, Shield, Plug, Brain, LayoutTemplate,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useApi } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
 import { PixelTanuki } from '@/components/shared/PixelTanuki';
-import type { Issue, Project } from '@/lib/types';
+import type { Issue } from '@/lib/types';
 
 export function Sidebar() {
   const { t, i18n } = useTranslation();
@@ -29,14 +29,6 @@ export function Sidebar() {
   const currentProjectSlug = projectSlugMatch ? projectSlugMatch[1] : null;
 
   const apiClient = useApi();
-
-  const [showProjectPicker, setShowProjectPicker] = useState(false);
-
-  const { data: projects = [] } = useQuery({
-    queryKey: ['projects-sidebar'],
-    queryFn: () => apiClient.projects.list(),
-    staleTime: 60_000,
-  });
 
   const { data: savedViews = [] } = useQuery({
     queryKey: ['saved-views'],
@@ -102,16 +94,11 @@ export function Sidebar() {
     { to: '/projects', icon: Kanban, label: t('sidebar.projects'), tourId: 'projects-list' },
   ];
 
-  // For project-scoped items: use current project if on project page, otherwise first project as fallback
-  const fallbackSlug = projects.length > 0 ? projects[0].slug : null;
-  const activeProjectSlug = currentProjectSlug || fallbackSlug;
-  const activeProject = projects.find(p => p.slug === activeProjectSlug);
-
   const planItems = [
     { to: currentProjectSlug ? `/projects/${currentProjectSlug}/milestones` : '/milestones', icon: Target, label: t('sidebar.milestones') },
     { to: '/roadmap', icon: CalendarRange, label: t('sidebar.roadmap') },
-    ...(activeProjectSlug ? [{ to: `/projects/${activeProjectSlug}/sprints`, icon: Zap, label: t('sidebar.sprints') }] : []),
-    ...(activeProjectSlug ? [{ to: `/projects/${activeProjectSlug}/context`, icon: Brain, label: 'Context' }] : []),
+    ...(currentProjectSlug ? [{ to: `/projects/${currentProjectSlug}/sprints`, icon: Zap, label: t('sidebar.sprints') }] : []),
+    { to: currentProjectSlug ? `/projects/${currentProjectSlug}/context` : '/context', icon: Brain, label: 'Context' },
     { to: '/initiatives', icon: Flag, label: t('sidebar.initiatives') },
   ];
 
@@ -263,42 +250,6 @@ export function Sidebar() {
           {coreItems.map((item) => <NavItem key={item.to} {...item} />)}
 
           <Divider label={t('sidebar.planning')} />
-          {/* Project scope selector — only when not on a project page */}
-          {!currentProjectSlug && projects.length > 1 && !isCompact && (
-            <div className="relative px-1 mb-1">
-              <button
-                onClick={() => setShowProjectPicker(v => !v)}
-                className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] bg-surface border border-border/50 hover:border-border transition-colors"
-              >
-                <Kanban size={12} className="text-accent shrink-0" />
-                <span className="flex-1 truncate text-left text-secondary">
-                  {activeProject?.name || 'Select project'}
-                </span>
-                <ChevronDown size={12} className={cn('text-muted transition-transform', showProjectPicker && 'rotate-180')} />
-              </button>
-              {showProjectPicker && (
-                <div className="absolute left-1 right-1 top-full mt-1 z-50 rounded-lg border border-border bg-bg shadow-xl max-h-48 overflow-y-auto">
-                  {projects.map((p: Project) => (
-                    <button
-                      key={p.id}
-                      onClick={() => {
-                        // Navigate to this project's board to set it as active
-                        window.location.href = `/projects/${p.slug}`;
-                        setShowProjectPicker(false);
-                      }}
-                      className={cn(
-                        'w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left hover:bg-surface-hover transition-colors',
-                        p.slug === activeProjectSlug ? 'text-accent font-medium' : 'text-secondary',
-                      )}
-                    >
-                      <span className="truncate">{p.name}</span>
-                      <span className="text-[9px] text-muted ml-auto">{p.prefix}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
           {planItems.map((item) => <NavItem key={item.to} {...item} />)}
 
           <Divider label={t('sidebar.tools')} />
