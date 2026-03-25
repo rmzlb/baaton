@@ -387,6 +387,9 @@ pub struct IssueDetail {
     pub tldrs: Vec<Tldr>,
     pub comments: Vec<Comment>,
     pub agent_session: Option<AgentSession>,
+    /// Compact one-line summary for LLM context efficiency
+    #[serde(rename = "_context")]
+    pub context_summary: String,
 }
 
 // ─── Project Tag ──────────────────────────────────────

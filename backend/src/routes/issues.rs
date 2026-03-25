@@ -1106,11 +1106,28 @@ pub async fn get_one(
         ));
     }
 
+    // Build compact _context summary for LLM efficiency
+    let context_summary = format!(
+        "{} [{}|{}] {} — {} comments, {} TLDRs{}",
+        issue.display_id,
+        issue.status,
+        issue.priority.as_deref().unwrap_or("no-priority"),
+        issue.title,
+        comments.len(),
+        tldrs.len(),
+        if let Some(ref s) = agent_session {
+            format!(", agent:{} ({})", s.agent_name, s.status)
+        } else {
+            String::new()
+        },
+    );
+
     Ok(Json(ApiResponse::with_hints(IssueDetail {
         issue,
         tldrs,
         comments,
         agent_session,
+        context_summary,
     }, hints)))
 }
 
