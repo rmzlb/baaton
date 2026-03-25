@@ -31,7 +31,7 @@ pub async fn run_triage_analysis(
     org_id: &str,
 ) -> Result<TriageSuggestion, String> {
     let issue = sqlx::query_as::<_, (String, Option<String>, Uuid)>(
-        "SELECT title, description, project_id FROM issues WHERE id = $1 AND org_id = $2"
+        "SELECT i.title, i.description, i.project_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2"
     )
     .bind(issue_id)
     .bind(org_id)
