@@ -1984,6 +1984,37 @@ function TldrCard({ tldr }: { tldr: TLDR }) {
           </a>
         )}
       </div>
+      {/* Handoff fields */}
+      {tldr.decisions_made && tldr.decisions_made.length > 0 && (
+        <div className="mt-2 pt-1.5 border-t border-border/50">
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-accent/70">Decisions</span>
+          <ul className="mt-0.5 space-y-0.5">
+            {tldr.decisions_made.map((d: string, i: number) => (
+              <li key={i} className="text-[10px] text-secondary flex gap-1"><span className="text-accent/50">•</span>{d}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {tldr.edge_cases && tldr.edge_cases.length > 0 && (
+        <div className="mt-1.5 pt-1.5 border-t border-border/50">
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-yellow-400/70">Edge Cases</span>
+          <ul className="mt-0.5 space-y-0.5">
+            {tldr.edge_cases.map((e: string, i: number) => (
+              <li key={i} className="text-[10px] text-secondary flex gap-1"><span className="text-yellow-400/50">⚠</span>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {tldr.context_updates && tldr.context_updates.length > 0 && (
+        <div className="mt-1.5 pt-1.5 border-t border-border/50">
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-blue-400/70">Context Updates</span>
+          <ul className="mt-0.5 space-y-0.5">
+            {tldr.context_updates.map((c: string, i: number) => (
+              <li key={i} className="text-[10px] text-secondary flex gap-1"><span className="text-blue-400/50">↑</span>{c}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

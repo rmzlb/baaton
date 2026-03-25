@@ -34,6 +34,8 @@ const Admin = lazy(() => import('./pages/Admin'));
 const AIChat = lazy(() => import('./pages/AIChat'));
 // TableView integrated into AllIssues as 3rd view mode
 const Integrations = lazy(() => import('./pages/Integrations'));
+const ProjectContext = lazy(() => import('./pages/ProjectContext'));
+const ProjectTemplates = lazy(() => import('./pages/ProjectTemplates'));
 
 
 const isAppDomain = window.location.hostname === 'app.baaton.dev';
@@ -189,6 +191,8 @@ export function App() {
             <Route path="/admin" element={<Admin />} />
             <Route path="/ai" element={<AIChat />} />
             <Route path="/integrations" element={<Integrations />} />
+            <Route path="/projects/:slug/context" element={<ProjectContext />} />
+            <Route path="/templates" element={<ProjectTemplates />} />
 
             <Route
               path="/org/*"

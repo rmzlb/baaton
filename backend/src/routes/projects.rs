@@ -195,6 +195,46 @@ pub async fn create(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
+    // ── Apply template if provided ────────────────────
+    if let Some(template_id) = body.template_id {
+        let tmpl_context: Option<serde_json::Value> = sqlx::query_scalar(
+            "SELECT default_context FROM project_templates WHERE id = $1 AND (is_system = true OR org_id = $2)"
+        )
+        .bind(template_id)
+        .bind(&effective_org)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten();
+
+        if let Some(ctx) = tmpl_context {
+            let stack = ctx.get("stack").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let conventions = ctx.get("conventions").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let architecture = ctx.get("architecture").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let constraints = ctx.get("constraints").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let current_focus = ctx.get("current_focus").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let learnings = ctx.get("learnings").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+            let _ = sqlx::query(
+                r#"
+                INSERT INTO project_contexts (project_id, org_id, stack, conventions, architecture, constraints, current_focus, learnings)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (project_id) DO NOTHING
+                "#,
+            )
+            .bind(project.id)
+            .bind(&effective_org)
+            .bind(stack)
+            .bind(conventions)
+            .bind(architecture)
+            .bind(constraints)
+            .bind(current_focus)
+            .bind(learnings)
+            .execute(&pool)
+            .await;
+        }
+    }
+
     // Webhook dispatch
     crate::routes::webhooks::dispatch_event(
         pool.clone(), effective_org.clone(), "project.created",

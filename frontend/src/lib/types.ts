@@ -150,6 +150,9 @@ export interface TLDR {
   files_changed: string[];
   tests_status: TestsStatus;
   pr_url: string | null;
+  decisions_made: string[];
+  edge_cases: string[];
+  context_updates: string[];
   created_at: string;
 }
 
@@ -306,6 +309,70 @@ export interface CreateTLDRRequest {
   files_changed?: string[];
   tests_status?: TestsStatus;
   pr_url?: string;
+  decisions_made?: string[];
+  edge_cases?: string[];
+  context_updates?: string[];
+}
+
+// ─── Project Context ──────────────────────────────────
+
+export interface ProjectContext {
+  id: string;
+  project_id: string;
+  org_id: string;
+  stack: string | null;
+  conventions: string | null;
+  architecture: string | null;
+  constraints: string | null;
+  current_focus: string | null;
+  learnings: string | null;
+  custom_context: Record<string, unknown>;
+  updated_at: string;
+  created_at: string;
+}
+
+// ─── Project Template ─────────────────────────────────
+
+export interface ProjectTemplate {
+  id: string;
+  org_id: string | null;
+  name: string;
+  description: string | null;
+  default_context: Record<string, unknown>;
+  default_statuses: unknown | null;
+  default_tags: string[];
+  is_system: boolean;
+  created_at: string;
+}
+
+// ─── Dependency Graph ─────────────────────────────────
+
+export interface DependencyNode {
+  id: string;
+  display_id: string;
+  title: string;
+  status: string;
+  priority: string | null;
+}
+
+export interface DependencyEdge {
+  source: string;
+  target: string;
+  type: string;
+}
+
+export interface BlockedIssue {
+  id: string;
+  display_id: string;
+  title: string;
+  blocked_by: string[];
+}
+
+export interface DependencyGraph {
+  nodes: DependencyNode[];
+  edges: DependencyEdge[];
+  suggested_order: string[];
+  blocked_issues: BlockedIssue[];
 }
 
 export interface ProjectTag {

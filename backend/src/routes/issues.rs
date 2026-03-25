@@ -893,6 +893,82 @@ pub async fn create(
     // ── SSE broadcast ────────────────────────────────
     broadcast_event(&sse_tx, org_id, "issue.created", &serde_json::to_string(&issue).unwrap_or_default());
 
+    // ── Auto-triage (fire-and-forget if enabled) ──────
+    // Skip if priority already set (issue came pre-triaged from API/agent)
+    if issue.priority.is_none() || issue.priority.as_deref() == Some("") {
+        let pool2 = pool.clone();
+        let oid = org_id.to_string();
+        let uid = auth.user_id.clone();
+        let uname = auth.display_name.clone();
+        let iid = issue.id;
+        let pid = issue.project_id;
+        tokio::spawn(async move {
+            // Rate limit: max 5 auto-triages per minute per org
+            let recent_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM activity_log WHERE action = 'auto_triage_applied' AND details->>'org_id' IS NOT NULL AND created_at > now() - interval '1 minute'"
+            )
+            .fetch_one(&pool2)
+            .await
+            .unwrap_or(0);
+
+            if recent_count >= 5 {
+                tracing::warn!("Auto-triage rate limit hit for org {}", oid);
+                return;
+            }
+
+            // Check if auto_triage_enabled for any config in this org
+            let config = sqlx::query_as::<_, (bool, bool)>(
+                "SELECT auto_triage_enabled, auto_triage_auto_apply FROM agent_configs WHERE org_id = $1 AND auto_triage_enabled = true LIMIT 1"
+            )
+            .bind(&oid)
+            .fetch_optional(&pool2)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some((true, auto_apply)) = config {
+                // Run triage analysis
+                if let Ok(suggestion) = crate::routes::triage::run_triage_analysis(&pool2, iid, &oid).await {
+                    if auto_apply {
+                        // Apply suggested priority and tags
+                        let priority = suggestion.suggested_priority.clone();
+                        let tags = suggestion.suggested_tags.clone();
+
+                        let _ = sqlx::query(
+                            "UPDATE issues SET priority = COALESCE($1, priority), tags = CASE WHEN array_length($2::text[], 1) > 0 THEN $2::text[] ELSE tags END, updated_at = now() WHERE id = $3"
+                        )
+                        .bind(&priority)
+                        .bind(&tags)
+                        .bind(iid)
+                        .execute(&pool2)
+                        .await;
+
+                        // Log activity
+                        crate::routes::activity::log_activity(
+                            &pool2, &oid, Some(pid), Some(iid), &uid, uname.as_deref(),
+                            "auto_triage_applied", Some("priority"),
+                            None, priority.as_deref(),
+                            Some(serde_json::json!({"tags": tags, "reasoning": suggestion.reasoning})),
+                        ).await;
+
+                        // Fire webhook
+                        crate::routes::webhooks::dispatch_event(
+                            pool2.clone(),
+                            oid.clone(),
+                            "issue.auto_triaged",
+                            serde_json::json!({
+                                "issue_id": iid.to_string(),
+                                "priority": priority,
+                                "tags": tags,
+                                "auto_applied": true,
+                            }),
+                        ).await;
+                    }
+                }
+            }
+        });
+    } // end auto-triage guard
+
     // AI-first: action hints for agents
     let hints = vec![
         crate::models::ActionHint::recommended(

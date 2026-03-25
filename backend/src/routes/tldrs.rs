@@ -29,10 +29,14 @@ pub async fn create(
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
     }
 
+    let decisions_made = body.decisions_made.clone().unwrap_or_default();
+    let edge_cases = body.edge_cases.clone().unwrap_or_default();
+    let context_updates = body.context_updates.clone().unwrap_or_default();
+
     let tldr = sqlx::query_as::<_, Tldr>(
         r#"
-        INSERT INTO tldrs (issue_id, agent_name, summary, files_changed, tests_status, pr_url)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO tldrs (issue_id, agent_name, summary, files_changed, tests_status, pr_url, decisions_made, edge_cases, context_updates)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         "#,
     )
@@ -42,6 +46,9 @@ pub async fn create(
     .bind(&body.files_changed.unwrap_or_default())
     .bind(body.tests_status.as_deref().unwrap_or("none"))
     .bind(&body.pr_url)
+    .bind(&decisions_made)
+    .bind(&edge_cases)
+    .bind(&context_updates)
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -60,6 +67,20 @@ pub async fn create(
             .fetch_optional(&pool)
             .await
             .unwrap_or(None);
+
+        // If context_updates present, append to project_contexts.learnings
+        if !context_updates.is_empty() {
+            if let Some(project_id) = pid {
+                let pool3 = pool.clone();
+                let oid2 = org_id.to_string();
+                let updates = context_updates.join("\n- ");
+                let content = format!("[{}] Context updates from {}:\n- {}", tldr.created_at.format("%Y-%m-%d"), body.agent_name, updates);
+                tokio::spawn(async move {
+                    crate::routes::project_context::append_to_learnings(&pool3, project_id, &oid2, &content).await;
+                });
+            }
+        }
+
         tokio::spawn(async move {
             crate::routes::activity::log_activity(
                 &pool2, &oid, pid, Some(iid), &uid, uname.as_deref(),

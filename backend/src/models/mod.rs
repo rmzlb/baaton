@@ -45,6 +45,7 @@ pub struct CreateProject {
     pub auto_assign_mode: Option<String>,
     pub default_assignee_id: Option<String>,
     pub github_repo_url: Option<String>,
+    pub template_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -284,6 +285,9 @@ pub struct Tldr {
     pub files_changed: Vec<String>,
     pub tests_status: String,
     pub pr_url: Option<String>,
+    pub decisions_made: Vec<String>,
+    pub edge_cases: Vec<String>,
+    pub context_updates: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -294,6 +298,68 @@ pub struct CreateTldr {
     pub files_changed: Option<Vec<String>>,
     pub tests_status: Option<String>,
     pub pr_url: Option<String>,
+    pub decisions_made: Option<Vec<String>>,
+    pub edge_cases: Option<Vec<String>>,
+    pub context_updates: Option<Vec<String>>,
+}
+
+// ─── Project Context ───────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct ProjectContext {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub org_id: String,
+    pub stack: Option<String>,
+    pub conventions: Option<String>,
+    pub architecture: Option<String>,
+    pub constraints: Option<String>,
+    pub current_focus: Option<String>,
+    pub learnings: Option<String>,
+    pub custom_context: serde_json::Value,
+    pub updated_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProjectContext {
+    pub stack: Option<String>,
+    pub conventions: Option<String>,
+    pub architecture: Option<String>,
+    pub constraints: Option<String>,
+    pub current_focus: Option<String>,
+    pub learnings: Option<String>,
+    pub custom_context: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AppendContextField {
+    pub field_name: String,
+    pub content: String,
+}
+
+// ─── Project Template ──────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct ProjectTemplate {
+    pub id: Uuid,
+    pub org_id: Option<String>,
+    pub name: String,
+    pub description: Option<String>,
+    pub default_context: serde_json::Value,
+    pub default_statuses: Option<serde_json::Value>,
+    pub default_tags: Vec<String>,
+    pub is_system: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProjectTemplate {
+    pub name: String,
+    pub description: Option<String>,
+    pub default_context: Option<serde_json::Value>,
+    pub default_statuses: Option<serde_json::Value>,
+    pub default_tags: Option<Vec<String>>,
 }
 
 // ─── Comment ──────────────────────────────────────────

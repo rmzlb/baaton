@@ -24,62 +24,53 @@ pub struct SimilarIssue {
     pub similarity: String,
 }
 
-/// POST /api/v1/issues/{id}/triage — AI-powered triage suggestions
-pub async fn analyze(
-    Extension(auth): Extension<AuthUser>,
-    State(pool): State<PgPool>,
-    Path(issue_id): Path<Uuid>,
-) -> Result<Json<ApiResponse<TriageSuggestion>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // Get the issue to analyze
+/// Internal helper: run triage analysis for a given issue. Returns TriageSuggestion.
+pub async fn run_triage_analysis(
+    pool: &PgPool,
+    issue_id: Uuid,
+    org_id: &str,
+) -> Result<TriageSuggestion, String> {
     let issue = sqlx::query_as::<_, (String, Option<String>, Uuid)>(
         "SELECT title, description, project_id FROM issues WHERE id = $1 AND org_id = $2"
     )
     .bind(issue_id)
     .bind(org_id)
-    .fetch_optional(&pool)
+    .fetch_optional(pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Issue not found".to_string())?;
 
     let (title, description, project_id) = issue;
 
-    // Get recent issues for similarity context
     let recent_issues = sqlx::query_as::<_, (Uuid, String, String, String, String)>(
         "SELECT id, display_id, title, status, priority FROM issues WHERE project_id = $1 AND id != $2 ORDER BY created_at DESC LIMIT 30"
     )
     .bind(project_id)
     .bind(issue_id)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     .unwrap_or_default();
 
-    // Get available tags
     let tags = sqlx::query_as::<_, (String,)>(
         "SELECT name FROM project_tags WHERE project_id = $1"
     )
     .bind(project_id)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     .unwrap_or_default();
 
-    // Get available assignees (unique from recent issues)
     let assignees = sqlx::query_as::<_, (String,)>(
         "SELECT DISTINCT unnest(assignee_ids) as uid FROM issues WHERE project_id = $1 AND assignee_ids != '{}' LIMIT 10"
     )
     .bind(project_id)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     .unwrap_or_default();
 
-    // Build prompt
     let recent_list = recent_issues.iter()
         .map(|(_, did, t, s, p)| format!("- {} [{}] (priority:{}) {}", did, s, p, t))
         .collect::<Vec<_>>()
         .join("\n");
-
     let tag_list = tags.iter().map(|(t,)| t.as_str()).collect::<Vec<_>>().join(", ");
     let assignee_list = assignees.iter().map(|(a,)| a.as_str()).collect::<Vec<_>>().join(", ");
 
@@ -93,15 +84,15 @@ Description: {}
 AVAILABLE TAGS: {}
 AVAILABLE ASSIGNEES: {}
 
-RECENT ISSUES (for similarity detection):
+RECENT ISSUES:
 {}
 
-Respond ONLY with valid JSON (no markdown, no code blocks):
+Respond ONLY with valid JSON:
 {{
   "suggested_priority": "urgent|high|medium|low",
   "suggested_tags": ["tag1"],
-  "suggested_assignee": "user_id or null",
-  "similar_issues": [{{ "display_id": "XXX-1", "similarity": "high|medium|low" }}],
+  "suggested_assignee": null,
+  "similar_issues": [],
   "reasoning": "Brief explanation"
 }}"#,
         title,
@@ -111,64 +102,76 @@ Respond ONLY with valid JSON (no markdown, no code blocks):
         if recent_list.is_empty() { "none".to_string() } else { recent_list },
     );
 
-    // Call Gemini API
     let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_default();
     if api_key.is_empty() {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "AI service not configured"}))));
+        return Err("GEMINI_API_KEY not set".to_string());
     }
 
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}", api_key))
-        .json(&json!({
+        .json(&serde_json::json!({
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.3, "maxOutputTokens": 500}
         }))
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(json!({"error": format!("AI request failed: {}", e)}))))?;
+        .map_err(|e| e.to_string())?;
 
-    let body: serde_json::Value = resp.json().await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(json!({"error": format!("AI response parse failed: {}", e)}))))?;
-
-    // Extract text from Gemini response
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
     let text = body["candidates"][0]["content"]["parts"][0]["text"]
         .as_str()
         .unwrap_or("{}");
-
-    // Clean JSON (remove markdown code blocks if present)
     let clean = text.trim()
         .trim_start_matches("```json")
         .trim_start_matches("```")
         .trim_end_matches("```")
         .trim();
 
-    let suggestion: TriageSuggestion = serde_json::from_str(clean)
+    let mut suggestion: TriageSuggestion = serde_json::from_str(clean)
         .unwrap_or(TriageSuggestion {
             suggested_priority: Some("medium".into()),
             suggested_tags: vec![],
             suggested_assignee: None,
             similar_issues: vec![],
-            reasoning: format!("AI parsing failed. Raw: {}", &clean[..clean.len().min(200)]),
+            reasoning: "AI parse failed".to_string(),
         });
 
-    // Map similar_issues to include actual IDs
-    let mut enriched_similar = Vec::new();
-    for sim in &suggestion.similar_issues {
-        if let Some(found) = recent_issues.iter().find(|(_, did, _, _, _)| did == &sim.display_id) {
-            enriched_similar.push(SimilarIssue {
-                id: found.0.to_string(),
-                display_id: found.1.clone(),
-                title: found.2.clone(),
-                similarity: sim.similarity.clone(),
-            });
-        }
-    }
+    // Enrich similar issues with IDs
+    suggestion.similar_issues = suggestion.similar_issues.iter()
+        .filter_map(|sim| {
+            recent_issues.iter().find(|(_, did, _, _, _)| did == &sim.display_id)
+                .map(|found| SimilarIssue {
+                    id: found.0.to_string(),
+                    display_id: found.1.clone(),
+                    title: found.2.clone(),
+                    similarity: sim.similarity.clone(),
+                })
+        })
+        .collect();
 
-    let result = TriageSuggestion {
-        similar_issues: enriched_similar,
-        ..suggestion
-    };
+    Ok(suggestion)
+}
+
+/// POST /api/v1/issues/{id}/triage — AI-powered triage suggestions
+pub async fn analyze(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(issue_id): Path<Uuid>,
+) -> Result<Json<ApiResponse<TriageSuggestion>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let result = run_triage_analysis(&pool, issue_id, org_id).await
+        .map_err(|e| {
+            if e == "Issue not found" {
+                (StatusCode::NOT_FOUND, Json(json!({"error": e})))
+            } else if e == "GEMINI_API_KEY not set" {
+                (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "AI service not configured"})))
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e})))
+            }
+        })?;
 
     Ok(Json(ApiResponse::new(result)))
 }

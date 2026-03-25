@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Kanban, PanelLeftClose, PanelLeft, X,
   Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox,
   CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink, KeyRound, Search,
-  Flag, Workflow, CreditCard, Bot, Sparkles, Shield, Plug,
+  Flag, Workflow, CreditCard, Bot, Sparkles, Shield, Plug, Brain, LayoutTemplate,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -98,6 +98,7 @@ export function Sidebar() {
     { to: currentProjectSlug ? `/projects/${currentProjectSlug}/milestones` : '/milestones', icon: Target, label: t('sidebar.milestones') },
     { to: '/roadmap', icon: CalendarRange, label: t('sidebar.roadmap') },
     ...(currentProjectSlug ? [{ to: `/projects/${currentProjectSlug}/sprints`, icon: Zap, label: t('sidebar.sprints') }] : []),
+    ...(currentProjectSlug ? [{ to: `/projects/${currentProjectSlug}/context`, icon: Brain, label: 'Context' }] : []),
     { to: '/initiatives', icon: Flag, label: t('sidebar.initiatives') },
   ];
 
@@ -113,6 +114,7 @@ export function Sidebar() {
     ...(isSuperAdmin ? [{ to: '/admin', icon: Shield, label: t('sidebar.admin') }] : []),
     { to: currentProjectSlug ? `/projects/${currentProjectSlug}/automations` : '/automations', icon: Workflow, label: t('sidebar.automations') },
     { to: '/integrations', icon: Plug, label: t('sidebar.integrations') },
+    { to: '/templates', icon: LayoutTemplate, label: 'Templates' },
   ];
 
   /* ─── Render Helpers ─────────────────────── */

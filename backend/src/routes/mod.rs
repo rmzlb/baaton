@@ -41,6 +41,8 @@ mod import_export;
 pub mod gamification;
 pub mod sse;
 pub mod event_bus;
+pub mod project_context;
+pub mod project_templates;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -194,6 +196,14 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/agent-sessions/{id}/steps", get(agent_sessions::list_steps).post(agent_sessions::create_step))
         .route("/agent-sessions/{id}/stream", get(agent_sessions::stream_steps))
         .route("/issues/{id}/agent-sessions", get(agent_sessions::list_by_issue))
+        // Project Context
+        .route("/projects/{id}/context", get(project_context::get_or_create).patch(project_context::update))
+        .route("/projects/{id}/context/append", post(project_context::append))
+        // Dependency Graph
+        .route("/projects/{id}/dependency-graph", get(relations::dependency_graph))
+        // Project Templates
+        .route("/project-templates", get(project_templates::list).post(project_templates::create))
+        .route("/project-templates/{id}", delete(project_templates::remove))
         // SSE real-time events
         .route("/events", get(sse::event_stream))
         // Slack (BAA-25)
