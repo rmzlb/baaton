@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { ListView } from '@/components/list/ListView';
@@ -18,7 +18,7 @@ import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2, Settings, Github, Star, GitFork, Circle, RefreshCw, ExternalLink, X, Download, Upload } from 'lucide-react';
+import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2, Settings, Github, Star, GitFork, Circle, RefreshCw, ExternalLink, X, Download, Upload, Brain } from 'lucide-react';
 import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { cn } from '@/lib/utils';
 import type { Issue, IssueStatus, ProjectStatus } from '@/lib/types';
@@ -299,6 +299,14 @@ export function ProjectBoard() {
               <List size={16} />
             </button>
           </div>
+
+          <Link
+            to={`/projects/${slug}/context`}
+            className="rounded-lg border border-border bg-surface p-1.5 text-secondary hover:bg-surface-hover hover:text-accent transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+            title="Project Context"
+          >
+            <Brain size={16} />
+          </Link>
 
           <button
             onClick={() => setShowProjectSettings(true)}
