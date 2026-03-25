@@ -1042,6 +1042,13 @@ pub async fn get_one(
     // AI-first: contextual hints based on issue state
     let mut hints = vec![];
 
+    // Always suggest pulling project context first
+    hints.push(crate::models::ActionHint::recommended(
+        "pull_context",
+        "Pull project context before starting work — stack, conventions, constraints. If your work changes any of these, update the context.",
+        Some(&format!("GET /projects/{}/context", issue.project_id)),
+    ));
+
     if issue.status == "backlog" || issue.status == "todo" {
         if issue.assignee_ids.is_empty() {
             hints.push(crate::models::ActionHint::recommended(
@@ -1551,8 +1558,20 @@ pub async fn update(
         if issue.status == "done" || issue.status == "cancelled" {
             hints.push(crate::models::ActionHint::recommended(
                 "add_tldr",
-                "Issue closed. Add a TLDR summarizing what was done, decisions made, and any follow-ups needed.",
+                "Issue closed. Add a TLDR summarizing what was done, decisions made, and any follow-ups needed. Include context_updates for learnings.",
                 Some(&format!("POST /issues/{}/tldr", issue.id)),
+            ));
+            hints.push(crate::models::ActionHint::recommended(
+                "review_context",
+                "Work complete — review project context. Did this change the stack, conventions, or reveal new constraints? Update if needed.",
+                Some(&format!("PATCH /projects/{}/context", issue.project_id)),
+            ));
+        }
+        if issue.status == "in_review" {
+            hints.push(crate::models::ActionHint::optional(
+                "review_context",
+                "Moving to review — check if project context needs updating (new patterns, decisions, or constraints discovered).",
+                Some(&format!("GET /projects/{}/context", issue.project_id)),
             ));
         }
     }
