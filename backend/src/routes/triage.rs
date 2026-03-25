@@ -163,6 +163,7 @@ pub struct TriageIssue {
     pub description: Option<String>,
     pub status: String,
     pub priority: Option<String>,
+    #[sqlx(rename = "type")]
     pub issue_type: Option<String>,
     pub project_id: Uuid,
     pub project_name: String,
@@ -182,9 +183,10 @@ pub async fn list_untriaged(
 
     let issues = sqlx::query_as::<_, TriageIssue>(
         r#"
-        SELECT i.id, i.display_id, i.title, i.description, i.status, i.priority, i.issue_type,
+        SELECT i.id, i.display_id, i.title, i.description, i.status, i.priority,
                i.project_id, p.name AS project_name, p.prefix AS project_prefix,
-               i.source, i.created_at
+               i.source, i.created_at,
+               i.type AS issue_type
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE p.org_id = $1
