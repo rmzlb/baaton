@@ -42,10 +42,10 @@ curl -s -X POST $BAATON/issues/ISSUE_ID/tldr -H "Authorization: Bearer $KEY" \
 - **Issue Type:** `bug` | `feature` | `improvement` | `question`
 - **Status:** per-project (default: `backlog` | `todo` | `in_progress` | `in_review` | `done` | `cancelled`)
 - **Tests Status:** `passed` | `failed` | `skipped` | `none`
-- **Webhook Events:** `issue.created` | `issue.updated` | `issue.deleted` | `issue.archived` | `issue.unarchived` | `status.changed` | `comment.created` | `comment.deleted` | `project.created` | `project.updated` | `project.deleted` | `milestone.created` | `milestone.updated` | `milestone.completed` | `sprint.created` | `sprint.completed` | `tldr.created` | `approval.requested` | `approval.responded`
+- **Webhook Events:** `issue.created` | `issue.updated` | `issue.deleted` | `issue.archived` | `issue.unarchived` | `issue.auto_triaged` | `status.changed` | `comment.created` | `comment.deleted` | `project.created` | `project.updated` | `project.deleted` | `milestone.created` | `milestone.updated` | `milestone.completed` | `sprint.created` | `sprint.completed` | `tldr.created` | `approval.requested` | `approval.responded`
 - **Automation Triggers:** `status_changed` | `priority_changed` | `label_added` | `issue_created` | `comment_added` | `assignee_changed` | `due_date_passed`
 - **Automation Actions:** `set_status` | `set_priority` | `add_label` | `assign_user` | `send_webhook` | `add_comment` | `run_agent`
-- **Permissions:** `issues:read` | `issues:write` | `issues:delete` | `projects:read` | `projects:write` | `projects:delete` | `comments:read` | `comments:write` | `comments:delete` | `labels:read` | `labels:write` | `milestones:read` | `milestones:write` | `sprints:read` | `sprints:write` | `automations:read` | `automations:write` | `webhooks:read` | `webhooks:write` | `members:read` | `members:invite` | `ai:chat` | `ai:triage` | `billing:read` | `admin:full`
+- **Permissions:** `issues:read` | `issues:write` | `issues:delete` | `projects:read` | `projects:write` | `projects:delete` | `comments:read` | `comments:write` | `comments:delete` | `labels:read` | `labels:write` | `milestones:read` | `milestones:write` | `sprints:read` | `sprints:write` | `automations:read` | `automations:write` | `webhooks:read` | `webhooks:write` | `members:read` | `members:invite` | `ai:chat` | `ai:triage` | `context:read` | `context:write` | `templates:read` | `templates:write` | `billing:read` | `admin:full`
 
 ---
 
@@ -270,17 +270,163 @@ curl -s -X POST $BAATON/issues/ISSUE_ID/tldr -H "Authorization: Bearer $KEY" \
     "summary": "Refactored auth module to use async timeouts. Added retry logic for slow connections. All tests pass.",
     "files_changed": ["src/auth.rs", "src/config.rs", "tests/auth_test.rs"],
     "tests_status": "passed",
-    "pr_url": "https://github.com/org/repo/pull/42"
+    "pr_url": "https://github.com/org/repo/pull/42",
+    "decisions_made": ["Switched from sync to async timeouts for better concurrency"],
+    "edge_cases": ["Timeout of 0ms now returns immediately instead of hanging"],
+    "context_updates": ["Auth module now requires tokio runtime"]
   }'
 ```
 
-| Field | Type | Required |
-|-------|------|----------|
-| agent_name | string | yes |
-| summary | string | yes |
-| files_changed | string[] | no |
-| tests_status | string | no |
-| pr_url | string | no |
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| agent_name | string | yes | |
+| summary | string | yes | |
+| files_changed | string[] | no | |
+| tests_status | string | no | |
+| pr_url | string | no | |
+| decisions_made | string[] | no | Key decisions taken during implementation |
+| edge_cases | string[] | no | Edge cases discovered |
+| context_updates | string[] | no | Auto-appended to project context learnings |
+
+---
+
+## Project Context (Agent Brain)
+
+Per-project living document. Agents pull this automatically to understand the project.
+
+### GET /projects/{id}/context
+Get or create the project context. Returns empty context if none exists yet.
+
+```bash
+curl -s $BAATON/projects/PROJECT_ID/context -H "Authorization: Bearer $KEY"
+```
+
+Response:
+```json
+{
+  "data": {
+    "id": "uuid",
+    "project_id": "uuid",
+    "stack": "Rust, Axum, sqlx, PostgreSQL",
+    "conventions": "Error handling with thiserror...",
+    "architecture": "Axum router with middleware...",
+    "constraints": "No panics in prod...",
+    "current_focus": "Migrating auth to Better Auth",
+    "learnings": "Connection pooling fixed the timeout issue...",
+    "custom_context": {},
+    "updated_at": "2026-03-25T12:00:00Z"
+  }
+}
+```
+
+### PATCH /projects/{id}/context
+Partial update — only provided fields are updated. Null fields are preserved.
+
+```bash
+curl -s -X PATCH $BAATON/projects/PROJECT_ID/context -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"stack": "Rust, Axum, React, Tailwind", "current_focus": "Shipping v2 API"}'
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| stack | string | Technologies and frameworks |
+| conventions | string | Coding patterns, naming rules |
+| architecture | string | Architectural decisions + rationale |
+| constraints | string | Perf, security, infra limitations |
+| current_focus | string | What the team is working on now |
+| learnings | string | What worked / failed. Auto-enriched from TLDRs |
+| custom_context | object | Extensible key-value store |
+
+### POST /projects/{id}/context/append
+Append content to a specific field (useful for agents adding learnings incrementally).
+
+```bash
+curl -s -X POST $BAATON/projects/PROJECT_ID/context/append -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"field_name": "learnings", "content": "Connection pooling with max 10 prevents timeout storms"}'
+```
+
+| Field | Type | Required | Accepted values |
+|-------|------|----------|-----------------|
+| field_name | string | yes | `stack`, `conventions`, `architecture`, `constraints`, `current_focus`, `learnings` |
+| content | string | yes | Text to append |
+
+---
+
+## Dependency Graph
+
+### GET /projects/{id}/dependency-graph
+Returns the full dependency graph for a project with topological ordering.
+
+```bash
+curl -s $BAATON/projects/PROJECT_ID/dependency-graph -H "Authorization: Bearer $KEY"
+```
+
+Response:
+```json
+{
+  "data": {
+    "nodes": [
+      { "id": "uuid", "display_id": "BAA-1", "title": "Setup DB", "status": "done", "priority": "high" },
+      { "id": "uuid", "display_id": "BAA-2", "title": "Build API", "status": "todo", "priority": "high" }
+    ],
+    "edges": [
+      { "source": "uuid-1", "target": "uuid-2", "type": "blocks" }
+    ],
+    "suggested_order": ["BAA-1", "BAA-3", "BAA-2"],
+    "blocked_issues": [
+      { "id": "uuid-2", "display_id": "BAA-2", "title": "Build API", "blocked_by": ["BAA-1"] }
+    ]
+  }
+}
+```
+
+- `suggested_order`: topological sort of active issues (excludes done/cancelled) — start from the top
+- `blocked_issues`: issues that have unresolved blockers (blocker not done/cancelled)
+
+---
+
+## Project Templates
+
+### GET /project-templates
+List available templates (system built-ins + org custom templates).
+
+```bash
+curl -s $BAATON/project-templates -H "Authorization: Bearer $KEY"
+```
+
+Built-in templates: **Rust API**, **Next.js App**, **React SPA**
+
+### POST /project-templates
+Create a custom project template.
+
+```bash
+curl -s -X POST $BAATON/project-templates -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Python FastAPI",
+    "description": "Backend API with FastAPI and SQLAlchemy",
+    "default_context": {
+      "stack": "Python, FastAPI, SQLAlchemy, PostgreSQL",
+      "conventions": "Type hints everywhere. Pydantic models for validation."
+    },
+    "default_tags": ["backend", "python"]
+  }'
+```
+
+### DELETE /project-templates/{id}
+Delete a custom template (system templates cannot be deleted).
+
+### Using templates on project creation
+
+Pass `template_id` when creating a project to auto-populate the project context:
+
+```bash
+curl -s -X POST $BAATON/projects -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My API", "slug": "my-api", "prefix": "API", "template_id": "uuid"}'
+```
 
 ---
 

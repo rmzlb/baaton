@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Copy, Link, KeyRound, RotateCw, X, Shield, Globe, CheckCircle2, Plus, Trash2, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { Copy, Link, KeyRound, RotateCw, X, Shield, Globe, CheckCircle2, Plus, Trash2, Eye, EyeOff, AlertTriangle, Brain } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useOrganization } from '@clerk/clerk-react';
 import { useApi } from '@/hooks/useApi';
 import { useNotificationStore } from '@/stores/notifications';
@@ -14,6 +15,7 @@ export function PublicLinkModal({ project, onClose }: { project: Project; onClos
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const { membership } = useOrganization();
+  const navigate = useNavigate();
   const addNotification = useNotificationStore((s) => s.addNotification);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
@@ -315,6 +317,40 @@ BAATON_BASE_URL=https://api.baaton.dev/api/v1`}</pre>
                 </div>
               </div>
             )}
+
+            {/* ── Section 3: Project Context ── */}
+            <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Brain size={15} className="text-accent" />
+                  <span className="text-xs font-semibold text-primary">Project Context</span>
+                </div>
+                <button
+                  onClick={() => { onClose(); navigate(`/projects/${project.slug || project.id}/context`); }}
+                  className="text-[10px] text-accent hover:text-accent-hover transition-colors"
+                >
+                  Edit →
+                </button>
+              </div>
+
+              <p className="text-[10px] text-muted leading-relaxed">
+                Define your project's stack, conventions, architecture, and constraints. Agents pull this context automatically via API.
+              </p>
+
+              <div className="space-y-1 text-[10px] font-mono text-muted">
+                <p className="font-sans text-[10px] text-secondary">Agent pulls context with:</p>
+                <pre className="rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all select-all">{`curl -s $BAATON/projects/${project.id}/context \\
+  -H "Authorization: Bearer $KEY"`}</pre>
+              </div>
+
+              <div className="space-y-1 text-[10px] font-mono text-muted">
+                <p className="font-sans text-[10px] text-secondary">Agent appends learnings:</p>
+                <pre className="rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all select-all">{`curl -s -X POST $BAATON/projects/${project.id}/context/append \\
+  -H "Authorization: Bearer $KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"field_name":"learnings","content":"..."}'`}</pre>
+              </div>
+            </div>
           </div>
         )}
       </div>

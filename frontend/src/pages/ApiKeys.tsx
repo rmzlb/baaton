@@ -60,6 +60,16 @@ const PERMISSION_GROUPS = [
     color: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/25',
   },
   {
+    key: 'context',
+    perms: ['context:read', 'context:write'],
+    color: 'bg-sky-500/15 text-sky-600 border-sky-500/25',
+  },
+  {
+    key: 'templates',
+    perms: ['templates:read', 'templates:write'],
+    color: 'bg-fuchsia-500/15 text-fuchsia-600 border-fuchsia-500/25',
+  },
+  {
     key: 'ai',
     perms: ['ai:chat', 'ai:triage'],
     color: 'bg-amber-500/15 text-amber-600 border-amber-500/25',
@@ -99,6 +109,8 @@ const PRESETS: Record<string, string[]> = {
     'automations:read', 'automations:write',
     'webhooks:read', 'webhooks:write',
     'members:read', 'members:invite',
+    'context:read', 'context:write',
+    'templates:read', 'templates:write',
     'ai:chat', 'ai:triage',
     'billing:read',
   ],
@@ -108,6 +120,8 @@ const PRESETS: Record<string, string[]> = {
     'comments:read', 'comments:write',
     'labels:read',
     'milestones:read',
+    'context:read', 'context:write',
+    'templates:read',
     'ai:chat', 'ai:triage',
   ],
   cicd: [

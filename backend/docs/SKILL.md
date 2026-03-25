@@ -52,6 +52,12 @@ Response format: `{ "data": ... }` — errors: `{ "error": "...", "accepted_valu
 | List webhooks | GET | `/webhooks` |
 | Create webhook | POST | `/webhooks` with `{ url, events[] }` |
 | Metrics | GET | `/metrics?days=30` |
+| Get project context | GET | `/projects/{id}/context` |
+| Update context | PATCH | `/projects/{id}/context` (partial update) |
+| Append to context | POST | `/projects/{id}/context/append` with `{ field_name, content }` |
+| Dependency graph | GET | `/projects/{id}/dependency-graph` |
+| List templates | GET | `/project-templates` |
+| Create template | POST | `/project-templates` |
 | AI chat | POST | `/ai/chat` with `{ messages[] }` |
 | Full API docs | GET | `/public/docs` (no auth) |
 
@@ -73,11 +79,11 @@ curl -s -X PATCH $BAATON_URL/issues/ISSUE_ID \
   -H "Content-Type: application/json" \
   -d '{"status":"in_progress"}'
 
-# 4. Post work summary (TLDR)
+# 4. Post work summary (TLDR with handoff data)
 curl -s -X POST $BAATON_URL/issues/ISSUE_ID/tldr \
   -H "Authorization: Bearer $BAATON_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"agent_name":"my-agent","summary":"Fixed the login bug by...","files_changed":["src/auth.rs"],"tests_status":"passed"}'
+  -d '{"agent_name":"my-agent","summary":"Fixed the login bug by...","files_changed":["src/auth.rs"],"tests_status":"passed","decisions_made":["Used async timeout"],"edge_cases":["0ms timeout returns immediately"],"context_updates":["Auth now requires tokio"]}'
 
 # 5. Mark done
 curl -s -X PATCH $BAATON_URL/issues/ISSUE_ID \
@@ -150,13 +156,15 @@ Errors include `accepted_values` for invalid enums:
 
 ## Best Practices
 
-1. Move to `in_progress` before starting work
-2. Post TLDRs with `files_changed` and `tests_status`
-3. Use `tags` to categorize (e.g., `["frontend","urgent"]`)
-4. Set `due_date` for time-sensitive issues
-5. Use `PATCH /issues/batch` for bulk operations
-6. Check `_hints` in responses for recommended next actions
-7. Use `/search/global` to find issues across all organizations
+1. Pull project context first: `GET /projects/{id}/context` — understand stack, conventions, constraints before coding
+2. Move to `in_progress` before starting work
+3. Post TLDRs with `files_changed`, `tests_status`, and `context_updates` for learnings
+4. Use `tags` to categorize (e.g., `["frontend","urgent"]`)
+5. Set `due_date` for time-sensitive issues
+6. Use `PATCH /issues/batch` for bulk operations
+7. Check `_hints` in responses for recommended next actions
+8. Use dependency graph (`GET /projects/{id}/dependency-graph`) to find execution order
+9. Use `context_updates` in TLDRs to auto-enrich project learnings
 
 ## Full Reference
 
