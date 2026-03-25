@@ -153,6 +153,144 @@ Respond ONLY with valid JSON:
     Ok(suggestion)
 }
 
+// ─── Triage issue row ─────────────────────────────────
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct TriageIssue {
+    pub id: Uuid,
+    pub display_id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub status: String,
+    pub priority: Option<String>,
+    pub issue_type: Option<String>,
+    pub project_id: Uuid,
+    pub project_name: String,
+    pub project_prefix: String,
+    pub source: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// GET /api/v1/triage — List all untriaged issues across all projects in the org
+/// Untriaged = no priority set, OR status=backlog with no assignee, OR source=form
+pub async fn list_untriaged(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+) -> Result<Json<ApiResponse<Vec<TriageIssue>>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let issues = sqlx::query_as::<_, TriageIssue>(
+        r#"
+        SELECT i.id, i.display_id, i.title, i.description, i.status, i.priority, i.issue_type,
+               i.project_id, p.name AS project_name, p.prefix AS project_prefix,
+               i.source, i.created_at
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        WHERE p.org_id = $1
+          AND (
+            i.priority IS NULL
+            OR i.priority = ''
+            OR (i.status = 'backlog' AND i.assignee_ids = '{}')
+            OR i.source = 'form'
+          )
+          AND i.status NOT IN ('done', 'cancelled')
+        ORDER BY i.created_at DESC
+        LIMIT 100
+        "#,
+    )
+    .bind(org_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    Ok(Json(ApiResponse::new(issues)))
+}
+
+/// POST /api/v1/triage/batch — Triage multiple issues at once
+#[derive(Debug, Deserialize)]
+pub struct BatchTriageRequest {
+    pub issue_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchTriageResult {
+    pub issue_id: Uuid,
+    pub display_id: String,
+    pub title: String,
+    pub suggestion: Option<TriageSuggestion>,
+    pub error: Option<String>,
+}
+
+pub async fn batch_triage(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Json(body): Json<BatchTriageRequest>,
+) -> Result<Json<ApiResponse<Vec<BatchTriageResult>>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    if body.issue_ids.is_empty() {
+        return Ok(Json(ApiResponse::new(vec![])));
+    }
+
+    if body.issue_ids.len() > 20 {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Maximum 20 issues per batch"}))));
+    }
+
+    let mut results = Vec::new();
+
+    for issue_id in &body.issue_ids {
+        // Fetch display_id and title for the result
+        let meta = sqlx::query_as::<_, (String, String)>(
+            "SELECT i.display_id, i.title FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2"
+        )
+        .bind(issue_id)
+        .bind(org_id)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten();
+
+        let (display_id, title) = match meta {
+            Some((d, t)) => (d, t),
+            None => {
+                results.push(BatchTriageResult {
+                    issue_id: *issue_id,
+                    display_id: "?".to_string(),
+                    title: "?".to_string(),
+                    suggestion: None,
+                    error: Some("Issue not found".to_string()),
+                });
+                continue;
+            }
+        };
+
+        match run_triage_analysis(&pool, *issue_id, org_id).await {
+            Ok(suggestion) => {
+                results.push(BatchTriageResult {
+                    issue_id: *issue_id,
+                    display_id,
+                    title,
+                    suggestion: Some(suggestion),
+                    error: None,
+                });
+            }
+            Err(e) => {
+                results.push(BatchTriageResult {
+                    issue_id: *issue_id,
+                    display_id,
+                    title,
+                    suggestion: None,
+                    error: Some(e),
+                });
+            }
+        }
+    }
+
+    Ok(Json(ApiResponse::new(results)))
+}
+
 /// POST /api/v1/issues/{id}/triage — AI-powered triage suggestions
 pub async fn analyze(
     Extension(auth): Extension<AuthUser>,

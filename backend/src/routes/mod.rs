@@ -159,6 +159,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/custom-fields/{id}", patch(custom_fields::update).delete(custom_fields::remove))
         .route("/issues/{id}/custom-values", get(custom_fields::get_values).put(custom_fields::set_values))
         .route("/issues/{id}/triage", post(triage::analyze))
+        .route("/triage", get(triage::list_untriaged))
+        .route("/triage/batch", post(triage::batch_triage))
         .route("/public/{slug}/email-intake", post(email_intake::intake))
         .route("/issues/{id}/attachments", get(attachments::list).post(attachments::create))
         .route("/issues/{id}/attachments/{att_id}", delete(attachments::remove))
