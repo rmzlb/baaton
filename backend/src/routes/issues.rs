@@ -13,6 +13,12 @@ use crate::routes::sla::apply_sla_deadline;
 use crate::routes::sse::{EventSender, broadcast_event};
 use crate::routes::webhooks::dispatch_event;
 
+/// Log internal error details and return a sanitized error response to the client.
+fn internal_err(e: impl std::fmt::Display) -> (StatusCode, Json<serde_json::Value>) {
+    tracing::error!(error = %e, "Internal error");
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Internal server error"})))
+}
+
 /// Strip inline data: URIs from HTML descriptions to prevent oversized JSON responses.
 /// Replaces `data:image/...;base64,...` with a placeholder, preserving the rest of the HTML.
 fn sanitize_description(desc: &str) -> String {
@@ -95,7 +101,7 @@ async fn get_project_statuses(pool: &PgPool, project_id: Uuid, org_id: &str) -> 
     .bind(org_id)
     .fetch_optional(pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| internal_err(e))?;
 
     let statuses_json = statuses_json
         .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
@@ -304,7 +310,7 @@ async fn resolve_auto_assign_assignees(
     .bind(org_id)
     .fetch_optional(tx.as_mut())
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
+    .map_err(|e| internal_err(e))?
     .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
 
     if let Some(assignees) = explicit_assignees {
@@ -402,14 +408,21 @@ pub async fn list_all(
         }
     };
 
-    // Cursor
-    let cursor_condition = if let Some(ref cursor) = params.after {
-        if let Some((ts, _id)) = crate::filter::decode_cursor(cursor) {
-            let op = if order_dir == "DESC" { "<" } else { ">" };
-            format!(" AND i.created_at {} '{}'", op, ts)
-        } else {
-            String::new()
-        }
+    // Cursor — decode and validate timestamp format to prevent injection
+    let cursor_ts: Option<String> = params.after.as_ref().and_then(|cursor| {
+        crate::filter::decode_cursor(cursor).and_then(|(ts, _id)| {
+            // Validate: must parse as a valid timestamp
+            if chrono::DateTime::parse_from_rfc3339(&ts).is_ok() || chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.fZ").is_ok() {
+                Some(ts)
+            } else {
+                tracing::warn!(cursor_ts = %ts, "Invalid cursor timestamp, ignoring");
+                None
+            }
+        })
+    });
+    let cursor_condition = if cursor_ts.is_some() {
+        let op = if order_dir == "DESC" { "<" } else { ">" };
+        format!(" AND i.created_at {} $11::timestamptz", op)
     } else {
         String::new()
     };
@@ -450,6 +463,7 @@ pub async fn list_all(
         .bind(include_archived)          // $8
         .bind(&params.created_after)     // $9
         .bind(&params.created_before)    // $10
+        .bind(&cursor_ts)               // $11 — safe parameterized cursor
         .fetch_all(&pool)
         .await
         .unwrap_or_else(|e| {
@@ -530,18 +544,21 @@ pub async fn list_by_project(
         }
     };
 
-    // Build cursor condition if present
-    let cursor_condition = if let Some(ref cursor) = params.after {
-        if let Some((ts, _id)) = crate::filter::decode_cursor(cursor) {
-            let op = if order_dir == "DESC" { "<" } else { ">" };
-            format!(" AND i.{} {} '{}'", 
-                if order_col.contains("CASE") { "created_at" } else { 
-                    order_col.trim_start_matches("i.")
-                },
-                op, ts)
-        } else {
-            String::new()
-        }
+    // Cursor — decode and validate timestamp format to prevent injection
+    let cursor_ts: Option<String> = params.after.as_ref().and_then(|cursor| {
+        crate::filter::decode_cursor(cursor).and_then(|(ts, _id)| {
+            if chrono::DateTime::parse_from_rfc3339(&ts).is_ok() || chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.fZ").is_ok() {
+                Some(ts)
+            } else {
+                tracing::warn!(cursor_ts = %ts, "Invalid cursor timestamp in list_by_project, ignoring");
+                None
+            }
+        })
+    });
+    let cursor_col = if order_col.contains("CASE") { "created_at" } else { order_col.trim_start_matches("i.") };
+    let cursor_condition = if cursor_ts.is_some() {
+        let op = if order_dir == "DESC" { "<" } else { ">" };
+        format!(" AND i.{} {} $13::timestamptz", cursor_col, op)
     } else {
         String::new()
     };
@@ -549,7 +566,7 @@ pub async fn list_by_project(
     // Parse advanced filter if provided
     let filter_clause = if let Some(ref filter_str) = params.filter {
         if let Ok(filter_val) = serde_json::from_str::<serde_json::Value>(filter_str) {
-            crate::filter::parse_filter(&filter_val, 12) // offset after base params
+            crate::filter::parse_filter(&filter_val, 13) // offset after base params
         } else {
             return Err((StatusCode::BAD_REQUEST, Json(json!({
                 "error": "Invalid filter JSON",
@@ -601,7 +618,8 @@ pub async fn list_by_project(
         .bind(include_archived)          // $9
         .bind(include_snoozed)           // $10
         .bind(&params.created_after)     // $11
-        .bind(&params.created_before);   // $12
+        .bind(&params.created_before)    // $12
+        .bind(&cursor_ts);              // $13 — safe parameterized cursor
 
     // Bind filter params (starting at $13+)
     // Note: sqlx dynamic binds need to use the same type
@@ -704,6 +722,18 @@ pub async fn create(
     }
 
     // ── Input validation ─────────────────────────────────
+    if body.title.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Title cannot be empty"}))));
+    }
+    if body.title.len() > 1000 {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Title must be under 1000 characters", "max": 1000}))));
+    }
+    if let Some(ref desc) = body.description {
+        if desc.len() > 200_000 {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Description must be under 200000 characters", "max": 200000}))));
+        }
+    }
+
     let issue_type = body.issue_type.as_deref().unwrap_or("feature");
     validate_issue_type(issue_type)?;
 
@@ -724,7 +754,7 @@ pub async fn create(
         .bind(pid)
         .fetch_optional(&pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        .map_err(|e| internal_err(e))?;
 
         match parent_parent {
             None => {
@@ -743,7 +773,7 @@ pub async fn create(
     let mut tx = pool
         .begin()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        .map_err(|e| internal_err(e))?;
 
     let (project_prefix, resolved_assignees) = resolve_auto_assign_assignees(
         &mut tx,
@@ -835,7 +865,7 @@ pub async fn create(
             error = %e,
             "issues.create.failed"
         );
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()})))
+        internal_err(e)
     })?;
 
     tracing::info!(
@@ -849,7 +879,7 @@ pub async fn create(
 
     tx.commit()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        .map_err(|e| internal_err(e))?;
 
     // ── Activity logging (fire-and-forget) ───────────────
     {
@@ -1346,7 +1376,7 @@ pub async fn update(
         .bind(new_parent_id)
         .fetch_optional(&pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        .map_err(|e| internal_err(e))?;
 
         match parent_parent {
             None => {
@@ -1419,7 +1449,7 @@ pub async fn update(
     .bind(parent_id_value)        // $27
     .fetch_one(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| internal_err(e))?;
 
     // ── Gamification: award XP for closing an issue (fire-and-forget) ──
     if status_changed && new_status == "done" {
@@ -1732,7 +1762,7 @@ pub async fn update_position(
     .bind(position)
     .fetch_one(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| internal_err(e))?;
 
     Ok(Json(ApiResponse::new(issue)))
 }
@@ -1798,7 +1828,7 @@ pub async fn remove(
     .bind(org_id)
     .execute(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| internal_err(e))?;
 
     if result.rows_affected() > 0 {
         // ── Webhook dispatch (fire-and-forget) ───────────
@@ -1859,7 +1889,7 @@ pub async fn batch_update(
         .bind(org_id)
         .fetch_optional(&pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        .map_err(|e| internal_err(e))?;
 
         if let Some(pid) = project_id {
             let valid_statuses = get_project_statuses(&pool, pid, org_id).await?;
@@ -1892,7 +1922,7 @@ pub async fn batch_update(
         .bind(org_id)
         .fetch_optional(&pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        .map_err(|e| internal_err(e))?;
 
         if let Some(issue) = issue {
             updated_count += 1;
@@ -1925,7 +1955,7 @@ pub async fn batch_delete(
     .bind(org_id)
     .execute(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| internal_err(e))?;
 
     Ok(Json(json!({"deleted": result.rows_affected()})))
 }
@@ -1998,7 +2028,7 @@ pub async fn search(
     .bind(is_overdue)
     .fetch_all(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| internal_err(e))?;
 
     Ok(Json(ApiResponse::new(results)))
 }
@@ -2096,7 +2126,7 @@ pub async fn search_global(
     .bind(&tsquery_str)
     .fetch_all(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| internal_err(e))?;
 
     Ok(Json(ApiResponse::new(results)))
 }
@@ -2199,7 +2229,7 @@ pub async fn public_submit(
     let mut tx = pool
         .begin()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        .map_err(|e| internal_err(e))?;
 
     let project = sqlx::query_as::<_, (Uuid, String, String, bool, Option<String>)>(
         "SELECT id, prefix, org_id, public_submit_enabled, public_submit_token FROM projects WHERE slug = $1 FOR UPDATE"
@@ -2289,11 +2319,11 @@ pub async fn public_submit(
     .bind(&attachments_json)
     .fetch_one(tx.as_mut())
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| internal_err(e))?;
 
     tx.commit()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        .map_err(|e| internal_err(e))?;
 
     Ok(Json(ApiResponse::new(issue)))
 }
@@ -2328,7 +2358,7 @@ pub async fn archive(
     .bind(id)
     .fetch_one(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| internal_err(e))?;
 
     // ── Activity log ─────────────────────────────────────
     {
@@ -2376,7 +2406,7 @@ pub async fn unarchive(
     .bind(id)
     .fetch_one(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| internal_err(e))?;
 
     // ── Activity log ─────────────────────────────────────
     {

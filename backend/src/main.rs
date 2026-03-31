@@ -1,6 +1,7 @@
 use axum::{Router, routing::get, middleware as axum_mw};
-use tower_http::cors::{CorsLayer, Any};
+use tower_http::cors::{CorsLayer, Any, AllowOrigin};
 use tower_http::trace::TraceLayer;
+use tower_http::limit::RequestBodyLimitLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -30,10 +31,15 @@ async fn main() -> anyhow::Result<()> {
     // Database
     let database_url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set");
+    let max_conns: u32 = std::env::var("DB_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(20);
     let connect_opts = database_url.parse::<sqlx::postgres::PgConnectOptions>()?
         .statement_cache_capacity(0);
     let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(max_conns)
+        .acquire_timeout(std::time::Duration::from_secs(5))
         .connect_with(connect_opts)
         .await?;
 
@@ -81,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
         (35, include_str!("../migrations/035_attachments.sql")),
         (36, include_str!("../migrations/036_slack.sql")),
         (37, include_str!("../migrations/037_ai_usage.sql")),
-        (37, include_str!("../migrations/037_agent_config.sql")),
+        (371, include_str!("../migrations/037_agent_config.sql")),  // was duplicate v37, re-indexed as 371
         (38, include_str!("../migrations/038_superadmin.sql")),
         (39, include_str!("../migrations/039_admin_audit_log.sql")),
         (40, include_str!("../migrations/040_user_plans.sql")),
@@ -154,11 +160,26 @@ async fn main() -> anyhow::Result<()> {
     // Novu notifications (None if NOVU_SECRET_KEY unset)
     let novu_client = novu::NovuClient::from_env();
 
-    // CORS
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    // CORS — restrict origins in production, permissive in dev
+    let cors = {
+        let allowed_origins = std::env::var("CORS_ORIGINS").unwrap_or_default();
+        if allowed_origins.is_empty() || allowed_origins == "*" {
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any)
+        } else {
+            let origins: Vec<axum::http::HeaderValue> = allowed_origins
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(origins))
+                .allow_methods(Any)
+                .allow_headers(Any)
+                .allow_credentials(true)
+        }
+    };
 
     // Router
     let app = Router::new()
@@ -169,6 +190,8 @@ async fn main() -> anyhow::Result<()> {
         .layer(axum::Extension(pool.clone()))
         .layer(axum_mw::from_fn(middleware::security::security_headers))
         .layer(cors)
+        // Default body limit: 2MB (attachment routes override to 20MB)
+        .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024))
         .layer(TraceLayer::new_for_http());
 
     // Serve
@@ -180,7 +203,29 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Baaton API listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
+    tracing::info!("Baaton API shut down gracefully");
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => { tracing::info!("Received Ctrl+C, shutting down..."); },
+        _ = terminate => { tracing::info!("Received SIGTERM, shutting down..."); },
+    }
 }
