@@ -510,7 +510,25 @@ pub async fn list_by_project(
     .unwrap_or(false);
 
     if !project_exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
+        // Check if project exists in another org to give a better error
+        let exists_elsewhere: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1)"
+        )
+        .bind(project_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(false);
+
+        if exists_elsewhere {
+            return Err((StatusCode::FORBIDDEN, Json(json!({
+                "error": "Project exists but your API key does not have access to it. Check that the key belongs to the correct organization.",
+                "hint": "List your accessible projects with GET /projects"
+            }))));
+        }
+        return Err((StatusCode::NOT_FOUND, Json(json!({
+            "error": "Project not found",
+            "hint": "List your accessible projects with GET /projects"
+        }))));
     }
 
     let limit = params.effective_limit();
