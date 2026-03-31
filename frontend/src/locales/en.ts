@@ -510,6 +510,7 @@ const en = {
   'projectAccess.copied': 'Copied!',
   'projectAccess.agentGuide': '🤖 Agent Setup Guide',
   'projectAccess.agentEnv': 'Add to your agent .env or SKILL.md:',
+  'projectAccess.agentSearch': 'Search by ticket ID, title, or date:',
   'projectAccess.agentGetDocs': 'Fetch full API docs (public, no auth):',
 
   // ─── PublicSubmit ───────────────────────────

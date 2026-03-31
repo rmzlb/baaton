@@ -40,7 +40,7 @@ Response format: `{ "data": ... }` — errors: `{ "error": "...", "accepted_valu
 | Update context | PATCH | `/projects/{id}/context` |
 | Append to context | POST | `/projects/{id}/context/append` with `{ field_name, content }` |
 | Create issue | POST | `/issues` |
-| List issues | GET | `/issues?project_id=UUID&status=todo&priority=high` |
+| List issues | GET | `/issues?status=todo&priority=high&search=HLM-187` |
 | Get issue | GET | `/issues/{id}` |
 | Update issue | PATCH | `/issues/{id}` |
 | Delete issue | DELETE | `/issues/{id}` |
@@ -148,6 +148,26 @@ Every list response returns `display_id` per item. Reference tickets by display_
 | decisions_made | string[] | — | Key decisions during implementation |
 | edge_cases | string[] | — | Edge cases discovered |
 | context_updates | string[] | — | Auto-appended to project learnings |
+
+## Filtering & Search
+
+`search` matches both **title** (ILIKE) and **display_id** (prefix match):
+```bash
+# Find ticket by ID
+curl -s "$BAATON_URL/issues?search=HLM-187" -H "Authorization: Bearer $BAATON_API_KEY"
+
+# Filter by date range
+curl -s "$BAATON_URL/projects/UUID/issues?created_after=2026-03-20&created_before=2026-03-31" \
+  -H "Authorization: Bearer $BAATON_API_KEY"
+```
+
+**Aliases:** `title` → same as `search`, `per_page` → same as `limit`.
+
+For advanced filtering, use `?filter=` with JSON:
+```bash
+curl -s "$BAATON_URL/issues?filter=%7B%22priority%22%3A%7B%22in%22%3A%5B%22urgent%22%2C%22high%22%5D%7D%7D" \
+  -H "Authorization: Bearer $BAATON_API_KEY"
+```
 
 ## Best Practices
 

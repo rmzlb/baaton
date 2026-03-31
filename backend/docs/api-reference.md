@@ -110,7 +110,9 @@ curl -s "$BAATON/issues?limit=20&order_by=updated_at" -H "Authorization: Bearer 
 # → use page_info.end_cursor from response as ?after= in next request
 ```
 
-Params: `status`, `priority`, `type`, `search`, `assignee_id`, `label`, `limit` (default 100, max 500), `offset`
+Params: `status`, `priority`, `type`, `search` (matches title + display_id), `title` (alias for search), `created_after` (ISO date), `created_before` (ISO date), `assignee_id`, `label`, `limit` (default 100, max 500), `per_page` (alias for limit), `offset`
+
+> **`search` matches both `title` (ILIKE) and `display_id` (prefix match).** Use `?search=HLM-187` to find a ticket by its ID.
 
 #### Ordering
 `order_by`: `created_at` (default) | `updated_at` | `priority` | `position` | `due_date`
@@ -162,7 +164,9 @@ Pass `filter` as URL-encoded JSON. Supports:
 
 ### GET /projects/{id}/issues
 List issues for a specific project.
-Params: `status`, `priority`, `type`, `category`, `search`, `limit`, `offset`, `filter`, `order_by`, `order_direction`, `after`
+Params: `status`, `priority`, `type`, `category`, `search` (matches title + display_id), `title` (alias for search), `created_after` (ISO date), `created_before` (ISO date), `limit`, `per_page` (alias for limit), `offset`, `filter`, `order_by`, `order_direction`, `after`, `include_snoozed`, `include_archived`
+
+> **`total_count` in `page_info` uses the same filters as the data query.** It reflects the actual number of matching issues, not the total project count.
 
 ### GET /issues/{id}
 Get a single issue with TLDRs, comments, and relations.

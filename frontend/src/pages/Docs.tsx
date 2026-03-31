@@ -1466,6 +1466,14 @@ curl -X POST https://api.baaton.dev/api/v1/issues \\
 curl "https://api.baaton.dev/api/v1/issues?status=in_progress&priority=high" \\
   -H "Authorization: Bearer baa_key"
 
+# Search by ticket ID or title
+curl "https://api.baaton.dev/api/v1/issues?search=HLM-187" \\
+  -H "Authorization: Bearer baa_key"
+
+# Filter by date range
+curl "https://api.baaton.dev/api/v1/issues?created_after=2026-03-20&created_before=2026-03-31" \\
+  -H "Authorization: Bearer baa_key"
+
 # List issues assigned to me
 curl https://api.baaton.dev/api/v1/issues/mine \\
   -H "Authorization: Bearer baa_key"

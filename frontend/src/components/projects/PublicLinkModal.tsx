@@ -311,6 +311,17 @@ BAATON_BASE_URL=https://api.baaton.dev/api/v1`}</pre>
                   </div>
 
                   <div className="space-y-1 text-[10px] font-mono text-muted">
+                    <p className="font-sans text-[10px] text-secondary">{t('projectAccess.agentSearch')}</p>
+                    <pre className="rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all select-all">{`# Search by ticket ID or title
+curl -s "$BAATON_URL/issues?search=${project.prefix}-42" \\
+  -H "Authorization: Bearer $BAATON_API_KEY"
+
+# Filter by date range
+curl -s "$BAATON_URL/projects/${project.id}/issues?created_after=2026-03-20" \\
+  -H "Authorization: Bearer $BAATON_API_KEY"`}</pre>
+                  </div>
+
+                  <div className="space-y-1 text-[10px] font-mono text-muted">
                     <p className="font-sans text-[10px] text-secondary">{t('projectAccess.agentGetDocs')}</p>
                     <pre className="rounded bg-bg border border-border p-2 text-primary whitespace-pre-wrap break-all select-all">curl -s https://api.baaton.dev/api/v1/public/docs</pre>
                   </div>
