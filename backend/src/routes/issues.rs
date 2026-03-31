@@ -13,6 +13,39 @@ use crate::routes::sla::apply_sla_deadline;
 use crate::routes::sse::{EventSender, broadcast_event};
 use crate::routes::webhooks::dispatch_event;
 
+/// Strip inline data: URIs from HTML descriptions to prevent oversized JSON responses.
+/// Replaces `data:image/...;base64,...` with a placeholder, preserving the rest of the HTML.
+fn sanitize_description(desc: &str) -> String {
+    // Regex-free approach: find data: URIs and replace them
+    let mut result = String::with_capacity(desc.len());
+    let mut remaining = desc;
+    while let Some(start) = remaining.find("data:") {
+        // Check if this looks like a data URI (data:mime/type;base64,...)
+        let after_data = &remaining[start..];
+        if after_data.starts_with("data:image/") || after_data.starts_with("data:application/") {
+            // Find the end of the data URI (typically ends with " or ' or > or space)
+            let end_chars = ['"', '\'', '>', ' ', '\n', ')'];
+            let end_offset = after_data[5..] // skip "data:"
+                .find(|c: char| end_chars.contains(&c))
+                .map(|i| i + 5)
+                .unwrap_or(after_data.len());
+
+            let data_uri = &after_data[..end_offset];
+            // Only replace if it's a substantial data URI (> 1KB = likely an embedded image)
+            if data_uri.len() > 1024 {
+                result.push_str(&remaining[..start]);
+                result.push_str("[embedded-image-removed]");
+                remaining = &remaining[start + end_offset..];
+                continue;
+            }
+        }
+        result.push_str(&remaining[..start + 5]); // include "data:" prefix
+        remaining = &remaining[start + 5..];
+    }
+    result.push_str(remaining);
+    result
+}
+
 // ─── Sub-Issues ───────────────────────────────────────
 
 /// GET /issues/{id}/children — list sub-issues
@@ -209,7 +242,15 @@ pub struct ListParams {
     pub r#type: Option<String>,
     pub category: Option<String>,
     pub search: Option<String>,
+    /// Alias: filter by title substring (equivalent to search on title only)
+    pub title: Option<String>,
+    /// Filter by created_at > date (ISO 8601, e.g. 2026-03-20)
+    pub created_after: Option<String>,
+    /// Filter by created_at < date (ISO 8601)
+    pub created_before: Option<String>,
     pub limit: Option<i64>,
+    /// Alias for limit (common convention)
+    pub per_page: Option<i64>,
     pub offset: Option<i64>,
     pub include_snoozed: Option<bool>,
     pub include_archived: Option<bool>,
@@ -223,6 +264,18 @@ pub struct ListParams {
     pub after: Option<String>,
     /// Cursor pagination: base64 cursor for backwards pagination
     pub before: Option<String>,
+}
+
+impl ListParams {
+    /// Resolve effective limit from `limit` or `per_page` alias.
+    pub fn effective_limit(&self) -> i64 {
+        self.limit.or(self.per_page).unwrap_or(100).min(500)
+    }
+
+    /// Resolve effective search: `search` takes priority, `title` is alias.
+    pub fn effective_search(&self) -> Option<&str> {
+        self.search.as_deref().or(self.title.as_deref())
+    }
 }
 
 #[derive(sqlx::FromRow)]
@@ -321,8 +374,9 @@ pub async fn list_all(
 
     let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
 
-    let limit = params.limit.unwrap_or(100).min(500);
+    let limit = params.effective_limit();
     let offset = params.offset.unwrap_or(0);
+    let effective_search = params.effective_search().map(|s| s.to_string());
 
     // Order
     let order_col = match params.order_by.as_deref() {
@@ -372,8 +426,10 @@ pub async fn list_all(
           AND ($2::text IS NULL OR i.status = $2)
           AND ($3::text IS NULL OR i.priority = $3)
           AND ($4::text IS NULL OR i.type = $4)
-          AND ($5::text IS NULL OR i.title ILIKE '%' || $5 || '%')
+          AND ($5::text IS NULL OR i.title ILIKE '%' || $5 || '%' OR i.display_id ILIKE $5 || '%')
           AND (i.archived = false OR $8::boolean)
+          AND ($9::text IS NULL OR i.created_at > $9::timestamptz)
+          AND ($10::text IS NULL OR i.created_at < $10::timestamptz)
           {}
         ORDER BY {} {}
         LIMIT $6 OFFSET $7
@@ -384,14 +440,16 @@ pub async fn list_all(
     );
 
     let mut issues = sqlx::query_as::<_, Issue>(&query)
-        .bind(&all_org_ids)        // $1
-        .bind(&params.status)      // $2
-        .bind(&params.priority)    // $3
-        .bind(&params.r#type)      // $4
-        .bind(&params.search)      // $5
-        .bind(fetch_limit)         // $6
-        .bind(offset)              // $7
-        .bind(include_archived)    // $8
+        .bind(&all_org_ids)              // $1
+        .bind(&params.status)            // $2
+        .bind(&params.priority)          // $3
+        .bind(&params.r#type)            // $4
+        .bind(&effective_search)         // $5 — search OR title alias
+        .bind(fetch_limit)               // $6
+        .bind(offset)                    // $7
+        .bind(include_archived)          // $8
+        .bind(&params.created_after)     // $9
+        .bind(&params.created_before)    // $10
         .fetch_all(&pool)
         .await
         .unwrap_or_else(|e| {
@@ -441,8 +499,9 @@ pub async fn list_by_project(
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
     }
 
-    let limit = params.limit.unwrap_or(100).min(500);
+    let limit = params.effective_limit();
     let offset = params.offset.unwrap_or(0);
+    let effective_search = params.effective_search().map(|s| s.to_string());
 
     let include_archived = params.include_archived.unwrap_or(false);
     let include_snoozed = params.include_snoozed.unwrap_or(false);
@@ -490,7 +549,7 @@ pub async fn list_by_project(
     // Parse advanced filter if provided
     let filter_clause = if let Some(ref filter_str) = params.filter {
         if let Ok(filter_val) = serde_json::from_str::<serde_json::Value>(filter_str) {
-            crate::filter::parse_filter(&filter_val, 10) // offset after base params
+            crate::filter::parse_filter(&filter_val, 12) // offset after base params
         } else {
             return Err((StatusCode::BAD_REQUEST, Json(json!({
                 "error": "Invalid filter JSON",
@@ -513,10 +572,12 @@ pub async fn list_by_project(
           AND ($2::text IS NULL OR i.status = $2)
           AND ($3::text IS NULL OR i.priority = $3)
           AND ($4::text IS NULL OR i.type = $4)
-          AND ($5::text IS NULL OR i.title ILIKE '%' || $5 || '%')
+          AND ($5::text IS NULL OR i.title ILIKE '%' || $5 || '%' OR i.display_id ILIKE $5 || '%')
           AND ($6::text IS NULL OR $6 = ANY(i.category))
           AND (i.archived = false OR $9::boolean)
           AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE OR $10::boolean)
+          AND ($11::text IS NULL OR i.created_at > $11::timestamptz)
+          AND ($12::text IS NULL OR i.created_at < $12::timestamptz)
           {}
           {}
         ORDER BY {} {}
@@ -529,18 +590,20 @@ pub async fn list_by_project(
     );
 
     let q = sqlx::query_as::<_, Issue>(&query)
-        .bind(project_id)          // $1
-        .bind(&params.status)      // $2
-        .bind(&params.priority)    // $3
-        .bind(&params.r#type)      // $4
-        .bind(&params.search)      // $5
-        .bind(&params.category)    // $6
-        .bind(fetch_limit)         // $7
-        .bind(offset)              // $8
-        .bind(include_archived)    // $9
-        .bind(include_snoozed);    // $10
+        .bind(project_id)               // $1
+        .bind(&params.status)            // $2
+        .bind(&params.priority)          // $3
+        .bind(&params.r#type)            // $4
+        .bind(&effective_search)         // $5 — search OR title alias, matches title + display_id
+        .bind(&params.category)          // $6
+        .bind(fetch_limit)               // $7
+        .bind(offset)                    // $8
+        .bind(include_archived)          // $9
+        .bind(include_snoozed)           // $10
+        .bind(&params.created_after)     // $11
+        .bind(&params.created_before);   // $12
 
-    // Bind filter params (starting at $11+)
+    // Bind filter params (starting at $13+)
     // Note: sqlx dynamic binds need to use the same type
     // For simplicity with dynamic filters, we use raw SQL string interpolation
     // (filter values are already escaped in the SQL generation)
@@ -568,7 +631,7 @@ pub async fn list_by_project(
         crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())
     });
 
-    // Get total count (only if requested via offset pagination)
+    // Get total count — uses same filters as data query for consistency
     let total_count = if params.after.is_none() && params.before.is_none() {
         let count: Option<i64> = sqlx::query_scalar(
             r#"
@@ -576,13 +639,25 @@ pub async fn list_by_project(
             WHERE i.project_id = $1
               AND ($2::text IS NULL OR i.status = $2)
               AND ($3::text IS NULL OR i.priority = $3)
-              AND (i.archived = false OR $4::boolean)
+              AND ($4::text IS NULL OR i.type = $4)
+              AND ($5::text IS NULL OR i.title ILIKE '%' || $5 || '%' OR i.display_id ILIKE $5 || '%')
+              AND ($6::text IS NULL OR $6 = ANY(i.category))
+              AND (i.archived = false OR $7::boolean)
+              AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE OR $8::boolean)
+              AND ($9::text IS NULL OR i.created_at > $9::timestamptz)
+              AND ($10::text IS NULL OR i.created_at < $10::timestamptz)
             "#,
         )
-        .bind(project_id)
-        .bind(&params.status)
-        .bind(&params.priority)
-        .bind(include_archived)
+        .bind(project_id)               // $1
+        .bind(&params.status)            // $2
+        .bind(&params.priority)          // $3
+        .bind(&params.r#type)            // $4
+        .bind(&effective_search)         // $5
+        .bind(&params.category)          // $6
+        .bind(include_archived)          // $7
+        .bind(include_snoozed)           // $8
+        .bind(&params.created_after)     // $9
+        .bind(&params.created_before)    // $10
         .fetch_optional(&pool)
         .await
         .ok()
@@ -734,7 +809,7 @@ pub async fn create(
     .bind(body.project_id)
     .bind(&display_id)
     .bind(&body.title)
-    .bind(&body.description)
+    .bind(&body.description.as_deref().map(sanitize_description))
     .bind(issue_type)
     .bind(status)
     .bind(&body.priority)
@@ -1317,7 +1392,7 @@ pub async fn update(
     )
     .bind(id)
     .bind(&body.title)
-    .bind(&body.description)
+    .bind(&body.description.as_deref().map(sanitize_description))
     .bind(&body.issue_type)
     .bind(&body.status)
     .bind(priority_provided)
@@ -2204,7 +2279,7 @@ pub async fn public_submit(
     .bind(project.0)
     .bind(&display_id)
     .bind(&body.title)
-    .bind(&body.description)
+    .bind(&body.description.as_deref().map(sanitize_description))
     .bind(body.r#type.as_deref().unwrap_or("bug"))
     .bind(body.priority.as_deref().unwrap_or("medium"))
     .bind(&body.category.clone().unwrap_or_default())
