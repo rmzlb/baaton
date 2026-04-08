@@ -226,6 +226,12 @@ const fr = {
   // ─── AllIssues ──────────────────────────────
   'allIssues.title': 'Toutes les Issues',
   'allIssues.loading': 'Chargement de toutes les issues…',
+  'allIssues.filters.allProjects': 'Tous les projets',
+  'allIssues.filters.noProjects': 'Aucun projet',
+  'allIssues.filters.selectOrg': 'Sélectionner l\'org',
+  'allIssues.filters.clearOrg': 'Effacer l\'org',
+  'allIssues.filters.projectSingular': 'projet',
+  'allIssues.filters.projectPlural': 'projets',
   'allIssues.issueCount_one': '{{count}} issue',
   'allIssues.issueCount_other': '{{count}} issues',
   'allIssues.projectCount_one': '{{count}} projet',
@@ -1280,6 +1286,8 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 
 // ─── Triage ───────────────────────────────────
 'triage.title': 'Triage',
+'triage.filters.allOrgs': 'Toutes les orgs',
+'triage.filters.noOrgs': 'Aucune org',
 'triage.issuesNeedAttention': 'issues à traiter',
 'triage.accept': 'Accepter',
 'triage.assign': 'Assigner',

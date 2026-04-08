@@ -226,6 +226,12 @@ const en = {
   // ─── AllIssues ──────────────────────────────
   'allIssues.title': 'All Issues',
   'allIssues.loading': 'Loading all issues…',
+  'allIssues.filters.allProjects': 'All projects',
+  'allIssues.filters.noProjects': 'No projects',
+  'allIssues.filters.selectOrg': 'Select org',
+  'allIssues.filters.clearOrg': 'Clear org',
+  'allIssues.filters.projectSingular': 'project',
+  'allIssues.filters.projectPlural': 'projects',
   'allIssues.issueCount_one': '{{count}} issue',
   'allIssues.issueCount_other': '{{count}} issues',
   'allIssues.projectCount_one': '{{count}} project',
@@ -1280,6 +1286,8 @@ As a [user], I want to [action] so that [benefit].
 
 // ─── Triage ───────────────────────────────────
 'triage.title': 'Triage',
+'triage.filters.allOrgs': 'All orgs',
+'triage.filters.noOrgs': 'No orgs',
 'triage.issuesNeedAttention': 'issues need attention',
 'triage.accept': 'Accept',
 'triage.assign': 'Assign',

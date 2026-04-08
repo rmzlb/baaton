@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useOrgMembers } from '@/hooks/useOrgMembers';
+import { FilterSelect } from '@/components/shared/FilterSelect';
 import { cn } from '@/lib/utils';
 import {
   Inbox, Check, ArrowRightLeft, XCircle,
@@ -11,6 +12,8 @@ import {
 } from 'lucide-react';
 import type { Issue, IssuePriority } from '@/lib/types';
 import { MarkdownView } from '@/components/shared/MarkdownView';
+
+const TRIAGE_ORG_FILTER_STORAGE_KEY = 'triage:org-filter:v1';
 
 interface AiTriageResult {
   priority?: IssuePriority;
@@ -26,7 +29,7 @@ export function Triage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [assignDropdownId, setAssignDropdownId] = useState<string | null>(null);
-  const [orgFilter, setOrgFilter] = useState<string>('all');
+  const [orgFilter, setOrgFilter] = useState<string>(() => localStorage.getItem(TRIAGE_ORG_FILTER_STORAGE_KEY) || 'all');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<AiTriageResult | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -58,6 +61,16 @@ export function Triage() {
     }
     return Array.from(orgs.entries()).map(([id, label]) => ({ id, label }));
   }, [allTriageIssues]);
+
+  useEffect(() => {
+    localStorage.setItem(TRIAGE_ORG_FILTER_STORAGE_KEY, orgFilter);
+  }, [orgFilter]);
+
+  useEffect(() => {
+    if (orgFilter !== 'all' && availableOrgs.length > 0 && !availableOrgs.some((org) => org.id === orgFilter)) {
+      setOrgFilter('all');
+    }
+  }, [availableOrgs, orgFilter]);
 
   // Apply org filter
   const triageIssues = useMemo(() =>
@@ -224,21 +237,25 @@ export function Triage() {
           {availableOrgs.length > 1 && (
             <div className="flex items-center gap-1.5">
               <Filter size={12} className="text-muted" />
-              <select
-                value={orgFilter}
-                onChange={(e) => { setOrgFilter(e.target.value); setSelectedId(null); }}
-                className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-secondary focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                <option value="all">{t('triage.allOrgs') || 'All orgs'} ({allTriageIssues.length})</option>
-                {availableOrgs.map((org) => {
-                  const count = allTriageIssues.filter((i) => i.org_id === org.id).length;
-                  return (
-                    <option key={org.id} value={org.id}>
-                      {org.label} ({count})
-                    </option>
-                  );
-                })}
-              </select>
+              <FilterSelect
+                multi={false}
+                label={orgFilter === 'all' ? t('triage.filters.allOrgs') : (availableOrgs.find((org) => org.id === orgFilter)?.label || t('triage.filters.allOrgs'))}
+                selectedValues={orgFilter === 'all' ? [] : [orgFilter]}
+                onChange={(values) => {
+                  setOrgFilter(values[0] || 'all');
+                  setSelectedId(null);
+                }}
+                allLabel={t('triage.filters.allOrgs')}
+                allCount={allTriageIssues.length}
+                emptyLabel={t('triage.filters.noOrgs')}
+                options={availableOrgs.map((org) => ({
+                  value: org.id,
+                  label: org.label,
+                  count: allTriageIssues.filter((i) => i.org_id === org.id).length,
+                }))}
+                widthClassName="min-w-[220px]"
+                triggerClassName="text-xs"
+              />
             </div>
           )}
           <div className="flex items-center gap-2 text-[10px] text-muted">
