@@ -49,21 +49,25 @@ interface ActivityFeedProps {
   issueId?: string;
   limit?: number;
   compact?: boolean;
+  entries?: ActivityEntry[] | null;
 }
 
 /* ── Component ─────────────────────────────────── */
 
-export function ActivityFeed({ issueId, limit = 20 }: ActivityFeedProps) {
+export function ActivityFeed({ issueId, limit = 20, entries: providedEntries }: ActivityFeedProps) {
   const { t } = useTranslation();
   const apiClient = useApi();
 
-  const { data: entries = [], isLoading } = useQuery({
+  const { data: queriedEntries = [], isLoading: queryLoading } = useQuery({
     queryKey: issueId ? ['activity', issueId] : ['activity'],
     queryFn: () => issueId ? apiClient.activity.listByIssue(issueId) : apiClient.activity.listRecent(),
     staleTime: 15_000,
     refetchInterval: 30_000,
+    enabled: providedEntries === undefined,
   });
 
+  const isLoading = providedEntries === null ? true : queryLoading;
+  const entries = providedEntries ?? queriedEntries;
   const items = entries.slice(0, limit);
 
   if (isLoading) {

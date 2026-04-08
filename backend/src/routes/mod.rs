@@ -43,6 +43,7 @@ pub mod sse;
 pub mod event_bus;
 pub mod project_context;
 pub mod project_templates;
+mod dashboard;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -206,6 +207,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Project Templates
         .route("/project-templates", get(project_templates::list).post(project_templates::create))
         .route("/project-templates/{id}", delete(project_templates::remove))
+        // Dashboard summary (single-call for the whole dashboard page)
+        .route("/dashboard/summary", get(dashboard::summary))
         // SSE real-time events
         .route("/events", get(sse::event_stream))
         // Slack (BAA-25)

@@ -1,12 +1,10 @@
-import { useAuth } from '@clerk/clerk-react';
 import { useOrganizationList, useOrganization } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useApi } from '@/hooks/useApi';
-import { api } from '@/lib/api';
 import {
-  Kanban, ArrowRight, Archive, Clock, Circle, Eye,
-  CheckCircle2, OctagonAlert, Building2, ChevronRight,
+  Kanban, ArrowRight, Clock, Circle, Eye,
+  CheckCircle2, Building2, ChevronRight,
   TrendingUp, Zap, Timer, Flame, Bot, User, Target,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -14,7 +12,88 @@ import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { ActivityFeed } from '@/components/activity/ActivityFeed';
 import { cn } from '@/lib/utils';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import type { Issue, Project, HeatmapCell } from '@/lib/types';
+import type { ActivityEntry, HeatmapCell } from '@/lib/types';
+
+interface DashboardProject {
+  id: string;
+  name: string;
+  slug: string;
+  prefix: string;
+  description: string | null;
+  status_counts: Record<string, number>;
+  total_issues: number;
+  assignees: string[];
+}
+
+interface DashboardOrg {
+  id: string;
+  name: string;
+  slug: string;
+  image_url?: string | null;
+  is_active: boolean;
+  projects: DashboardProject[];
+}
+
+interface DashboardMetrics {
+  issues_created: Array<{ date: string; count: number }>;
+  issues_closed: Array<{ date: string; count: number }>;
+  avg_resolution_hours: number | null;
+  active_issues: number;
+  period_days: number;
+}
+
+interface DashboardPerson {
+  velocity_7d: number;
+  velocity_30d: number;
+  velocity_trend: string;
+  this_week: number;
+  today: number;
+  streak: number;
+  best_week: number;
+  goal: number | null;
+  breakdown: Record<string, number>;
+  heatmap: HeatmapCell[];
+}
+
+interface DashboardProjectActivity {
+  id: string;
+  name: string;
+  prefix: string;
+  actions_30d: number;
+}
+
+interface DashboardContributor {
+  user_id: string;
+  name: string;
+  actions: number;
+  is_agent: boolean;
+}
+
+interface DashboardAssignedIssue {
+  id: string;
+  display_id: string;
+  title: string;
+  status: string;
+  priority: string | null;
+  project_prefix: string;
+}
+
+interface DashboardSummary {
+  orgs: DashboardOrg[];
+  metrics: DashboardMetrics;
+  personal: DashboardPerson;
+  org_activity: {
+    velocity_7d: number;
+    this_week: number;
+    today: number;
+    breakdown: Record<string, number>;
+    heatmap: HeatmapCell[];
+  };
+  projects_activity: DashboardProjectActivity[];
+  contributors: DashboardContributor[];
+  assigned: DashboardAssignedIssue[];
+  recent_activity: ActivityEntry[];
+}
 
 // ─── Greeting ──────────────────────────────────────────
 
@@ -96,19 +175,6 @@ function ActivityChart({ created, closed, days = 30 }: {
   );
 }
 
-// ─── Status bar (thin) ─────────────────────────────────
-
-function StatusBar({ counts, total }: { counts: Record<string, number>; total: number }) {
-  if (total === 0) return <div className="h-1.5 rounded-full bg-surface-hover" />;
-  const colors: Record<string, string> = { done: '#22c55e', in_review: '#8b5cf6', in_progress: '#f59e0b', todo: '#3b82f6', backlog: '#6b7280' };
-  const segments = ['done', 'in_review', 'in_progress', 'todo', 'backlog'].filter(s => (counts[s] || 0) > 0);
-  return (
-    <div className="flex h-1.5 rounded-full overflow-hidden bg-surface-hover">
-      {segments.map(s => <div key={s} className="h-full" style={{ width: `${((counts[s] || 0) / total) * 100}%`, backgroundColor: colors[s] }} />)}
-    </div>
-  );
-}
-
 // ─── Project Card (reference-inspired) ─────────────────
 
 // Avatar colors for contributor initials
@@ -121,30 +187,13 @@ const AVATAR_COLORS = [
   { bg: 'bg-cyan-500/15', text: 'text-cyan-400' },
 ];
 
-function ProjectCard({ project, issues, onNavigate }: {
-  project: Project; issues: Issue[]; onNavigate: () => void;
+function ProjectCard({ project, onNavigate }: {
+  project: DashboardProject; onNavigate: () => void;
 }) {
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const i of issues) c[i.status] = (c[i.status] || 0) + 1;
-    return c;
-  }, [issues]);
-
-  const total = issues.length;
-  const done = counts['done'] || 0;
-
-  // Unique assignees for avatar stack
-  const assignees = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const i of issues) {
-      if (i.assignee_ids) {
-        for (const aid of i.assignee_ids) {
-          if (aid && !seen.has(aid)) seen.set(aid, aid);
-        }
-      }
-    }
-    return Array.from(seen.keys()).slice(0, 4);
-  }, [issues]);
+  const counts = project.status_counts || {};
+  const total = project.total_issues || 0;
+  const done = counts.done || 0;
+  const assignees = project.assignees || [];
 
   const statusRows = [
     { key: 'todo', label: 'Todo', icon: Circle, color: 'text-blue-500' },
@@ -160,7 +209,6 @@ function ProjectCard({ project, issues, onNavigate }: {
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate(); } }}
       className="group rounded-xl border border-border bg-surface p-5 transition-all hover:border-accent/30 cursor-pointer flex flex-col h-full"
     >
-      {/* Header */}
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-surface-hover border border-border flex items-center justify-center text-[11px] font-bold font-mono text-secondary">
@@ -174,7 +222,6 @@ function ProjectCard({ project, issues, onNavigate }: {
         <ArrowRight size={14} className="text-muted/30 group-hover:text-muted transition-colors" />
       </div>
 
-      {/* Clean data list — dimmed when zero */}
       <div className="flex-1 space-y-2.5 mb-5 mt-1">
         {statusRows.map(s => {
           const val = counts[s.key] || 0;
@@ -193,9 +240,7 @@ function ProjectCard({ project, issues, onNavigate }: {
         })}
       </div>
 
-      {/* Footer: avatar stack + done badge */}
       <div className="flex items-center justify-between pt-4 border-t border-border/50 mt-auto">
-        {/* Avatar stack */}
         <div className="flex -space-x-1.5">
           {assignees.slice(0, 3).map((aid, i) => {
             const c = AVATAR_COLORS[i % AVATAR_COLORS.length];
@@ -216,7 +261,6 @@ function ProjectCard({ project, issues, onNavigate }: {
           )}
         </div>
 
-        {/* Done badge */}
         {done > 0 && (
           <div className="flex items-center gap-1 text-xs font-medium text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">
             <CheckCircle2 size={12} />
@@ -228,51 +272,48 @@ function ProjectCard({ project, issues, onNavigate }: {
   );
 }
 
-// ─── Org Section ───────────────────────────────────────
-
-function OrgSection({ orgName, orgSlug, orgImageUrl, projects, issuesByProject, isCurrentOrg, onSwitch, onProjectNavigate }: {
-  orgName: string; orgSlug: string; orgImageUrl?: string | null;
-  projects: Project[]; issuesByProject: Record<string, Issue[]>;
-  isCurrentOrg: boolean; onSwitch?: () => void;
-  onProjectNavigate: (project: Project) => void;
+function OrgSection({ org, onSwitch, onProjectNavigate }: {
+  org: DashboardOrg;
+  onSwitch?: () => void;
+  onProjectNavigate: (project: DashboardProject, orgId: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const allIssues = projects.flatMap(p => issuesByProject[p.id] || []);
-  const totalActive = allIssues.filter(i => !['done', 'cancelled'].includes(i.status)).length;
+  const totalIssues = org.projects.reduce((sum, p) => sum + p.total_issues, 0);
+  const totalActive = org.projects.reduce((sum, p) => sum + p.total_issues - (p.status_counts.done || 0) - (p.status_counts.cancelled || 0), 0);
 
   return (
     <div className="mb-6">
       <button onClick={() => setCollapsed(!collapsed)} className="flex items-center gap-2.5 mb-3 group w-full text-left">
         <ChevronRight size={14} className={cn('text-muted transition-transform', !collapsed && 'rotate-90')} />
         <div className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-hover shrink-0 overflow-hidden">
-          {orgImageUrl
-            ? <img src={orgImageUrl} alt="" className="h-5 w-5 object-contain" />
+          {org.image_url
+            ? <img src={org.image_url} alt="" className="h-5 w-5 object-contain" />
             : <Building2 size={12} className="text-accent" />
           }
         </div>
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-sm font-semibold text-primary truncate">{orgName}</span>
-          {isCurrentOrg && (
+          <span className="text-sm font-semibold text-primary truncate">{org.name}</span>
+          {org.is_active && (
             <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[9px] font-semibold text-accent uppercase tracking-wider">Active</span>
           )}
           <span className="text-[10px] text-muted font-mono shrink-0">
-            {projects.length} proj · {totalActive} active / {allIssues.length}
+            {org.projects.length} proj · {totalActive} active / {totalIssues}
           </span>
         </div>
-        <Link to={`/all-issues?org=${encodeURIComponent(orgSlug)}`} onClick={e => e.stopPropagation()} className="shrink-0 text-[10px] text-secondary hover:text-accent transition-colors">
+        <Link to={`/all-issues?org=${encodeURIComponent(org.slug)}`} onClick={e => e.stopPropagation()} className="shrink-0 text-[10px] text-secondary hover:text-accent transition-colors">
           All issues →
         </Link>
-        {!isCurrentOrg && onSwitch && (
+        {!org.is_active && onSwitch && (
           <button onClick={e => { e.stopPropagation(); onSwitch(); }} className="shrink-0 rounded-md border border-border px-2.5 py-1 text-[10px] font-medium text-secondary hover:text-primary transition-colors">
             Switch
           </button>
         )}
       </button>
       {!collapsed && (
-        projects.length === 0
+        org.projects.length === 0
           ? <div className="rounded-xl border border-border/50 bg-surface/50 p-6 text-center text-sm text-muted">No projects yet</div>
-          : <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{projects.map(p => (
-              <ProjectCard key={p.id} project={p} issues={issuesByProject[p.id] || []} onNavigate={() => onProjectNavigate(p)} />
+          : <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{org.projects.map(p => (
+              <ProjectCard key={p.id} project={p} onNavigate={() => onProjectNavigate(p, org.id)} />
             ))}</div>
       )}
     </div>
@@ -388,44 +429,18 @@ function MiniHeatmap({ cells, label }: { cells: HeatmapCell[]; label: string }) 
 
 // ─── Gamification Panel (right column) ─────────────────
 
-interface DashboardGamification {
-  personal: { velocity_7d: number; velocity_30d: number; velocity_trend: string; this_week: number; today: number; streak: number; best_week: number; goal: number | null; breakdown: Record<string, number>; heatmap: HeatmapCell[] };
-  org: { velocity_7d: number; this_week: number; today: number; breakdown: Record<string, number>; heatmap: HeatmapCell[] };
-  projects: Array<{ id: string; name: string; prefix: string; actions_30d: number }>;
-  contributors: Array<{ user_id: string; name: string; actions: number; is_agent: boolean }>;
-  assigned: Array<{ id: string; display_id: string; title: string; status: string; priority: string | null; project_prefix: string }>;
-}
-
 const PROJECT_COLORS = ['bg-amber-500', 'bg-emerald-500', 'bg-blue-500', 'bg-purple-500', 'bg-rose-500', 'bg-cyan-500'];
 const PROJECT_DOT_COLORS = ['text-amber-500', 'text-emerald-500', 'text-blue-500', 'text-purple-500', 'text-rose-500', 'text-cyan-500'];
 const PRIORITY_COLORS: Record<string, string> = { urgent: 'text-red-500', high: 'text-orange-500', medium: 'text-amber-500', low: 'text-blue-400' };
 const STATUS_BG: Record<string, string> = { backlog: 'bg-gray-500/10 text-gray-400', todo: 'bg-blue-500/10 text-blue-400', in_progress: 'bg-amber-500/10 text-amber-400', in_review: 'bg-purple-500/10 text-purple-400' };
 
-function GamificationPanel() {
-  const { getToken } = useAuth();
+function GamificationPanel({ data }: { data: DashboardSummary }) {
   const navigate = useNavigate();
-
-  const { data } = useQuery({
-    queryKey: ['gamification-dashboard'],
-    queryFn: async () => {
-      const token = await getToken();
-      if (!token) return null;
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'https://api.baaton.dev'}/api/v1/gamification/dashboard`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json();
-      return json.data as DashboardGamification;
-    },
-    staleTime: 60_000,
-  });
-
-  if (!data) return null;
-  const { personal: p, org: o, projects: projs, contributors, assigned } = data;
+  const { personal: p, org_activity: o, projects_activity: projs, contributors, assigned } = data;
   const projMax = Math.max(...projs.map(pr => pr.actions_30d), 1);
 
   return (
     <div className="space-y-4">
-      {/* ── Your Activity ── */}
       <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -439,7 +454,6 @@ function GamificationPanel() {
           )}
         </div>
 
-        {/* Stats row */}
         <div className="flex rounded-lg border border-border/50 overflow-hidden">
           {[
             { label: 'Velocity', value: p.velocity_7d.toFixed(1), sub: '/day' },
@@ -453,7 +467,6 @@ function GamificationPanel() {
           ))}
         </div>
 
-        {/* Goal */}
         {p.goal != null && p.goal > 0 && (
           <div className="flex items-center gap-2 rounded-lg bg-amber-500/5 border border-amber-500/10 px-3 py-1.5">
             <Target size={12} className="text-amber-500" />
@@ -464,7 +477,6 @@ function GamificationPanel() {
         <MiniHeatmap cells={p.heatmap} label="Your contributions" />
       </div>
 
-      {/* ── All Projects Activity ── */}
       <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -474,7 +486,6 @@ function GamificationPanel() {
           <span className="text-[10px] text-muted">{o.velocity_7d.toFixed(1)}/day</span>
         </div>
 
-        {/* Per-project bars */}
         <div className="space-y-1.5">
           {projs.map((pr, i) => (
             <div key={pr.id} className="flex items-center gap-2">
@@ -488,7 +499,6 @@ function GamificationPanel() {
           ))}
         </div>
 
-        {/* Contributors chips */}
         {contributors.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {contributors.map(c => (
@@ -506,7 +516,6 @@ function GamificationPanel() {
         <MiniHeatmap cells={o.heatmap} label="Team activity" />
       </div>
 
-      {/* ── Assigned to You ── */}
       {assigned.length > 0 && (
         <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
           <div className="flex items-center justify-between">
@@ -533,124 +542,98 @@ function GamificationPanel() {
   );
 }
 
-// ═══════════════════════════════════════════════════════
-// Dashboard — main page
-// ═══════════════════════════════════════════════════════
-
 export function Dashboard() {
   const { t } = useTranslation();
-  const { getToken } = useAuth();
   const navigate = useNavigate();
   const { organization: activeOrg } = useOrganization();
   const { userMemberships, setActive } = useOrganizationList({ userMemberships: { infinite: true } });
   const apiClient = useApi();
   const memberships = userMemberships?.data ?? [];
 
-  const { data: orgData = [], isLoading } = useQuery({
-    queryKey: ['dashboard-cross-org', memberships.map(m => m.organization.id).join(',')],
+  const { data, isLoading } = useQuery({
+    queryKey: ['dashboard-summary', activeOrg?.id],
     queryFn: async () => {
-      const results = await Promise.all(
-        memberships.map(async m => {
-          const org = m.organization;
-          try {
-            const token = await getToken({ organizationId: org.id });
-            if (!token) return { org, projects: [] as Project[], issues: [] as Issue[] };
-            const projects = await api.get<Project[]>('/projects', token);
-            const issues = await api.get<Issue[]>('/issues?limit=2000', token);
-            return { org, projects, issues };
-          } catch { return { org, projects: [] as Project[], issues: [] as Issue[] }; }
-        }),
-      );
-      return results;
+      const res = await apiClient.get<DashboardSummary>('/dashboard/summary');
+      return res;
     },
     enabled: memberships.length > 0,
     staleTime: 30_000,
   });
 
-  const { data: metrics } = useQuery({
-    queryKey: ['metrics', activeOrg?.id],
-    queryFn: () => apiClient.metrics.get(30),
-    enabled: !!activeOrg,
-    staleTime: 60_000,
-  });
-
-  const issuesByProject = useMemo(() => {
-    const map: Record<string, Issue[]> = {};
-    for (const { issues } of orgData) for (const i of issues) { if (!map[i.project_id]) map[i.project_id] = []; map[i.project_id].push(i); }
-    return map;
-  }, [orgData]);
-
-  const allIssues = orgData.flatMap(d => d.issues);
-  const oneWeekAgo = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d; }, []);
-
   const metricsItems = useMemo(() => {
-    const active = allIssues.filter(i => !['done', 'cancelled'].includes(i.status)).length;
-    const created = allIssues.filter(i => new Date(i.created_at) >= oneWeekAgo).length;
-    const closed = allIssues.filter(i => ['done', 'cancelled'].includes(i.status) && new Date(i.updated_at) >= oneWeekAgo).length;
-    const avgH = metrics?.avg_resolution_hours;
+    const active = data?.metrics.active_issues ?? 0;
+    const created = data?.metrics.issues_created?.reduce((sum, row) => sum + row.count, 0) ?? 0;
+    const closed = data?.metrics.issues_closed?.reduce((sum, row) => sum + row.count, 0) ?? 0;
+    const avgH = data?.metrics.avg_resolution_hours;
     const avgLabel = avgH != null ? (avgH >= 24 ? `${(avgH / 24).toFixed(1)}` : `${avgH.toFixed(1)}h`) : '—';
     const avgSub = avgH != null ? (avgH >= 24 ? 'days' : '') : '';
     return [
-      { label: 'Active Issues', value: active, color: '#3b82f6', icon: TrendingUp, sub: `+${created} this week` },
-      { label: 'Created', value: created, color: '#f59e0b', icon: Zap, sub: 'Last 7 days' },
+      { label: 'Active Issues', value: active, color: '#3b82f6', icon: TrendingUp, sub: `+${created} last 30d` },
+      { label: 'Created', value: created, color: '#f59e0b', icon: Zap, sub: 'Last 30 days' },
       { label: 'Closed', value: closed, color: '#22c55e', icon: CheckCircle2, sub: closed > created ? 'On track' : undefined },
       { label: 'Avg Resolution', value: avgLabel, color: '#8b5cf6', icon: Timer, sub: avgSub || undefined },
     ];
-  }, [allIssues, oneWeekAgo, metrics]);
+  }, [data]);
 
   const pendingNavRef = useRef<string | null>(null);
   useEffect(() => {
-    if (pendingNavRef.current && activeOrg) { const t = pendingNavRef.current; pendingNavRef.current = null; navigate(`/projects/${t}`); }
+    if (pendingNavRef.current && activeOrg) {
+      const target = pendingNavRef.current;
+      pendingNavRef.current = null;
+      navigate(`/projects/${target}`);
+    }
   }, [activeOrg, navigate]);
 
-  const handleProjectNavigate = useCallback((orgId: string, project: Project) => {
-    if (orgId === activeOrg?.id) { navigate(`/projects/${project.slug}`); }
-    else { pendingNavRef.current = project.slug; setActive?.({ organization: orgId }); }
+  const handleProjectNavigate = useCallback((project: DashboardProject, orgId: string) => {
+    if (orgId === activeOrg?.id) {
+      navigate(`/projects/${project.slug}`);
+    } else {
+      pendingNavRef.current = project.slug;
+      setActive?.({ organization: orgId });
+    }
   }, [activeOrg?.id, navigate, setActive]);
 
-  const sortedOrgData = useMemo(() => [...orgData].sort((a, b) => {
-    if (a.org.id === activeOrg?.id) return -1;
-    if (b.org.id === activeOrg?.id) return 1;
-    return a.org.name.localeCompare(b.org.name);
-  }), [orgData, activeOrg?.id]);
+  const sortedOrgs = useMemo(() => {
+    const orgs = data?.orgs ?? [];
+    return [...orgs].sort((a, b) => {
+      if (a.id === activeOrg?.id) return -1;
+      if (b.id === activeOrg?.id) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [data?.orgs, activeOrg?.id]);
 
-  const totalProjects = orgData.reduce((s, d) => s + d.projects.length, 0);
+  const totalProjects = data?.orgs.reduce((sum, org) => sum + org.projects.length, 0) ?? 0;
 
   return (
     <div className="max-w-[1280px] mx-auto px-4 md:px-6 py-6 md:py-8">
-      {/* ── Header ── */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-primary">{getGreeting()}</h1>
         <p className="text-secondary mt-1">
-          {memberships.length > 1
-            ? `${totalProjects} projects across ${memberships.length} organizations.`
+          {(data?.orgs.length ?? memberships.length) > 1
+            ? `${totalProjects} projects across ${data?.orgs.length ?? memberships.length} organizations.`
             : `${totalProjects} projects in your workspace.`}
         </p>
       </div>
 
-      {/* ── Unified Metrics Bar ── */}
       <div className="mb-6">
         <MetricsBar items={metricsItems} />
       </div>
 
-      {/* ── Activity Chart ── */}
-      {metrics && (
+      {data?.metrics && (
         <div className="rounded-xl border border-border bg-surface p-4 md:p-5 mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-[10px] font-semibold text-muted uppercase tracking-wider">Activity — 30 days</h2>
             <span className="text-[10px] text-muted">
-              {metrics.issues_created?.reduce((s: number, p: any) => s + p.count, 0) ?? 0} created · {metrics.issues_closed?.reduce((s: number, p: any) => s + p.count, 0) ?? 0} closed
+              {data.metrics.issues_created.reduce((s, p) => s + p.count, 0)} created · {data.metrics.issues_closed.reduce((s, p) => s + p.count, 0)} closed
             </span>
           </div>
-          <ActivityChart created={metrics.issues_created ?? []} closed={metrics.issues_closed ?? []} />
+          <ActivityChart created={data.metrics.issues_created} closed={data.metrics.issues_closed} />
         </div>
       )}
 
       <div className="mb-6"><GlobalCreateIssueButton variant="big" /></div>
 
-      {/* ── Main Grid: Projects + Right Panel ── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left: Projects */}
         <div className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t('dashboard.projects')}</h2>
@@ -669,32 +652,29 @@ export function Dashboard() {
                 </div>
               ))}
             </div>
-          ) : sortedOrgData.length === 0 ? (
+          ) : sortedOrgs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 rounded-xl border border-border bg-surface">
               <Kanban size={32} className="text-secondary mb-2" />
               <p className="text-sm text-secondary">{t('dashboard.noProjects')}</p>
             </div>
           ) : (
-            sortedOrgData.map(({ org, projects }) => (
+            sortedOrgs.map(org => (
               <OrgSection
-                key={org.id} orgName={org.name} orgSlug={org.slug}
-                orgImageUrl={(org as any).imageUrl || (org as any).image_url}
-                projects={projects} issuesByProject={issuesByProject}
-                isCurrentOrg={org.id === activeOrg?.id}
+                key={org.id}
+                org={org}
                 onSwitch={org.id !== activeOrg?.id ? () => setActive?.({ organization: org.id }) : undefined}
-                onProjectNavigate={project => handleProjectNavigate(org.id, project)}
+                onProjectNavigate={handleProjectNavigate}
               />
             ))
           )}
         </div>
 
-        {/* Right: Activity + Assigned + Feed */}
         <div className="space-y-4">
-          <GamificationPanel />
+          {data && <GamificationPanel data={data} />}
 
           <div className="rounded-xl border border-border bg-surface p-4">
             <h2 className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-3">{t('dashboard.recentActivity')}</h2>
-            <ActivityFeed limit={15} />
+            <ActivityFeed limit={15} entries={data ? data.recent_activity : null} />
           </div>
         </div>
       </div>
