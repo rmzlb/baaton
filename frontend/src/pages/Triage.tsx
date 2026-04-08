@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import * as Popover from '@radix-ui/react-popover';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -147,6 +148,41 @@ export function Triage() {
     setAssignDropdownId(null);
   }, [updateMutation, removeFromCache]);
 
+  const renderAssignMenu = useCallback((issueId: string) => (
+    <Popover.Portal>
+      <Popover.Content
+        sideOffset={8}
+        align="end"
+        collisionPadding={16}
+        className="z-[160] min-w-[220px] rounded-xl border border-border bg-surface py-1.5 shadow-2xl outline-none"
+      >
+        <p className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-muted">{t('triage.assignTo')}</p>
+        {issueOrgMembers.length === 0 ? (
+          <div className="px-3 py-2 text-xs text-muted">No members</div>
+        ) : (
+          issueOrgMembers.map((m, idx) => {
+            const name = `${m.first_name} ${m.last_name}`.trim() || m.email || m.user_id.slice(0, 12);
+            return (
+              <button
+                key={m.user_id}
+                onClick={(e) => { e.stopPropagation(); handleAssign(issueId, m.user_id); }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
+              >
+                <kbd className="min-w-[16px] rounded bg-surface-hover px-1 py-0.5 text-center font-mono text-[9px] text-muted">{idx + 1}</kbd>
+                {m.image_url ? (
+                  <img src={m.image_url} alt="" className="h-5 w-5 rounded-full object-cover" />
+                ) : (
+                  <User size={14} />
+                )}
+                <span>{name}</span>
+              </button>
+            );
+          })
+        )}
+      </Popover.Content>
+    </Popover.Portal>
+  ), [handleAssign, issueOrgMembers, t]);
+
   // Reset AI result when switching issues
   useEffect(() => {
     setAiResult(null);
@@ -189,7 +225,7 @@ export function Triage() {
         if (num >= 1 && num <= issueOrgMembers.length) {
           e.preventDefault();
           const member = issueOrgMembers[num - 1];
-          if (member?.user_id) handleAssign(selectedIssue.id, member.user_id);
+          if (member?.user_id) handleAssign(assignDropdownId, member.user_id);
         }
         return; // Don't process other shortcuts while dropdown open
       }
@@ -318,38 +354,18 @@ export function Triage() {
                   >
                     <Check size={16} />
                   </button>
-                  <div className="relative">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setAssignDropdownId(assignDropdownId === issue.id ? null : issue.id); }}
-                      className="rounded-md p-1.5 text-blue-400 hover:bg-blue-500/10 transition-colors"
-                      title={t('triage.assign')}
-                    >
-                      <ArrowRightLeft size={16} />
-                    </button>
-                    {assignDropdownId === issue.id && (
-                      <div className="absolute right-0 top-full mt-1 z-50 rounded-xl border border-border bg-surface shadow-2xl py-1.5 min-w-[200px]">
-                        <p className="px-3 py-1 text-[9px] font-semibold text-muted uppercase tracking-wider">{t('triage.assignTo')}</p>
-                        {issueOrgMembers.map((m, idx) => {
-                          const name = `${m.first_name} ${m.last_name}`.trim() || m.email || m.user_id.slice(0, 12);
-                          return (
-                            <button
-                              key={m.user_id}
-                              onClick={(e) => { e.stopPropagation(); handleAssign(issue.id, m.user_id); }}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-secondary hover:bg-surface-hover hover:text-primary transition-colors"
-                            >
-                              <kbd className="rounded bg-surface-hover px-1 py-0.5 text-[9px] font-mono text-muted min-w-[16px] text-center">{idx + 1}</kbd>
-                              {m.image_url ? (
-                                <img src={m.image_url} alt="" className="w-5 h-5 rounded-full object-cover" />
-                              ) : (
-                                <User size={14} />
-                              )}
-                              <span>{name}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  <Popover.Root open={assignDropdownId === issue.id} onOpenChange={(open) => setAssignDropdownId(open ? issue.id : null)}>
+                    <Popover.Trigger asChild>
+                      <button
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded-md p-1.5 text-blue-400 transition-colors hover:bg-blue-500/10"
+                        title={t('triage.assign')}
+                      >
+                        <ArrowRightLeft size={16} />
+                      </button>
+                    </Popover.Trigger>
+                    {renderAssignMenu(issue.id)}
+                  </Popover.Root>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDecline(issue); }}
                     className="rounded-md p-1.5 text-red-400 hover:bg-red-500/10 transition-colors"
@@ -499,14 +515,18 @@ export function Triage() {
                   {t('triage.accept')}
                   <kbd className="rounded bg-green-500/20 px-1.5 py-0.5 text-[10px] font-mono">1</kbd>
                 </button>
-                <button
-                  onClick={() => setAssignDropdownId(assignDropdownId === selectedIssue.id ? null : selectedIssue.id)}
-                  className="flex items-center gap-2 rounded-lg bg-blue-500/10 border border-blue-500/20 px-4 py-2 text-sm text-blue-400 hover:bg-blue-500/20 transition-colors"
-                >
-                  <ArrowRightLeft size={16} />
-                  {t('triage.assign')}
-                  <kbd className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-mono">2</kbd>
-                </button>
+                <Popover.Root open={assignDropdownId === selectedIssue.id} onOpenChange={(open) => setAssignDropdownId(open ? selectedIssue.id : null)}>
+                  <Popover.Trigger asChild>
+                    <button
+                      className="flex items-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-sm text-blue-400 transition-colors hover:bg-blue-500/20"
+                    >
+                      <ArrowRightLeft size={16} />
+                      {t('triage.assign')}
+                      <kbd className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-mono">2</kbd>
+                    </button>
+                  </Popover.Trigger>
+                  {renderAssignMenu(selectedIssue.id)}
+                </Popover.Root>
                 <button
                   onClick={() => handleDecline(selectedIssue)}
                   className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2 text-sm text-red-400 hover:bg-red-500/20 transition-colors"
