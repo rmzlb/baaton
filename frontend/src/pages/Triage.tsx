@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
@@ -29,7 +29,8 @@ export function Triage() {
   const queryClient = useQueryClient();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [assignDropdownId, setAssignDropdownId] = useState<string | null>(null);
+  const [isAssignOpen, setIsAssignOpen] = useState(false);
+  const previewAssignRef = useRef<HTMLButtonElement>(null);
   const [orgFilter, setOrgFilter] = useState<string>(() => localStorage.getItem(TRIAGE_ORG_FILTER_STORAGE_KEY) || 'all');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<AiTriageResult | null>(null);
@@ -83,10 +84,8 @@ export function Triage() {
 
   const selectedIssue = triageIssues.find((i) => i.id === selectedId) || triageIssues[0] || null;
 
-  // Determine which issue's org to fetch members for:
-  // Use the assign dropdown issue if open, otherwise the selected issue
-  const assignDropdownIssue = triageIssues.find((i) => i.id === assignDropdownId);
-  const activeOrgId = assignDropdownIssue?.org_id || selectedIssue?.org_id;
+  // Always fetch members for the selected issue's org
+  const activeOrgId = selectedIssue?.org_id;
   const { members: issueOrgMembers } = useOrgMembers(activeOrgId);
 
   // Auto-select first
@@ -145,7 +144,7 @@ export function Triage() {
   const handleAssign = useCallback((issueId: string, userId: string) => {
     removeFromCache(issueId);
     updateMutation.mutate({ id: issueId, body: { assignee_ids: [userId], status: 'todo' } });
-    setAssignDropdownId(null);
+    setIsAssignOpen(false);
   }, [updateMutation, removeFromCache]);
 
   const renderAssignMenu = useCallback((issueId: string) => (
@@ -218,16 +217,15 @@ export function Triage() {
     const handler = (e: KeyboardEvent) => {
       if (!selectedIssue || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-      // When assign dropdown is open: number keys pick a member, Escape closes
-      if (assignDropdownId) {
-        if (e.key === 'Escape') { e.preventDefault(); setAssignDropdownId(null); return; }
+      // When assign popover is open: number keys pick a member, Escape handled by Radix
+      if (isAssignOpen) {
         const num = parseInt(e.key);
-        if (num >= 1 && num <= issueOrgMembers.length) {
+        if (!isNaN(num) && num >= 1 && num <= issueOrgMembers.length) {
           e.preventDefault();
           const member = issueOrgMembers[num - 1];
-          if (member?.user_id) handleAssign(assignDropdownId, member.user_id);
+          if (member?.user_id) handleAssign(selectedIssue.id, member.user_id);
         }
-        return; // Don't process other shortcuts while dropdown open
+        return; // Don't process other shortcuts while assign open
       }
 
       // j/k to navigate issue list
@@ -240,12 +238,12 @@ export function Triage() {
       }
 
       if (e.key === '1') { e.preventDefault(); handleAccept(selectedIssue); }
-      if (e.key === '2') { e.preventDefault(); setAssignDropdownId(selectedIssue.id); }
+      if (e.key === '2') { e.preventDefault(); previewAssignRef.current?.click(); }
       if (e.key === '3') { e.preventDefault(); handleDecline(selectedIssue); }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [selectedIssue, handleAccept, handleDecline, handleAssign, assignDropdownId, issueOrgMembers, triageIssues]);
+  }, [selectedIssue, handleAccept, handleDecline, handleAssign, isAssignOpen, issueOrgMembers, triageIssues]);
 
   if (isLoading) {
     return (
@@ -354,10 +352,10 @@ export function Triage() {
                   >
                     <Check size={16} />
                   </button>
-                  <Popover.Root open={assignDropdownId === issue.id} onOpenChange={(open) => setAssignDropdownId(open ? issue.id : null)}>
+                  <Popover.Root>
                     <Popover.Trigger asChild>
                       <button
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); setSelectedId(issue.id); }}
                         className="rounded-md p-1.5 text-blue-400 transition-colors hover:bg-blue-500/10"
                         title={t('triage.assign')}
                       >
@@ -515,9 +513,10 @@ export function Triage() {
                   {t('triage.accept')}
                   <kbd className="rounded bg-green-500/20 px-1.5 py-0.5 text-[10px] font-mono">1</kbd>
                 </button>
-                <Popover.Root open={assignDropdownId === selectedIssue.id} onOpenChange={(open) => setAssignDropdownId(open ? selectedIssue.id : null)}>
+                <Popover.Root onOpenChange={setIsAssignOpen}>
                   <Popover.Trigger asChild>
                     <button
+                      ref={previewAssignRef}
                       className="flex items-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-sm text-blue-400 transition-colors hover:bg-blue-500/20"
                     >
                       <ArrowRightLeft size={16} />
