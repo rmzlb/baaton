@@ -313,15 +313,35 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let token = match auth_header {
-        Some(ref h) if h.starts_with("Bearer ") => &h[7..],
-        _ => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                r#"{"error":"Missing or invalid Authorization header"}"#,
-            )
-                .into_response();
-        }
+    // Fallback: accept ?token= query param (needed for EventSource/SSE which can't send headers)
+    let query_token: Option<String> = if auth_header.is_none() {
+        req.uri()
+            .query()
+            .and_then(|q| {
+                q.split('&')
+                    .find(|p| p.starts_with("token="))
+                    .map(|p| p[6..].to_string())
+            })
+    } else {
+        None
+    };
+
+    // Owned string to extend lifetime
+    let bearer_owned: Option<String> = auth_header
+        .as_ref()
+        .filter(|h| h.starts_with("Bearer "))
+        .map(|h| h[7..].to_string());
+
+    let token: &str = if let Some(ref t) = bearer_owned {
+        t
+    } else if let Some(ref t) = query_token {
+        t
+    } else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            r#"{"error":"Missing or invalid Authorization header"}"#,
+        )
+            .into_response();
     };
 
     // ── API Key auth path ────────────────────────────────
