@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
+use crate::routes::issues::fetch_user_org_ids;
 
 /// Full list of valid permission strings for API keys.
 /// "admin:full" grants all permissions (superkey).
@@ -107,19 +108,28 @@ pub async fn list(
 ) -> Result<Json<ApiResponse<Vec<ApiKeyRow>>>, (StatusCode, Json<serde_json::Value>)> {
     require_clerk_user(&auth)?;
 
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_ids = match fetch_user_org_ids(&auth.user_id).await {
+        Ok(ids) if !ids.is_empty() => ids,
+        Ok(_) => auth.org_id.iter().cloned().collect(),
+        Err(e) => {
+            tracing::warn!("fetch_user_org_ids failed in api_keys.list: {}", e);
+            auth.org_id.iter().cloned().collect()
+        }
+    };
 
-    let user_id = auth.user_id.clone();
+    if org_ids.is_empty() {
+        return Ok(Json(ApiResponse::new(vec![])));
+    }
+
     let keys = sqlx::query_as::<_, ApiKeyRow>(
         "SELECT k.id, k.org_id, o.name as org_name, k.name, k.key_prefix, k.permissions, \
          COALESCE(k.project_ids, '{}') as project_ids, k.last_used_at, k.expires_at, k.created_at \
          FROM api_keys k \
          LEFT JOIN organizations o ON o.id = k.org_id \
-         WHERE k.created_by = $1 \
-         ORDER BY k.created_at DESC"
+         WHERE k.org_id = ANY($1) \
+         ORDER BY k.org_id, k.created_at DESC"
     )
-    .bind(&user_id)
+    .bind(&org_ids)
     .fetch_all(&pool)
     .await
     .map_err(|e| {
@@ -159,8 +169,8 @@ pub async fn create(
     let (full_key, prefix, hash) = generate_api_key();
 
     let row = sqlx::query_as::<_, ApiKeyRow>(
-        "INSERT INTO api_keys (org_id, name, key_hash, key_prefix, permissions, project_ids, expires_at, created_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+        "INSERT INTO api_keys (org_id, name, key_hash, key_prefix, permissions, project_ids, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) \
          RETURNING id, org_id, (SELECT name FROM organizations WHERE id = $1) as org_name, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
     )
     .bind(org_id)
@@ -170,7 +180,6 @@ pub async fn create(
     .bind(&body.permissions)
     .bind(&body.project_ids)
     .bind(body.expires_at)
-    .bind(&auth.user_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| {

@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
     let max_conns: u32 = std::env::var("DB_MAX_CONNECTIONS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(20);
+        .unwrap_or(5);
     let connect_opts = database_url.parse::<sqlx::postgres::PgConnectOptions>()?
         .statement_cache_capacity(0);
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -99,6 +99,8 @@ async fn main() -> anyhow::Result<()> {
         (46, include_str!("../migrations/046_approval_workflow.sql")),
         (47, include_str!("../migrations/047_advanced_api.sql")),
         (48, include_str!("../migrations/048_agent_sessions.sql")),
+        (49, include_str!("../migrations/049_project_context.sql")),
+        (50, include_str!("../migrations/050_api_keys_created_by.sql")),
     ];
 
     for &(version, sql) in migrations {
@@ -108,12 +110,18 @@ async fn main() -> anyhow::Result<()> {
             .await
             .unwrap_or(false);
         if !applied {
-            sqlx::raw_sql(sql).execute(&pool).await?;
-            sqlx::query("INSERT INTO _migrations (version) VALUES ($1)")
-                .bind(version)
-                .execute(&pool)
-                .await?;
-            tracing::info!("Applied migration {}", version);
+            match sqlx::raw_sql(sql).execute(&pool).await {
+                Ok(_) => {
+                    let _ = sqlx::query("INSERT INTO _migrations (version) VALUES ($1)")
+                        .bind(version)
+                        .execute(&pool)
+                        .await;
+                    tracing::info!("Applied migration {}", version);
+                }
+                Err(e) => {
+                    tracing::warn!("Migration {} failed (will retry on next restart): {}", version, e);
+                }
+            }
         }
     }
     tracing::info!("Migrations applied");
