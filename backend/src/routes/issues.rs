@@ -1272,36 +1272,17 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateIssue>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
 
-    // Verify issue belongs to one of the user's orgs (cross-org support)
-    // First try current org, then check all user's orgs
-    let mut exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
+    let target_org_id: String = sqlx::query_scalar(
+        "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
     )
     .bind(id)
-    .bind(org_id)
-    .fetch_one(&pool)
+    .bind(&org_ids)
+    .fetch_optional(&pool)
     .await
-    .unwrap_or(false);
-
-    // Cross-org fallback: check if issue belongs to ANY org the user is a member of
-    if !exists {
-        let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
-        exists = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2))"
-        )
-        .bind(id)
-        .bind(&all_org_ids)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(false);
-    }
-
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
-    }
+    .map_err(internal_err)?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
 
     let existing = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
         .bind(id)
@@ -1316,7 +1297,7 @@ pub async fn update(
 
     // ── Input validation ─────────────────────────────────
     if let Some(ref status) = body.status {
-        let valid_statuses = get_project_statuses(&pool, existing.project_id, org_id).await?;
+        let valid_statuses = get_project_statuses(&pool, existing.project_id, &target_org_id).await?;
         validate_status(status, &valid_statuses)?;
 
         // Note: workflow transition is now permissive — warnings are returned in the response, not 400 errors.
@@ -1483,7 +1464,7 @@ pub async fn update(
     if status_changed && new_status == "done" {
         let pool2 = pool.clone();
         let uid = auth.user_id.clone();
-        let oid = org_id.to_string();
+        let oid = target_org_id.clone();
         tokio::spawn(async move {
             crate::routes::gamification::record_activity(&pool2, &uid, &oid, "issue_close").await;
         });
@@ -1495,7 +1476,7 @@ pub async fn update(
         let user_id = auth.user_id.clone();
         let user_name = auth.display_name.clone();
         let project_id = existing.project_id;
-        let org_id_str = org_id.to_string();
+        let org_id_str = target_org_id.clone();
 
         if status_changed {
             let old_val = existing.status.clone();
@@ -1608,7 +1589,7 @@ pub async fn update(
     {
         let issue_id_copy = id;
         let project_id_copy = existing.project_id;
-        let org_id_str2 = org_id.to_string();
+        let org_id_str2 = target_org_id.clone();
 
         // On assignee change → notify newly added assignees (type='assigned')
         if let Some(ref new_ids) = body.assignee_ids {
@@ -1671,7 +1652,7 @@ pub async fn update(
     // ── Automations: status/priority change (fire-and-forget) ─
     {
         let pool2 = pool.clone();
-        let oid = org_id.to_string();
+        let oid = target_org_id.clone();
         let pid = issue.project_id;
         let issue2 = issue.clone();
         let trigger = if status_changed {
@@ -1691,11 +1672,11 @@ pub async fn update(
 
     // ── Webhook dispatch (fire-and-forget) ───────────
     let event = if status_changed { "status.changed" } else { "issue.updated" };
-    dispatch_event(pool.clone(), org_id.to_string(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
+    dispatch_event(pool.clone(), target_org_id.clone(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
 
     // ── SSE broadcast ────────────────────────────────
     let sse_event = if status_changed { "issue.status_changed" } else { "issue.updated" };
-    broadcast_event(&sse_tx, org_id, sse_event, &serde_json::to_string(&issue).unwrap_or_default());
+    broadcast_event(&sse_tx, &target_org_id, sse_event, &serde_json::to_string(&issue).unwrap_or_default());
 
     // AI-first: contextual action hints
     let mut hints = vec![];
