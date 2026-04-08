@@ -2,9 +2,27 @@ use axum::{extract::{Path, Query, State}, http::StatusCode, Extension, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
+use std::collections::HashMap;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
+
+// ─── User Org IDs Cache ──────────────────────────────
+const USER_ORGS_CACHE_TTL: Duration = Duration::from_secs(300); // 5 min
+
+struct CachedUserOrgs {
+    org_ids: Vec<String>,
+    fetched_at: Instant,
+}
+
+static USER_ORGS_CACHE: OnceLock<RwLock<HashMap<String, CachedUserOrgs>>> = OnceLock::new();
+
+fn user_orgs_cache() -> &'static RwLock<HashMap<String, CachedUserOrgs>> {
+    USER_ORGS_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
 use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr, UpdateIssue};
 use crate::routes::activity::log_activity;
 use crate::routes::automations::evaluate_automations;
@@ -2182,6 +2200,16 @@ pub async fn resolve_user_org_ids_from_auth(auth: &super::super::middleware::Aut
 
 /// Fetch all organization IDs that a user belongs to via Clerk API
 pub async fn fetch_user_org_ids(user_id: &str) -> Result<Vec<String>, String> {
+    // Check cache first — avoids Clerk API flakiness causing missing cross-org data
+    {
+        let cache = user_orgs_cache().read().await;
+        if let Some(entry) = cache.get(user_id) {
+            if entry.fetched_at.elapsed() < USER_ORGS_CACHE_TTL {
+                return Ok(entry.org_ids.clone());
+            }
+        }
+    }
+
     let secret = std::env::var("CLERK_SECRET_KEY")
         .map_err(|_| "CLERK_SECRET_KEY not configured".to_string())?;
 
@@ -2200,6 +2228,14 @@ pub async fn fetch_user_org_ids(user_id: &str) -> Result<Vec<String>, String> {
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
+        // On error: return stale cache if available rather than failing
+        {
+            let cache = user_orgs_cache().read().await;
+            if let Some(entry) = cache.get(user_id) {
+                tracing::warn!("Clerk API error for {}, returning stale cache: {}", user_id, status);
+                return Ok(entry.org_ids.clone());
+            }
+        }
         return Err(format!("Clerk API returned {}: {}", status, body));
     }
 
@@ -2219,7 +2255,18 @@ pub async fn fetch_user_org_ids(user_id: &str) -> Result<Vec<String>, String> {
     let memberships: ClerkOrgMembershipsResponse = response.json().await
         .map_err(|e| format!("Failed to parse Clerk response: {}", e))?;
 
-    Ok(memberships.data.into_iter().map(|m| m.organization.id).collect())
+    let org_ids: Vec<String> = memberships.data.into_iter().map(|m| m.organization.id).collect();
+
+    // Update cache
+    {
+        let mut cache = user_orgs_cache().write().await;
+        cache.insert(user_id.to_string(), CachedUserOrgs {
+            org_ids: org_ids.clone(),
+            fetched_at: Instant::now(),
+        });
+    }
+
+    Ok(org_ids)
 }
 
 // ─── Public Submission ────────────────────────────────
