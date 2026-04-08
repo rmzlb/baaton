@@ -50,11 +50,12 @@ interface ActivityFeedProps {
   limit?: number;
   compact?: boolean;
   entries?: ActivityEntry[] | null;
+  onIssueClick?: (displayId: string, orgId: string | null) => void;
 }
 
 /* ── Component ─────────────────────────────────── */
 
-export function ActivityFeed({ issueId, limit = 20, entries: providedEntries }: ActivityFeedProps) {
+export function ActivityFeed({ issueId, limit = 20, entries: providedEntries, onIssueClick }: ActivityFeedProps) {
   const { t } = useTranslation();
   const apiClient = useApi();
 
@@ -69,6 +70,7 @@ export function ActivityFeed({ issueId, limit = 20, entries: providedEntries }: 
   const isLoading = providedEntries === null ? true : queryLoading;
   const entries = providedEntries ?? queriedEntries;
   const items = entries.slice(0, limit);
+  const handleItemIssueClick = onIssueClick;
 
   if (isLoading) {
     return (
@@ -95,7 +97,7 @@ export function ActivityFeed({ issueId, limit = 20, entries: providedEntries }: 
 
       <div className="space-y-5">
         {items.map((entry) => (
-          <TimelineItem key={entry.id} entry={entry} t={t} />
+          <TimelineItem key={entry.id} entry={entry} t={t} onIssueClick={handleItemIssueClick} />
         ))}
       </div>
     </div>
@@ -104,7 +106,7 @@ export function ActivityFeed({ issueId, limit = 20, entries: providedEntries }: 
 
 /* ── Timeline Item ─────────────────────────────── */
 
-function TimelineItem({ entry, t }: { entry: ActivityEntry; t: (k: string) => string }) {
+function TimelineItem({ entry, t, onIssueClick }: { entry: ActivityEntry; t: (k: string) => string; onIssueClick?: (displayId: string, orgId: string | null) => void }) {
   const navigate = useNavigate();
   const dotColor = DOT_COLORS[entry.action] || 'bg-gray-400';
   const verb = actionVerb(entry.action, t);
@@ -118,7 +120,12 @@ function TimelineItem({ entry, t }: { entry: ActivityEntry; t: (k: string) => st
         : entry.user_id.slice(0, 12);
 
   const handleIssueClick = () => {
-    if (entry.issue_display_id) navigate(`/all-issues?issue=${entry.issue_display_id}`);
+    if (!entry.issue_display_id) return;
+    if (onIssueClick) {
+      onIssueClick(entry.issue_display_id, entry.org_id ?? null);
+    } else {
+      navigate(`/all-issues?issue=${entry.issue_display_id}`);
+    }
   };
 
   return (

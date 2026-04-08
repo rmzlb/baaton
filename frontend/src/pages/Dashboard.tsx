@@ -71,6 +71,7 @@ interface DashboardContributor {
 
 interface DashboardAssignedIssue {
   id: string;
+  org_id: string | null;
   display_id: string;
   title: string;
   status: string;
@@ -435,8 +436,7 @@ const PROJECT_DOT_COLORS = ['text-amber-500', 'text-emerald-500', 'text-blue-500
 const PRIORITY_COLORS: Record<string, string> = { urgent: 'text-red-500', high: 'text-orange-500', medium: 'text-amber-500', low: 'text-blue-400' };
 const STATUS_BG: Record<string, string> = { backlog: 'bg-gray-500/10 text-gray-400', todo: 'bg-blue-500/10 text-blue-400', in_progress: 'bg-amber-500/10 text-amber-400', in_review: 'bg-purple-500/10 text-purple-400' };
 
-function GamificationPanel({ data }: { data: DashboardSummary }) {
-  const navigate = useNavigate();
+function GamificationPanel({ data, onIssueClick }: { data: DashboardSummary; onIssueClick: (displayId: string, orgId: string | null) => void }) {
   const { personal: p, org_activity: o, projects_activity: projs, contributors, assigned } = data;
   const projMax = Math.max(...projs.map(pr => pr.actions_30d), 1);
 
@@ -517,16 +517,18 @@ function GamificationPanel({ data }: { data: DashboardSummary }) {
         <MiniHeatmap cells={o.heatmap} label="Team activity" />
       </div>
 
-      {assigned.length > 0 && (
-        <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[10px] font-semibold text-muted uppercase tracking-wider">Assigned to you</h3>
-            <span className="text-[10px] text-muted">{assigned.length} open</span>
-          </div>
-          {assigned.map(issue => (
+      <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[10px] font-semibold text-muted uppercase tracking-wider">Assigned to you</h3>
+          {assigned.length > 0 && <span className="text-[10px] text-muted">{assigned.length} open</span>}
+        </div>
+        {assigned.length === 0 ? (
+          <p className="text-[11px] text-muted py-1">No open issues assigned to you.</p>
+        ) : (
+          assigned.map(issue => (
             <button
               key={issue.id}
-              onClick={() => navigate(`/all-issues?issue=${issue.display_id}`)}
+              onClick={() => onIssueClick(issue.display_id, issue.org_id)}
               className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-surface-hover transition-colors text-left group"
             >
               <span className={cn('text-[10px]', PRIORITY_COLORS[issue.priority ?? 'medium'])}>●</span>
@@ -536,9 +538,9 @@ function GamificationPanel({ data }: { data: DashboardSummary }) {
                 {issue.status.replace('_', ' ')}
               </span>
             </button>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -551,8 +553,9 @@ export function Dashboard() {
   const apiClient = useApi();
   const memberships = userMemberships?.data ?? [];
 
+  // Stable query key — backend is cross-org, no need to re-fetch on org switch
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-summary', activeOrg?.id],
+    queryKey: ['dashboard-summary'],
     queryFn: async () => {
       const res = await apiClient.get<DashboardSummary>('/dashboard/summary');
       return res;
@@ -577,13 +580,31 @@ export function Dashboard() {
   }, [data]);
 
   const pendingNavRef = useRef<string | null>(null);
+  // Pending navigation refs — used to complete navigation after org switch
+  const pendingIssueNavRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (pendingNavRef.current && activeOrg) {
       const target = pendingNavRef.current;
       pendingNavRef.current = null;
       navigate(`/projects/${target}`);
     }
+    if (pendingIssueNavRef.current && activeOrg) {
+      const displayId = pendingIssueNavRef.current;
+      pendingIssueNavRef.current = null;
+      navigate(`/all-issues?issue=${displayId}`);
+    }
   }, [activeOrg, navigate]);
+
+  // Navigate to an issue — switches org first if needed
+  const handleIssueNavigate = useCallback((displayId: string, orgId: string | null) => {
+    if (!orgId || orgId === activeOrg?.id) {
+      navigate(`/all-issues?issue=${displayId}`);
+    } else {
+      pendingIssueNavRef.current = displayId;
+      setActive?.({ organization: orgId });
+    }
+  }, [activeOrg?.id, navigate, setActive]);
 
   const handleProjectNavigate = useCallback((project: DashboardProject, orgId: string) => {
     if (orgId === activeOrg?.id) {
@@ -671,11 +692,11 @@ export function Dashboard() {
         </div>
 
         <div className="space-y-4">
-          {data && <GamificationPanel data={data} />}
+          {data && <GamificationPanel data={data} onIssueClick={handleIssueNavigate} />}
 
           <div className="rounded-xl border border-border bg-surface p-4">
             <h2 className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-3">{t('dashboard.recentActivity')}</h2>
-            <ActivityFeed limit={15} entries={data ? data.recent_activity : null} />
+            <ActivityFeed limit={15} entries={data ? data.recent_activity : null} onIssueClick={handleIssueNavigate} />
           </div>
         </div>
       </div>

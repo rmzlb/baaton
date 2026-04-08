@@ -151,6 +151,7 @@ struct ContribRow {
 #[derive(sqlx::FromRow)]
 struct AssignedRow {
     id: Uuid,
+    org_id: String,
     display_id: String,
     title: String,
     status: String,
@@ -371,7 +372,7 @@ pub async fn summary(
 
         // s) Assigned to user (cross-org)
         sqlx::query_as::<_, AssignedRow>(
-            r#"SELECT i.id, i.display_id, i.title, i.status, i.priority, p.prefix AS project_prefix
+            r#"SELECT i.id, p.org_id, i.display_id, i.title, i.status, i.priority, p.prefix AS project_prefix
                FROM issues i JOIN projects p ON p.id = i.project_id
                WHERE p.org_id = ANY($1) AND $2 = ANY(i.assignee_ids)
                  AND i.status NOT IN ('done', 'cancelled')
@@ -559,6 +560,7 @@ pub async fn summary(
             })).collect::<Vec<_>>(),
             "assigned": assigned.iter().map(|i| json!({
                 "id": i.id,
+                "org_id": i.org_id,
                 "display_id": i.display_id,
                 "title": i.title,
                 "status": i.status,
