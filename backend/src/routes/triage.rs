@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
+use crate::routes::issues::fetch_user_org_ids;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TriageSuggestion {
@@ -28,13 +29,13 @@ pub struct SimilarIssue {
 pub async fn run_triage_analysis(
     pool: &PgPool,
     issue_id: Uuid,
-    org_id: &str,
+    org_ids: &[String],
 ) -> Result<TriageSuggestion, String> {
     let issue = sqlx::query_as::<_, (String, Option<String>, Uuid)>(
-        "SELECT i.title, i.description, i.project_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2"
+        "SELECT i.title, i.description, i.project_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
     )
     .bind(issue_id)
-    .bind(org_id)
+    .bind(org_ids)
     .fetch_optional(pool)
     .await
     .map_err(|e| e.to_string())?
@@ -178,8 +179,19 @@ pub async fn list_untriaged(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Vec<TriageIssue>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
+    let current_org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_ids = if auth.user_id.starts_with("apikey:") {
+        vec![current_org_id.to_string()]
+    } else {
+        let mut org_ids = fetch_user_org_ids(&auth.user_id)
+            .await
+            .unwrap_or_else(|_| vec![current_org_id.to_string()]);
+        if !org_ids.iter().any(|id| id == current_org_id) {
+            org_ids.push(current_org_id.to_string());
+        }
+        org_ids
+    };
 
     let issues = sqlx::query_as::<_, TriageIssue>(
         r#"
@@ -189,7 +201,7 @@ pub async fn list_untriaged(
                i."type" AS issue_type
         FROM issues i
         JOIN projects p ON p.id = i.project_id
-        WHERE p.org_id = $1
+        WHERE p.org_id = ANY($1)
           AND (
             i.priority IS NULL
             OR i.priority = ''
@@ -201,7 +213,7 @@ pub async fn list_untriaged(
         LIMIT 100
         "#,
     )
-    .bind(org_id)
+    .bind(&org_ids)
     .fetch_all(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -229,8 +241,19 @@ pub async fn batch_triage(
     State(pool): State<PgPool>,
     Json(body): Json<BatchTriageRequest>,
 ) -> Result<Json<ApiResponse<Vec<BatchTriageResult>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
+    let current_org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_ids = if auth.user_id.starts_with("apikey:") {
+        vec![current_org_id.to_string()]
+    } else {
+        let mut org_ids = fetch_user_org_ids(&auth.user_id)
+            .await
+            .unwrap_or_else(|_| vec![current_org_id.to_string()]);
+        if !org_ids.iter().any(|id| id == current_org_id) {
+            org_ids.push(current_org_id.to_string());
+        }
+        org_ids
+    };
 
     if body.issue_ids.is_empty() {
         return Ok(Json(ApiResponse::new(vec![])));
@@ -245,10 +268,10 @@ pub async fn batch_triage(
     for issue_id in &body.issue_ids {
         // Fetch display_id and title for the result
         let meta = sqlx::query_as::<_, (String, String)>(
-            "SELECT i.display_id, i.title FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2"
+            "SELECT i.display_id, i.title FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
         )
         .bind(issue_id)
-        .bind(org_id)
+        .bind(&org_ids)
         .fetch_optional(&pool)
         .await
         .ok()
@@ -268,7 +291,7 @@ pub async fn batch_triage(
             }
         };
 
-        match run_triage_analysis(&pool, *issue_id, org_id).await {
+        match run_triage_analysis(&pool, *issue_id, &org_ids).await {
             Ok(suggestion) => {
                 results.push(BatchTriageResult {
                     issue_id: *issue_id,
@@ -299,10 +322,21 @@ pub async fn analyze(
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<TriageSuggestion>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
+    let current_org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_ids = if auth.user_id.starts_with("apikey:") {
+        vec![current_org_id.to_string()]
+    } else {
+        let mut org_ids = fetch_user_org_ids(&auth.user_id)
+            .await
+            .unwrap_or_else(|_| vec![current_org_id.to_string()]);
+        if !org_ids.iter().any(|id| id == current_org_id) {
+            org_ids.push(current_org_id.to_string());
+        }
+        org_ids
+    };
 
-    let result = run_triage_analysis(&pool, issue_id, org_id).await
+    let result = run_triage_analysis(&pool, issue_id, &org_ids).await
         .map_err(|e| {
             if e == "Issue not found" {
                 (StatusCode::NOT_FOUND, Json(json!({"error": e})))

@@ -241,6 +241,16 @@ async fn resolve_user_org_ids(_pool: &PgPool, current_org_id: &str, user_id: &st
     vec![current_org_id.to_string()]
 }
 
+async fn require_user_org_scope(
+    pool: &PgPool,
+    auth: &AuthUser,
+) -> Result<(String, Vec<String>), (StatusCode, Json<serde_json::Value>)> {
+    let current_org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_ids = resolve_user_org_ids(pool, current_org_id, &auth.user_id).await;
+    Ok((current_org_id.to_string(), org_ids))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ListParams {
     pub status: Option<String>,
@@ -1051,7 +1061,7 @@ pub async fn create(
 
             if let Some((true, auto_apply)) = config {
                 // Run triage analysis
-                if let Ok(suggestion) = crate::routes::triage::run_triage_analysis(&pool2, iid, &oid).await {
+                if let Ok(suggestion) = crate::routes::triage::run_triage_analysis(&pool2, iid, &[oid.clone()]).await {
                     if auto_apply {
                         // Apply suggested priority and tags
                         let priority = suggestion.suggested_priority.clone();
@@ -1739,15 +1749,14 @@ pub async fn update_position(
     Path(id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
 
     // Verify issue belongs to org
     let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
+        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2))"
     )
     .bind(id)
-    .bind(org_id)
+    .bind(&org_ids)
     .fetch_one(&pool)
     .await
     .unwrap_or(false);
@@ -1765,7 +1774,15 @@ pub async fn update_position(
         .fetch_one(&pool)
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
-    let valid_statuses = get_project_statuses(&pool, project_id, org_id).await?;
+    let target_org_id: String = sqlx::query_scalar(
+        "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
+    )
+    .bind(id)
+    .bind(&org_ids)
+    .fetch_one(&pool)
+    .await
+    .map_err(internal_err)?;
+    let valid_statuses = get_project_statuses(&pool, project_id, &target_org_id).await?;
     validate_status(status, &valid_statuses)?;
 
     let issue = sqlx::query_as::<_, Issue>(
@@ -1836,23 +1853,34 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
 
-    let result = sqlx::query(
-        "DELETE FROM issues WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = $2)"
+    let target_org_id: Option<String> = sqlx::query_scalar(
+        "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
     )
     .bind(id)
-    .bind(org_id)
+    .bind(&org_ids)
+    .fetch_optional(&pool)
+    .await
+    .map_err(internal_err)?;
+
+    let target_org_id = target_org_id
+        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
+
+    let result = sqlx::query(
+        "DELETE FROM issues WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = ANY($2))"
+    )
+    .bind(id)
+    .bind(&org_ids)
     .execute(&pool)
     .await
     .map_err(|e| internal_err(e))?;
 
     if result.rows_affected() > 0 {
         // ── Webhook dispatch (fire-and-forget) ───────────
-        dispatch_event(pool.clone(), org_id.to_string(), "issue.deleted", serde_json::json!({"id": id.to_string()})).await;
+        dispatch_event(pool.clone(), target_org_id.clone(), "issue.deleted", serde_json::json!({"id": id.to_string()})).await;
         // ── SSE broadcast ────────────────────────────────
-        broadcast_event(&sse_tx, org_id, "issue.deleted", &format!(r#"{{"id":"{}"}}"#, id));
+        broadcast_event(&sse_tx, &target_org_id, "issue.deleted", &format!(r#"{{"id":"{}"}}"#, id));
         Ok(Json(ApiResponse::new(())))
     } else {
         Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))
@@ -1886,8 +1914,7 @@ pub async fn batch_update(
     State(pool): State<PgPool>,
     Json(body): Json<BatchUpdateBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
 
     if body.issue_ids.is_empty() {
         return Ok(Json(json!({"updated": 0})));
@@ -1901,16 +1928,24 @@ pub async fn batch_update(
     // Validate status if provided — fetch project statuses from the first issue's project
     if let Some(ref status) = body.changes.status {
         let project_id: Option<Uuid> = sqlx::query_scalar(
-            "SELECT i.project_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2"
+            "SELECT i.project_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
         )
         .bind(body.issue_ids[0])
-        .bind(org_id)
+        .bind(&org_ids)
         .fetch_optional(&pool)
         .await
         .map_err(|e| internal_err(e))?;
 
         if let Some(pid) = project_id {
-            let valid_statuses = get_project_statuses(&pool, pid, org_id).await?;
+            let project_org_id: String = sqlx::query_scalar(
+                "SELECT org_id FROM projects WHERE id = $1 AND org_id = ANY($2)"
+            )
+            .bind(pid)
+            .bind(&org_ids)
+            .fetch_one(&pool)
+            .await
+            .map_err(internal_err)?;
+            let valid_statuses = get_project_statuses(&pool, pid, &project_org_id).await?;
             validate_status(status, &valid_statuses)?;
         }
     }
@@ -1928,7 +1963,7 @@ pub async fn batch_update(
                 tags       = CASE WHEN $5::text[] IS NOT NULL THEN $5 ELSE tags END,
                 updated_at = now()
             WHERE id = $1
-              AND project_id IN (SELECT id FROM projects WHERE org_id = $6)
+              AND project_id IN (SELECT id FROM projects WHERE org_id = ANY($6))
             RETURNING *
             "#,
         )
@@ -1937,7 +1972,7 @@ pub async fn batch_update(
         .bind(&body.changes.priority)
         .bind(&body.changes.assignee_ids)
         .bind(&body.changes.tags)
-        .bind(org_id)
+        .bind(&org_ids)
         .fetch_optional(&pool)
         .await
         .map_err(|e| internal_err(e))?;
@@ -1945,9 +1980,14 @@ pub async fn batch_update(
         if let Some(issue) = issue {
             updated_count += 1;
             let event = if body.changes.status.is_some() { "status.changed" } else { "issue.updated" };
-            dispatch_event(pool.clone(), org_id.to_string(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
+            let issue_org_id: String = sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
+                .bind(issue.project_id)
+                .fetch_one(&pool)
+                .await
+                .map_err(internal_err)?;
+            dispatch_event(pool.clone(), issue_org_id.clone(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
             let sse_event = if body.changes.status.is_some() { "issue.status_changed" } else { "issue.updated" };
-            broadcast_event(&sse_tx, org_id, sse_event, &serde_json::to_string(&issue).unwrap_or_default());
+            broadcast_event(&sse_tx, &issue_org_id, sse_event, &serde_json::to_string(&issue).unwrap_or_default());
         }
     }
 
@@ -1959,18 +1999,17 @@ pub async fn batch_delete(
     State(pool): State<PgPool>,
     Json(body): Json<BatchDeleteBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
 
     if body.issue_ids.is_empty() {
         return Ok(Json(json!({"deleted": 0})));
     }
 
     let result = sqlx::query(
-        "DELETE FROM issues WHERE id = ANY($1) AND project_id IN (SELECT id FROM projects WHERE org_id = $2)"
+        "DELETE FROM issues WHERE id = ANY($1) AND project_id IN (SELECT id FROM projects WHERE org_id = ANY($2))"
     )
     .bind(&body.issue_ids)
-    .bind(org_id)
+    .bind(&org_ids)
     .execute(&pool)
     .await
     .map_err(|e| internal_err(e))?;
@@ -2354,14 +2393,23 @@ pub async fn archive(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
+
+    let org_id: String = sqlx::query_scalar(
+        "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
+    )
+    .bind(id)
+    .bind(&org_ids)
+    .fetch_optional(&pool)
+    .await
+    .map_err(internal_err)?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
 
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
     )
     .bind(id)
-    .bind(org_id)
+    .bind(&org_id)
     .fetch_one(&pool)
     .await
     .unwrap_or(false);
@@ -2384,14 +2432,14 @@ pub async fn archive(
         let uid = auth.user_id.clone();
         let uname = auth.display_name.clone();
         let pid = issue.project_id;
-        let oid = org_id.to_string();
+        let oid = org_id.clone();
         tokio::spawn(async move {
             log_activity(&pool2, &oid, Some(pid), Some(id), &uid, uname.as_deref(), "issue_archived", None, None, None, None).await;
         });
     }
 
-    dispatch_event(pool.clone(), org_id.to_string(), "issue.archived", serde_json::to_value(&issue).unwrap_or_default()).await;
-    broadcast_event(&sse_tx, org_id, "issue.archived", &serde_json::to_string(&issue).unwrap_or_default());
+    dispatch_event(pool.clone(), org_id.clone(), "issue.archived", serde_json::to_value(&issue).unwrap_or_default()).await;
+    broadcast_event(&sse_tx, &org_id, "issue.archived", &serde_json::to_string(&issue).unwrap_or_default());
 
     Ok(Json(ApiResponse::new(issue)))
 }
@@ -2402,14 +2450,23 @@ pub async fn unarchive(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
+
+    let org_id: String = sqlx::query_scalar(
+        "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
+    )
+    .bind(id)
+    .bind(&org_ids)
+    .fetch_optional(&pool)
+    .await
+    .map_err(internal_err)?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
 
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
     )
     .bind(id)
-    .bind(org_id)
+    .bind(&org_id)
     .fetch_one(&pool)
     .await
     .unwrap_or(false);
@@ -2432,14 +2489,14 @@ pub async fn unarchive(
         let uid = auth.user_id.clone();
         let uname = auth.display_name.clone();
         let pid = issue.project_id;
-        let oid = org_id.to_string();
+        let oid = org_id.clone();
         tokio::spawn(async move {
             log_activity(&pool2, &oid, Some(pid), Some(id), &uid, uname.as_deref(), "issue_unarchived", None, None, None, None).await;
         });
     }
 
-    dispatch_event(pool.clone(), org_id.to_string(), "issue.unarchived", serde_json::to_value(&issue).unwrap_or_default()).await;
-    broadcast_event(&sse_tx, org_id, "issue.unarchived", &serde_json::to_string(&issue).unwrap_or_default());
+    dispatch_event(pool.clone(), org_id.clone(), "issue.unarchived", serde_json::to_value(&issue).unwrap_or_default()).await;
+    broadcast_event(&sse_tx, &org_id, "issue.unarchived", &serde_json::to_string(&issue).unwrap_or_default());
 
     Ok(Json(ApiResponse::new(issue)))
 }
