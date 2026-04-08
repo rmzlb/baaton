@@ -85,8 +85,9 @@ export function FilterSelect({
         <Popover.Content
           sideOffset={8}
           align="start"
+          collisionPadding={16}
           className={cn(
-            'z-50 rounded-2xl border border-border bg-surface shadow-2xl outline-none',
+            'z-[160] rounded-2xl border border-border bg-surface shadow-2xl outline-none',
             widthClassName,
             contentClassName,
           )}
