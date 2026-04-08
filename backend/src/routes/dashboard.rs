@@ -382,12 +382,13 @@ pub async fn summary(
 
         // t) Recent activity (cross-org, limit 15)
         sqlx::query_as::<_, ActivityRow>(
-            r#"SELECT al.id, al.org_id, al.project_id, al.issue_id, al.user_id, al.user_name,
+            r#"SELECT al.id, COALESCE(al.org_id, p.org_id) AS org_id, al.project_id, al.issue_id, al.user_id, al.user_name,
                       al.action, al.field, al.old_value, al.new_value, al.metadata, al.created_at,
                       i.title AS issue_title, i.display_id AS issue_display_id
                FROM activity_log al
                LEFT JOIN issues i ON i.id = al.issue_id
-               WHERE al.org_id = ANY($1)
+               LEFT JOIN projects p ON p.id = COALESCE(al.project_id, i.project_id)
+               WHERE p.org_id = ANY($1)
                ORDER BY al.created_at DESC
                LIMIT 15"#
         ).bind(&all_org_ids).fetch_all(&pool),

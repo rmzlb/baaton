@@ -196,6 +196,7 @@ function ProjectCard({ project, onNavigate }: {
   const assignees = project.assignees || [];
 
   const statusRows = [
+    { key: 'backlog', label: 'Backlog', icon: Circle, color: 'text-muted' },
     { key: 'todo', label: 'Todo', icon: Circle, color: 'text-blue-500' },
     { key: 'in_progress', label: 'In Progress', icon: Clock, color: 'text-amber-500' },
     { key: 'in_review', label: 'Review', icon: Eye, color: 'text-purple-500' },
