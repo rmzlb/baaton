@@ -27,7 +27,7 @@ export function useSSE() {
 
     const connect = async () => {
       try {
-        const token = await getToken({ template: 'default' }).catch(() => null);
+        const token = await getToken().catch(() => null);
         if (!token || cancelled) return;
 
         // Close existing connection
