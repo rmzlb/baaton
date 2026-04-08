@@ -68,6 +68,8 @@ const fr = {
   'apiKeys.permGroup.members': 'Membres',
   'apiKeys.permGroup.ai': 'IA',
   'apiKeys.permGroup.billing': 'Facturation',
+  'apiKeys.permGroup.context': 'Contexte',
+  'apiKeys.permGroup.templates': 'Modèles',
   'apiKeys.permGroup.admin': 'Admin',
   // Individual permissions
   'apiKeys.perm.issues:read': 'Lire',
@@ -94,6 +96,10 @@ const fr = {
   'apiKeys.perm.ai:chat': 'Chat',
   'apiKeys.perm.ai:triage': 'Triage',
   'apiKeys.perm.billing:read': 'Lire',
+  'apiKeys.perm.context:read': 'Lire',
+  'apiKeys.perm.context:write': 'Écrire',
+  'apiKeys.perm.templates:read': 'Lire',
+  'apiKeys.perm.templates:write': 'Écrire',
   'apiKeys.perm.admin:full': 'Accès complet (superclé)',
   // Misc
   'apiKeys.neverExpires': 'Jamais',

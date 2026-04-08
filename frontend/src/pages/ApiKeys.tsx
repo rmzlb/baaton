@@ -150,12 +150,22 @@ function formatExpiry(expires_at: string | null): string {
 
 function PermBadge({ perm, t, compact }: { perm: string; t: (k: string) => string; compact?: boolean }) {
   const color = PERM_COLOR[perm] ?? 'bg-zinc-500/15 text-zinc-600 border-zinc-500/25';
-  const [group, action] = perm.split(':');
-  const groupLabel = t(`apiKeys.permGroup.${group}` as any) ?? group;
-  const actionLabel = t(`apiKeys.perm.${perm}` as any) ?? action ?? perm;
+  const colonIdx = perm.indexOf(':');
+  // Graceful fallback for malformed/unknown perm strings (no colon or old data)
+  if (colonIdx === -1) {
+    return (
+      <span className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium bg-zinc-500/15 text-zinc-600 border-zinc-500/25">
+        {perm}
+      </span>
+    );
+  }
+  const group = perm.slice(0, colonIdx);
+  const action = perm.slice(colonIdx + 1);
+  const groupLabel = t(`apiKeys.permGroup.${group}` as any) || group;
+  const actionLabel = t(`apiKeys.perm.${perm}` as any) || action;
   // Compact: "Issues:R" — Full: "Issues: Read"
   const label = compact
-    ? `${groupLabel}:${(action ?? '')[0]?.toUpperCase() ?? '?'}`
+    ? `${groupLabel}:${action[0]?.toUpperCase() ?? '?'}`
     : `${groupLabel}: ${actionLabel}`;
   return (
     <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${color}`}>
@@ -914,9 +924,10 @@ export function ApiKeys() {
   });
 
   const { data: projects = [] } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => apiClient.projects.list(),
+    queryKey: ['projects-all-orgs'],
+    queryFn: () => apiClient.get<Array<{ id: string; name: string; slug: string; org_id: string }>>('/projects?all=true'),
     retry: false,
+    staleTime: 60_000,
   });
 
   const deleteMutation = useMutation({
