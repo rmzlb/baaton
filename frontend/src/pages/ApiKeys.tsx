@@ -822,6 +822,13 @@ function KeyTableRow({
         </button>
       </td>
 
+      {/* Org */}
+      <td className="px-4 py-3 hidden sm:table-cell">
+        <span className="text-xs text-muted">
+          {apiKey.org_name ?? apiKey.org_id.slice(0, 12)}
+        </span>
+      </td>
+
       {/* Scope */}
       <td className="px-4 py-3 hidden sm:table-cell">
         <span className="rounded-md border border-border bg-surface-hover px-2 py-0.5 text-xs text-secondary">
@@ -979,6 +986,9 @@ export function ApiKeys() {
                   {t('apiKeys.col.name')}
                 </th>
                 <th className="px-4 py-3 text-xs font-semibold text-secondary uppercase tracking-wider hidden sm:table-cell">
+                  {t('apiKeys.col.org')}
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold text-secondary uppercase tracking-wider hidden sm:table-cell">
                   {t('apiKeys.col.scope')}
                 </th>
                 <th className="px-4 py-3 text-xs font-semibold text-secondary uppercase tracking-wider hidden md:table-cell">
@@ -999,13 +1009,13 @@ export function ApiKeys() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-muted">
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted">
                     {t('settings.loadingKeys')}
                   </td>
                 </tr>
               ) : apiKeys.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center">
+                  <td colSpan={8} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-hover">
                         <Key size={22} className="text-muted" />

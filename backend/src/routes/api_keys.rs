@@ -38,6 +38,7 @@ fn validate_permissions(perms: &[String]) -> Result<(), String> {
 pub struct ApiKeyRow {
     pub id: Uuid,
     pub org_id: String,
+    pub org_name: Option<String>,
     pub name: String,
     pub key_prefix: String,
     pub permissions: Vec<String>,
@@ -109,11 +110,16 @@ pub async fn list(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
+    let user_id = auth.user_id.clone();
     let keys = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, org_id, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at \
-         FROM api_keys WHERE org_id = $1 ORDER BY created_at DESC"
+        "SELECT k.id, k.org_id, o.name as org_name, k.name, k.key_prefix, k.permissions, \
+         COALESCE(k.project_ids, '{}') as project_ids, k.last_used_at, k.expires_at, k.created_at \
+         FROM api_keys k \
+         LEFT JOIN organizations o ON o.id = k.org_id \
+         WHERE k.created_by = $1 \
+         ORDER BY k.created_at DESC"
     )
-    .bind(org_id)
+    .bind(&user_id)
     .fetch_all(&pool)
     .await
     .map_err(|e| {
@@ -153,9 +159,9 @@ pub async fn create(
     let (full_key, prefix, hash) = generate_api_key();
 
     let row = sqlx::query_as::<_, ApiKeyRow>(
-        "INSERT INTO api_keys (org_id, name, key_hash, key_prefix, permissions, project_ids, expires_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7) \
-         RETURNING id, org_id, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
+        "INSERT INTO api_keys (org_id, name, key_hash, key_prefix, permissions, project_ids, expires_at, created_by) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+         RETURNING id, org_id, (SELECT name FROM organizations WHERE id = $1) as org_name, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
     )
     .bind(org_id)
     .bind(body.name.trim())
@@ -164,6 +170,7 @@ pub async fn create(
     .bind(&body.permissions)
     .bind(&body.project_ids)
     .bind(body.expires_at)
+    .bind(&auth.user_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| {
@@ -233,7 +240,7 @@ pub async fn update(
            project_ids = COALESCE($5, project_ids), \
            expires_at  = CASE WHEN $6 THEN $7 ELSE expires_at END \
          WHERE id = $1 AND org_id = $2 \
-         RETURNING id, org_id, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
+         RETURNING id, org_id, (SELECT name FROM organizations WHERE id = org_id) as org_name, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
     )
     .bind(key_id)
     .bind(org_id)
@@ -277,7 +284,7 @@ pub async fn regenerate(
     let row = sqlx::query_as::<_, ApiKeyRow>(
         "UPDATE api_keys SET key_hash = $1, key_prefix = $2 \
          WHERE id = $3 AND org_id = $4 \
-         RETURNING id, org_id, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
+         RETURNING id, org_id, (SELECT name FROM organizations WHERE id = org_id) as org_name, name, key_prefix, permissions, COALESCE(project_ids, '{}') as project_ids, last_used_at, expires_at, created_at"
     )
     .bind(&hash)
     .bind(&prefix)

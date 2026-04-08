@@ -187,6 +187,7 @@ export interface Comment {
 export interface ApiKey {
   id: string;
   org_id: string;
+  org_name: string | null;
   name: string;
   key_prefix: string;
   permissions: string[];

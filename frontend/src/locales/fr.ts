@@ -25,6 +25,7 @@ const fr = {
   'apiKeys.qs.createIssue': 'Créer votre première issue :',
   'apiKeys.qs.viewDocs': 'Voir la documentation complète',
   'apiKeys.col.name': 'Nom',
+  'apiKeys.col.org': 'Organisation',
   'apiKeys.col.scope': 'Portée',
   'apiKeys.col.permissions': 'Permissions',
   'apiKeys.col.key': 'Clé API',
