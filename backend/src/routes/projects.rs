@@ -8,6 +8,7 @@ use crate::middleware::AuthUser;
 use crate::models::{
     ApiResponse, CreateProject, Project, ProjectAutoAssignSettings, UpdateProjectAutoAssignSettings,
 };
+use crate::routes::issues::fetch_user_org_ids;
 
 /// Parse "owner/repo" from a GitHub URL like https://github.com/owner/repo
 fn parse_github_owner_repo(url: &str) -> Option<(String, String)> {
@@ -93,11 +94,43 @@ pub async fn refresh_github(
 
 /// List projects — filtered by the user's current org_id if available.
 /// If no org_id in token (no active org selected), return ALL projects accessible to user.
+#[derive(Deserialize)]
+pub struct ListProjectsQuery {
+    /// When true, return projects from ALL orgs the user belongs to (cross-org, no session switch)
+    pub all: Option<bool>,
+}
+
 pub async fn list(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
+    Query(params): Query<ListProjectsQuery>,
 ) -> Json<ApiResponse<Vec<Project>>> {
-    let projects = if let Some(ref org_id) = auth.org_id {
+    let cross_org = params.all.unwrap_or(false) && !auth.user_id.starts_with("apikey:");
+
+    let projects = if cross_org {
+        // Cross-org: fetch all org IDs for this user and return all their projects
+        let org_ids = match fetch_user_org_ids(&auth.user_id).await {
+            Ok(ids) => ids,
+            Err(e) => {
+                tracing::warn!("fetch_user_org_ids failed in projects.list: {}", e);
+                auth.org_id.as_ref().map(|id| vec![id.clone()]).unwrap_or_default()
+            }
+        };
+        if org_ids.is_empty() {
+            vec![]
+        } else {
+            sqlx::query_as::<_, Project>(
+                "SELECT * FROM projects WHERE org_id = ANY($1) ORDER BY org_id, created_at DESC"
+            )
+            .bind(&org_ids)
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "projects.list cross-org query failed");
+                vec![]
+            })
+        }
+    } else if let Some(ref org_id) = auth.org_id {
         // User has an active org selected → filter by org
         sqlx::query_as::<_, Project>(
             "SELECT * FROM projects WHERE org_id = $1 ORDER BY created_at DESC"
@@ -115,13 +148,14 @@ pub async fn list(
             vec![]
         })
     } else {
-        // No active org → return empty (frontend should auto-select org)
+        // No active org → return empty
         vec![]
     };
 
     tracing::info!(
         user_id = %auth.user_id,
         org_id = ?auth.org_id,
+        cross_org,
         project_count = projects.len(),
         "projects.list"
     );

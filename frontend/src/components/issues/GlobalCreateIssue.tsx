@@ -6,10 +6,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, Kanban, Search, ChevronRight, Building2, ArrowLeft } from 'lucide-react';
-import { useAuth } from '@clerk/clerk-react';
 import { useOrganizationList, useOrganization } from '@clerk/clerk-react';
 import { useApi } from '@/hooks/useApi';
-import { api } from '@/lib/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import { CreateIssueModal } from './CreateIssueModal';
 import { cn } from '@/lib/utils';
@@ -65,7 +63,6 @@ export function GlobalCreateIssueButton({ variant = 'big', className }: GlobalCr
 
 function GlobalCreateModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
-  const { getToken } = useAuth();
   const apiClient = useApi();
   const { organization: activeOrg } = useOrganization();
   const { userMemberships } = useOrganizationList({
@@ -80,17 +77,18 @@ function GlobalCreateModal({ onClose }: { onClose: () => void }) {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [search, setSearch] = useState('');
 
-  // Fetch projects for selected org (cross-org aware)
-  const { data: projects = [], isLoading } = useQuery({
-    queryKey: ['projects-for-org', selectedOrgId],
-    queryFn: async () => {
-      if (!selectedOrgId) return [];
-      const token = await getToken({ organizationId: selectedOrgId });
-      if (!token) return [];
-      return api.get<Project[]>('/projects', token);
-    },
-    enabled: !!selectedOrgId,
+  // Fetch ALL projects cross-org via ?all=true — no Clerk org switch needed
+  const { data: allProjects = [], isLoading } = useQuery({
+    queryKey: ['projects-all-orgs'],
+    queryFn: () => apiClient.get<Project[]>('/projects?all=true'),
+    staleTime: 60_000,
   });
+
+  // Filter to the selected org
+  const projects = useMemo(
+    () => selectedOrgId ? allProjects.filter(p => p.org_id === selectedOrgId) : allProjects,
+    [allProjects, selectedOrgId],
+  );
 
   // Fetch tags for selected project
   const { data: projectTags = [] } = useQuery({
