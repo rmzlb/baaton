@@ -475,9 +475,10 @@ interface EditDrawerProps {
   projects: Array<{ id: string; name: string; slug: string }>;
   onClose: () => void;
   onSaved: () => void;
+  onRegenerate: () => void;
 }
 
-function EditDrawer({ apiKey, projects, onClose, onSaved }: EditDrawerProps) {
+function EditDrawer({ apiKey, projects, onClose, onSaved, onRegenerate }: EditDrawerProps) {
   const { t } = useTranslation();
   const apiClient = useApi();
   const [name, setName] = useState(apiKey.name);
@@ -595,22 +596,35 @@ function EditDrawer({ apiKey, projects, onClose, onSaved }: EditDrawerProps) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border shrink-0">
+        <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-border shrink-0">
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-secondary hover:text-primary"
+            onClick={() => {
+              onRegenerate();
+              onClose();
+            }}
+            className="flex items-center gap-2 rounded-lg border border-amber-500/30 px-4 py-2 text-sm text-amber-400 hover:bg-amber-500/10 transition-colors"
           >
-            {t('common.cancel')}
+            <RefreshCw size={14} />
+            {t('apiKeys.regenerateConfirmBtn')}
           </button>
-          <button
-            type="button"
-            disabled={!name.trim() || updateMutation.isPending}
-            onClick={() => updateMutation.mutate()}
-            className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-black hover:bg-accent-hover disabled:opacity-40 transition-colors"
-          >
-            {t('apiKeys.editDrawer.save')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-4 py-2 text-sm text-secondary hover:text-primary"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              disabled={!name.trim() || updateMutation.isPending}
+              onClick={() => updateMutation.mutate()}
+              className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-black hover:bg-accent-hover disabled:opacity-40 transition-colors"
+            >
+              {t('apiKeys.editDrawer.save')}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -810,16 +824,16 @@ function KeyTableRow({
   const isExpired = apiKey.expires_at && new Date(apiKey.expires_at) < new Date();
 
   return (
-    <tr className="border-b border-border last:border-0 hover:bg-surface-hover/40 transition-colors group">
+    <tr
+      onClick={onEdit}
+      className="border-b border-border last:border-0 hover:bg-surface-hover/40 transition-colors group cursor-pointer"
+    >
       {/* Name */}
       <td className="px-4 py-3">
-        <button
-          onClick={onEdit}
-          className="flex items-center gap-1.5 text-sm font-medium text-primary hover:text-accent transition-colors"
-        >
+        <div className="flex items-center gap-1.5 text-sm font-medium text-primary">
           {apiKey.name}
           <Pencil size={11} className="opacity-0 group-hover:opacity-40 transition-opacity" />
-        </button>
+        </div>
       </td>
 
       {/* Org */}
@@ -857,7 +871,10 @@ function KeyTableRow({
       {/* Key prefix */}
       <td className="px-4 py-3">
         <button
-          onClick={() => setShowPrefix(!showPrefix)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowPrefix(!showPrefix);
+          }}
           className="flex items-center gap-1.5 text-xs font-mono text-secondary hover:text-primary transition-colors"
         >
           {showPrefix ? (
@@ -886,21 +903,30 @@ function KeyTableRow({
       <td className="px-4 py-3">
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
-            onClick={onEdit}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
             className="rounded-md p-1.5 text-muted hover:bg-accent/10 hover:text-accent transition-all"
             title="Edit key"
           >
             <Pencil size={13} />
           </button>
           <button
-            onClick={onRegenerate}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRegenerate();
+            }}
             className="rounded-md p-1.5 text-muted hover:bg-amber-500/10 hover:text-amber-400 transition-all"
             title="Regenerate key"
           >
             <RefreshCw size={13} />
           </button>
           <button
-            onClick={onDelete}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
             className="rounded-md p-1.5 text-muted hover:bg-red-500/10 hover:text-red-400 transition-all"
             title="Revoke key"
           >
@@ -1068,6 +1094,7 @@ export function ApiKeys() {
           projects={projects}
           onClose={() => setEditTarget(null)}
           onSaved={() => queryClient.invalidateQueries({ queryKey: ['api-keys'] })}
+          onRegenerate={() => setRegenerateTarget({ id: editTarget.id, name: editTarget.name })}
         />
       )}
 
