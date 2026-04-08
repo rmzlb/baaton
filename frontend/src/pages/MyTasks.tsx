@@ -11,8 +11,19 @@ import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { useApi } from '@/hooks/useApi';
 import { useIssuesStore } from '@/stores/issues';
 import { useTranslation } from '@/hooks/useTranslation';
+import { FilterSelect } from '@/components/shared/FilterSelect';
 import { timeAgo, cn } from '@/lib/utils';
 import type { Issue, IssuePriority, IssueType } from '@/lib/types';
+
+const MY_TASKS_PROJECT_FILTER_KEY = 'my-tasks:project-filter:v1';
+
+interface DashboardProjectIndex {
+  orgs: Array<{
+    id: string;
+    name: string;
+    projects: Array<{ id: string; name: string; slug: string; prefix: string }>;
+  }>;
+}
 
 const typeIcons: Record<IssueType, typeof Bug> = {
   bug: Bug,
@@ -137,9 +148,21 @@ export function MyTasks() {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     new Set(FOCUS_SECTIONS.filter((s) => s.collapsedByDefault).map((s) => s.key)),
   );
+  const [projectFilter, setProjectFilter] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(MY_TASKS_PROJECT_FILTER_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+    } catch { return []; }
+  });
 
-  // Fetch my issues (assigned)
-  const { data: myIssues = [], isLoading: loadingMine } = useQuery({
+  useEffect(() => {
+    localStorage.setItem(MY_TASKS_PROJECT_FILTER_KEY, JSON.stringify(projectFilter));
+  }, [projectFilter]);
+
+  // Fetch my issues (assigned) — cross-org via backend
+  const { data: myIssuesRaw = [], isLoading: loadingMine } = useQuery({
     queryKey: ['my-issues', user?.id],
     queryFn: () => apiClient.issues.listMine(user!.id),
     enabled: !!user?.id,
@@ -152,6 +175,60 @@ export function MyTasks() {
     enabled: activeTab !== 'assigned',
     staleTime: 60_000,
   });
+
+  // Project index from dashboard/summary for richer org names
+  const { data: projectIndex } = useQuery({
+    queryKey: ['my-tasks-project-index'],
+    queryFn: () => apiClient.get<DashboardProjectIndex>('/dashboard/summary'),
+    staleTime: 60_000,
+  });
+
+  // Build cross-org project groups (from index or derive from issues)
+  const projectGroups = useMemo(() => {
+    const fromIndex = (projectIndex?.orgs ?? []).flatMap(org =>
+      org.projects.map(p => ({ id: p.id, name: p.name, prefix: p.prefix, orgId: org.id, orgName: org.name }))
+    );
+
+    if (fromIndex.length > 0) {
+      const groups = new Map<string, { orgId: string; orgName: string; projects: typeof fromIndex }>();
+      for (const p of fromIndex) {
+        const g = groups.get(p.orgId) ?? { orgId: p.orgId, orgName: p.orgName, projects: [] };
+        g.projects.push(p);
+        groups.set(p.orgId, g);
+      }
+      return Array.from(groups.values())
+        .map(g => ({ ...g, projects: [...g.projects].sort((a, b) => a.name.localeCompare(b.name)) }))
+        .sort((a, b) => a.orgName.localeCompare(b.orgName));
+    }
+
+    // Fallback: derive from loaded issues
+    const map = new Map<string, { orgId: string; orgName: string; projects: { id: string; name: string; prefix: string; orgId: string; orgName: string }[] }>();
+    for (const issue of myIssuesRaw) {
+      const orgId = issue.org_id || 'unknown';
+      const g = map.get(orgId) ?? { orgId, orgName: orgId.slice(0, 8), projects: [] };
+      if (!g.projects.find(p => p.id === issue.project_id)) {
+        const prefix = issue.display_id?.split('-')[0] || 'PRJ';
+        g.projects.push({ id: issue.project_id, name: prefix, prefix, orgId, orgName: g.orgName });
+      }
+      map.set(orgId, g);
+    }
+    return Array.from(map.values());
+  }, [projectIndex?.orgs, myIssuesRaw]);
+
+  // Apply project filter
+  const myIssues = useMemo(() =>
+    projectFilter.length === 0
+      ? myIssuesRaw
+      : myIssuesRaw.filter(i => projectFilter.includes(i.project_id)),
+    [myIssuesRaw, projectFilter],
+  );
+
+  // Counts for the FilterSelect options
+  const issueCountByProject = useMemo(() => {
+    const counts: Record<string, number> = {};
+    myIssuesRaw.forEach(i => { counts[i.project_id] = (counts[i.project_id] || 0) + 1; });
+    return counts;
+  }, [myIssuesRaw]);
 
   const isLoading = activeTab === 'assigned' ? loadingMine : loadingAll;
 
@@ -177,6 +254,17 @@ export function MyTasks() {
       issues: myIssues.filter(section.filter),
     })).filter((s) => s.issues.length > 0);
   }, [myIssues]);
+
+  // Project filter label
+  const projectFilterLabel = useMemo(() => {
+    if (projectFilter.length === 0) return 'All Projects';
+    if (projectFilter.length === 1) {
+      const all = projectGroups.flatMap(g => g.projects);
+      const p = all.find(p => p.id === projectFilter[0]);
+      return p ? `${p.orgName} / ${p.prefix}` : '1 project';
+    }
+    return `${projectFilter.length} projects`;
+  }, [projectFilter, projectGroups]);
 
   const toggleSection = (key: string) => {
     setCollapsedSections((prev) => {
@@ -225,7 +313,7 @@ export function MyTasks() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-3 md:px-6 py-3">
+      <div className="flex items-center justify-between border-b border-border px-3 md:px-6 py-3 gap-3">
         <div className="min-w-0">
           <h1 className="text-base md:text-lg font-semibold text-primary flex items-center gap-2">
             <CheckSquare size={18} className="text-accent shrink-0 md:w-5 md:h-5" />
@@ -235,6 +323,39 @@ export function MyTasks() {
             {t('myTasks.assignedToYou', { count: myIssues.length })}
           </p>
         </div>
+        {/* Cross-org project filter */}
+        {projectGroups.length > 1 && (
+          <div className="flex items-center gap-2 shrink-0">
+            <FilterSelect
+              label={projectFilterLabel}
+              selectedValues={projectFilter}
+              onChange={setProjectFilter}
+              allLabel="All Projects"
+              allCount={myIssuesRaw.length}
+              emptyLabel="No projects"
+              groupSelectLabel="Select org"
+              groupClearLabel="Clear org"
+              groups={projectGroups.map(group => ({
+                key: group.orgId,
+                label: group.orgName,
+                options: group.projects.map(p => ({
+                  value: p.id,
+                  label: p.name,
+                  prefix: p.prefix,
+                  count: issueCountByProject[p.id] || 0,
+                })),
+              }))}
+            />
+            {projectFilter.length > 0 && (
+              <button
+                onClick={() => setProjectFilter([])}
+                className="rounded-full border border-border px-2 py-1 text-[10px] text-secondary hover:text-primary"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
