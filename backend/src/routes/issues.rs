@@ -1,4 +1,8 @@
-use axum::{extract::{Path, Query, State}, http::StatusCode, Extension, Json};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    Extension, Json,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -28,13 +32,16 @@ use crate::routes::activity::log_activity;
 use crate::routes::automations::evaluate_automations;
 use crate::routes::notifications::create_notification;
 use crate::routes::sla::apply_sla_deadline;
-use crate::routes::sse::{EventSender, broadcast_event};
+use crate::routes::sse::{broadcast_event, EventSender};
 use crate::routes::webhooks::dispatch_event;
 
 /// Log internal error details and return a sanitized error response to the client.
 fn internal_err(e: impl std::fmt::Display) -> (StatusCode, Json<serde_json::Value>) {
     tracing::error!(error = %e, "Internal error");
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Internal server error"})))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({"error": "Internal server error"})),
+    )
 }
 
 /// Strip inline data: URIs from HTML descriptions to prevent oversized JSON responses.
@@ -78,8 +85,12 @@ pub async fn list_children(
     State(pool): State<PgPool>,
     Path(parent_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
@@ -91,11 +102,14 @@ pub async fn list_children(
     .unwrap_or(false);
 
     if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Parent issue not found"}))));
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Parent issue not found"})),
+        ));
     }
 
     let children = sqlx::query_as::<_, Issue>(
-        "SELECT * FROM issues WHERE parent_id = $1 ORDER BY created_at ASC"
+        "SELECT * FROM issues WHERE parent_id = $1 ORDER BY created_at ASC",
     )
     .bind(parent_id)
     .fetch_all(&pool)
@@ -111,20 +125,28 @@ const VALID_PRIORITIES: &[&str] = &["urgent", "high", "medium", "low"];
 const VALID_ISSUE_TYPES: &[&str] = &["bug", "feature", "improvement", "question"];
 
 /// Fetch valid status keys for a project from its `statuses` JSONB column.
-async fn get_project_statuses(pool: &PgPool, project_id: Uuid, org_id: &str) -> Result<Vec<String>, (StatusCode, Json<serde_json::Value>)> {
-    let statuses_json: Option<(serde_json::Value,)> = sqlx::query_as(
-        "SELECT statuses FROM projects WHERE id = $1 AND org_id = $2"
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| internal_err(e))?;
+async fn get_project_statuses(
+    pool: &PgPool,
+    project_id: Uuid,
+    org_id: &str,
+) -> Result<Vec<String>, (StatusCode, Json<serde_json::Value>)> {
+    let statuses_json: Option<(serde_json::Value,)> =
+        sqlx::query_as("SELECT statuses FROM projects WHERE id = $1 AND org_id = $2")
+            .bind(project_id)
+            .bind(org_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| internal_err(e))?;
 
-    let statuses_json = statuses_json
-        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
+    let statuses_json = statuses_json.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )
+    })?;
 
-    let keys: Vec<String> = statuses_json.0
+    let keys: Vec<String> = statuses_json
+        .0
         .as_array()
         .unwrap_or(&vec![])
         .iter()
@@ -134,7 +156,10 @@ async fn get_project_statuses(pool: &PgPool, project_id: Uuid, org_id: &str) -> 
     Ok(keys)
 }
 
-fn validate_status(status: &str, valid_statuses: &[String]) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+fn validate_status(
+    status: &str,
+    valid_statuses: &[String],
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
     if !valid_statuses.iter().any(|s| s == status) {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -180,31 +205,35 @@ fn validate_issue_type(issue_type: &str) -> Result<(), (StatusCode, Json<serde_j
 /// Non-natural transitions are ALLOWED but return warnings.
 fn natural_transitions(status: &str) -> &[&str] {
     match status {
-        "backlog"     => &["todo", "in_progress", "cancelled"],
-        "todo"        => &["in_progress", "backlog", "cancelled"],
+        "backlog" => &["todo", "in_progress", "cancelled"],
+        "todo" => &["in_progress", "backlog", "cancelled"],
         "in_progress" => &["in_review", "done", "todo", "cancelled"],
-        "in_review"   => &["done", "in_progress", "cancelled"],
-        "done"        => &["backlog", "todo"],  // reopening allowed
-        "cancelled"   => &["backlog", "todo"],  // recovery allowed
-        _             => &[],  // custom status — anything goes
+        "in_review" => &["done", "in_progress", "cancelled"],
+        "done" => &["backlog", "todo"],      // reopening allowed
+        "cancelled" => &["backlog", "todo"], // recovery allowed
+        _ => &[],                            // custom status — anything goes
     }
 }
 
 /// Intermediate steps that were skipped in a non-natural transition.
 fn skipped_steps(from: &str, to: &str) -> Vec<&'static str> {
     match (from, to) {
-        ("backlog", "done")      => vec!["todo", "in_progress", "in_review"],
+        ("backlog", "done") => vec!["todo", "in_progress", "in_review"],
         ("backlog", "in_review") => vec!["todo", "in_progress"],
-        ("todo", "done")         => vec!["in_progress", "in_review"],
-        ("todo", "in_review")    => vec!["in_progress"],
-        ("in_progress", "done")  => vec![],  // natural (can skip review)
+        ("todo", "done") => vec!["in_progress", "in_review"],
+        ("todo", "in_review") => vec!["in_progress"],
+        ("in_progress", "done") => vec![], // natural (can skip review)
         _ => vec![],
     }
 }
 
 /// Check a status transition. Returns Ok(warnings) — always allows the move.
 /// `force` = true suppresses warnings (agent explicitly confirmed).
-fn validate_status_transition(from: &str, to: &str, force: bool) -> Result<Vec<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+fn validate_status_transition(
+    from: &str,
+    to: &str,
+    force: bool,
+) -> Result<Vec<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     if from == to {
         return Ok(vec![]);
     }
@@ -263,9 +292,21 @@ async fn require_user_org_scope(
     pool: &PgPool,
     auth: &AuthUser,
 ) -> Result<(String, Vec<String>), (StatusCode, Json<serde_json::Value>)> {
-    let current_org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-    let org_ids = resolve_user_org_ids(pool, current_org_id, &auth.user_id).await;
+    let current_org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
+    let org_ids = if auth.user_id.starts_with("apikey:") {
+        if auth.scoped_org_ids.is_empty() {
+            vec![current_org_id.to_string()]
+        } else {
+            auth.scoped_org_ids.clone()
+        }
+    } else {
+        resolve_user_org_ids(pool, current_org_id, &auth.user_id).await
+    };
     Ok((current_org_id.to_string(), org_ids))
 }
 
@@ -339,7 +380,12 @@ async fn resolve_auto_assign_assignees(
     .fetch_optional(tx.as_mut())
     .await
     .map_err(|e| internal_err(e))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
+    .ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )
+    })?;
 
     if let Some(assignees) = explicit_assignees {
         if !assignees.is_empty() {
@@ -403,8 +449,12 @@ pub async fn list_all(
     State(pool): State<PgPool>,
     Query(params): Query<ListParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
 
@@ -430,9 +480,12 @@ pub async fn list_all(
         Some("asc") => "ASC",
         Some("desc") | None => "DESC",
         Some(other) => {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({
-                "error": format!("Invalid order_direction: '{}'", other)
-            }))));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": format!("Invalid order_direction: '{}'", other)
+                })),
+            ));
         }
     };
 
@@ -440,7 +493,9 @@ pub async fn list_all(
     let cursor_ts: Option<String> = params.after.as_ref().and_then(|cursor| {
         crate::filter::decode_cursor(cursor).and_then(|(ts, _id)| {
             // Validate: must parse as a valid timestamp
-            if chrono::DateTime::parse_from_rfc3339(&ts).is_ok() || chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.fZ").is_ok() {
+            if chrono::DateTime::parse_from_rfc3339(&ts).is_ok()
+                || chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.fZ").is_ok()
+            {
                 Some(ts)
             } else {
                 tracing::warn!(cursor_ts = %ts, "Invalid cursor timestamp, ignoring");
@@ -475,23 +530,21 @@ pub async fn list_all(
         ORDER BY {} {}
         LIMIT $6 OFFSET $7
         "#,
-        cursor_condition,
-        order_col,
-        order_dir,
+        cursor_condition, order_col, order_dir,
     );
 
     let mut issues = sqlx::query_as::<_, Issue>(&query)
-        .bind(&all_org_ids)              // $1
-        .bind(&params.status)            // $2
-        .bind(&params.priority)          // $3
-        .bind(&params.r#type)            // $4
-        .bind(&effective_search)         // $5 — search OR title alias
-        .bind(fetch_limit)               // $6
-        .bind(offset)                    // $7
-        .bind(include_archived)          // $8
-        .bind(&params.created_after)     // $9
-        .bind(&params.created_before)    // $10
-        .bind(&cursor_ts)               // $11 — safe parameterized cursor
+        .bind(&all_org_ids) // $1
+        .bind(&params.status) // $2
+        .bind(&params.priority) // $3
+        .bind(&params.r#type) // $4
+        .bind(&effective_search) // $5 — search OR title alias
+        .bind(fetch_limit) // $6
+        .bind(offset) // $7
+        .bind(include_archived) // $8
+        .bind(&params.created_after) // $9
+        .bind(&params.created_before) // $10
+        .bind(&cursor_ts) // $11 — safe parameterized cursor
         .fetch_all(&pool)
         .await
         .unwrap_or_else(|e| {
@@ -507,8 +560,12 @@ pub async fn list_all(
     let page_info = crate::filter::PageInfo {
         has_next_page,
         has_previous_page: params.after.is_some() || offset > 0,
-        start_cursor: issues.first().map(|i| crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())),
-        end_cursor: issues.last().map(|i| crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())),
+        start_cursor: issues
+            .first()
+            .map(|i| crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())),
+        end_cursor: issues
+            .last()
+            .map(|i| crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())),
         total_count: None,
     };
 
@@ -524,40 +581,34 @@ pub async fn list_by_project(
     Path(project_id): Path<Uuid>,
     Query(params): Query<ListParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let project_org_id: Option<String> =
+        sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
+            .bind(project_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| internal_err(e))?;
 
-    // Verify project belongs to org
-    let project_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !project_exists {
-        // Check if project exists in another org to give a better error
-        let exists_elsewhere: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1)"
-        )
-        .bind(project_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(false);
-
-        if exists_elsewhere {
-            return Err((StatusCode::FORBIDDEN, Json(json!({
-                "error": "Project exists but your API key does not have access to it. Check that the key belongs to the correct organization.",
-                "hint": "List your accessible projects with GET /projects"
-            }))));
+    match project_org_id {
+        Some(org_id) if auth.has_org_access(&org_id) => org_id,
+        Some(_) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "error": "Project exists but your API key does not have access to it. Check that the key organization scope is correct.",
+                    "hint": "List your accessible projects with GET /projects"
+                })),
+            ));
         }
-        return Err((StatusCode::NOT_FOUND, Json(json!({
-            "error": "Project not found",
-            "hint": "List your accessible projects with GET /projects"
-        }))));
-    }
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "error": "Project not found",
+                    "hint": "List your accessible projects with GET /projects"
+                })),
+            ));
+        }
+    };
 
     let limit = params.effective_limit();
     let offset = params.offset.unwrap_or(0);
@@ -582,11 +633,20 @@ pub async fn list_by_project(
     };
     let order_dir = match params.order_direction.as_deref() {
         Some("asc") => "ASC",
-        Some("desc") | None => if params.order_by.as_deref() == Some("position") { "ASC" } else { "DESC" },
+        Some("desc") | None => {
+            if params.order_by.as_deref() == Some("position") {
+                "ASC"
+            } else {
+                "DESC"
+            }
+        }
         Some(other) => {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({
-                "error": format!("Invalid order_direction: '{}'. Use 'asc' or 'desc'", other)
-            }))));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": format!("Invalid order_direction: '{}'. Use 'asc' or 'desc'", other)
+                })),
+            ));
         }
     };
 
@@ -601,7 +661,11 @@ pub async fn list_by_project(
             }
         })
     });
-    let cursor_col = if order_col.contains("CASE") { "created_at" } else { order_col.trim_start_matches("i.") };
+    let cursor_col = if order_col.contains("CASE") {
+        "created_at"
+    } else {
+        order_col.trim_start_matches("i.")
+    };
     let cursor_condition = if cursor_ts.is_some() {
         let op = if order_dir == "DESC" { "<" } else { ">" };
         format!(" AND i.{} {} $13::timestamptz", cursor_col, op)
@@ -614,16 +678,22 @@ pub async fn list_by_project(
         if let Ok(filter_val) = serde_json::from_str::<serde_json::Value>(filter_str) {
             crate::filter::parse_filter(&filter_val, 13) // offset after base params
         } else {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({
-                "error": "Invalid filter JSON",
-                "hint": "Example: {\"priority\":{\"in\":[\"urgent\",\"high\"]},\"due_date\":{\"lt\":\"2026-04-01\"}}"
-            }))));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "Invalid filter JSON",
+                    "hint": "Example: {\"priority\":{\"in\":[\"urgent\",\"high\"]},\"due_date\":{\"lt\":\"2026-04-01\"}}"
+                })),
+            ));
         }
     } else {
         None
     };
 
-    let extra_where = filter_clause.as_ref().map(|f| format!(" AND ({})", f.sql)).unwrap_or_default();
+    let extra_where = filter_clause
+        .as_ref()
+        .map(|f| format!(" AND ({})", f.sql))
+        .unwrap_or_default();
 
     // Fetch limit+1 to detect hasNextPage
     let fetch_limit = limit + 1;
@@ -646,26 +716,23 @@ pub async fn list_by_project(
         ORDER BY {} {}
         LIMIT $7 OFFSET $8
         "#,
-        cursor_condition,
-        extra_where,
-        order_col,
-        order_dir,
+        cursor_condition, extra_where, order_col, order_dir,
     );
 
     let q = sqlx::query_as::<_, Issue>(&query)
-        .bind(project_id)               // $1
-        .bind(&params.status)            // $2
-        .bind(&params.priority)          // $3
-        .bind(&params.r#type)            // $4
-        .bind(&effective_search)         // $5 — search OR title alias, matches title + display_id
-        .bind(&params.category)          // $6
-        .bind(fetch_limit)               // $7
-        .bind(offset)                    // $8
-        .bind(include_archived)          // $9
-        .bind(include_snoozed)           // $10
-        .bind(&params.created_after)     // $11
-        .bind(&params.created_before)    // $12
-        .bind(&cursor_ts);              // $13 — safe parameterized cursor
+        .bind(project_id) // $1
+        .bind(&params.status) // $2
+        .bind(&params.priority) // $3
+        .bind(&params.r#type) // $4
+        .bind(&effective_search) // $5 — search OR title alias, matches title + display_id
+        .bind(&params.category) // $6
+        .bind(fetch_limit) // $7
+        .bind(offset) // $8
+        .bind(include_archived) // $9
+        .bind(include_snoozed) // $10
+        .bind(&params.created_after) // $11
+        .bind(&params.created_before) // $12
+        .bind(&cursor_ts); // $13 — safe parameterized cursor
 
     // Bind filter params (starting at $13+)
     // Note: sqlx dynamic binds need to use the same type
@@ -673,13 +740,10 @@ pub async fn list_by_project(
     // (filter values are already escaped in the SQL generation)
     let _ = &filter_clause; // suppress unused warning
 
-    let mut issues = q
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!(error = %e, "issues.list_by_project query failed");
-            vec![]
-        });
+    let mut issues = q.fetch_all(&pool).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "issues.list_by_project query failed");
+        vec![]
+    });
 
     // Cursor pagination info
     let has_next_page = issues.len() > limit as usize;
@@ -688,12 +752,12 @@ pub async fn list_by_project(
     }
     let has_previous_page = params.after.is_some() || offset > 0;
 
-    let start_cursor = issues.first().map(|i| {
-        crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())
-    });
-    let end_cursor = issues.last().map(|i| {
-        crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string())
-    });
+    let start_cursor = issues
+        .first()
+        .map(|i| crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string()));
+    let end_cursor = issues
+        .last()
+        .map(|i| crate::filter::encode_cursor(&i.created_at.to_rfc3339(), &i.id.to_string()));
 
     // Get total count — uses same filters as data query for consistency
     let total_count = if params.after.is_none() && params.before.is_none() {
@@ -752,31 +816,66 @@ pub async fn create(
     State(pool): State<PgPool>,
     Json(body): Json<CreateIssue>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id: String = sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
+        .bind(body.project_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| internal_err(e))?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Project not found"})),
+            )
+        })?;
+
+    if !auth.has_org_access(&org_id) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": "API key does not have access to this project's organization. Check org_ids scope on the key."
+            })),
+        ));
+    }
 
     // ── Plan enforcement: check issue limit (per-user, cross-org) ─────────
     crate::middleware::plan_guard::enforce_quota(
-        &pool, &auth, crate::middleware::plan_guard::QuotaKind::Issues
-    ).await?;
+        &pool,
+        &auth,
+        crate::middleware::plan_guard::QuotaKind::Issues,
+    )
+    .await?;
 
     // ── Project access check (API key scoping) ─────────
     if !auth.has_project_access(body.project_id) {
-        return Err((StatusCode::FORBIDDEN, Json(json!({
-            "error": "API key does not have access to this project. Check project_ids scope on the key."
-        }))));
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": "API key does not have access to this project. Check project_ids scope on the key."
+            })),
+        ));
     }
 
     // ── Input validation ─────────────────────────────────
     if body.title.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Title cannot be empty"}))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Title cannot be empty"})),
+        ));
     }
     if body.title.len() > 1000 {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Title must be under 1000 characters", "max": 1000}))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Title must be under 1000 characters", "max": 1000})),
+        ));
     }
     if let Some(ref desc) = body.description {
         if desc.len() > 200_000 {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Description must be under 200000 characters", "max": 200000}))));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({"error": "Description must be under 200000 characters", "max": 200000}),
+                ),
+            ));
         }
     }
 
@@ -788,46 +887,44 @@ pub async fn create(
     }
 
     let status = body.status.as_deref().unwrap_or("backlog");
-    let valid_statuses = get_project_statuses(&pool, body.project_id, org_id).await?;
+    let valid_statuses = get_project_statuses(&pool, body.project_id, &org_id).await?;
     validate_status(status, &valid_statuses)?;
 
     // ── Depth validation for parent_id (max depth 2) ─────
     if let Some(pid) = body.parent_id {
         // Fetch the parent issue's own parent_id
-        let parent_parent: Option<Option<Uuid>> = sqlx::query_scalar(
-            "SELECT parent_id FROM issues WHERE id = $1"
-        )
-        .bind(pid)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| internal_err(e))?;
+        let parent_parent: Option<Option<Uuid>> =
+            sqlx::query_scalar("SELECT parent_id FROM issues WHERE id = $1")
+                .bind(pid)
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| internal_err(e))?;
 
         match parent_parent {
             None => {
-                return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Parent issue not found"}))));
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "Parent issue not found"})),
+                ));
             }
             Some(Some(_grandparent)) => {
-                return Err((StatusCode::BAD_REQUEST, Json(json!({
-                    "error": "Cannot nest issues more than 2 levels deep (parent already has a parent)"
-                }))));
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": "Cannot nest issues more than 2 levels deep (parent already has a parent)"
+                    })),
+                ));
             }
             Some(None) => {} // parent is top-level, ok
         }
     }
 
     // ── Transaction start ────────────────────────────────
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| internal_err(e))?;
+    let mut tx = pool.begin().await.map_err(|e| internal_err(e))?;
 
-    let (project_prefix, resolved_assignees) = resolve_auto_assign_assignees(
-        &mut tx,
-        body.project_id,
-        org_id,
-        body.assignee_ids.clone(),
-    )
-    .await?;
+    let (project_prefix, resolved_assignees) =
+        resolve_auto_assign_assignees(&mut tx, body.project_id, &org_id, body.assignee_ids.clone())
+            .await?;
 
     let next_number: (i64,) = sqlx::query_as(
         r#"
@@ -845,16 +942,18 @@ pub async fn create(
 
     let display_id = format!("{}-{}", project_prefix, next_number.0);
 
-    let max_pos: Option<(Option<f64>,)> = sqlx::query_as(
-        "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status = $2"
-    )
-    .bind(body.project_id)
-    .bind(status)
-    .fetch_optional(tx.as_mut())
-    .await
-    .unwrap_or(None);
+    let max_pos: Option<(Option<f64>,)> =
+        sqlx::query_as("SELECT MAX(position) FROM issues WHERE project_id = $1 AND status = $2")
+            .bind(body.project_id)
+            .bind(status)
+            .fetch_optional(tx.as_mut())
+            .await
+            .unwrap_or(None);
 
-    let position = max_pos.and_then(|p| p.0).map(|p| p + 1000.0).unwrap_or(1000.0);
+    let position = max_pos
+        .and_then(|p| p.0)
+        .map(|p| p + 1000.0)
+        .unwrap_or(1000.0);
 
     let created_by_name = auth.created_by_label();
 
@@ -869,7 +968,9 @@ pub async fn create(
         "issues.create.attempt"
     );
 
-    let attachments_json = body.attachments.unwrap_or_else(|| serde_json::Value::Array(vec![]));
+    let attachments_json = body
+        .attachments
+        .unwrap_or_else(|| serde_json::Value::Array(vec![]));
 
     let issue = sqlx::query_as::<_, Issue>(
         r#"
@@ -923,9 +1024,7 @@ pub async fn create(
         "issues.create.success"
     );
 
-    tx.commit()
-        .await
-        .map_err(|e| internal_err(e))?;
+    tx.commit().await.map_err(|e| internal_err(e))?;
 
     // ── Activity logging (fire-and-forget) ───────────────
     {
@@ -936,7 +1035,20 @@ pub async fn create(
         let iid = issue.id;
         let oid = org_id.to_string();
         tokio::spawn(async move {
-            log_activity(&pool2, &oid, Some(pid), Some(iid), &uid, uname.as_deref(), "issue_created", None, None, None, None).await;
+            log_activity(
+                &pool2,
+                &oid,
+                Some(pid),
+                Some(iid),
+                &uid,
+                uname.as_deref(),
+                "issue_created",
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
         });
     }
 
@@ -952,7 +1064,10 @@ pub async fn create(
 
     // ── Novu notifications (fire-and-forget) ─────────────
     if let Some(ref novu) = novu {
-        let actor_name = auth.display_name.clone().unwrap_or_else(|| auth.user_id.clone());
+        let actor_name = auth
+            .display_name
+            .clone()
+            .unwrap_or_else(|| auth.user_id.clone());
         let display_id = issue.display_id.clone();
         let title = issue.title.clone();
         let priority = issue.priority.clone();
@@ -973,7 +1088,11 @@ pub async fn create(
             tokio::spawn(async move {
                 let subs: Vec<crate::novu::Subscriber> = assignees
                     .into_iter()
-                    .map(|id| crate::novu::Subscriber { id, email: None, name: None })
+                    .map(|id| crate::novu::Subscriber {
+                        id,
+                        email: None,
+                        name: None,
+                    })
                     .collect();
                 novu.trigger_many(
                     "issue-assigned",
@@ -1000,7 +1119,11 @@ pub async fn create(
                 tokio::spawn(async move {
                     let subs: Vec<crate::novu::Subscriber> = assignees
                         .into_iter()
-                        .map(|id| crate::novu::Subscriber { id, email: None, name: None })
+                        .map(|id| crate::novu::Subscriber {
+                            id,
+                            email: None,
+                            name: None,
+                        })
                         .collect();
                     novu.trigger_many(
                         "urgent-issue-created",
@@ -1039,10 +1162,21 @@ pub async fn create(
     }
 
     // ── Webhook dispatch (fire-and-forget) ───────────
-    dispatch_event(pool.clone(), org_id.to_string(), "issue.created", serde_json::to_value(&issue).unwrap_or_default()).await;
+    dispatch_event(
+        pool.clone(),
+        org_id.to_string(),
+        "issue.created",
+        serde_json::to_value(&issue).unwrap_or_default(),
+    )
+    .await;
 
     // ── SSE broadcast ────────────────────────────────
-    broadcast_event(&sse_tx, org_id, "issue.created", &serde_json::to_string(&issue).unwrap_or_default());
+    broadcast_event(
+        &sse_tx,
+        &org_id,
+        "issue.created",
+        &serde_json::to_string(&issue).unwrap_or_default(),
+    );
 
     // ── Auto-triage (fire-and-forget if enabled) ──────
     // Skip if priority already set (issue came pre-triaged from API/agent)
@@ -1079,7 +1213,9 @@ pub async fn create(
 
             if let Some((true, auto_apply)) = config {
                 // Run triage analysis
-                if let Ok(suggestion) = crate::routes::triage::run_triage_analysis(&pool2, iid, &[oid.clone()]).await {
+                if let Ok(suggestion) =
+                    crate::routes::triage::run_triage_analysis(&pool2, iid, &[oid.clone()]).await
+                {
                     if auto_apply {
                         // Apply suggested priority and tags
                         let priority = suggestion.suggested_priority.clone();
@@ -1113,7 +1249,8 @@ pub async fn create(
                                 "tags": tags,
                                 "auto_applied": true,
                             }),
-                        ).await;
+                        )
+                        .await;
                     }
                 }
             }
@@ -1143,8 +1280,12 @@ pub async fn get_one(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<IssueDetail>>, (StatusCode, Json<serde_json::Value>)> {
     let start = std::time::Instant::now();
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let issue = sqlx::query_as::<_, Issue>(
         r#"
@@ -1158,7 +1299,12 @@ pub async fn get_one(
     .bind(org_id)
     .fetch_one(&pool)
     .await
-    .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
+    .map_err(|_| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Issue not found"})),
+        )
+    })?;
 
     // Fetch TLDRs, comments, and active agent session in parallel
     let (tldrs, comments, agent_session) = tokio::join!(
@@ -1233,7 +1379,12 @@ pub async fn get_one(
         ));
     }
 
-    if issue.description.as_ref().map(|d| d.trim().is_empty()).unwrap_or(true) {
+    if issue
+        .description
+        .as_ref()
+        .map(|d| d.trim().is_empty())
+        .unwrap_or(true)
+    {
         hints.push(crate::models::ActionHint::optional(
             "add_description",
             "Issue has no description. Add details to improve context for agents and humans.",
@@ -1252,7 +1403,10 @@ pub async fn get_one(
     if let Some(ref as_ref) = agent_session {
         hints.push(crate::models::ActionHint::optional(
             "view_agent_progress",
-            &format!("Agent '{}' is {} on this issue. View live progress.", as_ref.agent_name, as_ref.status),
+            &format!(
+                "Agent '{}' is {} on this issue. View live progress.",
+                as_ref.agent_name, as_ref.status
+            ),
             Some(&format!("GET /agent-sessions/{}/stream", as_ref.id)),
         ));
     }
@@ -1273,13 +1427,16 @@ pub async fn get_one(
         },
     );
 
-    Ok(Json(ApiResponse::with_hints(IssueDetail {
-        issue,
-        tldrs,
-        comments,
-        agent_session,
-        context_summary,
-    }, hints)))
+    Ok(Json(ApiResponse::with_hints(
+        IssueDetail {
+            issue,
+            tldrs,
+            comments,
+            agent_session,
+            context_summary,
+        },
+        hints,
+    )))
 }
 
 pub async fn update(
@@ -1306,16 +1463,25 @@ pub async fn update(
         .bind(id)
         .fetch_one(&pool)
         .await
-        .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Issue not found"})),
+            )
+        })?;
 
     // ── Project access check (API key scoping) ─────────
     if !auth.has_project_access(existing.project_id) {
-        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "API key does not have access to this project"}))));
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "API key does not have access to this project"})),
+        ));
     }
 
     // ── Input validation ─────────────────────────────────
     if let Some(ref status) = body.status {
-        let valid_statuses = get_project_statuses(&pool, existing.project_id, &target_org_id).await?;
+        let valid_statuses =
+            get_project_statuses(&pool, existing.project_id, &target_org_id).await?;
         validate_status(status, &valid_statuses)?;
 
         // Note: workflow transition is now permissive — warnings are returned in the response, not 400 errors.
@@ -1387,7 +1553,10 @@ pub async fn update(
 
     // Compute closed_at: set when moving to done/cancelled, clear when reopening
     let is_closing = status_changed && (new_status == "done" || new_status == "cancelled");
-    let is_reopening = status_changed && existing.closed_at.is_some() && new_status != "done" && new_status != "cancelled";
+    let is_reopening = status_changed
+        && existing.closed_at.is_some()
+        && new_status != "done"
+        && new_status != "cancelled";
 
     let snoozed_until_provided = body.snoozed_until.is_some();
     let snoozed_until_value = body.snoozed_until.flatten();
@@ -1397,22 +1566,27 @@ pub async fn update(
 
     // Depth check for parent_id update
     if let Some(new_parent_id) = parent_id_value {
-        let parent_parent: Option<Option<Uuid>> = sqlx::query_scalar(
-            "SELECT parent_id FROM issues WHERE id = $1"
-        )
-        .bind(new_parent_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| internal_err(e))?;
+        let parent_parent: Option<Option<Uuid>> =
+            sqlx::query_scalar("SELECT parent_id FROM issues WHERE id = $1")
+                .bind(new_parent_id)
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| internal_err(e))?;
 
         match parent_parent {
             None => {
-                return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Parent issue not found"}))));
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "Parent issue not found"})),
+                ));
             }
             Some(Some(_)) => {
-                return Err((StatusCode::BAD_REQUEST, Json(json!({
-                    "error": "Cannot nest issues more than 2 levels deep"
-                }))));
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": "Cannot nest issues more than 2 levels deep"
+                    })),
+                ));
             }
             Some(None) => {}
         }
@@ -1467,13 +1641,13 @@ pub async fn update(
     .bind(estimate_value)
     .bind(sprint_id_provided)
     .bind(sprint_id_value)
-    .bind(status_changed)         // $21: status_changed_at trigger
-    .bind(is_closing)             // $22: set closed_at
-    .bind(is_reopening)           // $23: clear closed_at
+    .bind(status_changed) // $21: status_changed_at trigger
+    .bind(is_closing) // $22: set closed_at
+    .bind(is_reopening) // $23: clear closed_at
     .bind(snoozed_until_provided) // $24
-    .bind(snoozed_until_value)    // $25
-    .bind(parent_id_provided)     // $26
-    .bind(parent_id_value)        // $27
+    .bind(snoozed_until_value) // $25
+    .bind(parent_id_provided) // $26
+    .bind(parent_id_value) // $27
     .fetch_one(&pool)
     .await
     .map_err(|e| internal_err(e))?;
@@ -1504,7 +1678,20 @@ pub async fn update(
             let uname = user_name.clone();
             let oid = org_id_str.clone();
             tokio::spawn(async move {
-                log_activity(&pool2, &oid, Some(project_id), Some(id), &uid, uname.as_deref(), "status_changed", Some("status"), Some(&old_val), Some(&new_val), None).await;
+                log_activity(
+                    &pool2,
+                    &oid,
+                    Some(project_id),
+                    Some(id),
+                    &uid,
+                    uname.as_deref(),
+                    "status_changed",
+                    Some("status"),
+                    Some(&old_val),
+                    Some(&new_val),
+                    None,
+                )
+                .await;
             });
         }
 
@@ -1516,7 +1703,20 @@ pub async fn update(
             let uname = user_name.clone();
             let oid = org_id_str.clone();
             tokio::spawn(async move {
-                log_activity(&pool2, &oid, Some(project_id), Some(id), &uid, uname.as_deref(), "priority_changed", Some("priority"), Some(&old_val), Some(&new_val), None).await;
+                log_activity(
+                    &pool2,
+                    &oid,
+                    Some(project_id),
+                    Some(id),
+                    &uid,
+                    uname.as_deref(),
+                    "priority_changed",
+                    Some("priority"),
+                    Some(&old_val),
+                    Some(&new_val),
+                    None,
+                )
+                .await;
             });
         }
 
@@ -1529,7 +1729,20 @@ pub async fn update(
                 let uname = user_name.clone();
                 let oid = org_id_str.clone();
                 tokio::spawn(async move {
-                    log_activity(&pool2, &oid, Some(project_id), Some(id), &uid, uname.as_deref(), "assignee_changed", Some("assignee_ids"), Some(&old_val), Some(&new_val), None).await;
+                    log_activity(
+                        &pool2,
+                        &oid,
+                        Some(project_id),
+                        Some(id),
+                        &uid,
+                        uname.as_deref(),
+                        "assignee_changed",
+                        Some("assignee_ids"),
+                        Some(&old_val),
+                        Some(&new_val),
+                        None,
+                    )
+                    .await;
                 });
             }
         }
@@ -1537,7 +1750,10 @@ pub async fn update(
 
     // ── Novu notifications (fire-and-forget) ─────────────
     if let Some(ref novu) = novu {
-        let actor_name = auth.display_name.clone().unwrap_or_else(|| auth.user_id.clone());
+        let actor_name = auth
+            .display_name
+            .clone()
+            .unwrap_or_else(|| auth.user_id.clone());
 
         // New assignees (added in this update, not previously assigned)
         if let Some(ref new_ids) = body.assignee_ids {
@@ -1554,7 +1770,11 @@ pub async fn update(
                 tokio::spawn(async move {
                     let subs: Vec<crate::novu::Subscriber> = added
                         .into_iter()
-                        .map(|id| crate::novu::Subscriber { id, email: None, name: None })
+                        .map(|id| crate::novu::Subscriber {
+                            id,
+                            email: None,
+                            name: None,
+                        })
                         .collect();
                     novu.trigger_many(
                         "issue-assigned",
@@ -1586,7 +1806,11 @@ pub async fn update(
                 tokio::spawn(async move {
                     let subs: Vec<crate::novu::Subscriber> = assignees
                         .into_iter()
-                        .map(|id| crate::novu::Subscriber { id, email: None, name: None })
+                        .map(|id| crate::novu::Subscriber {
+                            id,
+                            email: None,
+                            name: None,
+                        })
                         .collect();
                     novu.trigger_many(
                         "status-changed",
@@ -1623,10 +1847,16 @@ pub async fn update(
                 tokio::spawn(async move {
                     for uid in added {
                         create_notification(
-                            &pool2, &uid, &oid, "assigned",
-                            Some(issue_id_copy), Some(project_id_copy),
-                            &title, None,
-                        ).await;
+                            &pool2,
+                            &uid,
+                            &oid,
+                            "assigned",
+                            Some(issue_id_copy),
+                            Some(project_id_copy),
+                            &title,
+                            None,
+                        )
+                        .await;
                     }
                 });
             }
@@ -1638,17 +1868,20 @@ pub async fn update(
             if !assignees.is_empty() {
                 let pool2 = pool.clone();
                 let oid = org_id_str2.clone();
-                let title = format!(
-                    "Issue '{}' status changed to {}",
-                    issue.title, issue.status
-                );
+                let title = format!("Issue '{}' status changed to {}", issue.title, issue.status);
                 tokio::spawn(async move {
                     for uid in assignees {
                         create_notification(
-                            &pool2, &uid, &oid, "status_changed",
-                            Some(issue_id_copy), Some(project_id_copy),
-                            &title, None,
-                        ).await;
+                            &pool2,
+                            &uid,
+                            &oid,
+                            "status_changed",
+                            Some(issue_id_copy),
+                            Some(project_id_copy),
+                            &title,
+                            None,
+                        )
+                        .await;
                     }
                 });
             }
@@ -1689,12 +1922,31 @@ pub async fn update(
     }
 
     // ── Webhook dispatch (fire-and-forget) ───────────
-    let event = if status_changed { "status.changed" } else { "issue.updated" };
-    dispatch_event(pool.clone(), target_org_id.clone(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
+    let event = if status_changed {
+        "status.changed"
+    } else {
+        "issue.updated"
+    };
+    dispatch_event(
+        pool.clone(),
+        target_org_id.clone(),
+        event,
+        serde_json::to_value(&issue).unwrap_or_default(),
+    )
+    .await;
 
     // ── SSE broadcast ────────────────────────────────
-    let sse_event = if status_changed { "issue.status_changed" } else { "issue.updated" };
-    broadcast_event(&sse_tx, &target_org_id, sse_event, &serde_json::to_string(&issue).unwrap_or_default());
+    let sse_event = if status_changed {
+        "issue.status_changed"
+    } else {
+        "issue.updated"
+    };
+    broadcast_event(
+        &sse_tx,
+        &target_org_id,
+        sse_event,
+        &serde_json::to_string(&issue).unwrap_or_default(),
+    );
 
     // AI-first: contextual action hints
     let mut hints = vec![];
@@ -1739,7 +1991,11 @@ pub async fn update(
         vec![]
     };
 
-    Ok(Json(ApiResponse::with_hints_and_warnings(issue, hints, transition_warnings)))
+    Ok(Json(ApiResponse::with_hints_and_warnings(
+        issue,
+        hints,
+        transition_warnings,
+    )))
 }
 
 pub async fn update_position(
@@ -1761,18 +2017,32 @@ pub async fn update_position(
     .unwrap_or(false);
 
     if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Issue not found"})),
+        ));
     }
 
-    let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("todo");
-    let position = body.get("position").and_then(|v| v.as_f64()).unwrap_or(1000.0);
+    let status = body
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("todo");
+    let position = body
+        .get("position")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1000.0);
 
     // Validate status against project config
     let project_id: Uuid = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
         .bind(id)
         .fetch_one(&pool)
         .await
-        .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Issue not found"})),
+            )
+        })?;
     let target_org_id: String = sqlx::query_scalar(
         "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
     )
@@ -1811,8 +2081,12 @@ pub async fn list_mine(
     State(pool): State<PgPool>,
     Query(params): Query<MineParams>,
 ) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     // Cross-org: show tasks assigned to user from ALL orgs
     let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
@@ -1863,8 +2137,12 @@ pub async fn remove(
     .await
     .map_err(internal_err)?;
 
-    let target_org_id = target_org_id
-        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
+    let target_org_id = target_org_id.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Issue not found"})),
+        )
+    })?;
 
     let result = sqlx::query(
         "DELETE FROM issues WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = ANY($2))"
@@ -1877,12 +2155,26 @@ pub async fn remove(
 
     if result.rows_affected() > 0 {
         // ── Webhook dispatch (fire-and-forget) ───────────
-        dispatch_event(pool.clone(), target_org_id.clone(), "issue.deleted", serde_json::json!({"id": id.to_string()})).await;
+        dispatch_event(
+            pool.clone(),
+            target_org_id.clone(),
+            "issue.deleted",
+            serde_json::json!({"id": id.to_string()}),
+        )
+        .await;
         // ── SSE broadcast ────────────────────────────────
-        broadcast_event(&sse_tx, &target_org_id, "issue.deleted", &format!(r#"{{"id":"{}"}}"#, id));
+        broadcast_event(
+            &sse_tx,
+            &target_org_id,
+            "issue.deleted",
+            &format!(r#"{{"id":"{}"}}"#, id),
+        );
         Ok(Json(ApiResponse::new(())))
     } else {
-        Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Issue not found"})),
+        ))
     }
 }
 
@@ -1937,7 +2229,7 @@ pub async fn batch_update(
 
         if let Some(pid) = project_id {
             let project_org_id: String = sqlx::query_scalar(
-                "SELECT org_id FROM projects WHERE id = $1 AND org_id = ANY($2)"
+                "SELECT org_id FROM projects WHERE id = $1 AND org_id = ANY($2)",
             )
             .bind(pid)
             .bind(&org_ids)
@@ -1978,15 +2270,35 @@ pub async fn batch_update(
 
         if let Some(issue) = issue {
             updated_count += 1;
-            let event = if body.changes.status.is_some() { "status.changed" } else { "issue.updated" };
-            let issue_org_id: String = sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
-                .bind(issue.project_id)
-                .fetch_one(&pool)
-                .await
-                .map_err(internal_err)?;
-            dispatch_event(pool.clone(), issue_org_id.clone(), event, serde_json::to_value(&issue).unwrap_or_default()).await;
-            let sse_event = if body.changes.status.is_some() { "issue.status_changed" } else { "issue.updated" };
-            broadcast_event(&sse_tx, &issue_org_id, sse_event, &serde_json::to_string(&issue).unwrap_or_default());
+            let event = if body.changes.status.is_some() {
+                "status.changed"
+            } else {
+                "issue.updated"
+            };
+            let issue_org_id: String =
+                sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
+                    .bind(issue.project_id)
+                    .fetch_one(&pool)
+                    .await
+                    .map_err(internal_err)?;
+            dispatch_event(
+                pool.clone(),
+                issue_org_id.clone(),
+                event,
+                serde_json::to_value(&issue).unwrap_or_default(),
+            )
+            .await;
+            let sse_event = if body.changes.status.is_some() {
+                "issue.status_changed"
+            } else {
+                "issue.updated"
+            };
+            broadcast_event(
+                &sse_tx,
+                &issue_org_id,
+                sse_event,
+                &serde_json::to_string(&issue).unwrap_or_default(),
+            );
         }
     }
 
@@ -2043,11 +2355,18 @@ pub async fn search(
     State(pool): State<PgPool>,
     Query(params): Query<SearchParams>,
 ) -> Result<Json<ApiResponse<Vec<SearchResult>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     if params.q.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Query parameter 'q' is required"}))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Query parameter 'q' is required"})),
+        ));
     }
 
     let limit = params.limit.unwrap_or(20).min(100);
@@ -2111,13 +2430,19 @@ pub async fn search_global(
     Query(params): Query<SearchParams>,
 ) -> Result<Json<ApiResponse<Vec<GlobalSearchResult>>>, (StatusCode, Json<serde_json::Value>)> {
     if params.q.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Query parameter 'q' is required"}))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Query parameter 'q' is required"})),
+        ));
     }
 
     // Get all org IDs this user belongs to (API key → direct, Clerk user → API call)
     let org_ids = resolve_user_org_ids_from_auth(&auth).await.map_err(|e| {
         tracing::error!(error = %e, "Failed to fetch user org memberships");
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to resolve organizations"})))
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Failed to resolve organizations"})),
+        )
     })?;
 
     if org_ids.is_empty() {
@@ -2128,7 +2453,9 @@ pub async fn search_global(
     let is_overdue = params.is_overdue.unwrap_or(false);
 
     // Build prefix-safe tsquery: "hlm" → "hlm:*", "audio record" → "audio:* & record:*"
-    let tsquery_str = params.q.split_whitespace()
+    let tsquery_str = params
+        .q
+        .split_whitespace()
         .filter(|w| !w.is_empty())
         .map(|w| format!("{}:*", w.replace('\'', "").replace('\\', "")))
         .collect::<Vec<_>>()
@@ -2190,10 +2517,11 @@ pub async fn search_global(
 /// Resolve all organization IDs for an authenticated user.
 /// For API key users, returns the org_id from the auth middleware directly.
 /// For Clerk users, fetches memberships from Clerk API.
-pub async fn resolve_user_org_ids_from_auth(auth: &super::super::middleware::AuthUser) -> Result<Vec<String>, String> {
+pub async fn resolve_user_org_ids_from_auth(
+    auth: &super::super::middleware::AuthUser,
+) -> Result<Vec<String>, String> {
     if auth.user_id.starts_with("apikey:") {
-        // API key auth: org_id already resolved by middleware
-        return Ok(auth.org_id.iter().cloned().collect());
+        return Ok(auth.scoped_org_ids.clone());
     }
     fetch_user_org_ids(&auth.user_id).await
 }
@@ -2232,7 +2560,11 @@ pub async fn fetch_user_org_ids(user_id: &str) -> Result<Vec<String>, String> {
         {
             let cache = user_orgs_cache().read().await;
             if let Some(entry) = cache.get(user_id) {
-                tracing::warn!("Clerk API error for {}, returning stale cache: {}", user_id, status);
+                tracing::warn!(
+                    "Clerk API error for {}, returning stale cache: {}",
+                    user_id,
+                    status
+                );
                 return Ok(entry.org_ids.clone());
             }
         }
@@ -2252,18 +2584,27 @@ pub async fn fetch_user_org_ids(user_id: &str) -> Result<Vec<String>, String> {
         data: Vec<ClerkOrgMembership>,
     }
 
-    let memberships: ClerkOrgMembershipsResponse = response.json().await
+    let memberships: ClerkOrgMembershipsResponse = response
+        .json()
+        .await
         .map_err(|e| format!("Failed to parse Clerk response: {}", e))?;
 
-    let org_ids: Vec<String> = memberships.data.into_iter().map(|m| m.organization.id).collect();
+    let org_ids: Vec<String> = memberships
+        .data
+        .into_iter()
+        .map(|m| m.organization.id)
+        .collect();
 
     // Update cache
     {
         let mut cache = user_orgs_cache().write().await;
-        cache.insert(user_id.to_string(), CachedUserOrgs {
-            org_ids: org_ids.clone(),
-            fetched_at: Instant::now(),
-        });
+        cache.insert(
+            user_id.to_string(),
+            CachedUserOrgs {
+                org_ids: org_ids.clone(),
+                fetched_at: Instant::now(),
+            },
+        );
     }
 
     Ok(org_ids)
@@ -2290,31 +2631,40 @@ pub async fn public_submit(
     Json(body): Json<PublicSubmission>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
     if body.title.trim().is_empty() || body.title.len() > 500 {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Title is required and must be under 500 characters"}))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Title is required and must be under 500 characters"})),
+        ));
     }
     if let Some(ref desc) = body.description {
         if desc.len() > 10_000 {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Description must be under 10000 characters"}))));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "Description must be under 10000 characters"})),
+            ));
         }
     }
 
     if let Some(ref priority) = body.priority {
         if !matches!(priority.as_str(), "urgent" | "high" | "medium" | "low") {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid priority"}))));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "Invalid priority"})),
+            ));
         }
     }
 
     if let Some(ref category) = body.category {
         let allowed = ["FRONT", "BACK", "API", "DB", "INFRA", "UX", "DEVOPS"];
         if category.iter().any(|c| !allowed.contains(&c.as_str())) {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid category"}))));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "Invalid category"})),
+            ));
         }
     }
 
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| internal_err(e))?;
+    let mut tx = pool.begin().await.map_err(|e| internal_err(e))?;
 
     let project = sqlx::query_as::<_, (Uuid, String, String, bool, Option<String>)>(
         "SELECT id, prefix, org_id, public_submit_enabled, public_submit_token FROM projects WHERE slug = $1 FOR UPDATE"
@@ -2325,22 +2675,23 @@ pub async fn public_submit(
     .map_err(|e| (StatusCode::NOT_FOUND, Json(json!({"error": format!("Project not found: {}", e)}))))?;
 
     if !project.3 {
-        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "Public submission disabled"}))));
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "Public submission disabled"})),
+        ));
     }
     match (&project.4, body.token.as_deref()) {
         (Some(expected), Some(provided)) if expected == provided => {}
         _ => {
-            return Err((StatusCode::FORBIDDEN, Json(json!({"error": "Invalid public token"}))));
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({"error": "Invalid public token"})),
+            ));
         }
     }
 
-    let (_, resolved_assignees) = resolve_auto_assign_assignees(
-        &mut tx,
-        project.0,
-        &project.2,
-        None,
-    )
-    .await?;
+    let (_, resolved_assignees) =
+        resolve_auto_assign_assignees(&mut tx, project.0, &project.2, None).await?;
 
     let next_number: (i64,) = sqlx::query_as(
         r#"
@@ -2362,13 +2713,19 @@ pub async fn public_submit(
     let attachments_json = if let Some(ref atts) = body.attachments {
         if let Some(arr) = atts.as_array() {
             if arr.len() > 5 {
-                return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Maximum 5 attachments allowed"}))));
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "Maximum 5 attachments allowed"})),
+                ));
             }
             for att in arr {
                 if att.get("url").and_then(|v| v.as_str()).is_none()
                     || att.get("name").and_then(|v| v.as_str()).is_none()
                 {
-                    return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid attachment format"}))));
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({"error": "Invalid attachment format"})),
+                    ));
                 }
             }
             atts.clone()
@@ -2406,9 +2763,7 @@ pub async fn public_submit(
     .await
     .map_err(|e| internal_err(e))?;
 
-    tx.commit()
-        .await
-        .map_err(|e| internal_err(e))?;
+    tx.commit().await.map_err(|e| internal_err(e))?;
 
     Ok(Json(ApiResponse::new(issue)))
 }
@@ -2443,7 +2798,10 @@ pub async fn archive(
     .unwrap_or(false);
 
     if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Issue not found"})),
+        ));
     }
 
     let issue = sqlx::query_as::<_, Issue>(
@@ -2462,12 +2820,36 @@ pub async fn archive(
         let pid = issue.project_id;
         let oid = org_id.clone();
         tokio::spawn(async move {
-            log_activity(&pool2, &oid, Some(pid), Some(id), &uid, uname.as_deref(), "issue_archived", None, None, None, None).await;
+            log_activity(
+                &pool2,
+                &oid,
+                Some(pid),
+                Some(id),
+                &uid,
+                uname.as_deref(),
+                "issue_archived",
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
         });
     }
 
-    dispatch_event(pool.clone(), org_id.clone(), "issue.archived", serde_json::to_value(&issue).unwrap_or_default()).await;
-    broadcast_event(&sse_tx, &org_id, "issue.archived", &serde_json::to_string(&issue).unwrap_or_default());
+    dispatch_event(
+        pool.clone(),
+        org_id.clone(),
+        "issue.archived",
+        serde_json::to_value(&issue).unwrap_or_default(),
+    )
+    .await;
+    broadcast_event(
+        &sse_tx,
+        &org_id,
+        "issue.archived",
+        &serde_json::to_string(&issue).unwrap_or_default(),
+    );
 
     Ok(Json(ApiResponse::new(issue)))
 }
@@ -2500,7 +2882,10 @@ pub async fn unarchive(
     .unwrap_or(false);
 
     if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Issue not found"})),
+        ));
     }
 
     let issue = sqlx::query_as::<_, Issue>(
@@ -2519,12 +2904,36 @@ pub async fn unarchive(
         let pid = issue.project_id;
         let oid = org_id.clone();
         tokio::spawn(async move {
-            log_activity(&pool2, &oid, Some(pid), Some(id), &uid, uname.as_deref(), "issue_unarchived", None, None, None, None).await;
+            log_activity(
+                &pool2,
+                &oid,
+                Some(pid),
+                Some(id),
+                &uid,
+                uname.as_deref(),
+                "issue_unarchived",
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
         });
     }
 
-    dispatch_event(pool.clone(), org_id.clone(), "issue.unarchived", serde_json::to_value(&issue).unwrap_or_default()).await;
-    broadcast_event(&sse_tx, &org_id, "issue.unarchived", &serde_json::to_string(&issue).unwrap_or_default());
+    dispatch_event(
+        pool.clone(),
+        org_id.clone(),
+        "issue.unarchived",
+        serde_json::to_value(&issue).unwrap_or_default(),
+    )
+    .await;
+    broadcast_event(
+        &sse_tx,
+        &org_id,
+        "issue.unarchived",
+        &serde_json::to_string(&issue).unwrap_or_default(),
+    );
 
     Ok(Json(ApiResponse::new(issue)))
 }

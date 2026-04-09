@@ -1,4 +1,8 @@
-use axum::{extract::{Extension, Path, Query, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
@@ -14,7 +18,8 @@ use crate::routes::issues::fetch_user_org_ids;
 fn parse_github_owner_repo(url: &str) -> Option<(String, String)> {
     let url = url.trim().trim_end_matches('/').trim_end_matches(".git");
     // Handle both https://github.com/owner/repo and github.com/owner/repo
-    let path = url.strip_prefix("https://github.com/")
+    let path = url
+        .strip_prefix("https://github.com/")
         .or_else(|| url.strip_prefix("http://github.com/"))
         .or_else(|| url.strip_prefix("github.com/"))?;
     let parts: Vec<&str> = path.splitn(3, '/').collect();
@@ -37,7 +42,12 @@ async fn fetch_github_metadata(url: &str) -> Option<serde_json::Value> {
         .await
         .ok()?;
     if !resp.status().is_success() {
-        tracing::warn!("GitHub API returned {} for {}/{}", resp.status(), owner, repo);
+        tracing::warn!(
+            "GitHub API returned {} for {}/{}",
+            resp.status(),
+            owner,
+            repo
+        );
         return None;
     }
     let data: serde_json::Value = resp.json().await.ok()?;
@@ -62,32 +72,54 @@ pub async fn refresh_github(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let row = sqlx::query_as::<_, (Option<String>,)>(
-        "SELECT github_repo_url FROM projects WHERE id = $1 AND org_id = $2"
+        "SELECT github_repo_url FROM projects WHERE id = $1 AND org_id = $2",
     )
-    .bind(id).bind(org_id)
+    .bind(id)
+    .bind(org_id)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
 
     let url = match row {
         Some((Some(u),)) if !u.is_empty() => u,
-        _ => return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "No GitHub repo URL configured for this project"})))),
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "No GitHub repo URL configured for this project"})),
+            ))
+        }
     };
 
     let metadata = fetch_github_metadata(&url).await
         .ok_or_else(|| (StatusCode::BAD_GATEWAY, Json(json!({"error": "Failed to fetch GitHub metadata — repo may be private or not found"}))))?;
 
     let project = sqlx::query_as::<_, Project>(
-        "UPDATE projects SET github_metadata = $3 WHERE id = $1 AND org_id = $2 RETURNING *"
+        "UPDATE projects SET github_metadata = $3 WHERE id = $1 AND org_id = $2 RETURNING *",
     )
-    .bind(id).bind(org_id).bind(&metadata)
+    .bind(id)
+    .bind(org_id)
+    .bind(&metadata)
     .fetch_one(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
 
     Ok(Json(ApiResponse::new(project)))
 }
@@ -105,22 +137,28 @@ pub async fn list(
     State(pool): State<PgPool>,
     Query(params): Query<ListProjectsQuery>,
 ) -> Json<ApiResponse<Vec<Project>>> {
-    let cross_org = params.all.unwrap_or(false) && !auth.user_id.starts_with("apikey:");
+    let cross_org = auth.user_id.starts_with("apikey:") || params.all.unwrap_or(false);
 
     let projects = if cross_org {
-        // Cross-org: fetch all org IDs for this user and return all their projects
-        let org_ids = match fetch_user_org_ids(&auth.user_id).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                tracing::warn!("fetch_user_org_ids failed in projects.list: {}", e);
-                auth.org_id.as_ref().map(|id| vec![id.clone()]).unwrap_or_default()
+        let org_ids = if auth.user_id.starts_with("apikey:") {
+            auth.scoped_org_ids.clone()
+        } else {
+            match fetch_user_org_ids(&auth.user_id).await {
+                Ok(ids) => ids,
+                Err(e) => {
+                    tracing::warn!("fetch_user_org_ids failed in projects.list: {}", e);
+                    auth.org_id
+                        .as_ref()
+                        .map(|id| vec![id.clone()])
+                        .unwrap_or_default()
+                }
             }
         };
         if org_ids.is_empty() {
             vec![]
         } else {
             sqlx::query_as::<_, Project>(
-                "SELECT * FROM projects WHERE org_id = ANY($1) ORDER BY org_id, created_at DESC"
+                "SELECT * FROM projects WHERE org_id = ANY($1) ORDER BY org_id, created_at DESC",
             )
             .bind(&org_ids)
             .fetch_all(&pool)
@@ -131,9 +169,8 @@ pub async fn list(
             })
         }
     } else if let Some(ref org_id) = auth.org_id {
-        // User has an active org selected → filter by org
         sqlx::query_as::<_, Project>(
-            "SELECT * FROM projects WHERE org_id = $1 ORDER BY created_at DESC"
+            "SELECT * FROM projects WHERE org_id = $1 ORDER BY created_at DESC",
         )
         .bind(org_id)
         .fetch_all(&pool)
@@ -148,7 +185,6 @@ pub async fn list(
             vec![]
         })
     } else {
-        // No active org → return empty
         vec![]
     };
 
@@ -171,22 +207,39 @@ pub async fn create(
 ) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
     let effective_org = match &auth.org_id {
         Some(id) => id.clone(),
-        None => return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Must have active organization"})))),
+        None => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "Must have active organization"})),
+            ))
+        }
     };
 
     // Input validation
     if body.name.trim().is_empty() || body.name.len() > 200 {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Project name is required and must be under 200 characters"}))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Project name is required and must be under 200 characters"})),
+        ));
     }
     // Slug: non-empty, max 100 chars, alphanumeric + dash only
     if body.slug.trim().is_empty()
         || body.slug.len() > 100
-        || !body.slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        || !body
+            .slug
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
     {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid slug format"}))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid slug format"})),
+        ));
     }
     if body.prefix.trim().is_empty() || body.prefix.len() > 10 {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Prefix is required and must be under 10 characters"}))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Prefix is required and must be under 10 characters"})),
+        ));
     }
 
     // Ensure the org exists + resolve name from Clerk in background
@@ -194,12 +247,18 @@ pub async fn create(
 
     // ── Project limit guard (per-user, cross-org) ─────────
     crate::middleware::plan_guard::enforce_quota(
-        &pool, &auth, crate::middleware::plan_guard::QuotaKind::Projects
-    ).await?;
+        &pool,
+        &auth,
+        crate::middleware::plan_guard::QuotaKind::Projects,
+    )
+    .await?;
 
     let auto_assign_mode = body.auto_assign_mode.as_deref().unwrap_or("off");
     if !matches!(auto_assign_mode, "off" | "default_assignee" | "round_robin") {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid auto_assign_mode"}))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid auto_assign_mode"})),
+        ));
     }
 
     // Fetch GitHub metadata if repo URL provided
@@ -242,12 +301,30 @@ pub async fn create(
         .flatten();
 
         if let Some(ctx) = tmpl_context {
-            let stack = ctx.get("stack").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let conventions = ctx.get("conventions").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let architecture = ctx.get("architecture").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let constraints = ctx.get("constraints").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let current_focus = ctx.get("current_focus").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let learnings = ctx.get("learnings").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let stack = ctx
+                .get("stack")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let conventions = ctx
+                .get("conventions")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let architecture = ctx
+                .get("architecture")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let constraints = ctx
+                .get("constraints")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let current_focus = ctx
+                .get("current_focus")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let learnings = ctx
+                .get("learnings")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             let _ = sqlx::query(
                 r#"
@@ -271,9 +348,12 @@ pub async fn create(
 
     // Webhook dispatch
     crate::routes::webhooks::dispatch_event(
-        pool.clone(), effective_org.clone(), "project.created",
+        pool.clone(),
+        effective_org.clone(),
+        "project.created",
         serde_json::to_value(&project).unwrap_or_default(),
-    ).await;
+    )
+    .await;
 
     let hints = vec![
         crate::models::ActionHint::recommended(
@@ -302,21 +382,32 @@ pub async fn get_one(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
-    let project = sqlx::query_as::<_, Project>(
-        "SELECT * FROM projects WHERE id = $1 AND org_id = $2"
-    )
-    .bind(id)
-    .bind(org_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    let project =
+        sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1 AND org_id = $2")
+            .bind(id)
+            .bind(org_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": e.to_string()})),
+                )
+            })?;
 
     match project {
         Some(p) => Ok(Json(ApiResponse::new(p))),
-        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )),
     }
 }
 
@@ -327,20 +418,31 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let auto_assign_mode = body.get("auto_assign_mode").and_then(|v| v.as_str());
     if let Some(mode) = auto_assign_mode {
         if !matches!(mode, "off" | "default_assignee" | "round_robin") {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid auto_assign_mode"}))));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "Invalid auto_assign_mode"})),
+            ));
         }
     }
 
     // If github_repo_url changed, re-fetch metadata
     let new_github_url = body.get("github_repo_url").and_then(|v| v.as_str());
     let github_metadata = if let Some(url) = new_github_url {
-        if url.is_empty() { None } else { fetch_github_metadata(url).await }
+        if url.is_empty() {
+            None
+        } else {
+            fetch_github_metadata(url).await
+        }
     } else {
         None
     };
@@ -356,7 +458,8 @@ pub async fn update(
            WHERE id = $1 AND org_id = $2
            RETURNING *"#,
     )
-    .bind(id).bind(org_id)
+    .bind(id)
+    .bind(org_id)
     .bind(body.get("name").and_then(|v| v.as_str()))
     .bind(body.get("description").and_then(|v| v.as_str()))
     .bind(auto_assign_mode)
@@ -367,18 +470,29 @@ pub async fn update(
     .bind(&github_metadata)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
 
     match project {
         Some(p) => {
             // Webhook dispatch
             crate::routes::webhooks::dispatch_event(
-                pool.clone(), org_id.to_string(), "project.updated",
+                pool.clone(),
+                org_id.to_string(),
+                "project.updated",
                 serde_json::to_value(&p).unwrap_or_default(),
-            ).await;
+            )
+            .await;
             Ok(Json(ApiResponse::new(p)))
         }
-        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )),
     }
 }
 
@@ -401,8 +515,12 @@ pub async fn get_public_submit_settings(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<PublicSubmitSettings>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let row = sqlx::query_as::<_, (bool, Option<String>, String)>(
         "SELECT public_submit_enabled, public_submit_token, slug FROM projects WHERE id = $1 AND org_id = $2",
@@ -414,8 +532,15 @@ pub async fn get_public_submit_settings(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     match row {
-        Some((enabled, token, slug)) => Ok(Json(ApiResponse::new(PublicSubmitSettings { enabled, token, slug }))),
-        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
+        Some((enabled, token, slug)) => Ok(Json(ApiResponse::new(PublicSubmitSettings {
+            enabled,
+            token,
+            slug,
+        }))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )),
     }
 }
 
@@ -426,8 +551,12 @@ pub async fn update_public_submit_settings(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdatePublicSubmitSettings>,
 ) -> Result<Json<ApiResponse<PublicSubmitSettings>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let current = sqlx::query_as::<_, (bool, Option<String>, String)>(
         "SELECT public_submit_enabled, public_submit_token, slug FROM projects WHERE id = $1 AND org_id = $2 FOR UPDATE",
@@ -440,7 +569,12 @@ pub async fn update_public_submit_settings(
 
     let (current_enabled, current_token, _slug) = match current {
         Some(row) => row,
-        None => return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Project not found"})),
+            ))
+        }
     };
 
     let enabled = body.enabled.unwrap_or(current_enabled);
@@ -463,7 +597,11 @@ pub async fn update_public_submit_settings(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    Ok(Json(ApiResponse::new(PublicSubmitSettings { enabled: updated.0, token: updated.1, slug: updated.2 })))
+    Ok(Json(ApiResponse::new(PublicSubmitSettings {
+        enabled: updated.0,
+        token: updated.1,
+        slug: updated.2,
+    })))
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -480,18 +618,31 @@ pub async fn board_by_slug(
     Query(params): Query<BoardParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let start = std::time::Instant::now();
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
-    let project = sqlx::query_as::<_, Project>(
-        "SELECT * FROM projects WHERE slug = $1 AND org_id = $2"
-    )
-    .bind(&slug)
-    .bind(org_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
+    let project =
+        sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE slug = $1 AND org_id = $2")
+            .bind(&slug)
+            .bind(org_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": e.to_string()})),
+                )
+            })?
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({"error": "Project not found"})),
+                )
+            })?;
 
     let include_archived = params.include_archived.unwrap_or(false);
     let include_snoozed = params.include_snoozed.unwrap_or(false);
@@ -554,7 +705,10 @@ pub async fn resolve_public_token(
 
     match row {
         Some((slug, name)) => Ok(Json(json!({ "slug": slug, "name": name, "token": token }))),
-        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Invalid or disabled public link"})))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Invalid or disabled public link"})),
+        )),
     }
 }
 
@@ -564,23 +718,39 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let result = sqlx::query("DELETE FROM projects WHERE id = $1 AND org_id = $2")
-        .bind(id).bind(org_id)
+        .bind(id)
+        .bind(org_id)
         .execute(&pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            )
+        })?;
 
     if result.rows_affected() > 0 {
         crate::routes::webhooks::dispatch_event(
-            pool.clone(), org_id.to_string(), "project.deleted",
+            pool.clone(),
+            org_id.to_string(),
+            "project.deleted",
             serde_json::json!({"id": id.to_string()}),
-        ).await;
+        )
+        .await;
         Ok(Json(ApiResponse::new(())))
     } else {
-        Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        ))
     }
 }
 
@@ -589,8 +759,12 @@ pub async fn get_auto_assign_settings(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ProjectAutoAssignSettings>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let settings = sqlx::query_as::<_, ProjectAutoAssignSettings>(
         r#"
@@ -603,11 +777,19 @@ pub async fn get_auto_assign_settings(
     .bind(org_id)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
 
     match settings {
         Some(s) => Ok(Json(ApiResponse::new(s))),
-        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )),
     }
 }
 
@@ -617,11 +799,21 @@ pub async fn update_auto_assign_settings(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateProjectAutoAssignSettings>,
 ) -> Result<Json<ApiResponse<ProjectAutoAssignSettings>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
-    if !matches!(body.auto_assign_mode.as_str(), "off" | "default_assignee" | "round_robin") {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid auto_assign_mode"}))));
+    if !matches!(
+        body.auto_assign_mode.as_str(),
+        "off" | "default_assignee" | "round_robin"
+    ) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid auto_assign_mode"})),
+        ));
     }
 
     let settings = sqlx::query_as::<_, ProjectAutoAssignSettings>(
@@ -639,10 +831,18 @@ pub async fn update_auto_assign_settings(
     .bind(&body.default_assignee_id)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
 
     match settings {
         Some(s) => Ok(Json(ApiResponse::new(s))),
-        None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"})))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )),
     }
 }

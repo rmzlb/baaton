@@ -1,6 +1,6 @@
-pub mod security;
-pub mod rate_limit;
 pub mod plan_guard;
+pub mod rate_limit;
+pub mod security;
 
 use axum::{
     extract::Request,
@@ -10,7 +10,7 @@ use axum::{
 };
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -57,8 +57,12 @@ fn parse_jwks(jwks: &JwkSet) -> HashMap<String, DecodingKey> {
     let mut map = HashMap::new();
     for key in &jwks.keys {
         match DecodingKey::from_rsa_components(&key.n, &key.e) {
-            Ok(dk) => { map.insert(key.kid.clone(), dk); }
-            Err(e) => { tracing::warn!("Failed to parse JWK kid={}: {}", key.kid, e); }
+            Ok(dk) => {
+                map.insert(key.kid.clone(), dk);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to parse JWK kid={}: {}", key.kid, e);
+            }
         }
     }
     map
@@ -133,15 +137,28 @@ async fn fetch_clerk_profile(user_id: &str) -> Option<(Option<String>, Option<St
         ("", "") => data.username.clone(),
         (first, last) => {
             let name = format!("{} {}", first, last).trim().to_string();
-            if name.is_empty() { data.username.clone() } else { Some(name) }
+            if name.is_empty() {
+                data.username.clone()
+            } else {
+                Some(name)
+            }
         }
     };
 
     let email = if let Some(primary_id) = data.primary_email_address_id.as_deref() {
         data.email_addresses
             .as_ref()
-            .and_then(|emails| emails.iter().find(|e| e.id == primary_id).map(|e| e.email_address.clone()))
-            .or_else(|| data.email_addresses.as_ref().and_then(|emails| emails.first().map(|e| e.email_address.clone())))
+            .and_then(|emails| {
+                emails
+                    .iter()
+                    .find(|e| e.id == primary_id)
+                    .map(|e| e.email_address.clone())
+            })
+            .or_else(|| {
+                data.email_addresses
+                    .as_ref()
+                    .and_then(|emails| emails.first().map(|e| e.email_address.clone()))
+            })
     } else {
         data.email_addresses
             .as_ref()
@@ -232,11 +249,16 @@ pub struct AuthUser {
     pub org_role: Option<String>,
     pub email: Option<String>,
     pub display_name: Option<String>,
+    pub scoped_org_ids: Vec<String>,
     /// API key project scoping: if non-empty, restrict access to these projects only
     pub scoped_project_ids: Vec<uuid::Uuid>,
 }
 
 impl AuthUser {
+    pub fn has_org_access(&self, org_id: &str) -> bool {
+        self.scoped_org_ids.is_empty() || self.scoped_org_ids.iter().any(|id| id == org_id)
+    }
+
     /// Check if this user has access to a specific project.
     /// Returns true if no project scoping is set (full org access) or if the project is in scope.
     pub fn has_project_access(&self, project_id: uuid::Uuid) -> bool {
@@ -244,10 +266,20 @@ impl AuthUser {
     }
 
     pub fn created_by_label(&self) -> Option<String> {
-        if let Some(name) = self.display_name.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        if let Some(name) = self
+            .display_name
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
             return Some(name.to_string());
         }
-        if let Some(email) = self.email.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        if let Some(email) = self
+            .email
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
             return Some(email.to_string());
         }
         None
@@ -315,13 +347,11 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
 
     // Fallback: accept ?token= query param (needed for EventSource/SSE which can't send headers)
     let query_token: Option<String> = if auth_header.is_none() {
-        req.uri()
-            .query()
-            .and_then(|q| {
-                q.split('&')
-                    .find(|p| p.starts_with("token="))
-                    .map(|p| p[6..].to_string())
-            })
+        req.uri().query().and_then(|q| {
+            q.split('&')
+                .find(|p| p.starts_with("token="))
+                .map(|p| p[6..].to_string())
+        })
     } else {
         None
     };
@@ -350,7 +380,11 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             Some(p) => p,
             None => {
                 tracing::error!("PgPool not found in request extensions for API key auth");
-                return (StatusCode::INTERNAL_SERVER_ERROR, r#"{"error":"Auth not configured"}"#).into_response();
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    r#"{"error":"Auth not configured"}"#,
+                )
+                    .into_response();
             }
         };
 
@@ -359,16 +393,26 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         #[derive(sqlx::FromRow)]
         struct ApiKeyLookup {
             id: uuid::Uuid,
-            org_id: String,
+            created_by: Option<String>,
             name: String,
             #[allow(dead_code)]
             permissions: Vec<String>,
             expires_at: Option<chrono::DateTime<chrono::Utc>>,
             project_ids: Vec<uuid::Uuid>,
+            scoped_org_ids: Vec<String>,
         }
 
         let key_row = match sqlx::query_as::<_, ApiKeyLookup>(
-            "SELECT id, org_id, name, permissions, expires_at, COALESCE(project_ids, '{}') as project_ids FROM api_keys WHERE key_hash = $1"
+            "SELECT \
+                k.id, \
+                k.created_by, \
+                k.name, \
+                k.permissions, \
+                k.expires_at, \
+                COALESCE(k.project_ids, '{}') as project_ids, \
+                COALESCE((SELECT array_agg(s.org_id ORDER BY s.org_id) FROM api_key_org_scopes s WHERE s.api_key_id = k.id), ARRAY[k.org_id]) as scoped_org_ids \
+             FROM api_keys k \
+             WHERE k.key_hash = $1"
         )
         .bind(&hash)
         .fetch_optional(&pool)
@@ -387,8 +431,36 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         // Check expiry
         if let Some(expires) = key_row.expires_at {
             if expires < chrono::Utc::now() {
-                return (StatusCode::UNAUTHORIZED, r#"{"error":"API key expired"}"#).into_response();
+                return (StatusCode::UNAUTHORIZED, r#"{"error":"API key expired"}"#)
+                    .into_response();
             }
+        }
+
+        let mut effective_org_ids = key_row.scoped_org_ids.clone();
+        if let Some(owner_user_id) = key_row.created_by.as_deref() {
+            match crate::routes::issues::fetch_user_org_ids(owner_user_id).await {
+                Ok(owner_org_ids) if !owner_org_ids.is_empty() => {
+                    effective_org_ids.retain(|org_id| {
+                        owner_org_ids
+                            .iter()
+                            .any(|owner_org_id| owner_org_id == org_id)
+                    });
+                }
+                Ok(_) => {
+                    effective_org_ids.clear();
+                }
+                Err(e) => {
+                    tracing::warn!(api_key_id = %key_row.id, error = %e, "Failed to refresh owner org memberships for API key auth");
+                }
+            }
+        }
+
+        if effective_org_ids.is_empty() {
+            return (
+                StatusCode::FORBIDDEN,
+                r#"{"error":"API key no longer has access to any organization"}"#,
+            )
+                .into_response();
         }
 
         // Fire-and-forget: update last_used_at
@@ -403,11 +475,12 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
 
         let auth_user = AuthUser {
             user_id: format!("apikey:{}", key_row.id),
-            org_id: Some(key_row.org_id),
+            org_id: Some(effective_org_ids[0].clone()),
             org_slug: None,
             org_role: None,
             email: None,
             display_name: Some(key_row.name.clone()),
+            scoped_org_ids: effective_org_ids,
             scoped_project_ids: key_row.project_ids,
         };
 
@@ -422,10 +495,17 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
 
         // ── Hourly rate limit for API key ────────────
         let rate_key = format!("apikey:{}", key_row.id);
-        if let Ok(rl) = rate_limit::check_hourly(&pool, &rate_key, rate_limit::HOURLY_LIMIT_API_KEY).await {
+        if let Ok(rl) =
+            rate_limit::check_hourly(&pool, &rate_key, rate_limit::HOURLY_LIMIT_API_KEY).await
+        {
             if !rl.allowed {
                 let headers = rate_limit::hourly_rate_limit_headers(&rl);
-                return (StatusCode::TOO_MANY_REQUESTS, headers, r#"{"error":"Rate limit exceeded. See X-RateLimit-Requests-* headers."}"#).into_response();
+                return (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    headers,
+                    r#"{"error":"Rate limit exceeded. See X-RateLimit-Requests-* headers."}"#,
+                )
+                    .into_response();
             }
             // Inject rate limit headers directly into response
             let mut response = next.run(req).await;
@@ -451,12 +531,16 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         Some(k) => k.clone(),
         None => {
             tracing::error!("JWKS keys not found in request extensions");
-            return (StatusCode::INTERNAL_SERVER_ERROR, r#"{"error":"Auth not configured"}"#).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                r#"{"error":"Auth not configured"}"#,
+            )
+                .into_response();
         }
     };
 
-    let issuer = std::env::var("CLERK_ISSUER")
-        .unwrap_or_else(|_| "https://clerk.baaton.dev".to_string());
+    let issuer =
+        std::env::var("CLERK_ISSUER").unwrap_or_else(|_| "https://clerk.baaton.dev".to_string());
     let authorized_parties: Vec<String> = std::env::var("CLERK_AUTHORIZED_PARTIES")
         .unwrap_or_else(|_| "https://app.baaton.dev,https://baaton.dev".to_string())
         .split(',')
@@ -506,7 +590,11 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             o.rol.as_ref().map(|r| format!("org:{}", r)),
         )
     } else {
-        (claims.org_id.clone(), claims.org_slug.clone(), claims.org_role.clone())
+        (
+            claims.org_id.clone(),
+            claims.org_slug.clone(),
+            claims.org_role.clone(),
+        )
     };
 
     let mut display_name = {
@@ -525,13 +613,18 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
     // Always try to resolve email (needed for super_admin lookup by email)
     if display_name.is_none() || email.is_none() {
         if let Some((fetched_name, fetched_email)) = resolve_profile_cached(&claims.sub).await {
-            if display_name.is_none() { display_name = fetched_name; }
-            if email.is_none() { email = fetched_email; }
+            if display_name.is_none() {
+                display_name = fetched_name;
+            }
+            if email.is_none() {
+                email = fetched_email;
+            }
         }
     }
 
     let auth_user = AuthUser {
         user_id: claims.sub,
+        scoped_org_ids: org_id.iter().cloned().collect(),
         org_id,
         org_slug,
         org_role,
@@ -552,10 +645,17 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
     // ── Hourly rate limit for JWT users ────────────
     if let Some(pool) = req.extensions().get::<PgPool>().cloned() {
         let rate_key = format!("user:{}", auth_user.user_id);
-        if let Ok(rl) = rate_limit::check_hourly(&pool, &rate_key, rate_limit::HOURLY_LIMIT_JWT).await {
+        if let Ok(rl) =
+            rate_limit::check_hourly(&pool, &rate_key, rate_limit::HOURLY_LIMIT_JWT).await
+        {
             if !rl.allowed {
                 let headers = rate_limit::hourly_rate_limit_headers(&rl);
-                return (StatusCode::TOO_MANY_REQUESTS, headers, r#"{"error":"Rate limit exceeded. See X-RateLimit-Requests-* headers."}"#).into_response();
+                return (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    headers,
+                    r#"{"error":"Rate limit exceeded. See X-RateLimit-Requests-* headers."}"#,
+                )
+                    .into_response();
             }
             req.extensions_mut().insert(rate_limit::RateLimitExtension {
                 limit: rl.limit,
@@ -566,7 +666,10 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
     }
 
     // Extract rate limit info before passing request to next handler
-    let rl_ext = req.extensions().get::<rate_limit::RateLimitExtension>().cloned();
+    let rl_ext = req
+        .extensions()
+        .get::<rate_limit::RateLimitExtension>()
+        .cloned();
 
     let mut response = next.run(req).await;
 

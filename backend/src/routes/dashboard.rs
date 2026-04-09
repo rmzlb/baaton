@@ -1,4 +1,8 @@
-use axum::{extract::{Extension, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Extension, State},
+    http::StatusCode,
+    Json,
+};
 use chrono::{Datelike, NaiveDate, Utc};
 use serde::Deserialize;
 use serde_json::json;
@@ -43,7 +47,11 @@ async fn fetch_org_metadata(org_id: &str) -> Option<(String, String, Option<Stri
         let cache = org_cache().read().await;
         if let Some(entry) = cache.get(org_id) {
             if entry.fetched_at.elapsed() < ORG_CACHE_TTL {
-                return Some((entry.name.clone(), entry.slug.clone(), entry.image_url.clone()));
+                return Some((
+                    entry.name.clone(),
+                    entry.slug.clone(),
+                    entry.image_url.clone(),
+                ));
             }
         }
     }
@@ -69,12 +77,15 @@ async fn fetch_org_metadata(org_id: &str) -> Option<(String, String, Option<Stri
     // Update cache
     {
         let mut cache = org_cache().write().await;
-        cache.insert(org_id.to_string(), CachedOrg {
-            name: data.name,
-            slug: data.slug,
-            image_url: data.image_url,
-            fetched_at: Instant::now(),
-        });
+        cache.insert(
+            org_id.to_string(),
+            CachedOrg {
+                name: data.name,
+                slug: data.slug,
+                image_url: data.image_url,
+                fetched_at: Instant::now(),
+            },
+        );
     }
 
     Some(result)
@@ -185,8 +196,19 @@ pub async fn summary(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let active_org_id = auth.org_id.clone().unwrap_or_default();
 
-    // 1. Resolve all org IDs
-    let all_org_ids: Vec<String> = if !auth.user_id.starts_with("apikey:") {
+    let all_org_ids: Vec<String> = if auth.user_id.starts_with("apikey:") {
+        if auth.scoped_org_ids.is_empty() {
+            if active_org_id.is_empty() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "Organization required"})),
+                ));
+            }
+            vec![active_org_id.clone()]
+        } else {
+            auth.scoped_org_ids.clone()
+        }
+    } else {
         match fetch_user_org_ids(&auth.user_id).await {
             Ok(mut orgs) => {
                 if !orgs.contains(&active_org_id) && !active_org_id.is_empty() {
@@ -197,16 +219,14 @@ pub async fn summary(
             Err(e) => {
                 tracing::warn!("fetch_user_org_ids failed: {}", e);
                 if active_org_id.is_empty() {
-                    return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))));
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({"error": "Organization required"})),
+                    ));
                 }
                 vec![active_org_id.clone()]
             }
         }
-    } else {
-        if active_org_id.is_empty() {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))));
-        }
-        vec![active_org_id.clone()]
     };
 
     let today = Utc::now().date_naive();
@@ -436,7 +456,10 @@ pub async fn summary(
     // 4. Build assignees map: project_id -> Vec<String>
     let mut assignees_map: HashMap<Uuid, Vec<String>> = HashMap::new();
     for a in &assignees {
-        assignees_map.entry(a.project_id).or_default().push(a.assignee_id.clone());
+        assignees_map
+            .entry(a.project_id)
+            .or_default()
+            .push(a.assignee_id.clone());
     }
 
     // 5. Group projects by org_id
@@ -446,55 +469,70 @@ pub async fn summary(
     }
 
     // 6. Fetch org metadata (parallel, cached)
-    let org_metadata_futures: Vec<_> = all_org_ids.iter().map(|oid| {
-        let oid = oid.clone();
-        async move {
-            let meta = fetch_org_metadata(&oid).await;
-            (oid, meta)
-        }
-    }).collect();
+    let org_metadata_futures: Vec<_> = all_org_ids
+        .iter()
+        .map(|oid| {
+            let oid = oid.clone();
+            async move {
+                let meta = fetch_org_metadata(&oid).await;
+                (oid, meta)
+            }
+        })
+        .collect();
     let org_metadata_results = futures::future::join_all(org_metadata_futures).await;
 
     // 7. Build orgs array
-    let orgs_json: Vec<serde_json::Value> = org_metadata_results.into_iter().map(|(oid, meta)| {
-        let (name, slug, image_url) = meta.unwrap_or_else(|| (oid.clone(), oid.clone(), None));
-        let org_projects = projects_by_org.get(&oid).cloned().unwrap_or_default();
-        let projects_json: Vec<serde_json::Value> = org_projects.iter().map(|p| {
-            let proj_assignees = assignees_map.get(&p.id).cloned().unwrap_or_default();
-            json!({
-                "id": p.id,
-                "name": p.name,
-                "slug": p.slug,
-                "prefix": p.prefix,
-                "description": p.description,
-                "status_counts": {
-                    "backlog": p.backlog,
-                    "todo": p.todo,
-                    "in_progress": p.in_progress,
-                    "in_review": p.in_review,
-                    "done": p.done,
-                    "cancelled": p.cancelled,
-                },
-                "total_issues": p.total_issues,
-                "assignees": proj_assignees,
-            })
-        }).collect();
+    let orgs_json: Vec<serde_json::Value> = org_metadata_results
+        .into_iter()
+        .map(|(oid, meta)| {
+            let (name, slug, image_url) = meta.unwrap_or_else(|| (oid.clone(), oid.clone(), None));
+            let org_projects = projects_by_org.get(&oid).cloned().unwrap_or_default();
+            let projects_json: Vec<serde_json::Value> = org_projects
+                .iter()
+                .map(|p| {
+                    let proj_assignees = assignees_map.get(&p.id).cloned().unwrap_or_default();
+                    json!({
+                        "id": p.id,
+                        "name": p.name,
+                        "slug": p.slug,
+                        "prefix": p.prefix,
+                        "description": p.description,
+                        "status_counts": {
+                            "backlog": p.backlog,
+                            "todo": p.todo,
+                            "in_progress": p.in_progress,
+                            "in_review": p.in_review,
+                            "done": p.done,
+                            "cancelled": p.cancelled,
+                        },
+                        "total_issues": p.total_issues,
+                        "assignees": proj_assignees,
+                    })
+                })
+                .collect();
 
-        json!({
-            "id": oid,
-            "name": name,
-            "slug": slug,
-            "image_url": image_url,
-            "is_active": oid == active_org_id,
-            "projects": projects_json,
+            json!({
+                "id": oid,
+                "name": name,
+                "slug": slug,
+                "image_url": image_url,
+                "is_active": oid == active_org_id,
+                "projects": projects_json,
+            })
         })
-    }).collect();
+        .collect();
 
     // 8. Velocities
     let pv7 = pv7_total as f64 / 7.0;
     let pv30 = pv30_total as f64 / 30.0;
     let ov7 = ov7_total as f64 / 7.0;
-    let velocity_trend = if pv7 > pv30 * 1.1 { "up" } else if pv7 < pv30 * 0.9 { "down" } else { "stable" };
+    let velocity_trend = if pv7 > pv30 * 1.1 {
+        "up"
+    } else if pv7 < pv30 * 0.9 {
+        "down"
+    } else {
+        "stable"
+    };
 
     let (streak_val, best_week) = match &streak {
         Some(s) => (s.current_streak, s.best_week_count),

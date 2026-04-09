@@ -1,4 +1,8 @@
-use axum::{extract::{Extension, Path, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Extension, Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
@@ -52,13 +56,12 @@ pub async fn run_triage_analysis(
     .await
     .unwrap_or_default();
 
-    let tags = sqlx::query_as::<_, (String,)>(
-        "SELECT name FROM project_tags WHERE project_id = $1"
-    )
-    .bind(project_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let tags =
+        sqlx::query_as::<_, (String,)>("SELECT name FROM project_tags WHERE project_id = $1")
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
 
     let assignees = sqlx::query_as::<_, (String,)>(
         "SELECT DISTINCT unnest(assignee_ids) as uid FROM issues WHERE project_id = $1 AND assignee_ids != '{}' LIMIT 10"
@@ -68,12 +71,21 @@ pub async fn run_triage_analysis(
     .await
     .unwrap_or_default();
 
-    let recent_list = recent_issues.iter()
+    let recent_list = recent_issues
+        .iter()
         .map(|(_, did, t, s, p)| format!("- {} [{}] (priority:{}) {}", did, s, p, t))
         .collect::<Vec<_>>()
         .join("\n");
-    let tag_list = tags.iter().map(|(t,)| t.as_str()).collect::<Vec<_>>().join(", ");
-    let assignee_list = assignees.iter().map(|(a,)| a.as_str()).collect::<Vec<_>>().join(", ");
+    let tag_list = tags
+        .iter()
+        .map(|(t,)| t.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let assignee_list = assignees
+        .iter()
+        .map(|(a,)| a.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let prompt = format!(
         r#"You are a triage assistant. Analyze this issue and suggest priority, tags, and assignee.
@@ -98,9 +110,21 @@ Respond ONLY with valid JSON:
 }}"#,
         title,
         description.as_deref().unwrap_or("No description"),
-        if tag_list.is_empty() { "none" } else { &tag_list },
-        if assignee_list.is_empty() { "none" } else { &assignee_list },
-        if recent_list.is_empty() { "none".to_string() } else { recent_list },
+        if tag_list.is_empty() {
+            "none"
+        } else {
+            &tag_list
+        },
+        if assignee_list.is_empty() {
+            "none"
+        } else {
+            &assignee_list
+        },
+        if recent_list.is_empty() {
+            "none".to_string()
+        } else {
+            recent_list
+        },
     );
 
     let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_default();
@@ -123,14 +147,15 @@ Respond ONLY with valid JSON:
     let text = body["candidates"][0]["content"]["parts"][0]["text"]
         .as_str()
         .unwrap_or("{}");
-    let clean = text.trim()
+    let clean = text
+        .trim()
         .trim_start_matches("```json")
         .trim_start_matches("```")
         .trim_end_matches("```")
         .trim();
 
-    let mut suggestion: TriageSuggestion = serde_json::from_str(clean)
-        .unwrap_or(TriageSuggestion {
+    let mut suggestion: TriageSuggestion =
+        serde_json::from_str(clean).unwrap_or(TriageSuggestion {
             suggested_priority: Some("medium".into()),
             suggested_tags: vec![],
             suggested_assignee: None,
@@ -139,9 +164,13 @@ Respond ONLY with valid JSON:
         });
 
     // Enrich similar issues with IDs
-    suggestion.similar_issues = suggestion.similar_issues.iter()
+    suggestion.similar_issues = suggestion
+        .similar_issues
+        .iter()
         .filter_map(|sim| {
-            recent_issues.iter().find(|(_, did, _, _, _)| did == &sim.display_id)
+            recent_issues
+                .iter()
+                .find(|(_, did, _, _, _)| did == &sim.display_id)
                 .map(|found| SimilarIssue {
                     id: found.0.to_string(),
                     display_id: found.1.clone(),
@@ -179,10 +208,18 @@ pub async fn list_untriaged(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Vec<TriageIssue>>>, (StatusCode, Json<serde_json::Value>)> {
-    let current_org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let current_org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
     let org_ids = if auth.user_id.starts_with("apikey:") {
-        vec![current_org_id.to_string()]
+        if auth.scoped_org_ids.is_empty() {
+            vec![current_org_id.to_string()]
+        } else {
+            auth.scoped_org_ids.clone()
+        }
     } else {
         let mut org_ids = fetch_user_org_ids(&auth.user_id)
             .await
@@ -216,7 +253,12 @@ pub async fn list_untriaged(
     .bind(&org_ids)
     .fetch_all(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
 
     Ok(Json(ApiResponse::new(issues)))
 }
@@ -241,10 +283,18 @@ pub async fn batch_triage(
     State(pool): State<PgPool>,
     Json(body): Json<BatchTriageRequest>,
 ) -> Result<Json<ApiResponse<Vec<BatchTriageResult>>>, (StatusCode, Json<serde_json::Value>)> {
-    let current_org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let current_org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
     let org_ids = if auth.user_id.starts_with("apikey:") {
-        vec![current_org_id.to_string()]
+        if auth.scoped_org_ids.is_empty() {
+            vec![current_org_id.to_string()]
+        } else {
+            auth.scoped_org_ids.clone()
+        }
     } else {
         let mut org_ids = fetch_user_org_ids(&auth.user_id)
             .await
@@ -260,7 +310,10 @@ pub async fn batch_triage(
     }
 
     if body.issue_ids.len() > 20 {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Maximum 20 issues per batch"}))));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Maximum 20 issues per batch"})),
+        ));
     }
 
     let mut results = Vec::new();
@@ -322,10 +375,18 @@ pub async fn analyze(
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<TriageSuggestion>>, (StatusCode, Json<serde_json::Value>)> {
-    let current_org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let current_org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
     let org_ids = if auth.user_id.starts_with("apikey:") {
-        vec![current_org_id.to_string()]
+        if auth.scoped_org_ids.is_empty() {
+            vec![current_org_id.to_string()]
+        } else {
+            auth.scoped_org_ids.clone()
+        }
     } else {
         let mut org_ids = fetch_user_org_ids(&auth.user_id)
             .await
@@ -336,12 +397,16 @@ pub async fn analyze(
         org_ids
     };
 
-    let result = run_triage_analysis(&pool, issue_id, &org_ids).await
+    let result = run_triage_analysis(&pool, issue_id, &org_ids)
+        .await
         .map_err(|e| {
             if e == "Issue not found" {
                 (StatusCode::NOT_FOUND, Json(json!({"error": e})))
             } else if e == "GEMINI_API_KEY not set" {
-                (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "AI service not configured"})))
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({"error": "AI service not configured"})),
+                )
             } else {
                 (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e})))
             }

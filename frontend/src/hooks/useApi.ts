@@ -330,6 +330,7 @@ export function useApi() {
       create: async (body: {
         name: string;
         permissions?: string[];
+        org_ids?: string[];
         project_ids?: string[];
         expires_at?: string | null;
       }): Promise<ApiKey & { key: string }> =>
@@ -341,6 +342,7 @@ export function useApi() {
       update: async (id: string, body: {
         name?: string;
         permissions?: string[];
+        org_ids?: string[];
         project_ids?: string[];
         expires_at?: string | null;
       }): Promise<ApiKey> =>

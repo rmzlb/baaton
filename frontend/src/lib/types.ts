@@ -188,6 +188,8 @@ export interface ApiKey {
   id: string;
   org_id: string;
   org_name: string | null;
+  org_ids: string[];
+  org_count: number;
   name: string;
   key_prefix: string;
   permissions: string[];

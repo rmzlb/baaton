@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOrganization, useOrganizationList } from '@clerk/clerk-react';
 import {
   Plus, Trash2, Copy, CheckCircle2, AlertTriangle, BookOpen,
   RefreshCw, Key, X, ChevronDown, Pencil, Shield, Zap, Bot,
@@ -148,6 +149,85 @@ function formatExpiry(expires_at: string | null): string {
   return d.toLocaleDateString();
 }
 
+type OrgScopeMode = 'current' | 'selected' | 'all';
+
+type OrgOption = {
+  id: string;
+  name: string;
+  slug?: string;
+};
+
+type ProjectOption = {
+  id: string;
+  name: string;
+  slug: string;
+  org_id: string;
+};
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function getEffectiveOrgIds(
+  mode: OrgScopeMode,
+  activeOrgId: string | null,
+  selectedOrgIds: string[],
+  organizations: OrgOption[],
+): string[] {
+  if (mode === 'all') return uniqueStrings(organizations.map(org => org.id));
+  if (mode === 'current') return activeOrgId ? [activeOrgId] : organizations[0] ? [organizations[0].id] : [];
+  return uniqueStrings(selectedOrgIds);
+}
+
+function isAllCurrentOrganizations(orgIds: string[], organizations: OrgOption[]): boolean {
+  const left = uniqueStrings(orgIds).sort();
+  const right = uniqueStrings(organizations.map(org => org.id)).sort();
+  return right.length > 0 && left.length === right.length && left.every((id, i) => id === right[i]);
+}
+
+function getOrgScopeLabel(
+  apiKey: ApiKey,
+  organizations: OrgOption[],
+  t: (k: string, opts?: any) => string,
+): string {
+  const scopedOrgIds = uniqueStrings(apiKey.org_ids?.length ? apiKey.org_ids : [apiKey.org_id]);
+
+  if (isAllCurrentOrganizations(scopedOrgIds, organizations)) {
+    return t('apiKeys.orgScopeAllCurrent');
+  }
+
+  if (scopedOrgIds.length <= 1) {
+    const orgId = scopedOrgIds[0] ?? apiKey.org_id;
+    return organizations.find(org => org.id === orgId)?.name ?? apiKey.org_name ?? orgId;
+  }
+
+  return t('apiKeys.orgScopeMultiple', { count: scopedOrgIds.length });
+}
+
+function groupProjectsByOrg(projects: ProjectOption[], organizations: OrgOption[]) {
+  const orgMap = new Map(organizations.map(org => [org.id, org]));
+  const groups = new Map<string, ProjectOption[]>();
+
+  for (const project of projects) {
+    const current = groups.get(project.org_id) ?? [];
+    current.push(project);
+    groups.set(project.org_id, current);
+  }
+
+  return Array.from(groups.entries())
+    .map(([orgId, orgProjects]) => ({
+      orgId,
+      orgName: orgMap.get(orgId)?.name ?? orgId,
+      projects: [...orgProjects].sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .sort((a, b) => a.orgName.localeCompare(b.orgName));
+}
+
+function getOrgNames(orgIds: string[], organizations: OrgOption[]): string[] {
+  const orgMap = new Map(organizations.map(org => [org.id, org.name]));
+  return uniqueStrings(orgIds).map(orgId => orgMap.get(orgId) ?? orgId);
+}
+
 function PermBadge({ perm, t, compact }: { perm: string; t: (k: string) => string; compact?: boolean }) {
   const color = PERM_COLOR[perm] ?? 'bg-zinc-500/15 text-zinc-600 border-zinc-500/25';
   const colonIdx = perm.indexOf(':');
@@ -231,18 +311,52 @@ type ExpiryOption = 'never' | '30d' | '90d' | '1y' | 'custom';
 interface CreateModalProps {
   onClose: () => void;
   onCreated: (key: ApiKey & { key: string }) => void;
-  projects: Array<{ id: string; name: string; slug: string }>;
+  projects: ProjectOption[];
+  organizations: OrgOption[];
+  activeOrgId: string | null;
 }
 
-function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
+function CreateModal({ onClose, onCreated, projects, organizations, activeOrgId }: CreateModalProps) {
   const { t } = useTranslation();
   const apiClient = useApi();
   const [name, setName] = useState('');
+  const [orgScopeMode, setOrgScopeMode] = useState<OrgScopeMode>(organizations.length > 1 ? 'selected' : 'current');
   const [scopeAll, setScopeAll] = useState(true);
+  const [selectedOrgIds, setSelectedOrgIds] = useState<string[]>(activeOrgId ? [activeOrgId] : []);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<string[]>(PRESETS.agent);
   const [expiry, setExpiry] = useState<ExpiryOption>('never');
   const [customDate, setCustomDate] = useState('');
+
+  const effectiveOrgIds = useMemo(
+    () => getEffectiveOrgIds(orgScopeMode, activeOrgId, selectedOrgIds, organizations),
+    [orgScopeMode, activeOrgId, selectedOrgIds, organizations],
+  );
+
+  const visibleProjects = useMemo(
+    () => projects.filter(project => effectiveOrgIds.includes(project.org_id)),
+    [projects, effectiveOrgIds],
+  );
+
+  const visibleProjectGroups = useMemo(
+    () => groupProjectsByOrg(visibleProjects, organizations),
+    [visibleProjects, organizations],
+  );
+
+  const effectiveOrgNames = useMemo(
+    () => getOrgNames(effectiveOrgIds, organizations),
+    [effectiveOrgIds, organizations],
+  );
+
+  useEffect(() => {
+    if (!activeOrgId) return;
+    setSelectedOrgIds(prev => (prev.length > 0 ? prev : [activeOrgId]));
+  }, [activeOrgId]);
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleProjects.map(project => project.id));
+    setSelectedProjects(prev => prev.filter(id => visibleIds.has(id)));
+  }, [visibleProjects]);
 
   const createMutation = useMutation({
     mutationFn: () => {
@@ -255,6 +369,7 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
       return apiClient.apiKeys.create({
         name: name.trim(),
         permissions,
+        org_ids: effectiveOrgIds,
         project_ids: scopeAll ? [] : selectedProjects,
         expires_at: expires_at ?? null,
       });
@@ -271,6 +386,12 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
   const toggleProject = (id: string) => {
     setSelectedProjects(prev =>
       prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id],
+    );
+  };
+
+  const toggleOrg = (id: string) => {
+    setSelectedOrgIds(prev =>
+      prev.includes(id) ? prev.filter(orgId => orgId !== id) : [...prev, id],
     );
   };
 
@@ -291,7 +412,6 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
         className="w-full max-w-2xl rounded-2xl border border-border bg-surface shadow-2xl max-h-[90vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div className="flex items-center gap-2">
             <Key size={18} className="text-accent" />
@@ -305,7 +425,6 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
-          {/* Name */}
           <div>
             <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-1.5">
               {t('apiKeys.col.name')}
@@ -320,11 +439,99 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
             />
           </div>
 
-          {/* Scope */}
           <div>
             <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-1.5">
-              {t('apiKeys.createModal.scope')}
+              {t('apiKeys.createModal.orgScope')}
             </label>
+            <p className="text-xs text-muted mb-2">
+              {t('apiKeys.createModal.orgScopeHelp')}
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 mb-2">
+              <button
+                type="button"
+                onClick={() => setOrgScopeMode('current')}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                  orgScopeMode === 'current'
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border text-secondary hover:border-border hover:text-primary'
+                }`}
+              >
+                {t('apiKeys.createModal.orgScopeCurrent')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrgScopeMode('selected')}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                  orgScopeMode === 'selected'
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border text-secondary hover:border-border hover:text-primary'
+                }`}
+              >
+                {t('apiKeys.createModal.orgScopeSelected')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrgScopeMode('all')}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                  orgScopeMode === 'all'
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border text-secondary hover:border-border hover:text-primary'
+                }`}
+              >
+                {t('apiKeys.createModal.orgScopeAllCurrent')}
+              </button>
+            </div>
+            {orgScopeMode === 'selected' && organizations.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 p-3 rounded-lg border border-border bg-bg">
+                {organizations.map(org => (
+                  <button
+                    key={org.id}
+                    type="button"
+                    onClick={() => toggleOrg(org.id)}
+                    className={`rounded-md border px-2 py-1 text-xs font-medium transition-all ${
+                      selectedOrgIds.includes(org.id)
+                        ? 'border-accent bg-accent/15 text-accent'
+                        : 'border-border text-muted hover:text-secondary'
+                    }`}
+                  >
+                    {org.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {orgScopeMode === 'all' && (
+              <p className="text-xs text-muted mt-2">
+                {t('apiKeys.createModal.orgScopeAllCurrentHelp')}
+              </p>
+            )}
+            <div className="mt-3 rounded-lg border border-border bg-bg px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-secondary">
+                {t('apiKeys.createModal.orgTargets')}
+              </div>
+              {effectiveOrgNames.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {effectiveOrgNames.map(name => (
+                    <span key={name} className="rounded-md border border-accent/20 bg-accent/10 px-2 py-1 text-xs font-medium text-accent">
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-muted">{t('apiKeys.createModal.orgTargetsEmpty')}</p>
+              )}
+              {scopeAll && effectiveOrgNames.length > 0 && (
+                <p className="mt-2 text-xs text-muted">{t('apiKeys.createModal.scopeAllAppliesHelp')}</p>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-1.5">
+              {t('apiKeys.createModal.projectScope')}
+            </label>
+            <p className="text-xs text-muted mb-2">
+              {t('apiKeys.createModal.projectScopeHelp')}
+            </p>
             <div className="flex gap-2 mb-2">
               <button
                 type="button"
@@ -349,27 +556,38 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
                 {t('apiKeys.createModal.scopeSpecific')}
               </button>
             </div>
-            {!scopeAll && projects.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 p-3 rounded-lg border border-border bg-bg">
-                {projects.map(p => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => toggleProject(p.id)}
-                    className={`rounded-md border px-2 py-1 text-xs font-medium transition-all ${
-                      selectedProjects.includes(p.id)
-                        ? 'border-accent bg-accent/15 text-accent'
-                        : 'border-border text-muted hover:text-secondary'
-                    }`}
-                  >
-                    {p.name}
-                  </button>
+            {!scopeAll && visibleProjects.length > 0 && (
+              <div className="space-y-3 p-3 rounded-lg border border-border bg-bg">
+                {visibleProjectGroups.map(group => (
+                  <div key={group.orgId} className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-secondary">
+                      {group.orgName}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.projects.map(project => (
+                        <button
+                          key={project.id}
+                          type="button"
+                          onClick={() => toggleProject(project.id)}
+                          className={`rounded-md border px-2 py-1 text-xs font-medium transition-all ${
+                            selectedProjects.includes(project.id)
+                              ? 'border-accent bg-accent/15 text-accent'
+                              : 'border-border text-muted hover:text-secondary'
+                          }`}
+                        >
+                          {project.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
+            {!scopeAll && visibleProjects.length === 0 && (
+              <p className="text-xs text-muted mt-2">{t('apiKeys.createModal.noProjectsInSelectedOrgs')}</p>
+            )}
           </div>
 
-          {/* Expiration */}
           <div>
             <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-1.5">
               {t('apiKeys.createModal.expiration')}
@@ -400,7 +618,6 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
             )}
           </div>
 
-          {/* Permission Presets */}
           <div>
             <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-1.5">
               {t('apiKeys.createModal.presets')}
@@ -436,7 +653,6 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
               </button>
             </div>
 
-            {/* Permissions grid */}
             <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-2">
               {t('apiKeys.createModal.permissions')}
             </label>
@@ -444,7 +660,6 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
           <button
             type="button"
@@ -455,7 +670,7 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
           </button>
           <button
             type="button"
-            disabled={!name.trim() || createMutation.isPending}
+            disabled={!name.trim() || effectiveOrgIds.length === 0 || createMutation.isPending}
             onClick={() => createMutation.mutate()}
             className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-black hover:bg-accent-hover disabled:opacity-40 transition-colors"
           >
@@ -472,25 +687,58 @@ function CreateModal({ onClose, onCreated, projects }: CreateModalProps) {
 
 interface EditDrawerProps {
   apiKey: ApiKey;
-  projects: Array<{ id: string; name: string; slug: string }>;
+  projects: ProjectOption[];
+  organizations: OrgOption[];
+  activeOrgId: string | null;
   onClose: () => void;
   onSaved: () => void;
   onRegenerate: () => void;
 }
 
-function EditDrawer({ apiKey, projects, onClose, onSaved, onRegenerate }: EditDrawerProps) {
+function EditDrawer({ apiKey, projects, organizations, activeOrgId, onClose, onSaved, onRegenerate }: EditDrawerProps) {
   const { t } = useTranslation();
   const apiClient = useApi();
+  const initialOrgIds = uniqueStrings(apiKey.org_ids?.length ? apiKey.org_ids : [apiKey.org_id]);
   const [name, setName] = useState(apiKey.name);
   const [permissions, setPermissions] = useState<string[]>(apiKey.permissions);
+  const [orgScopeMode, setOrgScopeMode] = useState<OrgScopeMode>(() => (
+    isAllCurrentOrganizations(initialOrgIds, organizations) ? 'all' : 'selected'
+  ));
+  const [selectedOrgIds, setSelectedOrgIds] = useState<string[]>(initialOrgIds);
   const [scopeAll, setScopeAll] = useState(apiKey.project_ids.length === 0);
   const [selectedProjects, setSelectedProjects] = useState<string[]>(apiKey.project_ids);
+
+  const effectiveOrgIds = useMemo(
+    () => getEffectiveOrgIds(orgScopeMode, activeOrgId, selectedOrgIds, organizations),
+    [orgScopeMode, activeOrgId, selectedOrgIds, organizations],
+  );
+
+  const visibleProjects = useMemo(
+    () => projects.filter(project => effectiveOrgIds.includes(project.org_id)),
+    [projects, effectiveOrgIds],
+  );
+
+  const visibleProjectGroups = useMemo(
+    () => groupProjectsByOrg(visibleProjects, organizations),
+    [visibleProjects, organizations],
+  );
+
+  const effectiveOrgNames = useMemo(
+    () => getOrgNames(effectiveOrgIds, organizations),
+    [effectiveOrgIds, organizations],
+  );
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleProjects.map(project => project.id));
+    setSelectedProjects(prev => prev.filter(id => visibleIds.has(id)));
+  }, [visibleProjects]);
 
   const updateMutation = useMutation({
     mutationFn: () =>
       apiClient.apiKeys.update(apiKey.id, {
         name: name.trim(),
         permissions,
+        org_ids: effectiveOrgIds,
         project_ids: scopeAll ? [] : selectedProjects,
       }),
     onSuccess: () => {
@@ -505,6 +753,12 @@ function EditDrawer({ apiKey, projects, onClose, onSaved, onRegenerate }: EditDr
     );
   };
 
+  const toggleOrg = (id: string) => {
+    setSelectedOrgIds(prev =>
+      prev.includes(id) ? prev.filter(orgId => orgId !== id) : [...prev, id],
+    );
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-end bg-black/50 backdrop-blur-sm"
@@ -514,7 +768,6 @@ function EditDrawer({ apiKey, projects, onClose, onSaved, onRegenerate }: EditDr
         className="w-full sm:w-[480px] h-[90vh] sm:h-full sm:max-h-screen rounded-t-2xl sm:rounded-l-2xl sm:rounded-r-none border border-border bg-surface shadow-2xl flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
             <Pencil size={15} className="text-accent" />
@@ -525,9 +778,7 @@ function EditDrawer({ apiKey, projects, onClose, onSaved, onRegenerate }: EditDr
           </button>
         </div>
 
-        {/* Body */}
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
-          {/* Name */}
           <div>
             <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-1.5">
               {t('apiKeys.col.name')}
@@ -541,11 +792,93 @@ function EditDrawer({ apiKey, projects, onClose, onSaved, onRegenerate }: EditDr
             />
           </div>
 
-          {/* Scope */}
           <div>
             <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-1.5">
-              {t('apiKeys.createModal.scope')}
+              {t('apiKeys.createModal.orgScope')}
             </label>
+            <p className="text-xs text-muted mb-2">
+              {t('apiKeys.createModal.orgScopeHelp')}
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 mb-2">
+              <button
+                type="button"
+                onClick={() => setOrgScopeMode('current')}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                  orgScopeMode === 'current' ? 'border-accent bg-accent/10 text-accent' : 'border-border text-secondary hover:text-primary'
+                }`}
+              >
+                {t('apiKeys.createModal.orgScopeCurrent')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrgScopeMode('selected')}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                  orgScopeMode === 'selected' ? 'border-accent bg-accent/10 text-accent' : 'border-border text-secondary hover:text-primary'
+                }`}
+              >
+                {t('apiKeys.createModal.orgScopeSelected')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrgScopeMode('all')}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                  orgScopeMode === 'all' ? 'border-accent bg-accent/10 text-accent' : 'border-border text-secondary hover:text-primary'
+                }`}
+              >
+                {t('apiKeys.createModal.orgScopeAllCurrent')}
+              </button>
+            </div>
+            {orgScopeMode === 'selected' && organizations.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 p-3 rounded-lg border border-border bg-bg">
+                {organizations.map(org => (
+                  <button
+                    key={org.id}
+                    type="button"
+                    onClick={() => toggleOrg(org.id)}
+                    className={`rounded-md border px-2 py-1 text-xs font-medium transition-all ${
+                      selectedOrgIds.includes(org.id)
+                        ? 'border-accent bg-accent/15 text-accent'
+                        : 'border-border text-muted hover:text-secondary'
+                    }`}
+                  >
+                    {org.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {orgScopeMode === 'all' && (
+              <p className="text-xs text-muted mt-2">
+                {t('apiKeys.createModal.orgScopeAllCurrentHelp')}
+              </p>
+            )}
+            <div className="mt-3 rounded-lg border border-border bg-bg px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-secondary">
+                {t('apiKeys.createModal.orgTargets')}
+              </div>
+              {effectiveOrgNames.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {effectiveOrgNames.map(name => (
+                    <span key={name} className="rounded-md border border-accent/20 bg-accent/10 px-2 py-1 text-xs font-medium text-accent">
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-muted">{t('apiKeys.createModal.orgTargetsEmpty')}</p>
+              )}
+              {scopeAll && effectiveOrgNames.length > 0 && (
+                <p className="mt-2 text-xs text-muted">{t('apiKeys.createModal.scopeAllAppliesHelp')}</p>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-1.5">
+              {t('apiKeys.createModal.projectScope')}
+            </label>
+            <p className="text-xs text-muted mb-2">
+              {t('apiKeys.createModal.projectScopeHelp')}
+            </p>
             <div className="flex gap-2 mb-2">
               <button
                 type="button"
@@ -566,27 +899,38 @@ function EditDrawer({ apiKey, projects, onClose, onSaved, onRegenerate }: EditDr
                 {t('apiKeys.createModal.scopeSpecific')}
               </button>
             </div>
-            {!scopeAll && projects.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 p-3 rounded-lg border border-border bg-bg">
-                {projects.map(p => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => toggleProject(p.id)}
-                    className={`rounded-md border px-2 py-1 text-xs font-medium transition-all ${
-                      selectedProjects.includes(p.id)
-                        ? 'border-accent bg-accent/15 text-accent'
-                        : 'border-border text-muted hover:text-secondary'
-                    }`}
-                  >
-                    {p.name}
-                  </button>
+            {!scopeAll && visibleProjects.length > 0 && (
+              <div className="space-y-3 p-3 rounded-lg border border-border bg-bg">
+                {visibleProjectGroups.map(group => (
+                  <div key={group.orgId} className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-secondary">
+                      {group.orgName}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.projects.map(project => (
+                        <button
+                          key={project.id}
+                          type="button"
+                          onClick={() => toggleProject(project.id)}
+                          className={`rounded-md border px-2 py-1 text-xs font-medium transition-all ${
+                            selectedProjects.includes(project.id)
+                              ? 'border-accent bg-accent/15 text-accent'
+                              : 'border-border text-muted hover:text-secondary'
+                          }`}
+                        >
+                          {project.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
+            {!scopeAll && visibleProjects.length === 0 && (
+              <p className="text-xs text-muted mt-2">{t('apiKeys.createModal.noProjectsInSelectedOrgs')}</p>
+            )}
           </div>
 
-          {/* Permissions */}
           <div>
             <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-2">
               {t('apiKeys.createModal.permissions')}
@@ -595,7 +939,6 @@ function EditDrawer({ apiKey, projects, onClose, onSaved, onRegenerate }: EditDr
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-border shrink-0">
           <button
             type="button"
@@ -618,7 +961,7 @@ function EditDrawer({ apiKey, projects, onClose, onSaved, onRegenerate }: EditDr
             </button>
             <button
               type="button"
-              disabled={!name.trim() || updateMutation.isPending}
+              disabled={!name.trim() || effectiveOrgIds.length === 0 || updateMutation.isPending}
               onClick={() => updateMutation.mutate()}
               className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-sm font-bold text-black hover:bg-accent-hover disabled:opacity-40 transition-colors"
             >
@@ -792,6 +1135,7 @@ function RegenerateModal({
 function KeyTableRow({
   apiKey,
   projects,
+  organizations,
   onEdit,
   onRegenerate,
   onDelete,
@@ -799,6 +1143,7 @@ function KeyTableRow({
 }: {
   apiKey: ApiKey;
   projects: Array<{ id: string; name: string }>;
+  organizations: OrgOption[];
   onEdit: () => void;
   onRegenerate: () => void;
   onDelete: () => void;
@@ -806,7 +1151,11 @@ function KeyTableRow({
 }) {
   const [showPrefix, setShowPrefix] = useState(false);
 
-  // Compute scope label
+  const orgScopeLabel = useMemo(
+    () => getOrgScopeLabel(apiKey, organizations, t),
+    [apiKey, organizations, t],
+  );
+
   const scopeLabel = useMemo(() => {
     if (apiKey.project_ids.length === 0) return t('apiKeys.scopeAll');
     const names = apiKey.project_ids
@@ -839,7 +1188,7 @@ function KeyTableRow({
       {/* Org */}
       <td className="px-4 py-3 hidden sm:table-cell">
         <span className="text-xs text-muted">
-          {apiKey.org_name ?? apiKey.org_id.slice(0, 12)}
+          {orgScopeLabel}
         </span>
       </td>
 
@@ -942,6 +1291,8 @@ function KeyTableRow({
 
 export function ApiKeys() {
   const { t } = useTranslation();
+  const { organization: activeOrg } = useOrganization();
+  const { userMemberships } = useOrganizationList({ userMemberships: { infinite: true } });
   const apiClient = useApi();
   const queryClient = useQueryClient();
 
@@ -958,10 +1309,18 @@ export function ApiKeys() {
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects-all-orgs'],
-    queryFn: () => apiClient.get<Array<{ id: string; name: string; slug: string; org_id: string }>>('/projects?all=true'),
+    queryFn: () => apiClient.get<ProjectOption[]>('/projects?all=true'),
     retry: false,
     staleTime: 60_000,
   });
+
+  const organizations = useMemo<OrgOption[]>(() => (
+    (userMemberships?.data ?? []).map(membership => ({
+      id: membership.organization.id,
+      name: membership.organization.name || membership.organization.slug || membership.organization.id,
+      slug: membership.organization.slug || undefined,
+    }))
+  ), [userMemberships?.data]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.apiKeys.delete(id),
@@ -1062,6 +1421,7 @@ export function ApiKeys() {
                     key={key.id}
                     apiKey={key}
                     projects={projects}
+                    organizations={organizations}
                     t={t}
                     onEdit={() => setEditTarget(key)}
                     onRegenerate={() => setRegenerateTarget({ id: key.id, name: key.name })}
@@ -1078,6 +1438,8 @@ export function ApiKeys() {
       {showCreate && (
         <CreateModal
           projects={projects}
+          organizations={organizations}
+          activeOrgId={activeOrg?.id ?? null}
           onClose={() => setShowCreate(false)}
           onCreated={(data) => {
             setNewKeySecret(data.key);
@@ -1092,6 +1454,8 @@ export function ApiKeys() {
         <EditDrawer
           apiKey={editTarget}
           projects={projects}
+          organizations={organizations}
+          activeOrgId={activeOrg?.id ?? null}
           onClose={() => setEditTarget(null)}
           onSaved={() => queryClient.invalidateQueries({ queryKey: ['api-keys'] })}
           onRegenerate={() => setRegenerateTarget({ id: editTarget.id, name: editTarget.name })}
