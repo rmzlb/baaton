@@ -35,6 +35,10 @@ const VALID_PERMISSIONS: &[&str] = &[
     "webhooks:write",
     "members:read",
     "members:invite",
+    "context:read",
+    "context:write",
+    "templates:read",
+    "templates:write",
     "ai:chat",
     "ai:triage",
     "billing:read",
@@ -68,6 +72,7 @@ const API_KEY_ROW_SELECT: &str = r#"
 fn validate_permissions(perms: &[String]) -> Result<(), String> {
     for p in perms {
         if !VALID_PERMISSIONS.contains(&p.as_str()) {
+            tracing::warn!(permission = %p, "api_keys.validate_permissions unknown permission");
             return Err(format!(
                 "Unknown permission: '{}'. Valid permissions: {}",
                 p,
