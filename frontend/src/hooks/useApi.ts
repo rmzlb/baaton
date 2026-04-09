@@ -330,6 +330,7 @@ export function useApi() {
       create: async (body: {
         name: string;
         permissions?: string[];
+        org_scope_mode?: 'fixed' | 'all_dynamic';
         org_ids?: string[];
         project_ids?: string[];
         expires_at?: string | null;
@@ -342,6 +343,7 @@ export function useApi() {
       update: async (id: string, body: {
         name?: string;
         permissions?: string[];
+        org_scope_mode?: 'fixed' | 'all_dynamic';
         org_ids?: string[];
         project_ids?: string[];
         expires_at?: string | null;

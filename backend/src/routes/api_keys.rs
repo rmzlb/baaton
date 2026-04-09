@@ -45,11 +45,15 @@ const VALID_PERMISSIONS: &[&str] = &[
     "admin:full",
 ];
 
+const ORG_SCOPE_MODE_FIXED: &str = "fixed";
+const ORG_SCOPE_MODE_ALL_DYNAMIC: &str = "all_dynamic";
+
 const API_KEY_ROW_SELECT: &str = r#"
     SELECT
         k.id,
         k.org_id,
         o.name as org_name,
+        k.org_scope_mode,
         COALESCE(
             (SELECT array_agg(s.org_id ORDER BY s.org_id) FROM api_key_org_scopes s WHERE s.api_key_id = k.id),
             ARRAY[k.org_id]
@@ -88,6 +92,7 @@ pub struct ApiKeyRow {
     pub id: Uuid,
     pub org_id: String,
     pub org_name: Option<String>,
+    pub org_scope_mode: String,
     pub org_ids: Vec<String>,
     pub org_count: i64,
     pub name: String,
@@ -111,6 +116,8 @@ pub struct CreateApiKeyRequest {
     pub name: String,
     #[serde(default = "default_permissions")]
     pub permissions: Vec<String>,
+    #[serde(default = "default_org_scope_mode")]
+    pub org_scope_mode: String,
     #[serde(default)]
     pub org_ids: Vec<String>,
     #[serde(default)]
@@ -122,6 +129,7 @@ pub struct CreateApiKeyRequest {
 pub struct UpdateApiKeyRequest {
     pub name: Option<String>,
     pub permissions: Option<Vec<String>>,
+    pub org_scope_mode: Option<String>,
     pub org_ids: Option<Vec<String>>,
     pub project_ids: Option<Vec<Uuid>>,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -133,6 +141,24 @@ fn default_permissions() -> Vec<String> {
         "issues:write".to_string(),
         "projects:read".to_string(),
     ]
+}
+
+fn default_org_scope_mode() -> String {
+    ORG_SCOPE_MODE_FIXED.to_string()
+}
+
+fn validate_org_scope_mode(mode: &str) -> Result<(), String> {
+    match mode {
+        ORG_SCOPE_MODE_FIXED | ORG_SCOPE_MODE_ALL_DYNAMIC => Ok(()),
+        other => Err(format!(
+            "Unknown org_scope_mode: '{}'. Valid values: {}, {}",
+            other, ORG_SCOPE_MODE_FIXED, ORG_SCOPE_MODE_ALL_DYNAMIC
+        )),
+    }
+}
+
+fn is_all_dynamic_scope(mode: &str) -> bool {
+    mode == ORG_SCOPE_MODE_ALL_DYNAMIC
 }
 
 fn generate_api_key() -> (String, String, String) {
@@ -173,6 +199,13 @@ async fn fetch_manageable_org_ids(auth: &AuthUser) -> Vec<String> {
             tracing::warn!("fetch_user_org_ids failed in api_keys route: {}", e);
             auth.org_id.iter().cloned().collect()
         }
+    }
+}
+
+fn apply_dynamic_scope_to_row(row: &mut ApiKeyRow, manageable_org_ids: &[String]) {
+    if is_all_dynamic_scope(&row.org_scope_mode) {
+        row.org_ids = manageable_org_ids.to_vec();
+        row.org_count = row.org_ids.len() as i64;
     }
 }
 
@@ -329,7 +362,7 @@ pub async fn list(
         API_KEY_ROW_SELECT
     );
 
-    let keys = sqlx::query_as::<_, ApiKeyRow>(&sql)
+    let mut keys = sqlx::query_as::<_, ApiKeyRow>(&sql)
         .bind(&auth.user_id)
         .bind(&manageable_org_ids)
         .fetch_all(&pool)
@@ -341,6 +374,10 @@ pub async fn list(
                 Json(json!({"error": "Failed to list API keys"})),
             )
         })?;
+
+    for row in &mut keys {
+        apply_dynamic_scope_to_row(row, &manageable_org_ids);
+    }
 
     Ok(Json(ApiResponse::new(keys)))
 }
@@ -362,7 +399,15 @@ pub async fn create(
     validate_permissions(&body.permissions)
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
 
-    let scoped_org_ids = resolve_requested_org_ids(&auth, &body.org_ids).await?;
+    validate_org_scope_mode(&body.org_scope_mode)
+        .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
+
+    let manageable_org_ids = fetch_manageable_org_ids(&auth).await;
+    let scoped_org_ids = if is_all_dynamic_scope(&body.org_scope_mode) {
+        manageable_org_ids.clone()
+    } else {
+        resolve_requested_org_ids(&auth, &body.org_ids).await?
+    };
     validate_project_scope(&pool, &body.project_ids, &scoped_org_ids).await?;
 
     crate::middleware::plan_guard::enforce_quota(
@@ -393,8 +438,8 @@ pub async fn create(
     })?;
 
     let key_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO api_keys (org_id, created_by, name, key_hash, key_prefix, permissions, project_ids, expires_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id"
+        "INSERT INTO api_keys (org_id, created_by, name, key_hash, key_prefix, permissions, org_scope_mode, project_ids, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id"
     )
     .bind(&anchor_org_id)
     .bind(&auth.user_id)
@@ -402,6 +447,7 @@ pub async fn create(
     .bind(&hash)
     .bind(&prefix)
     .bind(&body.permissions)
+    .bind(&body.org_scope_mode)
     .bind(&body.project_ids)
     .bind(body.expires_at)
     .fetch_one(tx.as_mut())
@@ -421,7 +467,8 @@ pub async fn create(
         )
     })?;
 
-    let row = fetch_api_key_row(&pool, key_id).await?;
+    let mut row = fetch_api_key_row(&pool, key_id).await?;
+    apply_dynamic_scope_to_row(&mut row, &manageable_org_ids);
 
     let key_name = row.name.clone();
     let actor_name = auth
@@ -447,6 +494,7 @@ pub async fn create(
         user_id = %auth.user_id,
         anchor_org_id = %anchor_org_id,
         key_prefix = %prefix,
+        org_scope_mode = %row.org_scope_mode,
         org_count = row.org_count,
         "api_keys.create"
     );
@@ -479,9 +527,14 @@ pub async fn update(
             .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
     }
 
+    if let Some(ref org_scope_mode) = body.org_scope_mode {
+        validate_org_scope_mode(org_scope_mode)
+            .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
+    }
+
     let manageable_org_ids = fetch_manageable_org_ids(&auth).await;
-    let existing_row = sqlx::query_as::<_, (String, Vec<Uuid>)>(
-        "SELECT org_id, COALESCE(project_ids, '{}') as project_ids FROM api_keys \
+    let existing_row = sqlx::query_as::<_, (String, String, Vec<Uuid>)>(
+        "SELECT org_id, org_scope_mode, COALESCE(project_ids, '{}') as project_ids FROM api_keys \
          WHERE id = $1 AND (created_by = $2 OR (created_by IS NULL AND org_id = ANY($3)))",
     )
     .bind(key_id)
@@ -503,15 +556,24 @@ pub async fn update(
         )
     })?;
 
-    let scoped_org_ids = match body.org_ids.as_ref() {
-        Some(org_ids) => resolve_requested_org_ids(&auth, org_ids).await?,
-        None => {
-            let row = fetch_api_key_row(&pool, key_id).await?;
-            unique_org_ids(&row.org_ids)
+    let effective_scope_mode = body
+        .org_scope_mode
+        .clone()
+        .unwrap_or_else(|| existing_row.1.clone());
+
+    let scoped_org_ids = if is_all_dynamic_scope(&effective_scope_mode) {
+        manageable_org_ids.clone()
+    } else {
+        match body.org_ids.as_ref() {
+            Some(org_ids) => resolve_requested_org_ids(&auth, org_ids).await?,
+            None => {
+                let row = fetch_api_key_row(&pool, key_id).await?;
+                unique_org_ids(&row.org_ids)
+            }
         }
     };
 
-    let effective_project_ids = body.project_ids.clone().unwrap_or(existing_row.1.clone());
+    let effective_project_ids = body.project_ids.clone().unwrap_or(existing_row.2.clone());
     validate_project_scope(&pool, &effective_project_ids, &scoped_org_ids).await?;
     let anchor_org_id = auth
         .org_id
@@ -533,7 +595,8 @@ pub async fn update(
            name = COALESCE($5, name), \
            permissions = COALESCE($6, permissions), \
            project_ids = COALESCE($7, project_ids), \
-           expires_at = CASE WHEN $8 THEN $9 ELSE expires_at END \
+           expires_at = CASE WHEN $8 THEN $9 ELSE expires_at END, \
+           org_scope_mode = $10 \
          WHERE id = $1 AND (created_by = $2 OR (created_by IS NULL AND org_id = ANY($3)))",
     )
     .bind(key_id)
@@ -545,6 +608,7 @@ pub async fn update(
     .bind(body.project_ids.as_ref())
     .bind(body.expires_at.is_some())
     .bind(body.expires_at)
+    .bind(&effective_scope_mode)
     .execute(tx.as_mut())
     .await
     .map_err(|e| {
@@ -572,11 +636,13 @@ pub async fn update(
         )
     })?;
 
-    let row = fetch_api_key_row(&pool, key_id).await?;
+    let mut row = fetch_api_key_row(&pool, key_id).await?;
+    apply_dynamic_scope_to_row(&mut row, &manageable_org_ids);
 
     tracing::info!(
         user_id = %auth.user_id,
         key_id = %key_id,
+        org_scope_mode = %row.org_scope_mode,
         org_count = row.org_count,
         "api_keys.update"
     );
@@ -619,12 +685,14 @@ pub async fn regenerate(
         ));
     }
 
-    let row = fetch_api_key_row(&pool, key_id).await?;
+    let mut row = fetch_api_key_row(&pool, key_id).await?;
+    apply_dynamic_scope_to_row(&mut row, &manageable_org_ids);
 
     tracing::info!(
         user_id = %auth.user_id,
         key_id = %key_id,
         key_prefix = %prefix,
+        org_scope_mode = %row.org_scope_mode,
         org_count = row.org_count,
         "api_keys.regenerate"
     );

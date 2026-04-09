@@ -39,8 +39,8 @@ const en = {
   'apiKeys.createModal.orgScopeHelp': 'Choose which organizations this key can access. Then choose all projects in those organizations, or only specific projects.',
   'apiKeys.createModal.orgScopeCurrent': 'Current org only',
   'apiKeys.createModal.orgScopeSelected': 'Choose organizations',
-  'apiKeys.createModal.orgScopeAllCurrent': 'All my current organizations',
-  'apiKeys.createModal.orgScopeAllCurrentHelp': 'Explicit snapshot of your current memberships, not future orgs you join later.',
+  'apiKeys.createModal.orgScopeAllCurrent': 'All my current and future organizations',
+  'apiKeys.createModal.orgScopeAllCurrentHelp': 'This key will automatically include organizations you join later too.',
   'apiKeys.createModal.orgTargets': 'Applies to organizations',
   'apiKeys.createModal.orgTargetsEmpty': 'Select at least one organization.',
   'apiKeys.createModal.scopeAllAppliesHelp': 'This will include every project inside these organizations.',
@@ -70,7 +70,7 @@ const en = {
   // Scope badges
   'apiKeys.scopeAll': 'All projects in org scope',
   'apiKeys.scopeProjects': '{{count}} project(s)',
-  'apiKeys.orgScopeAllCurrent': 'All current organizations',
+  'apiKeys.orgScopeAllCurrent': 'All current and future organizations',
   'apiKeys.orgScopeMultiple': '{{count}} organizations',
   // Permission groups
   'apiKeys.permGroup.issues': 'Issues',

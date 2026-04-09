@@ -395,6 +395,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             id: uuid::Uuid,
             created_by: Option<String>,
             name: String,
+            org_scope_mode: String,
             #[allow(dead_code)]
             permissions: Vec<String>,
             expires_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -407,6 +408,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
                 k.id, \
                 k.created_by, \
                 k.name, \
+                k.org_scope_mode, \
                 k.permissions, \
                 k.expires_at, \
                 COALESCE(k.project_ids, '{}') as project_ids, \
@@ -440,11 +442,15 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         if let Some(owner_user_id) = key_row.created_by.as_deref() {
             match crate::routes::issues::fetch_user_org_ids(owner_user_id).await {
                 Ok(owner_org_ids) if !owner_org_ids.is_empty() => {
-                    effective_org_ids.retain(|org_id| {
-                        owner_org_ids
-                            .iter()
-                            .any(|owner_org_id| owner_org_id == org_id)
-                    });
+                    if key_row.org_scope_mode == "all_dynamic" {
+                        effective_org_ids = owner_org_ids;
+                    } else {
+                        effective_org_ids.retain(|org_id| {
+                            owner_org_ids
+                                .iter()
+                                .any(|owner_org_id| owner_org_id == org_id)
+                        });
+                    }
                 }
                 Ok(_) => {
                     effective_org_ids.clear();
@@ -487,6 +493,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         tracing::debug!(
             api_key_id = %key_row.id,
             api_key_name = %key_row.name,
+            org_scope_mode = %key_row.org_scope_mode,
             org_id = ?auth_user.org_id,
             "Authenticated via API key"
         );

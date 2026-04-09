@@ -179,12 +179,6 @@ function getEffectiveOrgIds(
   return uniqueStrings(selectedOrgIds);
 }
 
-function isAllCurrentOrganizations(orgIds: string[], organizations: OrgOption[]): boolean {
-  const left = uniqueStrings(orgIds).sort();
-  const right = uniqueStrings(organizations.map(org => org.id)).sort();
-  return right.length > 0 && left.length === right.length && left.every((id, i) => id === right[i]);
-}
-
 function getOrgScopeLabel(
   apiKey: ApiKey,
   organizations: OrgOption[],
@@ -192,7 +186,7 @@ function getOrgScopeLabel(
 ): string {
   const scopedOrgIds = uniqueStrings(apiKey.org_ids?.length ? apiKey.org_ids : [apiKey.org_id]);
 
-  if (isAllCurrentOrganizations(scopedOrgIds, organizations)) {
+  if (apiKey.org_scope_mode === 'all_dynamic') {
     return t('apiKeys.orgScopeAllCurrent');
   }
 
@@ -369,6 +363,7 @@ function CreateModal({ onClose, onCreated, projects, organizations, activeOrgId 
       return apiClient.apiKeys.create({
         name: name.trim(),
         permissions,
+        org_scope_mode: orgScopeMode === 'all' ? 'all_dynamic' : 'fixed',
         org_ids: effectiveOrgIds,
         project_ids: scopeAll ? [] : selectedProjects,
         expires_at: expires_at ?? null,
@@ -702,7 +697,9 @@ function EditDrawer({ apiKey, projects, organizations, activeOrgId, onClose, onS
   const [name, setName] = useState(apiKey.name);
   const [permissions, setPermissions] = useState<string[]>(apiKey.permissions);
   const [orgScopeMode, setOrgScopeMode] = useState<OrgScopeMode>(() => (
-    isAllCurrentOrganizations(initialOrgIds, organizations) ? 'all' : 'selected'
+    apiKey.org_scope_mode === 'all_dynamic'
+      ? 'all'
+      : (initialOrgIds.length === 1 && activeOrgId && initialOrgIds[0] === activeOrgId ? 'current' : 'selected')
   ));
   const [selectedOrgIds, setSelectedOrgIds] = useState<string[]>(initialOrgIds);
   const [scopeAll, setScopeAll] = useState(apiKey.project_ids.length === 0);
@@ -738,6 +735,7 @@ function EditDrawer({ apiKey, projects, organizations, activeOrgId, onClose, onS
       apiClient.apiKeys.update(apiKey.id, {
         name: name.trim(),
         permissions,
+        org_scope_mode: orgScopeMode === 'all' ? 'all_dynamic' : 'fixed',
         org_ids: effectiveOrgIds,
         project_ids: scopeAll ? [] : selectedProjects,
       }),

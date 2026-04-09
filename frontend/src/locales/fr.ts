@@ -39,8 +39,8 @@ const fr = {
   'apiKeys.createModal.orgScopeHelp': 'Choisis à quelles organisations cette clé a accès. Ensuite tu choisis tous les projets de ces organisations, ou seulement certains projets.',
   'apiKeys.createModal.orgScopeCurrent': 'Org actuelle uniquement',
   'apiKeys.createModal.orgScopeSelected': 'Choisir les organisations',
-  'apiKeys.createModal.orgScopeAllCurrent': 'Toutes mes organisations actuelles',
-  'apiKeys.createModal.orgScopeAllCurrentHelp': 'Snapshot explicite de tes memberships actuels, pas des futures orgs rejointes plus tard.',
+  'apiKeys.createModal.orgScopeAllCurrent': 'Toutes mes organisations actuelles et futures',
+  'apiKeys.createModal.orgScopeAllCurrentHelp': 'Cette clé inclura automatiquement aussi les organisations que tu rejoindras plus tard.',
   'apiKeys.createModal.orgTargets': 'S’applique aux organisations',
   'apiKeys.createModal.orgTargetsEmpty': 'Sélectionne au moins une organisation.',
   'apiKeys.createModal.scopeAllAppliesHelp': 'Ça inclura tous les projets dans ces organisations.',
@@ -70,7 +70,7 @@ const fr = {
   // Scope badges
   'apiKeys.scopeAll': 'Tous les projets du scope org',
   'apiKeys.scopeProjects': '{{count}} projet(s)',
-  'apiKeys.orgScopeAllCurrent': 'Toutes les organisations actuelles',
+  'apiKeys.orgScopeAllCurrent': 'Toutes les organisations actuelles et futures',
   'apiKeys.orgScopeMultiple': '{{count}} organisations',
   // Permission groups
   'apiKeys.permGroup.issues': 'Issues',
