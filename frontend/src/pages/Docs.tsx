@@ -13,7 +13,7 @@ import {
   Keyboard,
   LinkIcon,
   Plug,
-  Github,
+  GitFork as Github,
   ShieldCheck,
   Brain,
   Server,

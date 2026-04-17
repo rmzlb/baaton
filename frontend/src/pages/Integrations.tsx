@@ -1,4 +1,4 @@
-import { Github, Mail, Slack, Plug, Unplug, ExternalLink } from 'lucide-react';
+import { GitFork as Github, Mail, MessageSquare as Slack, Plug, Unplug, ExternalLink } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';

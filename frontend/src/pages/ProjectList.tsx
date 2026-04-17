@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Kanban, ArrowRight, Trash2, X, Github, AlertTriangle, Copy, Check, Star, GitFork, Circle } from 'lucide-react';
+import { Plus, Kanban, ArrowRight, Trash2, X, AlertTriangle, Copy, Check, Star, GitFork, Circle } from 'lucide-react';
+const Github = GitFork;
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { ApiError } from '@/lib/api';

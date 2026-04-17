@@ -1,3 +1,4 @@
+// @deprecated — AI processing moved to backend (POST /api/v1/ai/agent). This file is kept for backward compat.
 /**
  * Baaton AI Engine v2 — Vercel AI SDK (@ai-sdk/google)
  *

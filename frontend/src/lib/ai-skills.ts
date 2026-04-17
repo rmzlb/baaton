@@ -1,3 +1,4 @@
+// @deprecated — AI processing moved to backend (POST /api/v1/ai/agent). This file is kept for backward compat.
 /**
  * Baaton AI Skills — Function calling definitions for Gemini + AI SDK.
  * Each skill maps to a tool and an executor that calls the Baaton API.

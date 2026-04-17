@@ -48,6 +48,10 @@ export interface UseAgentChatReturn {
   isStreaming: boolean;
   error: string | null;
   clearMessages: () => void;
+  /** Load a set of messages into the hook (e.g. when restoring a saved conversation). */
+  loadMessages: (messages: AgentMessage[]) => void;
+  /** Abort the current in-flight stream without clearing messages. */
+  abort: () => void;
   usage: AgentUsage | null;
 }
 
@@ -390,5 +394,14 @@ export function useAgentChat(options: UseAgentChatOptions): UseAgentChatReturn {
     setUsage(null);
   }, []);
 
-  return { messages, sendMessage, isStreaming, error, clearMessages, usage };
+  const loadMessages = useCallback((msgs: AgentMessage[]) => {
+    setMessages(msgs);
+  }, []);
+
+  const abort = useCallback(() => {
+    abortRef.current?.abort();
+    setIsStreaming(false);
+  }, []);
+
+  return { messages, sendMessage, isStreaming, error, clearMessages, loadMessages, abort, usage };
 }

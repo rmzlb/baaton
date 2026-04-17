@@ -1,3 +1,4 @@
+// @deprecated — AI processing moved to backend (POST /api/v1/ai/agent). This file is kept for backward compat.
 /**
  * Baaton AI State Machine — Lightweight conversation state tracking.
  * Follows Manus/XState pattern from HelmAI (without XState dependency).

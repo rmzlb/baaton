@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Github, Plus, AlertTriangle, Loader2, Unplug } from 'lucide-react';
+import { GitFork as Github, Plus, AlertTriangle, Loader2, Unplug } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { GitHubConnectionStatus } from '@/components/github/GitHubConnectionStatus';

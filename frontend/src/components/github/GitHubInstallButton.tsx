@@ -1,4 +1,4 @@
-import { Github } from 'lucide-react';
+import { GitFork as Github } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 
 import { resolveApiOrigin } from '@/lib/api-origin';
