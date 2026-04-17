@@ -579,15 +579,17 @@ export default function AIChat() {
             <PromptInputTextarea
               placeholder={t('ai.placeholder')}
               disabled={!canSend}
+              className="text-[13px]"
             />
             <PromptInputFooter>
-              <span className="text-[10px] text-muted/60">
+              <span className="text-[10px] text-[--color-muted]">
                 {t('aiChat.backendAgent')} · {projects.length} {t('aiChat.projectsLabel')}
               </span>
               <PromptInputSubmit
                 status={chatStatus}
                 onStop={abort}
                 disabled={!isStreaming && false}
+                className="bg-amber-500 text-black hover:bg-amber-400 rounded-lg"
               />
             </PromptInputFooter>
           </PromptInput>

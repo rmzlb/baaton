@@ -550,20 +550,22 @@ export function AIAssistant() {
           )}
 
           {/* Input — AI Elements PromptInput */}
-          <div className="shrink-0 border-t border-border bg-bg px-3 pb-3 pt-2">
+          <div className="shrink-0 border-t border-[--color-border] bg-[--color-bg] px-3 pb-4 pt-3">
             <PromptInput onSubmit={({ text }) => { if (text.trim()) void handleSend(text); }}>
               <PromptInputTextarea
                 placeholder={t('ai.placeholder')}
                 disabled={!canSend}
+                className="text-[13px]"
               />
               <PromptInputFooter>
-                <span className="text-[10px] text-muted/60">
+                <span className="text-[10px] text-[--color-muted]">
                   {t('aiChat.backendAgent')} · {skillCount} skills
                 </span>
                 <PromptInputSubmit
                   status={chatStatus}
                   onStop={abort}
                   disabled={!isStreaming && false}
+                  className="bg-amber-500 text-black hover:bg-amber-400 rounded-lg"
                 />
               </PromptInputFooter>
             </PromptInput>

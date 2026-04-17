@@ -25,7 +25,7 @@ export type ToolProps = ComponentProps<typeof Collapsible>;
 
 export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
-    className={cn("group not-prose mb-4 w-full rounded-md border border-[--color-border]", className)}
+    className={cn("group not-prose my-1 w-full rounded-xl border border-[--color-border] bg-[--color-bg]", className)}
     {...props}
   />
 );
@@ -85,7 +85,7 @@ export const ToolHeader = ({
   return (
     <CollapsibleTrigger
       className={cn(
-        "flex w-full items-center justify-between gap-4 p-3",
+        "flex w-full items-center justify-between gap-3 p-2.5 hover:bg-[--color-surface-hover] transition-colors rounded-xl group-data-[state=open]:rounded-b-none",
         className
       )}
       {...props}
@@ -105,7 +105,7 @@ export type ToolContentProps = ComponentProps<typeof CollapsibleContent>;
 export const ToolContent = ({ className, ...props }: ToolContentProps) => (
   <CollapsibleContent
     className={cn(
-      "space-y-4 p-4 text-[--color-primary] outline-none",
+      "space-y-3 p-3 pt-0 text-[--color-primary] outline-none border-t border-[--color-border]",
       className
     )}
     {...props}
@@ -117,8 +117,8 @@ export type ToolInputProps = ComponentProps<"div"> & {
 };
 
 export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
-  <div className={cn("space-y-2 overflow-hidden", className)} {...props}>
-    <h4 className="font-medium text-[--color-muted] text-xs uppercase tracking-wide">
+  <div className={cn("space-y-2 overflow-hidden mt-3", className)} {...props}>
+    <h4 className="font-medium text-[--color-muted] text-[10px] uppercase tracking-wide">
       Parameters
     </h4>
     <div className="rounded-md bg-[--color-surface-hover]/50">
@@ -153,15 +153,15 @@ export const ToolOutput = ({
   }
 
   return (
-    <div className={cn("space-y-2", className)} {...props}>
-      <h4 className="font-medium text-[--color-muted] text-xs uppercase tracking-wide">
+    <div className={cn("space-y-2 mt-3", className)} {...props}>
+      <h4 className="font-medium text-[--color-muted] text-[10px] uppercase tracking-wide">
         {errorText ? "Error" : "Result"}
       </h4>
       <div
         className={cn(
           "overflow-x-auto rounded-md text-xs [&_table]:w-full",
           errorText
-            ? "bg-red-500/10 text-red-400"
+            ? "bg-red-500/10 text-red-400 p-3"
             : "bg-[--color-surface-hover]/50 text-[--color-primary]"
         )}
       >
