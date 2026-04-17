@@ -1,16 +1,15 @@
 /**
- * AIAssistant — Right sidebar AI panel (replaces floating popup).
+ * AIAssistant — Right sidebar AI panel using AI Elements SDK.
  *
- * Pattern: 3-column layout integration (left nav | content | AI panel).
- * Sessions persisted in localStorage, AI Elements SDK for rendering.
+ * Same rendering quality as /ai (AIChat) but in a sidebar form factor.
+ * Uses: Conversation, Message, MessageResponse, PromptInput, Shimmer, Suggestions.
  */
 
 import { useRef, useEffect, useCallback, useState, memo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Sparkles, Send, Trash2, Bot, User, Loader2,
-  Wrench, ChevronDown, Plus,
-  MessageSquare, PanelRightClose,
+  Sparkles, Trash2, Bot, User, Copy, Check, RefreshCw,
+  Wrench, ChevronDown, Plus, MessageSquare, PanelRightClose, AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useUIStore } from '@/stores/ui';
@@ -18,9 +17,28 @@ import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAgentChat, type AgentMessage } from '@/hooks/useAgentChat';
 import { ToolResultRenderer } from '@/components/ai/ToolResultRenderer';
-import { MarkdownView } from '@/components/shared/MarkdownView';
 import { TOOL_SCHEMAS } from '@/lib/ai-skills';
 import { cn } from '@/lib/utils';
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from '@/components/ai-elements/conversation';
+import {
+  Message,
+  MessageContent,
+  MessageResponse,
+  MessageActions,
+  MessageAction,
+} from '@/components/ai-elements/message';
+import {
+  PromptInput,
+  PromptInputTextarea,
+  PromptInputFooter,
+  PromptInputSubmit,
+} from '@/components/ai-elements/prompt-input';
+import { Shimmer } from '@/components/ai-elements/shimmer';
+import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion';
 
 // ─── Session persistence ───────────────────────
 
@@ -74,6 +92,7 @@ const SessionItem = memo(function SessionItem({
   onSelect: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       onClick={onSelect}
@@ -85,7 +104,7 @@ const SessionItem = memo(function SessionItem({
       )}
     >
       <MessageSquare size={12} className="shrink-0 text-muted/60" />
-      <span className="flex-1 text-[11px] truncate">{s.title || 'New Chat'}</span>
+      <span className="flex-1 text-[11px] truncate">{s.title || t('aiChat.newChat')}</span>
       <button
         onClick={e => { e.stopPropagation(); onDelete(); }}
         className="shrink-0 rounded p-0.5 text-transparent group-hover:text-muted hover:!text-red-400 transition-colors"
@@ -96,59 +115,83 @@ const SessionItem = memo(function SessionItem({
   );
 });
 
-// ─── Typing indicator ──────────────────────────
+// ─── Copy button ───────────────────────────────
 
-function TypingIndicator() {
+function CopyButton({ content }: { content: string }) {
   const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(content).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
   return (
-    <div className="flex gap-2">
-      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-hover text-secondary mt-0.5">
-        <Bot size={12} />
-      </div>
-      <div className="rounded-lg bg-surface border border-border px-4 py-3">
-        <div className="flex items-center gap-1.5">
-          <Loader2 size={12} className="animate-spin text-accent" />
-          <span className="text-xs text-muted">{t('ai.analyzing')}</span>
-        </div>
-      </div>
-    </div>
+    <MessageAction tooltip={copied ? t('aiChat.copied') : t('aiChat.copy')} onClick={handleCopy}>
+      {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+    </MessageAction>
   );
 }
 
-// ─── Message bubble ────────────────────────────
+// ─── Message bubble (AI Elements SDK) ──────────
 
-const MessageBubble = memo(function MessageBubble({ message }: { message: AgentMessage }) {
-  const isUser = message.role === 'user';
-  const toolCalls = !isUser ? (message.toolCalls ?? []) : [];
+const PanelMessageBubble = memo(function PanelMessageBubble({
+  msg, isLast, isStreaming, onRegenerate,
+}: {
+  msg: AgentMessage;
+  isLast: boolean;
+  isStreaming: boolean;
+  onRegenerate?: () => void;
+}) {
+  const { t } = useTranslation();
+
+  const isThinking =
+    msg.role === 'assistant' &&
+    isLast &&
+    isStreaming &&
+    !msg.content &&
+    !msg.toolCalls?.length;
 
   return (
-    <div className={cn('flex gap-2', isUser && 'flex-row-reverse')}>
-      <div className={cn(
-        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full mt-0.5',
-        isUser ? 'bg-accent/20 text-accent' : 'bg-surface-hover text-secondary',
-      )}>
-        {isUser ? <User size={12} /> : <Bot size={12} />}
-      </div>
-      <div className="max-w-[88%] space-y-1.5">
-        {toolCalls.length > 0 && (
-          <div className="space-y-1">
-            {toolCalls.map(tc => <ToolResultRenderer key={tc.id} event={tc} />)}
+    <Message from={msg.role}>
+      <MessageContent>
+        {isThinking ? (
+          <div className="flex items-center gap-2 py-1">
+            <Bot size={14} className="text-accent shrink-0" />
+            <Shimmer className="text-sm text-muted/70">{t('aiChat.thinking')}</Shimmer>
           </div>
-        )}
-        {message.content && (
-          <div className={cn(
-            'rounded-lg px-3 py-2',
-            isUser ? 'bg-accent text-black' : 'bg-surface border border-border',
-          )}>
-            {isUser ? (
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
-            ) : (
-              <div className="text-sm"><MarkdownView content={message.content} /></div>
+        ) : (
+          <>
+            {msg.toolCalls?.map(tc => (
+              <ToolResultRenderer key={tc.id} event={tc} />
+            ))}
+
+            {msg.content && (
+              msg.role === 'user' ? (
+                <div className="flex items-start gap-2">
+                  <User size={14} className="text-secondary mt-0.5 shrink-0" />
+                  <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
+                </div>
+              ) : (
+                <MessageResponse isAnimating={isLast && isStreaming}>
+                  {msg.content}
+                </MessageResponse>
+              )
             )}
-          </div>
+          </>
         )}
-      </div>
-    </div>
+      </MessageContent>
+
+      {!isThinking && msg.content && (
+        <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
+          <CopyButton content={msg.content} />
+          {msg.role === 'assistant' && isLast && !isStreaming && onRegenerate && (
+            <MessageAction tooltip={t('aiChat.regenerate')} onClick={onRegenerate}>
+              <RefreshCw size={12} />
+            </MessageAction>
+          )}
+        </MessageActions>
+      )}
+    </Message>
   );
 });
 
@@ -169,7 +212,7 @@ function useSuggestions() {
 
 export function AIAssistant() {
   const { t } = useTranslation();
-  const SUGGESTIONS = useSuggestions();
+  const PANEL_SUGGESTIONS = useSuggestions();
   const aiPanelOpen = useUIStore(s => s.aiPanelOpen);
   const setAiPanelOpen = useUIStore(s => s.setAiPanelOpen);
   const toggleAiPanel = useUIStore(s => s.toggleAiPanel);
@@ -182,11 +225,7 @@ export function AIAssistant() {
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const { getToken } = useAuth();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [input, setInput] = useState('');
 
-  // Auth token
   useEffect(() => {
     getToken().then(tk => { if (tk) setAuthToken(tk); });
     const id = setInterval(() => {
@@ -195,17 +234,15 @@ export function AIAssistant() {
     return () => clearInterval(id);
   }, [getToken]);
 
-  // Projects
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: () => apiClient.projects.list(),
     staleTime: 60_000,
   });
 
-  // Agent chat hook
   const {
     messages, sendMessage: agentSend, isStreaming,
-    error: agentError, clearMessages, loadMessages,
+    error: agentError, clearMessages, loadMessages, abort,
   } = useAgentChat({
     projectIds: projects.map(p => p.id),
     authToken,
@@ -215,20 +252,17 @@ export function AIAssistant() {
     },
   });
 
-  // Refs for stable access
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
 
-  // Restore active session on mount
   useEffect(() => {
     const initial = loadSessions().find(s => s.id === activeId);
     if (initial?.messages.length) loadMessages(initial.messages);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist when streaming ends
   const prevStreamingRef = useRef(false);
   useEffect(() => {
     const justFinished = prevStreamingRef.current && !isStreaming;
@@ -242,22 +276,13 @@ export function AIAssistant() {
     setSessions(prev => {
       const updated = prev.map(s => {
         if (s.id !== sid) return s;
-        const title = s.title || msgs.find(m => m.role === 'user')?.content.slice(0, 40) || 'New Chat';
+        const title = s.title || msgs.find(m => m.role === 'user')?.content.slice(0, 40) || t('aiChat.newChat');
         return { ...s, messages: msgs, title, updatedAt: Date.now() };
       });
       saveSessions(updated);
       return updated;
     });
-  }, [isStreaming]);
-
-  // Scroll + focus
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isStreaming]);
-
-  useEffect(() => {
-    if (aiPanelOpen) setTimeout(() => inputRef.current?.focus(), 200);
-  }, [aiPanelOpen]);
+  }, [isStreaming, t]);
 
   // Cmd+J shortcut
   useEffect(() => {
@@ -315,10 +340,9 @@ export function AIAssistant() {
 
   // ── Send ──
 
-  const handleSend = useCallback(async (text?: string) => {
-    const msg = (text ?? input).trim();
+  const handleSend = useCallback(async (text: string) => {
+    const msg = text.trim();
     if (!msg || isStreaming) return;
-    setInput('');
 
     if (!activeId) {
       const s = makeSession();
@@ -331,23 +355,32 @@ export function AIAssistant() {
     }
 
     await agentSend(msg);
-  }, [input, isStreaming, activeId, agentSend]);
+  }, [isStreaming, activeId, agentSend]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+  const handleRegenerate = useCallback(() => {
+    if (isStreaming || !messages.length) return;
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') { lastUserIdx = i; break; }
     }
-  };
+    if (lastUserIdx === -1) return;
+    const lastUserContent = messages[lastUserIdx].content;
+    loadMessages(messages.slice(0, lastUserIdx));
+    setTimeout(() => agentSend(lastUserContent), 0);
+  }, [messages, isStreaming, loadMessages, agentSend]);
 
-  const hasMessages = messages.length > 0;
+  const isEmpty = messages.length === 0 && !isStreaming;
+  const canSend = !isStreaming && !!authToken;
+  const chatStatus = (isStreaming ? 'streaming' : 'ready') as 'streaming' | 'ready';
+
+  // ── FAB when closed ──
 
   if (!aiPanelOpen) {
     return (
       <button
         onClick={toggleAiPanel}
         aria-label={t('ai.openAssistant') || 'Open AI assistant (Cmd+J)'}
-        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500 text-black shadow-lg transition-all duration-300 hover:scale-105 hover:bg-amber-400 lg:flex"
+        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500 text-black shadow-lg transition-all duration-300 hover:scale-105 hover:bg-amber-400"
       >
         <Sparkles size={20} />
       </button>
@@ -370,7 +403,7 @@ export function AIAssistant() {
               </span>
             </h3>
             <p className="text-[10px] text-muted">
-              {projects.length} projects · Backend Agent
+              {projects.length} {t('aiChat.projectsLabel')} · {t('aiChat.backendAgent')}
             </p>
           </div>
         </div>
@@ -388,7 +421,7 @@ export function AIAssistant() {
           <button
             onClick={handleNewSession}
             className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
-            title="New chat"
+            title={t('aiChat.newChat')}
           >
             <Plus size={14} />
           </button>
@@ -405,7 +438,7 @@ export function AIAssistant() {
         /* ── Sessions list ── */
         <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
           {sessions.length === 0 ? (
-            <p className="px-3 py-8 text-center text-xs text-muted/60">No sessions yet</p>
+            <p className="px-3 py-8 text-center text-xs text-muted/60">{t('aiChat.noConversations')}</p>
           ) : (
             sessions.map(s => (
               <SessionItem
@@ -419,118 +452,122 @@ export function AIAssistant() {
           )}
         </div>
       ) : (
-        /* ── Chat area ── */
+        /* ── Chat area with AI Elements SDK ── */
         <>
-          <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
-            {!hasMessages && !isStreaming ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500 mb-3">
-                  <Sparkles size={24} />
-                </div>
-                <h4 className="text-sm font-semibold text-primary mb-1">{t('ai.agentWithSkills')}</h4>
-                <p className="text-xs text-muted mb-4 max-w-[280px]">{t('ai.agentDesc')}</p>
+          <Conversation>
+            <ConversationContent className="gap-4 p-3">
+              {isEmpty ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center mb-3">
+                    <Sparkles size={24} className="text-accent" />
+                  </div>
+                  <h4 className="text-sm font-semibold text-primary mb-1">{t('ai.agentWithSkills')}</h4>
+                  <p className="text-xs text-muted mb-4 max-w-[280px]">{t('ai.agentDesc')}</p>
 
-                <details className="w-full mb-4 px-2 group">
-                  <summary className="flex items-center justify-center gap-1 cursor-pointer text-[10px] text-muted hover:text-secondary transition-colors">
-                    <Wrench size={10} />
-                    {t('ai.availableSkills')}
-                    <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
-                  </summary>
-                  <div className="mt-2 grid grid-cols-2 gap-1 text-[9px]">
-                    {[
-                      ['search_issues', t('ai.skillSearch')],
-                      ['create_issue', t('ai.skillCreate')],
-                      ['update_issue', t('ai.skillUpdate')],
-                      ['bulk_update', t('ai.skillBulkUpdate')],
-                      ['add_comment', t('ai.skillComment')],
-                      ['plan_milestones', t('ai.skillPlanMilestones')],
-                      ['generate_prd', t('ai.skillPrd')],
-                      ['analyze_sprint', t('ai.skillSprint')],
-                      ['get_metrics', t('ai.skillMetrics')],
-                      ['adjust_timeline', t('ai.skillAdjustTimeline')],
-                    ].map(([skill, label]) => (
-                      <div key={skill} className="flex items-center gap-1 rounded border border-border/50 bg-surface/50 px-2 py-1">
-                        <span className="text-accent">*</span>
-                        <span className="text-secondary">{label}</span>
-                      </div>
+                  <details className="w-full mb-4 px-2 group">
+                    <summary className="flex items-center justify-center gap-1 cursor-pointer text-[10px] text-muted hover:text-secondary transition-colors">
+                      <Wrench size={10} />
+                      {t('ai.availableSkills')}
+                      <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
+                    </summary>
+                    <div className="mt-2 grid grid-cols-2 gap-1 text-[9px]">
+                      {[
+                        ['search_issues', t('ai.skillSearch')],
+                        ['create_issue', t('ai.skillCreate')],
+                        ['update_issue', t('ai.skillUpdate')],
+                        ['bulk_update', t('ai.skillBulkUpdate')],
+                        ['add_comment', t('ai.skillComment')],
+                        ['plan_milestones', t('ai.skillPlanMilestones')],
+                        ['generate_prd', t('ai.skillPrd')],
+                        ['analyze_sprint', t('ai.skillSprint')],
+                        ['get_metrics', t('ai.skillMetrics')],
+                        ['adjust_timeline', t('ai.skillAdjustTimeline')],
+                      ].map(([skill, label]) => (
+                        <div key={skill} className="flex items-center gap-1 rounded border border-border/50 bg-surface/50 px-2 py-1">
+                          <span className="text-accent">*</span>
+                          <span className="text-secondary">{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+
+                  <Suggestions>
+                    {PANEL_SUGGESTIONS.map(s => (
+                      <Suggestion
+                        key={s.label}
+                        suggestion={s.prompt}
+                        onClick={handleSend}
+                        disabled={!canSend}
+                      >
+                        {s.label}
+                      </Suggestion>
                     ))}
-                  </div>
-                </details>
-
-                <div className="flex flex-wrap gap-1.5 justify-center">
-                  {SUGGESTIONS.map(s => (
-                    <button
-                      key={s.label}
-                      onClick={() => handleSend(s.prompt)}
-                      className="rounded-full border border-border bg-surface px-2.5 py-1.5 text-[10px] text-secondary hover:border-accent hover:text-accent transition-colors"
-                    >
-                      {s.label}
-                    </button>
-                  ))}
+                  </Suggestions>
                 </div>
-              </div>
-            ) : (
-              <>
-                {messages.map(msg => (
-                  <MessageBubble key={msg.id} message={msg} />
-                ))}
-                {isStreaming && <TypingIndicator />}
-                {agentError && !isStreaming && (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
-                    {agentError}
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </>
-            )}
-          </div>
+              ) : (
+                <>
+                  {messages.map((msg, i) => (
+                    <PanelMessageBubble
+                      key={msg.id}
+                      msg={msg}
+                      isLast={i === messages.length - 1}
+                      isStreaming={isStreaming}
+                      onRegenerate={
+                        msg.role === 'assistant' && i === messages.length - 1
+                          ? handleRegenerate
+                          : undefined
+                      }
+                    />
+                  ))}
+
+                  {agentError && !isStreaming && (
+                    <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                      <AlertCircle size={14} className="text-red-400 shrink-0" />
+                      <p className="text-xs text-red-300">{agentError}</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </ConversationContent>
+            <ConversationScrollButton />
+          </Conversation>
 
           {/* Quick suggestions while chatting */}
-          {hasMessages && !isStreaming && (
+          {messages.length > 0 && messages.length < 4 && !isStreaming && (
             <div className="border-t border-border px-3 py-1.5 shrink-0">
-              <div className="flex gap-1 overflow-x-auto pb-0.5">
-                {SUGGESTIONS.slice(0, 4).map(s => (
-                  <button
+              <Suggestions>
+                {PANEL_SUGGESTIONS.slice(0, 4).map(s => (
+                  <Suggestion
                     key={s.label}
-                    onClick={() => handleSend(s.prompt)}
-                    className="shrink-0 rounded-full border border-border bg-surface px-2 py-1 text-[9px] text-muted hover:border-accent hover:text-accent transition-colors"
+                    suggestion={s.prompt}
+                    onClick={handleSend}
+                    disabled={!canSend}
                   >
                     {s.label}
-                  </button>
+                  </Suggestion>
                 ))}
-              </div>
+              </Suggestions>
             </div>
           )}
 
-          {/* Input */}
-          <div className="border-t border-border px-3 py-2.5 shrink-0">
-            <div className="flex items-end gap-2 rounded-lg border border-border bg-surface px-3 py-2 focus-within:border-accent transition-colors">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
+          {/* Input — AI Elements PromptInput */}
+          <div className="shrink-0 border-t border-border bg-bg px-3 pb-3 pt-2">
+            <PromptInput onSubmit={({ text }) => { if (text.trim()) void handleSend(text); }}>
+              <PromptInputTextarea
                 placeholder={t('ai.placeholder')}
-                disabled={isStreaming}
-                rows={1}
-                className="flex-1 bg-transparent text-sm text-primary placeholder-muted outline-none resize-none max-h-20"
+                disabled={!canSend}
               />
-              <button
-                onClick={() => handleSend()}
-                disabled={!input.trim() || isStreaming}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                <Send size={14} />
-              </button>
-            </div>
-            <div className="flex items-center justify-between mt-1">
-              <p className="text-[9px] text-muted">
-                Backend Agent · {skillCount} skills · {t('ai.realTimeData')}
-              </p>
-              <kbd className="text-[9px] text-muted/50 font-mono">
-                {navigator.platform?.includes('Mac') ? 'Cmd' : 'Ctrl'}+J
-              </kbd>
-            </div>
+              <PromptInputFooter>
+                <span className="text-[10px] text-muted/60">
+                  {t('aiChat.backendAgent')} · {skillCount} skills
+                </span>
+                <PromptInputSubmit
+                  status={chatStatus}
+                  onStop={abort}
+                  disabled={!isStreaming && !authToken}
+                />
+              </PromptInputFooter>
+            </PromptInput>
           </div>
         </>
       )}
