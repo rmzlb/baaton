@@ -15,6 +15,8 @@ mod sprints;
 mod cycles;
 mod templates;
 mod ai;
+pub mod ai_agent;
+pub mod ai_tools;
 pub mod activity;
 pub mod automations;
 pub mod github;
@@ -101,6 +103,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/ai/chat", post(ai::chat))
         .route("/ai/key", get(ai::get_key))
         .route("/ai/pm-full-review", post(ai::pm_full_review))
+        .route("/ai/agent", post(ai_agent::agent_chat))
         // Tags
         .route("/tags/{id}", delete(tags::remove))
         // Milestones by ID

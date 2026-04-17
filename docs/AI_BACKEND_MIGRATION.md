@@ -280,8 +280,22 @@ struct ToolResult {
 | generate_prd | `PRDDocument` | `<PRDViewer prd={data} />` |
 | (text only tools) | `null` | Rendered as markdown |
 
-### Phase 3 : Frontend — `useAgentChat` hook + Component Registry
+### Phase 3 : Frontend — `useAgentChat` hook + AI Elements + Component Registry
 **Fichiers : `frontend/src/hooks/useAgentChat.ts` (nouveau), `frontend/src/components/ai/tool-components/` (nouveau)**
+
+**NEW: Use AI Elements (https://elements.ai-sdk.dev/)** — a shadcn/ui registry for AI chat UIs.
+Install: `npx ai-elements@latest add conversation message tool prompt-input suggestion shimmer`
+Components are copied to `components/ai-elements/` (source code, not a package).
+
+AI Elements provides:
+- `Conversation` — chat wrapper with auto-scroll
+- `Message` + `MessageResponse` — message bubbles with markdown (uses Streamdown)
+- `Tool` + `ToolHeader` + `ToolContent` + `ToolInput` + `ToolOutput` — collapsible tool call display
+- `PromptInput` — chat input with submit button
+- `Suggestion` — suggested prompts
+- `Shimmer` — streaming loading animation
+
+Custom data-rich components (IssueTable, MetricsCard) go INSIDE `ToolOutput`.
 
 3.1. **`useAgentChat` hook** — remplace `generateAIResponse()` :
 ```tsx
