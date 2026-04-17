@@ -5,18 +5,23 @@
  * Uses: Conversation, Message, MessageResponse, PromptInput, Shimmer, Suggestions.
  */
 
-import { useRef, useEffect, useCallback, useState, memo } from 'react';
+import { useRef, useEffect, useCallback, useState, useMemo, memo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Sparkles, Trash2, Bot, User, Copy, Check, RefreshCw,
+  Sparkles, Trash2, Bot, Copy, Check, RefreshCw,
   Wrench, ChevronDown, Plus, MessageSquare, PanelRightClose, AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
+import { useChat } from '@ai-sdk/react';
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithToolCalls,
+} from 'ai';
+import type { UIMessage } from 'ai';
 import { useUIStore } from '@/stores/ui';
+import { useNotificationStore } from '@/stores/notifications';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useAgentChat, type AgentMessage } from '@/hooks/useAgentChat';
-import { ToolResultRenderer } from '@/components/ai/ToolResultRenderer';
 import { TOOL_SCHEMAS } from '@/lib/ai-skills';
 import { cn } from '@/lib/utils';
 import {
@@ -39,47 +44,96 @@ import {
 } from '@/components/ai-elements/prompt-input';
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion';
+import { ToolPartRenderer } from '@/components/ai/ToolPartRenderer';
+
+// ─── Helpers ────────────────────────────────────
+
+function getTextFromMessage(msg: UIMessage): string {
+  return msg.parts
+    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+    .map(p => p.text)
+    .join('');
+}
+
+function isToolPart(part: { type: string }): boolean {
+  return part.type.startsWith('tool-') || part.type === 'dynamic-tool';
+}
 
 // ─── Session persistence ───────────────────────
 
 interface StoredSession {
+  schema_version: 2;
   id: string;
   title: string;
-  messages: AgentMessage[];
+  messages: UIMessage[];
   createdAt: number;
   updatedAt: number;
 }
 
 const STORAGE_KEY = 'baaton-ai-panel-sessions';
 const MAX_SESSIONS = 30;
+const SCHEMA_VERSION = 2;
 
 function loadSessions(): StoredSession[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as StoredSession[]) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return [];
+    if (parsed[0]?.schema_version !== SCHEMA_VERSION) {
+      console.warn('[Baaton AI] Session format outdated, clearing.');
+      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.setItem('baaton-ai-sessions-cleared', '1');
+      return [];
+    }
+    return parsed;
   } catch { return []; }
+}
+
+function stripHeavyParts(msg: UIMessage): UIMessage {
+  return {
+    ...msg,
+    parts: msg.parts.map(part => {
+      if (!part.type.startsWith('tool-')) return part;
+      const toolPart = part as any;
+      if (!toolPart.output) return toolPart;
+      return {
+        ...toolPart,
+        output: {
+          result: toolPart.output.result,
+          summary: toolPart.output.summary,
+          component: toolPart.output.component,
+          approved: toolPart.output.approved,
+          finalValues: toolPart.output.finalValues,
+        },
+      };
+    }),
+  };
 }
 
 function saveSessions(ss: StoredSession[]) {
   try {
     const trimmed = ss.slice(0, MAX_SESSIONS).map(s => ({
       ...s,
-      messages: s.messages.slice(-80).map(m => ({
-        ...m,
-        toolCalls: m.toolCalls
-          ?.filter(tc => tc.status !== 'executing')
-          .map(tc => ({ ...tc, result: tc.result ? { ...tc.result, data: undefined } : undefined })),
-      })),
+      schema_version: SCHEMA_VERSION as const,
+      messages: s.messages.slice(-80).map(stripHeavyParts),
     }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
   } catch { /* quota */ }
+}
+
+function extractTitle(msgs: UIMessage[]): string {
+  const firstUser = msgs.find(m => m.role === 'user');
+  if (!firstUser) return 'New Chat';
+  const text = firstUser.parts.find(p => p.type === 'text');
+  return ((text as any)?.text ?? 'New Chat').slice(0, 40);
 }
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function makeSession(): StoredSession {
   const now = Date.now();
-  return { id: uid(), title: '', messages: [], createdAt: now, updatedAt: now };
+  return { schema_version: SCHEMA_VERSION, id: uid(), title: '', messages: [], createdAt: now, updatedAt: now };
 }
 
 // ─── Session list item ─────────────────────────
@@ -132,70 +186,6 @@ function CopyButton({ content }: { content: string }) {
   );
 }
 
-// ─── Message bubble (AI Elements SDK) ──────────
-
-const PanelMessageBubble = memo(function PanelMessageBubble({
-  msg, isLast, isStreaming, onRegenerate, onAction,
-}: {
-  msg: AgentMessage;
-  isLast: boolean;
-  isStreaming: boolean;
-  onRegenerate?: () => void;
-  onAction?: (prompt: string) => void;
-}) {
-  const { t } = useTranslation();
-
-  const isThinking =
-    msg.role === 'assistant' &&
-    isLast &&
-    isStreaming &&
-    !msg.content &&
-    !msg.toolCalls?.length;
-
-  return (
-    <Message from={msg.role}>
-      <MessageContent>
-        {isThinking ? (
-          <div className="flex items-center gap-2 py-1">
-            <Bot size={14} className="text-accent shrink-0" />
-            <Shimmer className="text-sm text-muted/70">{t('aiChat.thinking')}</Shimmer>
-          </div>
-        ) : (
-          <>
-            {msg.toolCalls?.map(tc => (
-              <ToolResultRenderer key={tc.id} event={tc} onAction={onAction} />
-            ))}
-
-            {msg.content && (
-              msg.role === 'user' ? (
-                <div className="flex items-start gap-2">
-                  <User size={14} className="text-secondary mt-0.5 shrink-0" />
-                  <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-                </div>
-              ) : (
-                <MessageResponse isAnimating={isLast && isStreaming}>
-                  {msg.content}
-                </MessageResponse>
-              )
-            )}
-          </>
-        )}
-      </MessageContent>
-
-      {!isThinking && msg.content && (
-        <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
-          <CopyButton content={msg.content} />
-          {msg.role === 'assistant' && isLast && !isStreaming && onRegenerate && (
-            <MessageAction tooltip={t('aiChat.regenerate')} onClick={onRegenerate}>
-              <RefreshCw size={12} />
-            </MessageAction>
-          )}
-        </MessageActions>
-      )}
-    </Message>
-  );
-});
-
 // ─── Suggestions ───────────────────────────────
 
 function useSuggestions() {
@@ -218,21 +208,14 @@ export function AIAssistant() {
   const setAiPanelOpen = useUIStore(s => s.setAiPanelOpen);
   const toggleAiPanel = useUIStore(s => s.toggleAiPanel);
 
-  const [authToken, setAuthToken] = useState('');
   const [sessionsView, setSessionsView] = useState(false);
   const [sessions, setSessions] = useState<StoredSession[]>(loadSessions);
   const [activeId, setActiveId] = useState<string | null>(() => loadSessions()[0]?.id ?? null);
 
+  const addNotification = useNotificationStore(s => s.addNotification);
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const { getToken } = useAuth();
-
-  // Fresh token getter for each request (no stale timer)
-  const getAuthToken = useCallback(async () => {
-    const tk = await getToken();
-    if (tk) setAuthToken(tk);
-    return tk;
-  }, [getToken]);
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -240,34 +223,56 @@ export function AIAssistant() {
     staleTime: 60_000,
   });
 
+  // ── AI SDK v5+ transport & hook ──
+
+  const transport = useMemo(() => new DefaultChatTransport({
+    api: `${import.meta.env.VITE_API_URL ?? ''}/api/v1/ai/chat`,
+    prepareSendMessagesRequest: async ({ messages, body }) => {
+      const token = await getToken();
+      return {
+        headers: { Authorization: `Bearer ${token ?? ''}` },
+        body: { ...body, messages, project_ids: projects.map(p => p.id) },
+      };
+    },
+  }), [getToken, projects]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initialMessages = useMemo(() => {
+    const session = sessions.find(s => s.id === activeId);
+    return session?.messages ?? [];
+  }, [activeId]);
+
   const {
-    messages, sendMessage: agentSend, isStreaming,
-    error: agentError, clearMessages, loadMessages, abort,
-  } = useAgentChat({
-    projectIds: projects.map(p => p.id),
-    getAuthToken,
-    onComplete: () => {
+    messages, sendMessage, status, stop, regenerate,
+    setMessages, addToolOutput, error,
+  } = useChat({
+    id: activeId ?? 'default',
+    transport,
+    messages: initialMessages,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    onFinish: () => {
       queryClient.invalidateQueries({ queryKey: ['issues'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['milestones'], refetchType: 'all' });
     },
+    onError: (err) => {
+      console.error('[AI panel]', err);
+    },
   });
+
+  const isStreaming = status === 'streaming' || status === 'submitted';
 
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
 
+  // ── Sync session title to localStorage when streaming ends ──
+  const prevStatusRef = useRef(status);
   useEffect(() => {
-    const initial = loadSessions().find(s => s.id === activeId);
-    if (initial?.messages.length) loadMessages(initial.messages);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const prevStreamingRef = useRef(false);
-  useEffect(() => {
-    const justFinished = prevStreamingRef.current && !isStreaming;
-    prevStreamingRef.current = isStreaming;
-    if (!justFinished) return;
+    const wasActive = prevStatusRef.current === 'streaming' || prevStatusRef.current === 'submitted';
+    const isDone = status === 'ready';
+    prevStatusRef.current = status;
+    if (!wasActive || !isDone) return;
 
     const msgs = messagesRef.current;
     const sid = activeIdRef.current;
@@ -276,13 +281,47 @@ export function AIAssistant() {
     setSessions(prev => {
       const updated = prev.map(s => {
         if (s.id !== sid) return s;
-        const title = s.title || msgs.find(m => m.role === 'user')?.content.slice(0, 40) || t('aiChat.newChat');
-        return { ...s, messages: msgs, title, updatedAt: Date.now() };
+        const firstUser = msgs.find(m => m.role === 'user');
+        const userText = firstUser ? getTextFromMessage(firstUser) : '';
+        const title = s.title || userText.slice(0, 40) || t('aiChat.newChat');
+        return { ...s, title, updatedAt: Date.now() };
       });
       saveSessions(updated);
       return updated;
     });
-  }, [isStreaming, t]);
+  }, [status, t]);
+
+  // ── Persist messages to localStorage ──
+  useEffect(() => {
+    if (!activeId || messages.length === 0) return;
+    setSessions(prev => {
+      const updated = prev.map(s =>
+        s.id === activeId
+          ? {
+              ...s,
+              messages,
+              title: s.title || extractTitle(messages),
+              updatedAt: Date.now(),
+              schema_version: SCHEMA_VERSION as const,
+            }
+          : s
+      );
+      saveSessions(updated);
+      return updated;
+    });
+  }, [messages, activeId]);
+
+  // ── One-time toast after old sessions cleared ──
+  useEffect(() => {
+    if (sessionStorage.getItem('baaton-ai-sessions-cleared') === '1') {
+      sessionStorage.removeItem('baaton-ai-sessions-cleared');
+      addNotification({
+        type: 'info',
+        title: 'Sessions IA archivées',
+        message: "L'IA a été mise à jour. Démarre une nouvelle conversation.",
+      });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cmd+J shortcut
   useEffect(() => {
@@ -308,17 +347,16 @@ export function AIAssistant() {
       return updated;
     });
     setActiveId(s.id);
-    clearMessages();
+    setMessages([]);
     setSessionsView(false);
-  }, [clearMessages]);
+  }, [setMessages]);
 
   const handleSwitchSession = useCallback((id: string) => {
-    const s = sessions.find(ss => ss.id === id);
     setActiveId(id);
-    if (s?.messages.length) loadMessages(s.messages);
-    else clearMessages();
+    const session = sessions.find(s => s.id === id);
+    setMessages(session?.messages ?? []);
     setSessionsView(false);
-  }, [sessions, loadMessages, clearMessages]);
+  }, [sessions, setMessages]);
 
   const handleDeleteSession = useCallback((id: string) => {
     setSessions(prev => {
@@ -330,13 +368,12 @@ export function AIAssistant() {
       const remaining = sessions.filter(s => s.id !== id);
       if (remaining.length > 0) {
         setActiveId(remaining[0].id);
-        loadMessages(remaining[0].messages);
       } else {
         setActiveId(null);
-        clearMessages();
       }
+      setMessages([]);
     }
-  }, [activeId, sessions, loadMessages, clearMessages]);
+  }, [activeId, sessions, setMessages]);
 
   // ── Send ──
 
@@ -354,24 +391,16 @@ export function AIAssistant() {
       setActiveId(s.id);
     }
 
-    await agentSend(msg);
-  }, [isStreaming, activeId, agentSend]);
+    await sendMessage({ text: msg });
+  }, [isStreaming, activeId, sendMessage]);
 
   const handleRegenerate = useCallback(() => {
     if (isStreaming || !messages.length) return;
-    let lastUserIdx = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') { lastUserIdx = i; break; }
-    }
-    if (lastUserIdx === -1) return;
-    const lastUserContent = messages[lastUserIdx].content;
-    loadMessages(messages.slice(0, lastUserIdx));
-    setTimeout(() => agentSend(lastUserContent), 0);
-  }, [messages, isStreaming, loadMessages, agentSend]);
+    void regenerate();
+  }, [messages.length, isStreaming, regenerate]);
 
   const isEmpty = messages.length === 0 && !isStreaming;
   const canSend = !isStreaming;
-  const chatStatus = (isStreaming ? 'streaming' : 'ready') as 'streaming' | 'ready';
 
   // ── FAB when closed ──
 
@@ -507,26 +536,54 @@ export function AIAssistant() {
               ) : (
                 <>
                   {messages
-                    .filter(msg => !(msg.role === 'user' && msg.content.startsWith('__INTERNAL__:')))
-                    .map((msg, i, arr) => (
-                    <PanelMessageBubble
-                      key={msg.id}
-                      msg={msg}
-                      isLast={i === arr.length - 1}
-                      isStreaming={isStreaming}
-                      onAction={handleSend}
-                      onRegenerate={
-                        msg.role === 'assistant' && i === arr.length - 1
-                          ? handleRegenerate
-                          : undefined
-                      }
-                    />
-                  ))}
+                    .map((msg, i, arr) => {
+                      const msgText = getTextFromMessage(msg);
+                      const isLast = i === arr.length - 1;
+                      const isThinking = msg.role === 'assistant' && isLast && isStreaming
+                        && !msgText && !msg.parts.some(isToolPart);
 
-                  {agentError && !isStreaming && (
+                      return (
+                        <Message from={msg.role} key={msg.id}>
+                          <MessageContent>
+                            {isThinking ? (
+                              <div className="flex items-center gap-2 py-1">
+                                <Bot size={14} className="text-accent shrink-0" />
+                                <Shimmer className="text-sm text-muted/70">{t('aiChat.thinking')}</Shimmer>
+                              </div>
+                            ) : (
+                              msg.parts.map((part, idx) => {
+                                if (part.type === 'text') {
+                                  const text = (part as any).text as string;
+                                  return msg.role === 'user'
+                                    ? <p key={idx} className="whitespace-pre-wrap text-[13px]">{text}</p>
+                                    : <MessageResponse key={idx} isAnimating={isLast && status === 'streaming'}>{text}</MessageResponse>;
+                                }
+                                if (isToolPart(part)) {
+                                  return <ToolPartRenderer key={idx} part={part} addToolOutput={addToolOutput} />;
+                                }
+                                return null;
+                              })
+                            )}
+                          </MessageContent>
+
+                          {!isThinking && msgText && (
+                            <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              <CopyButton content={msgText} />
+                              {msg.role === 'assistant' && isLast && !isStreaming && (
+                                <MessageAction tooltip={t('aiChat.regenerate')} onClick={handleRegenerate}>
+                                  <RefreshCw size={12} />
+                                </MessageAction>
+                              )}
+                            </MessageActions>
+                          )}
+                        </Message>
+                      );
+                    })}
+
+                  {error && !isStreaming && (
                     <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
                       <AlertCircle size={14} className="text-red-400 shrink-0" />
-                      <p className="text-xs text-red-300">{agentError}</p>
+                      <p className="text-xs text-red-300">{error.message}</p>
                     </div>
                   )}
                 </>
@@ -566,9 +623,8 @@ export function AIAssistant() {
                   {t('aiChat.backendAgent')} · {skillCount} skills
                 </span>
                 <PromptInputSubmit
-                  status={chatStatus}
-                  onStop={abort}
-                  disabled={!isStreaming && false}
+                  status={status === 'submitted' || status === 'streaming' ? 'streaming' : 'ready'}
+                  onStop={stop}
                   className="bg-amber-500 text-black hover:bg-amber-400 rounded-lg"
                 />
               </PromptInputFooter>

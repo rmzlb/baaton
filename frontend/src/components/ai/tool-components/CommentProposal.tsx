@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { MessageSquare, Check, X, Loader2 } from 'lucide-react';
+import { MessageSquare, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import type { DynamicToolUIPart } from 'ai';
 
-interface CommentProposalData {
+interface CommentInput {
   issue_id?: string;
   display_id?: string;
   title?: string;
@@ -12,48 +13,58 @@ interface CommentProposalData {
 }
 
 interface Props {
-  data: CommentProposalData;
-  onAction?: (prompt: string) => void;
+  part: DynamicToolUIPart;
+  addToolOutput: (opts: { tool: string; toolCallId: string; output: unknown }) => void;
 }
 
-export default function CommentProposal({ data, onAction }: Props) {
-  const safe = data ?? {};
-  const [content, setContent] = useState(safe.content || '');
-  const [submitted, setSubmitted] = useState<'approved' | 'cancelled' | null>(null);
+function ApprovedBadge({ displayId }: { displayId?: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
+      <Check size={12} className="text-emerald-500 shrink-0" />
+      <span className="text-emerald-400 font-medium">Approuve</span>
+      {displayId && <span className="font-mono text-[11px] text-[--color-muted]">{displayId}</span>}
+    </div>
+  );
+}
+
+function CancelledBadge() {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-[--color-border] bg-[--color-surface-hover]/30 px-3 py-2 text-[12px] text-[--color-muted]">
+      <X size={12} className="shrink-0" />
+      <span>Commentaire annule</span>
+    </div>
+  );
+}
+
+export default function CommentProposal({ part, addToolOutput }: Props) {
+  const input = (part.input ?? {}) as CommentInput;
+  const [content, setContent] = useState(input.content || '');
+
+  if (part.state === 'output-available') {
+    const output = part.output as { approved: boolean } | undefined;
+    if (output?.approved) {
+      return <ApprovedBadge displayId={input.display_id} />;
+    }
+    return <CancelledBadge />;
+  }
+
+  if (part.state !== 'input-available') return null;
 
   const handleApprove = () => {
-    if (!onAction || submitted) return;
-    setSubmitted('approved');
-    onAction(
-      `__INTERNAL__: User approved. Call add_comment now with EXACTLY these values:\n` +
-      `- issue_id: ${safe.issue_id}\n` +
-      `- content: ${content}`
-    );
+    addToolOutput({
+      tool: 'propose_comment',
+      toolCallId: part.toolCallId,
+      output: { approved: true, finalContent: content },
+    });
   };
 
   const handleCancel = () => {
-    if (!onAction || submitted) return;
-    setSubmitted('cancelled');
-    onAction("__INTERNAL__: User cancelled. Don't add the comment. Just acknowledge briefly.");
+    addToolOutput({
+      tool: 'propose_comment',
+      toolCallId: part.toolCallId,
+      output: { approved: false },
+    });
   };
-
-  if (submitted === 'approved') {
-    return (
-      <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
-        <Loader2 size={12} className="animate-spin text-emerald-500 shrink-0" />
-        <span className="text-emerald-400 font-medium">Ajout du commentaire…</span>
-        {safe.display_id && <span className="font-mono text-[11px] text-[--color-muted]">{safe.display_id}</span>}
-      </div>
-    );
-  }
-  if (submitted === 'cancelled') {
-    return (
-      <div className="flex items-center gap-2 rounded-lg border border-[--color-border] bg-[--color-surface-hover]/30 px-3 py-2 text-[12px] text-[--color-muted]">
-        <X size={12} className="shrink-0" />
-        <span>Commentaire annule</span>
-      </div>
-    );
-  }
 
   return (
     <div className="rounded-xl border border-amber-500/30 overflow-hidden">
@@ -62,23 +73,22 @@ export default function CommentProposal({ data, onAction }: Props) {
         <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
           Proposition de commentaire
         </span>
-        {safe.display_id && (
+        {input.display_id && (
           <Badge variant="secondary" className="ml-auto h-5 font-mono text-[10px]">
-            {safe.display_id}
+            {input.display_id}
           </Badge>
         )}
       </div>
 
       <div className="p-3 space-y-2 bg-[--color-bg]">
-        {safe.title && (
+        {input.title && (
           <p className="text-[11px] text-[--color-muted] italic line-clamp-1">
-            sur : {safe.title}
+            sur : {input.title}
           </p>
         )}
         <Textarea
           value={content}
           onChange={e => setContent(e.target.value)}
-          disabled={!!submitted}
           rows={4}
           placeholder="Votre commentaire en Markdown..."
           className="text-[12px] resize-none"
@@ -88,7 +98,6 @@ export default function CommentProposal({ data, onAction }: Props) {
       <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/50">
         <Button
           onClick={handleCancel}
-          disabled={!!submitted}
           variant="secondary"
           size="sm"
         >
@@ -97,12 +106,12 @@ export default function CommentProposal({ data, onAction }: Props) {
         </Button>
         <Button
           onClick={handleApprove}
-          disabled={!!submitted || !content.trim()}
+          disabled={!content.trim()}
           size="sm"
           className="bg-amber-500 text-black hover:bg-amber-400"
         >
           <Check size={12} />
-          {submitted ? 'Envoye' : 'Commenter'}
+          Commenter
         </Button>
       </div>
     </div>

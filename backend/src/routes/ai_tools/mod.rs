@@ -31,6 +31,18 @@ fn tool(name: &str, description: &str, parameters: Value) -> ToolDefinition {
     }
 }
 
+// ─── Client-Interactive Tool Detection ──────────────────────────────────────
+
+/// Tools that require user approval via the UI.
+/// The frontend renders an approval form using the tool's input args;
+/// the user's decision is sent back as addToolOutput on the next turn.
+pub fn is_client_interactive(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "propose_issue" | "propose_update_issue" | "propose_bulk_update" | "propose_comment"
+    )
+}
+
 // ─── Tool Definitions (Gemini JSON Schema) ────────────────────────────────────
 
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {

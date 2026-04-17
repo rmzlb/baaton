@@ -1,3 +1,10 @@
+//! DEPRECATED: This route is kept for one deploy cycle as a fallback.
+//! Use `/api/v1/ai/chat` (ai_chat module) which speaks the AI SDK v5
+//! UIMessage protocol natively.
+//!
+//! TODO: Delete this file in the next PR after confirming no clients
+//! still hit `/api/v1/ai/agent`.
+
 use axum::{
     extract::{Extension, State},
     http::StatusCode,

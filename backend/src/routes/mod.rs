@@ -16,6 +16,7 @@ mod cycles;
 mod templates;
 mod ai;
 pub mod ai_agent;
+pub mod ai_chat;
 pub mod ai_tools;
 pub mod activity;
 pub mod automations;
@@ -100,7 +101,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/github/mappings/{id}", patch(github::repos::update_mapping).delete(github::repos::delete_mapping))
         .route("/issues/{id}/github", get(github::repos::get_issue_github_data))
         // AI
-        .route("/ai/chat", post(ai::chat))
+        .route("/ai/chat", post(ai_chat::chat_handler))
+        .route("/ai/chat-legacy", post(ai::chat))
         .route("/ai/key", get(ai::get_key))
         .route("/ai/pm-full-review", post(ai::pm_full_review))
         .route("/ai/agent", post(ai_agent::agent_chat))

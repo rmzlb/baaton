@@ -456,3 +456,58 @@ Si un jour Baaton migre vers Next.js + Node.js, on pourra utiliser `@ai-sdk/rsc`
 - Chaque component reçoit un `data: any` prop (typé par component)
 - Le fallback si pas de component = afficher le `summary` en Markdown
 - Garder le même look & feel que le chat actuel
+
+---
+
+## Phase 6 — UIMessage Protocol Migration (April 2026)
+
+### Why
+
+The custom SSE protocol (events: `text`, `tool_start`, `tool_result`, `done`, `error`) and custom `useAgentChat` React hook reinvented what AI SDK v5 standardizes. The `__INTERNAL__:` prefix hack for tool approval was buggy: Gemini Flash 2.0 sometimes echoed the prefix back as text instead of calling the real tool.
+
+### What changed
+
+**Backend** ([backend/src/routes/ai_chat/](backend/src/routes/ai_chat/))
+- New route `POST /api/v1/ai/chat`
+- Speaks AI SDK v5 UIMessage stream protocol (SSE with typed JSON chunks)
+- Required header `x-vercel-ai-ui-message-stream: v1`
+- Tools split into two categories:
+  - **client-interactive** (`propose_*`): no server execute, frontend renders approval UI
+  - **server-execute** (`create_*`/`update_*`/`search_*`/etc.): auto-run via `execute_tool()`
+- Old `/api/v1/ai/agent` route deprecated (kept one cycle as fallback)
+
+**Frontend**
+- `useAgentChat` (custom hook, ~435 lines) → `useChat` from `@ai-sdk/react` (native)
+- `DefaultChatTransport` with `prepareSendMessagesRequest` for fresh JWT per request
+- `sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls` for HIL auto-resubmit
+- New `ToolPartRenderer` routes `tool-*` parts to React components (replaces custom registry)
+- Proposal cards use `addToolOutput({ tool, toolCallId, output: { approved, finalValues } })`
+- ~570 lines of custom code deleted (useAgentChat + ToolResultRenderer + filters + hacks)
+- Sessions migrated to `UIMessage[]` format with `schema_version: 2`. Old sessions cleared with one-time toast.
+
+### Stream protocol (UIMessage v1)
+
+Server emits SSE `data: {...JSON...}` events ending with `data: [DONE]`. Header `x-vercel-ai-ui-message-stream: v1`.
+
+Event types we emit:
+- `start`, `start-step`
+- `text-start`, `text-delta`, `text-end`
+- `tool-input-available`
+- `tool-output-available`
+- `finish-step`, `finish`
+- `error`
+
+Frontend `useChat` parses these into `message.parts: UIMessagePart[]`.
+
+### Tool approval flow (Human In the Loop)
+
+1. User: "create issue HLM: foo"
+2. Model calls `propose_issue` (client-interactive — server doesn't execute)
+3. Backend emits `tool-input-available`, stream ends after `[DONE]`
+4. Frontend renders IssueProposal card from `part.input`
+5. User edits and clicks Approuver
+6. Frontend calls `addToolOutput({ tool, toolCallId, output: { approved, finalValues } })`
+7. `sendAutomaticallyWhen` triggers next turn (resends messages with the new tool output appended)
+8. Backend sees the tool output in messages, model now calls `create_issue` (server execute)
+9. Backend executes, emits `tool-output-available`, then `text-*` for confirmation
+10. Stream ends, IssueCreated card shows

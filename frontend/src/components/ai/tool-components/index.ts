@@ -22,8 +22,4 @@ export const TOOL_COMPONENTS: Record<string, React.LazyExoticComponent<ToolCompo
   IssueCreated: lazy(() => import('./IssueCreated')),
   IssueUpdated: lazy(() => import('./IssueUpdated')),
   PRDDocument: lazy(() => import('./PRDDocument')),
-  IssueProposal: lazy(() => import('./IssueProposal')),
-  UpdateIssueProposal: lazy(() => import('./UpdateIssueProposal')),
-  BulkUpdateProposal: lazy(() => import('./BulkUpdateProposal')),
-  CommentProposal: lazy(() => import('./CommentProposal')),
 };
