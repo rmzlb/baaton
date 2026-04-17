@@ -27,8 +27,9 @@ const PRIORITY_COLOR: Record<string, string> = {
 };
 
 export default function BulkUpdateProposal({ data, onAction }: Props) {
+  const safe = data ?? {};
   const [submitted, setSubmitted] = useState<'approved' | 'cancelled' | null>(null);
-  const updates = data.updates || [];
+  const updates = safe.updates || [];
 
   const handleApprove = () => {
     if (!onAction || submitted) return;

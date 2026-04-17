@@ -14,7 +14,8 @@ interface Props {
 }
 
 export default function CommentProposal({ data, onAction }: Props) {
-  const [content, setContent] = useState(data.content || '');
+  const safe = data ?? {};
+  const [content, setContent] = useState(safe.content || '');
   const [submitted, setSubmitted] = useState<'approved' | 'cancelled' | null>(null);
 
   const handleApprove = () => {
@@ -22,7 +23,7 @@ export default function CommentProposal({ data, onAction }: Props) {
     setSubmitted('approved');
     onAction(
       `__INTERNAL__: User approved. Call add_comment now with EXACTLY these values:\n` +
-      `- issue_id: ${data.issue_id}\n` +
+      `- issue_id: ${safe.issue_id}\n` +
       `- content: ${content}`
     );
   };
@@ -38,7 +39,7 @@ export default function CommentProposal({ data, onAction }: Props) {
       <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
         <Loader2 size={12} className="animate-spin text-emerald-500 shrink-0" />
         <span className="text-emerald-400 font-medium">Ajout du commentaire…</span>
-        {data.display_id && <span className="font-mono text-[11px] text-[--color-muted]">{data.display_id}</span>}
+        {safe.display_id && <span className="font-mono text-[11px] text-[--color-muted]">{safe.display_id}</span>}
       </div>
     );
   }
@@ -58,17 +59,17 @@ export default function CommentProposal({ data, onAction }: Props) {
         <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
           Proposition de commentaire
         </span>
-        {data.display_id && (
+        {safe.display_id && (
           <span className="ml-auto font-mono text-[10px] text-[--color-muted]">
-            {data.display_id}
+            {safe.display_id}
           </span>
         )}
       </div>
 
       <div className="p-3 space-y-2 bg-[--color-bg]">
-        {data.title && (
+        {safe.title && (
           <p className="text-[11px] text-[--color-muted] italic line-clamp-1">
-            sur : {data.title}
+            sur : {safe.title}
           </p>
         )}
         <textarea

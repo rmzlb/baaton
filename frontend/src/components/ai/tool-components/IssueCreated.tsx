@@ -15,8 +15,8 @@ interface IssueCreatedProps {
 }
 
 export default function IssueCreated({ data }: IssueCreatedProps) {
-  const issue: CreatedIssue =
-    (data as { issue?: CreatedIssue }).issue ?? (data as CreatedIssue);
+  const safe = (data ?? {}) as { issue?: CreatedIssue } & CreatedIssue;
+  const issue: CreatedIssue = safe.issue ?? safe;
 
   return (
     <div className="flex items-start gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
@@ -27,7 +27,7 @@ export default function IssueCreated({ data }: IssueCreatedProps) {
           {issue.display_id && (
             <span className="font-mono text-[11px] text-[--color-muted]">{issue.display_id}</span>
           )}
-          <span className="text-sm font-medium text-[--color-primary]">{issue.title}</span>
+          <span className="text-sm font-medium text-[--color-primary]">{issue.title ?? '(issue created)'}</span>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-[--color-muted]">
           {issue.status && <span>Status: <span className="text-[--color-secondary]">{issue.status}</span></span>}

@@ -31,10 +31,11 @@ function renderValue(v: unknown): string {
 }
 
 export default function IssueUpdated({ data }: IssueUpdatedProps) {
-  const issue = data.issue ?? { display_id: data.display_id, title: data.title ?? '?' };
+  const safe = data ?? ({} as IssueUpdatedData);
+  const issue = safe.issue ?? { display_id: safe.display_id, title: safe.title ?? '(issue updated)' };
 
-  const changes: ChangeEntry[] = data.changes
-    ?? (data.updated_fields?.map((f) => ({ field: f })) ?? []);
+  const changes: ChangeEntry[] = safe.changes
+    ?? (safe.updated_fields?.map((f) => ({ field: f })) ?? []);
 
   return (
     <div className="flex items-start gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3">

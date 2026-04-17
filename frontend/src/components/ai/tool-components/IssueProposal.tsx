@@ -37,24 +37,25 @@ const TYPE_STYLE: Record<string, string> = {
 };
 
 export default function IssueProposal({ data, onAction }: IssueProposalProps) {
-  const [title, setTitle] = useState(data.title || '');
-  const [description, setDescription] = useState(data.description || '');
+  const safe = data ?? {};
+  const [title, setTitle] = useState(safe.title || '');
+  const [description, setDescription] = useState(safe.description || '');
   const [type, setType] = useState<typeof TYPE_OPTIONS[number]>(
-    (data.type as typeof TYPE_OPTIONS[number]) || 'feature',
+    (safe.type as typeof TYPE_OPTIONS[number]) || 'feature',
   );
   const [priority, setPriority] = useState<typeof PRIORITY_OPTIONS[number]>(
-    (data.priority as typeof PRIORITY_OPTIONS[number]) || 'medium',
+    (safe.priority as typeof PRIORITY_OPTIONS[number]) || 'medium',
   );
   const [submitted, setSubmitted] = useState<'approved' | 'cancelled' | null>(null);
 
   const handleApprove = () => {
     if (!onAction || submitted) return;
     setSubmitted('approved');
-    const tags = (data.tags || []).join(', ') || '(none)';
-    const category = (data.category || []).join(', ') || '(none)';
+    const tags = (safe.tags || []).join(', ') || '(none)';
+    const category = (safe.category || []).join(', ') || '(none)';
     onAction(
       `__INTERNAL__: User approved. Call create_issue now with EXACTLY these final values:\n` +
-      `- project_id: ${data.project_id}\n` +
+      `- project_id: ${safe.project_id}\n` +
       `- title: ${title}\n` +
       `- description: ${description}\n` +
       `- type: ${type}\n` +
@@ -98,9 +99,9 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
         <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
           Proposition de creation
         </span>
-        {data.project_prefix && (
+        {safe.project_prefix && (
           <span className="ml-auto font-mono text-[10px] text-[--color-muted]">
-            {data.project_prefix}
+            {safe.project_prefix}
           </span>
         )}
       </div>
@@ -187,14 +188,14 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
         </div>
 
         {/* Categories + Tags display */}
-        {((data.category && data.category.length > 0) || (data.tags && data.tags.length > 0)) && (
+        {((safe.category && safe.category.length > 0) || (safe.tags && safe.tags.length > 0)) && (
           <div className="flex flex-wrap gap-1.5">
-            {data.category?.map(c => (
+            {safe.category?.map(c => (
               <span key={c} className="rounded border border-[--color-border] bg-[--color-surface] px-1.5 py-0.5 text-[10px] text-[--color-secondary]">
                 {c}
               </span>
             ))}
-            {data.tags?.map(t => (
+            {safe.tags?.map(t => (
               <span key={t} className="rounded bg-[--color-surface-hover] px-1.5 py-0.5 text-[10px] text-[--color-muted]">
                 #{t}
               </span>

@@ -130,11 +130,13 @@ export function ToolResultRenderer({ event, onAction }: ToolResultRendererProps)
 
   // Rich component → render DIRECTLY, no Tool chrome.
   // This is the AI SDK Elements pattern: custom UI replaces the generic tool UI.
+  // Guard against undefined data (restored sessions strip heavy data).
+  const safeData = event.result.data ?? {};
   return (
     <div className="space-y-1.5">
       <CompletedBadge name={event.name} />
       <Suspense fallback={<ComponentSkeleton />}>
-        <Component data={event.result.data} onAction={onAction} />
+        <Component data={safeData} onAction={onAction} />
       </Suspense>
     </div>
   );

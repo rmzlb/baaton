@@ -33,8 +33,9 @@ function DiffValue({ value, muted }: { value: string | string[]; muted?: boolean
 }
 
 export default function UpdateIssueProposal({ data, onAction }: Props) {
+  const safe = data ?? {};
   const [submitted, setSubmitted] = useState<'approved' | 'cancelled' | null>(null);
-  const diff = data.diff || [];
+  const diff = safe.diff || [];
 
   const handleApprove = () => {
     if (!onAction || submitted) return;
@@ -45,7 +46,7 @@ export default function UpdateIssueProposal({ data, onAction }: Props) {
     }).join('\n');
     onAction(
       `__INTERNAL__: User approved. Call update_issue now with EXACTLY these values:\n` +
-      `- issue_id: ${data.issue_id}\n${changes}`
+      `- issue_id: ${safe.issue_id}\n${changes}`
     );
   };
 
@@ -60,7 +61,7 @@ export default function UpdateIssueProposal({ data, onAction }: Props) {
       <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
         <Loader2 size={12} className="animate-spin text-emerald-500 shrink-0" />
         <span className="text-emerald-400 font-medium">Mise a jour en cours…</span>
-        {data.display_id && <span className="font-mono text-[11px] text-[--color-muted]">{data.display_id}</span>}
+        {safe.display_id && <span className="font-mono text-[11px] text-[--color-muted]">{safe.display_id}</span>}
       </div>
     );
   }
@@ -80,17 +81,17 @@ export default function UpdateIssueProposal({ data, onAction }: Props) {
         <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
           Proposition de modification
         </span>
-        {data.display_id && (
+        {safe.display_id && (
           <span className="ml-auto font-mono text-[10px] text-[--color-muted]">
-            {data.display_id}
+            {safe.display_id}
           </span>
         )}
       </div>
 
       <div className="p-3 space-y-2 bg-[--color-bg]">
-        {data.title && (
+        {safe.title && (
           <p className="text-[13px] text-[--color-primary] font-medium line-clamp-2">
-            {data.title}
+            {safe.title}
           </p>
         )}
 
