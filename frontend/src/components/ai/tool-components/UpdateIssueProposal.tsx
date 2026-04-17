@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Pencil, Check, X, ArrowRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 interface DiffEntry {
   field: string;
@@ -82,9 +84,9 @@ export default function UpdateIssueProposal({ data, onAction }: Props) {
           Proposition de modification
         </span>
         {safe.display_id && (
-          <span className="ml-auto font-mono text-[10px] text-[--color-muted]">
+          <Badge variant="secondary" className="ml-auto h-5 font-mono text-[10px]">
             {safe.display_id}
-          </span>
+          </Badge>
         )}
       </div>
 
@@ -116,22 +118,24 @@ export default function UpdateIssueProposal({ data, onAction }: Props) {
       </div>
 
       <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/50">
-        <button
+        <Button
           onClick={handleCancel}
           disabled={!!submitted}
-          className="flex items-center gap-1.5 rounded-md border border-[--color-border] bg-[--color-bg] px-2.5 py-1 text-[11px] font-medium text-[--color-secondary] hover:text-[--color-primary] hover:border-[--color-muted] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          variant="secondary"
+          size="sm"
         >
           <X size={12} />
           Annuler
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={handleApprove}
           disabled={!!submitted || diff.length === 0}
-          className="flex items-center gap-1.5 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          size="sm"
+          className="bg-amber-500 text-black hover:bg-amber-400"
         >
           <Check size={12} />
           {submitted ? 'Envoye' : 'Appliquer'}
-        </button>
+        </Button>
       </div>
     </div>
   );

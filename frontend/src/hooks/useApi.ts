@@ -119,10 +119,11 @@ export function useApi() {
 
     // ─── Projects ──────────────────────────────
     projects: {
-      list: async (): Promise<Project[]> =>
+      list: async (params?: { all?: boolean }): Promise<Project[]> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
-          return api.get<Project[]>('/projects', token);
+          const qs = params?.all ? '?all=true' : '';
+          return api.get<Project[]>(`/projects${qs}`, token);
         }),
 
       get: async (id: string): Promise<Project> =>

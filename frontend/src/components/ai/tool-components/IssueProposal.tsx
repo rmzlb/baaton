@@ -1,8 +1,21 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Sparkles, Check, X, Loader2, FolderKanban } from 'lucide-react';
+import { Sparkles, Check, X, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApi } from '@/hooks/useApi';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface ProposalData {
   project_id?: string;
@@ -38,12 +51,20 @@ const TYPE_STYLE: Record<string, string> = {
   question: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
 };
 
+function shortOrg(orgId: string): string {
+  // Clerk org ids look like 'org_2aBcD...' — take the last 6 chars as a stable shorthand
+  if (orgId.startsWith('org_')) return orgId.slice(4, 10);
+  return orgId.slice(0, 8);
+}
+
 export default function IssueProposal({ data, onAction }: IssueProposalProps) {
   const safe = data ?? {};
   const apiClient = useApi();
+
+  // Fetch ALL projects across every org the user belongs to
   const { data: projects = [] } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => apiClient.projects.list(),
+    queryKey: ['projects-all-orgs'],
+    queryFn: () => apiClient.projects.list({ all: true }),
     staleTime: 60_000,
   });
 
@@ -60,6 +81,17 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
 
   const selectedProject = projects.find(p => p.id === projectId);
   const currentPrefix = selectedProject?.prefix ?? safe.project_prefix ?? '?';
+
+  // Group projects by org for the dropdown
+  const projectsByOrg = useMemo(() => {
+    const groups = new Map<string, typeof projects>();
+    for (const p of projects) {
+      const list = groups.get(p.org_id) ?? [];
+      list.push(p);
+      groups.set(p.org_id, list);
+    }
+    return Array.from(groups.entries());
+  }, [projects]);
 
   const handleApprove = () => {
     if (!onAction || submitted) return;
@@ -85,7 +117,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
     onAction("__INTERNAL__: User cancelled. Don't create the issue. Just acknowledge briefly.");
   };
 
-  // Compact state shown after approve/cancel
+  // Compact states shown after approve/cancel
   if (submitted === 'approved') {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
@@ -104,6 +136,8 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
     );
   }
 
+  const isMultiOrg = projectsByOrg.length > 1;
+
   return (
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
       {/* Header */}
@@ -112,78 +146,79 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
         <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
           Proposition de creation
         </span>
-        <span className="ml-auto font-mono text-[10px] text-[--color-muted]">
+        <Badge variant="secondary" className="ml-auto h-5 font-mono text-[10px]">
           {currentPrefix}
-        </span>
+        </Badge>
       </div>
 
       {/* Body */}
       <div className="p-3 space-y-3 bg-[--color-bg]">
-        {/* Project dropdown */}
+        {/* Project dropdown (shadcn Select) */}
         <div>
           <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
             Projet
           </label>
-          <div className="relative">
-            <FolderKanban size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[--color-muted] pointer-events-none" />
-            <select
-              value={projectId}
-              onChange={e => setProjectId(e.target.value)}
-              disabled={!!submitted || projects.length === 0}
-              className="w-full appearance-none rounded-md border border-[--color-border] bg-[--color-surface] pl-8 pr-7 py-1.5 text-[13px] text-[--color-primary] outline-none focus:border-amber-500 disabled:opacity-50 cursor-pointer"
-            >
-              {projects.length === 0 && (
-                <option value="">Chargement des projets…</option>
+          <Select value={projectId} onValueChange={setProjectId} disabled={!!submitted}>
+            <SelectTrigger className="w-full h-9 text-[13px]">
+              <SelectValue placeholder={projects.length === 0 ? "Chargement…" : "Selectionner un projet"} />
+            </SelectTrigger>
+            <SelectContent>
+              {isMultiOrg ? (
+                projectsByOrg.map(([orgId, orgProjects]) => (
+                  <SelectGroup key={orgId}>
+                    <SelectLabel className="text-[10px] font-medium text-[--color-muted] uppercase tracking-wide">
+                      Org {shortOrg(orgId)}
+                    </SelectLabel>
+                    {orgProjects.map(p => (
+                      <SelectItem key={p.id} value={p.id} className="text-[13px]">
+                        <span className="font-medium">{p.name}</span>
+                        <span className="ml-2 font-mono text-[11px] text-[--color-muted]">{p.prefix}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))
+              ) : (
+                projects.map(p => (
+                  <SelectItem key={p.id} value={p.id} className="text-[13px]">
+                    <span className="font-medium">{p.name}</span>
+                    <span className="ml-2 font-mono text-[11px] text-[--color-muted]">{p.prefix}</span>
+                  </SelectItem>
+                ))
               )}
-              {!projectId && projects.length > 0 && (
-                <option value="" disabled>Selectionner un projet…</option>
-              )}
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.prefix})
-                </option>
-              ))}
-            </select>
-            <svg
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[--color-muted] pointer-events-none"
-              width="10" height="10" viewBox="0 0 20 20" fill="currentColor"
-            >
-              <path d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" />
-            </svg>
-          </div>
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Title */}
+        {/* Title (shadcn Input) */}
         <div>
           <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
             Titre
           </label>
-          <input
-            type="text"
+          <Input
             value={title}
             onChange={e => setTitle(e.target.value)}
             disabled={!!submitted}
-            className="w-full rounded-md border border-[--color-border] bg-[--color-surface] px-2.5 py-1.5 text-[13px] text-[--color-primary] placeholder-[--color-muted] outline-none focus:border-amber-500 disabled:opacity-50"
             placeholder="Titre clair, sans prefix"
+            className="h-9 text-[13px]"
           />
         </div>
 
-        {/* Description */}
+        {/* Description (shadcn Textarea) */}
         <div>
           <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
             Description
           </label>
-          <textarea
+          <Textarea
             value={description}
             onChange={e => setDescription(e.target.value)}
             disabled={!!submitted}
-            rows={3}
-            className="w-full rounded-md border border-[--color-border] bg-[--color-surface] px-2.5 py-1.5 text-[12px] text-[--color-primary] placeholder-[--color-muted] outline-none focus:border-amber-500 disabled:opacity-50 resize-none"
+            rows={4}
             placeholder="Details, reproduction, contexte..."
+            className="text-[12px] resize-none"
           />
         </div>
 
-        {/* Type + Priority */}
+        {/* Type + Priority pills */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
@@ -193,6 +228,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
               {TYPE_OPTIONS.map(t => (
                 <button
                   key={t}
+                  type="button"
                   onClick={() => !submitted && setType(t)}
                   disabled={!!submitted}
                   className={cn(
@@ -216,6 +252,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
               {PRIORITY_OPTIONS.map(p => (
                 <button
                   key={p}
+                  type="button"
                   onClick={() => !submitted && setPriority(p)}
                   disabled={!!submitted}
                   className={cn(
@@ -236,37 +273,39 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
         {((safe.category && safe.category.length > 0) || (safe.tags && safe.tags.length > 0)) && (
           <div className="flex flex-wrap gap-1.5">
             {safe.category?.map(c => (
-              <span key={c} className="rounded border border-[--color-border] bg-[--color-surface] px-1.5 py-0.5 text-[10px] text-[--color-secondary]">
+              <Badge key={c} variant="outline" className="h-5 text-[10px]">
                 {c}
-              </span>
+              </Badge>
             ))}
             {safe.tags?.map(t => (
-              <span key={t} className="rounded bg-[--color-surface-hover] px-1.5 py-0.5 text-[10px] text-[--color-muted]">
+              <Badge key={t} variant="secondary" className="h-5 text-[10px]">
                 #{t}
-              </span>
+              </Badge>
             ))}
           </div>
         )}
       </div>
 
-      {/* Action buttons */}
+      {/* Action buttons (shadcn Button) */}
       <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/50">
-        <button
+        <Button
           onClick={handleCancel}
           disabled={!!submitted}
-          className="flex items-center gap-1.5 rounded-md border border-[--color-border] bg-[--color-bg] px-2.5 py-1 text-[11px] font-medium text-[--color-secondary] hover:text-[--color-primary] hover:border-[--color-muted] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          variant="secondary"
+          size="sm"
         >
           <X size={12} />
           Annuler
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={handleApprove}
           disabled={!!submitted || !title.trim() || !projectId}
-          className="flex items-center gap-1.5 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          size="sm"
+          className="bg-amber-500 text-black hover:bg-amber-400"
         >
           <Check size={12} />
           {submitted ? 'Envoye' : 'Creer'}
-        </button>
+        </Button>
       </div>
     </div>
   );
