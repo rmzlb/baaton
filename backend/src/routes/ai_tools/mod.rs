@@ -136,8 +136,63 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             }),
         ),
         tool(
+            "propose_update_issue",
+            "PROPOSE updating an existing issue (does NOT modify). Returns a diff of current vs proposed values for user review. ALWAYS use this BEFORE update_issue. Only include fields you want to change.",
+            json!({
+                "type": "OBJECT",
+                "properties": {
+                    "issue_id": {"type": "STRING", "description": "Internal UUID of the issue to update."},
+                    "title": {"type": "STRING", "description": "New plain-text title."},
+                    "description": {"type": "STRING", "description": "New Markdown description."},
+                    "status": {"type": "STRING", "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]},
+                    "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"]},
+                    "type": {"type": "STRING", "enum": ["bug", "feature", "improvement", "question"]},
+                    "tags": {"type": "ARRAY", "items": {"type": "STRING"}},
+                    "category": {"type": "ARRAY", "items": {"type": "STRING"}}
+                },
+                "required": ["issue_id"]
+            }),
+        ),
+        tool(
+            "propose_bulk_update",
+            "PROPOSE bulk updating N issues (does NOT modify). Returns the list of affected issues and the changes for user review. ALWAYS use this BEFORE bulk_update_issues.",
+            json!({
+                "type": "OBJECT",
+                "properties": {
+                    "updates": {
+                        "type": "ARRAY",
+                        "description": "Array of per-issue update objects.",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "issue_id": {"type": "STRING"},
+                                "status": {"type": "STRING", "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]},
+                                "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"]},
+                                "tags": {"type": "ARRAY", "items": {"type": "STRING"}},
+                                "category": {"type": "ARRAY", "items": {"type": "STRING"}}
+                            },
+                            "required": ["issue_id"]
+                        }
+                    }
+                },
+                "required": ["updates"]
+            }),
+        ),
+        tool(
+            "propose_comment",
+            "PROPOSE adding a comment to an issue (does NOT add it). Returns an editable preview for user review. ALWAYS use this BEFORE add_comment.",
+            json!({
+                "type": "OBJECT",
+                "properties": {
+                    "issue_id": {"type": "STRING", "description": "UUID of the issue."},
+                    "content": {"type": "STRING", "description": "Proposed comment body in Markdown."}
+                },
+                "required": ["issue_id", "content"]
+            }),
+        ),
+        tool(
             "update_issue",
-            "Update fields of an existing issue by UUID. Only changed fields need to be provided. Use search_issues first to resolve display_id to UUID.",
+            "Update fields of an existing issue by UUID. Only changed fields need to be provided. ONLY call after propose_update_issue has been approved by the user.",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -175,7 +230,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         ),
         tool(
             "bulk_update_issues",
-            "Apply updates to multiple issues atomically. Faster than calling update_issue in a loop.",
+            "Apply updates to multiple issues atomically. ONLY call after propose_bulk_update has been approved by the user.",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -212,7 +267,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         ),
         tool(
             "add_comment",
-            "Append a threaded comment to an existing issue. Use to annotate, log decisions, or record progress updates.",
+            "Append a threaded comment to an issue. ONLY call after propose_comment has been approved by the user.",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -1014,6 +1069,148 @@ async fn exec_propose_issue(pool: &PgPool, org_id: &str, args: &Value) -> Result
     })
 }
 
+/// Propose an update to an existing issue. Fetches current state and returns
+/// a diff for user review.
+async fn exec_propose_update_issue(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+    let issue_id_str = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
+    let issue_id: Uuid = issue_id_str.parse()
+        .map_err(|_| format!("Invalid issue_id UUID: {}", issue_id_str))?;
+
+    #[derive(sqlx::FromRow)]
+    struct IssueRow {
+        display_id: String,
+        title: String,
+        description: Option<String>,
+        status: String,
+        priority: String,
+        r#type: String,
+        tags: Option<Vec<String>>,
+        category: Option<Vec<String>>,
+    }
+
+    let current = sqlx::query_as::<_, IssueRow>(
+        "SELECT display_id, title, description, status, priority, type, tags, category
+         FROM issues WHERE id = $1 AND org_id = $2",
+    )
+    .bind(issue_id)
+    .bind(org_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("DB error: {e}"))?
+    .ok_or_else(|| "Issue not found".to_string())?;
+
+    let mut diff: Vec<Value> = Vec::new();
+    let field_str = |name: &str, cur: &str, args: &Value| {
+        args.get(name).and_then(|v| v.as_str()).and_then(|new| {
+            if new != cur { Some(json!({ "field": name, "from": cur, "to": new })) } else { None }
+        })
+    };
+    let field_array = |name: &str, cur: &[String], args: &Value| {
+        args.get(name).and_then(|v| v.as_array()).and_then(|arr| {
+            let new: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+            if new != cur { Some(json!({ "field": name, "from": cur, "to": new })) } else { None }
+        })
+    };
+
+    if let Some(d) = field_str("title", &current.title, args) { diff.push(d); }
+    if let Some(d) = field_str("description", current.description.as_deref().unwrap_or(""), args) { diff.push(d); }
+    if let Some(d) = field_str("status", &current.status, args) { diff.push(d); }
+    if let Some(d) = field_str("priority", &current.priority, args) { diff.push(d); }
+    if let Some(d) = field_str("type", &current.r#type, args) { diff.push(d); }
+    if let Some(d) = field_array("tags", current.tags.as_deref().unwrap_or(&[]), args) { diff.push(d); }
+    if let Some(d) = field_array("category", current.category.as_deref().unwrap_or(&[]), args) { diff.push(d); }
+
+    let data = json!({
+        "issue_id": issue_id_str,
+        "display_id": current.display_id,
+        "title": current.title,
+        "diff": diff,
+    });
+
+    Ok(ToolResult {
+        data: data.clone(),
+        for_model: format!(
+            "Update proposal ready for {} ({} changes). User must approve before you call update_issue.",
+            current.display_id, diff.len()
+        ),
+        component_hint: Some("UpdateIssueProposal".to_string()),
+        summary: format!("Proposed {} changes to {}", diff.len(), current.display_id),
+    })
+}
+
+/// Propose a bulk update to N issues. Fetches current state for each and returns
+/// the list of changes for user review.
+async fn exec_propose_bulk_update(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+    let updates = args.get("updates").and_then(|v| v.as_array())
+        .ok_or_else(|| "updates must be an array".to_string())?;
+
+    let mut rows: Vec<Value> = Vec::new();
+    for u in updates {
+        let issue_id_str = u.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
+        let Ok(issue_id) = issue_id_str.parse::<Uuid>() else { continue };
+
+        let cur: Option<(String, String, String, String)> = sqlx::query_as(
+            "SELECT display_id, title, status, priority FROM issues WHERE id = $1 AND org_id = $2",
+        )
+        .bind(issue_id)
+        .bind(org_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+        let (display_id, title, cur_status, cur_priority) = cur
+            .unwrap_or_else(|| ("?".into(), "?".into(), "?".into(), "?".into()));
+
+        rows.push(json!({
+            "issue_id": issue_id_str,
+            "display_id": display_id,
+            "title": title,
+            "current": { "status": cur_status, "priority": cur_priority },
+            "changes": u,
+        }));
+    }
+
+    Ok(ToolResult {
+        data: json!({ "updates": rows }),
+        for_model: format!("Bulk update proposal ready ({} issues). User must approve before you call bulk_update_issues.", rows.len()),
+        component_hint: Some("BulkUpdateProposal".to_string()),
+        summary: format!("Proposed bulk update on {} issues", rows.len()),
+    })
+}
+
+/// Propose adding a comment. Fetches issue info and returns the proposed content.
+async fn exec_propose_comment(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+    let issue_id_str = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
+    let issue_id: Uuid = issue_id_str.parse()
+        .map_err(|_| format!("Invalid issue_id UUID: {}", issue_id_str))?;
+    let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    let issue: Option<(String, String)> = sqlx::query_as(
+        "SELECT display_id, title FROM issues WHERE id = $1 AND org_id = $2",
+    )
+    .bind(issue_id)
+    .bind(org_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    let (display_id, title) = issue.unwrap_or_else(|| ("?".into(), "?".into()));
+
+    Ok(ToolResult {
+        data: json!({
+            "issue_id": issue_id_str,
+            "display_id": display_id,
+            "title": title,
+            "content": content,
+        }),
+        for_model: format!("Comment proposal on {} ready. User must approve before you call add_comment.", display_id),
+        component_hint: Some("CommentProposal".to_string()),
+        summary: format!("Proposed comment on {}", display_id),
+    })
+}
+
 pub async fn execute_tool(
     pool: &PgPool,
     org_id: &str,
@@ -1030,6 +1227,9 @@ pub async fn execute_tool(
             Err(e) => { tracing::warn!("search_issues real query failed: {e}; falling back to stub"); Ok(stub_search_issues(&args)) }
         },
         "propose_issue" => exec_propose_issue(pool, org_id, &args).await,
+        "propose_update_issue" => exec_propose_update_issue(pool, org_id, &args).await,
+        "propose_bulk_update" => exec_propose_bulk_update(pool, org_id, &args).await,
+        "propose_comment" => exec_propose_comment(pool, org_id, &args).await,
         "create_issue" => create_issue_real(pool, org_id, user_id, &args).await,
         "update_issue" => update_issue_real(pool, org_id, user_id, &args).await,
         "bulk_update_issues" => bulk_update_issues_real(pool, org_id, user_id, &args).await,
