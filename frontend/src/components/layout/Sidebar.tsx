@@ -23,6 +23,8 @@ export function Sidebar() {
   const closeMobile = useUIStore((s) => s.closeMobileSidebar);
   const theme = useUIStore((s) => s.theme);
   const toggleTheme = useUIStore((s) => s.toggleTheme);
+  const aiPanelOpen = useUIStore((s) => s.aiPanelOpen);
+  const toggleAiPanel = useUIStore((s) => s.toggleAiPanel);
 
   const location = useLocation();
   const projectSlugMatch = location.pathname.match(/^\/projects\/([^/]+)/);
@@ -60,7 +62,7 @@ export function Sidebar() {
     (i: Issue) => i.source === 'form' || (i.assignee_ids.length === 0 && i.status === 'backlog')
   ).length;
 
-  const isCompact = collapsed && !mobileOpen;
+  const isCompact = (collapsed || aiPanelOpen) && !mobileOpen;
 
   const toggleLanguage = () => {
     const next = i18n.language === 'fr' ? 'en' : 'fr';
@@ -193,7 +195,7 @@ export function Sidebar() {
         aria-label={t('sidebar.navigation') || 'Sidebar'}
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border bg-bg transition-all duration-200',
-          collapsed ? 'w-14' : 'w-56',
+          (collapsed || aiPanelOpen) ? 'w-14' : 'w-56',
           'max-md:-translate-x-full max-md:w-56',
           mobileOpen && 'max-md:translate-x-0',
         )}
@@ -294,6 +296,12 @@ export function Sidebar() {
             <UserButton appearance={{ elements: { avatarBox: 'h-7 w-7' } }} />
             {!isCompact && (
               <div className="flex items-center gap-1 ml-auto">
+                <button onClick={toggleAiPanel} className={cn(
+                  'rounded-lg p-1.5 transition-colors',
+                  aiPanelOpen ? 'bg-amber-500/20 text-amber-500' : 'text-muted hover:bg-surface-hover hover:text-secondary',
+                )} title={aiPanelOpen ? 'Close AI panel' : 'Open AI panel (Cmd+J)'}>
+                  <Sparkles size={14} />
+                </button>
                 <button onClick={toggleTheme} className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors"
                   title={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}>
                   {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
@@ -306,6 +314,12 @@ export function Sidebar() {
             )}
             {isCompact && (
               <>
+                <button onClick={toggleAiPanel} className={cn(
+                  'rounded-lg p-1.5 transition-colors',
+                  aiPanelOpen ? 'bg-amber-500/20 text-amber-500' : 'text-muted hover:bg-surface-hover hover:text-secondary',
+                )} title={aiPanelOpen ? 'Close AI panel' : 'Open AI panel (Cmd+J)'}>
+                  <Sparkles size={14} />
+                </button>
                 <button onClick={toggleTheme} className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors">
                   {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
                 </button>

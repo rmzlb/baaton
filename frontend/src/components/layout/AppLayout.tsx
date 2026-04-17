@@ -12,9 +12,9 @@ import { cn } from '@/lib/utils';
 
 export function AppLayout() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
+  const aiPanelOpen = useUIStore((s) => s.aiPanelOpen);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
 
-  // Global Cmd+K / Ctrl+K handler
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -26,28 +26,27 @@ export function AppLayout() {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // Onboarding tour — auto-starts for first-time users
   useOnboarding();
-
-  // Global SSE connection for real-time updates + notifications
   useSSE();
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg text-primary">
-      {/* Skip to content link for keyboard users */}
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-black focus:text-sm focus:font-medium focus:shadow-lg"
       >
         Skip to content
       </a>
+
+      {/* Left sidebar */}
       <Sidebar />
+
+      {/* Main content — shrinks when AI panel opens */}
       <div
         className={cn(
-          'flex flex-1 flex-col overflow-hidden transition-all duration-200',
-          // Desktop: offset for sidebar
+          'flex flex-1 flex-col overflow-hidden transition-all duration-200 min-w-0',
           collapsed ? 'md:ml-14' : 'md:ml-56',
-          // Mobile: no offset (sidebar is overlay)
+          aiPanelOpen && 'lg:ml-14',
           'ml-0',
         )}
       >
@@ -56,7 +55,11 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
-      {/* Live region for screen reader announcements */}
+
+      {/* Right AI panel */}
+      <AIAssistant />
+
+      {/* Overlays */}
       <div
         id="a11y-announcer"
         aria-live="polite"
@@ -64,7 +67,6 @@ export function AppLayout() {
         className="sr-only"
         role="status"
       />
-      <AIAssistant />
       <ToastContainer />
       {showCommandPalette && <CommandPalette onClose={() => setShowCommandPalette(false)} />}
     </div>
