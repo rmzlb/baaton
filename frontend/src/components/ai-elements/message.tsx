@@ -54,9 +54,9 @@ export const MessageContent = ({
 }: MessageContentProps) => (
   <div
     className={cn(
-      "flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm",
-      "group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-[--color-surface-hover] group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-[--color-primary]",
-      "group-[.is-assistant]:text-[--color-primary]",
+      "flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm rounded-xl px-4 py-3",
+      "group-[.is-user]:ml-auto group-[.is-user]:bg-amber-500 group-[.is-user]:text-black",
+      "group-[.is-assistant]:bg-[--color-surface] group-[.is-assistant]:border group-[.is-assistant]:border-[--color-border] group-[.is-assistant]:text-[--color-primary]",
       className
     )}
     {...props}
