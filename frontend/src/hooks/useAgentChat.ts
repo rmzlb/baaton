@@ -390,6 +390,15 @@ export function useAgentChat(options: UseAgentChatOptions): UseAgentChatReturn {
       } finally {
         setIsStreaming(false);
         abortRef.current = null;
+        // Remove ghost assistant messages (no content and no tool calls)
+        setMessages((prev) =>
+          prev.filter(
+            (m) =>
+              m.role !== 'assistant' ||
+              m.content.trim() !== '' ||
+              (m.toolCalls && m.toolCalls.length > 0),
+          ),
+        );
       }
     },
     [

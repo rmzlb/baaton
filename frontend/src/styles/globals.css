@@ -15,10 +15,11 @@
   --color-secondary: var(--color-surface-hover);
   --color-secondary-foreground: var(--color-primary);
   --color-muted: var(--color-surface-hover);
-  --color-muted-foreground: var(--color-secondary);
+  --color-muted-foreground: #666666;
   --color-accent: var(--color-surface-hover);
   --color-accent-foreground: var(--color-primary);
   --color-destructive: #ef4444;
+  --color-destructive-foreground: #fafafa;
   --color-input: var(--color-border);
   --color-ring: var(--color-accent);
   --radius-sm: 0.375rem;

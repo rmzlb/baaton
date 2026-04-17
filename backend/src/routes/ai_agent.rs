@@ -168,6 +168,7 @@ Tu es le PM assistant de l'équipe. Tu ne codes pas, mais tu :
 async fn build_project_context(pool: &PgPool, org_id: &str, project_ids: &[String]) -> String {
     #[derive(sqlx::FromRow)]
     struct ProjectRow {
+        id: uuid::Uuid,
         name: String,
         prefix: String,
     }
@@ -181,7 +182,7 @@ async fn build_project_context(pool: &PgPool, org_id: &str, project_ids: &[Strin
 
     let projects: Vec<ProjectRow> = if project_ids.is_empty() {
         sqlx::query_as::<_, ProjectRow>(
-            "SELECT name, prefix FROM projects WHERE org_id = $1 ORDER BY name ASC LIMIT 20",
+            "SELECT id, name, prefix FROM projects WHERE org_id = $1 ORDER BY name ASC LIMIT 20",
         )
         .bind(org_id)
         .fetch_all(pool)
@@ -189,7 +190,7 @@ async fn build_project_context(pool: &PgPool, org_id: &str, project_ids: &[Strin
         .unwrap_or_default()
     } else {
         sqlx::query_as::<_, ProjectRow>(
-            "SELECT name, prefix FROM projects WHERE org_id = $1 AND id = ANY($2::uuid[]) ORDER BY name ASC",
+            "SELECT id, name, prefix FROM projects WHERE org_id = $1 AND id = ANY($2::uuid[]) ORDER BY name ASC",
         )
         .bind(org_id)
         .bind(project_ids)
@@ -239,7 +240,7 @@ async fn build_project_context(pool: &PgPool, org_id: &str, project_ids: &[Strin
     // Build context string
     let mut ctx = String::from("## Projets disponibles\n\n");
     for project in &projects {
-        ctx.push_str(&format!("### {} (prefix: {})\n", project.name, project.prefix));
+        ctx.push_str(&format!("### {} (prefix: {}, id: {})\n", project.name, project.prefix, project.id));
         let project_counts: Vec<&IssueCountRow> = counts
             .iter()
             .filter(|c| c.project_name == project.name)

@@ -47,7 +47,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     },
                     "project_id": {
                         "type": "STRING",
-                        "description": "UUID of project to search within. Omit to search all."
+                        "description": "UUID or prefix of project to search within. Omit to search all."
                     },
                     "status": {
                         "type": "STRING",
@@ -79,7 +79,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "project_id": {
                         "type": "STRING",
-                        "description": "UUID of the project. Required."
+                        "description": "Project UUID or prefix or prefix (e.g. 'HLM'). Required."
                     },
                     "title": {
                         "type": "STRING",
@@ -213,7 +213,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "type": "OBJECT",
                 "properties": {
                     "brief": {"type": "STRING", "description": "Feature/problem description to document."},
-                    "project_id": {"type": "STRING", "description": "Project UUID for context (optional)."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix for context (optional)."}
                 },
                 "required": ["brief"]
             }),
@@ -224,7 +224,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID. Omit for all projects."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix. Omit for all projects."}
                 }
             }),
         ),
@@ -234,7 +234,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID. Omit to aggregate across all projects."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix. Omit to aggregate across all projects."}
                 }
             }),
         ),
@@ -244,7 +244,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID. Omit for cross-project recap."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix. Omit for cross-project recap."},
                     "days": {"type": "NUMBER", "description": "Days to look back (default 7)."}
                 }
             }),
@@ -255,7 +255,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID. Omit for cross-project suggestions."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix. Omit for cross-project suggestions."}
                 }
             }),
         ),
@@ -265,7 +265,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID. Required."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix. Required."},
                     "target_date": {"type": "STRING", "description": "Hard deadline in YYYY-MM-DD format."},
                     "team_size": {"type": "NUMBER", "description": "Number of active developers (default 1)."}
                 },
@@ -278,7 +278,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
                     "milestones": {
                         "type": "ARRAY",
                         "description": "Ordered list of milestones to create.",
@@ -308,7 +308,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
                     "constraint": {"type": "STRING", "description": "Natural-language constraint, e.g. 'finish by 2026-03-15' or 'we lost one dev'."}
                 },
                 "required": ["project_id", "constraint"]
@@ -343,7 +343,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                         "type": "STRING",
                         "enum": ["active", "completed", "archived"]
                     },
-                    "project_id": {"type": "STRING", "description": "Project UUID (required for add_project, remove_project)."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (required for add_project, remove_project)."}
                 },
                 "required": ["action"]
             }),
@@ -358,7 +358,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                         "type": "STRING",
                         "enum": ["list", "create", "toggle", "delete"]
                     },
-                    "project_id": {"type": "STRING", "description": "Project UUID."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
                     "automation_id": {"type": "STRING", "description": "Automation UUID (for toggle/delete)."},
                     "name": {"type": "STRING", "description": "Human-readable automation name."},
                     "trigger_type": {
@@ -385,7 +385,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                         "type": "STRING",
                         "enum": ["list_rules", "stats", "create_rule", "delete_rule"]
                     },
-                    "project_id": {"type": "STRING", "description": "Project UUID."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
                     "rule_id": {"type": "STRING", "description": "SLA rule UUID (for delete_rule)."},
                     "priority": {
                         "type": "STRING",
@@ -406,7 +406,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                         "type": "STRING",
                         "enum": ["list", "create", "delete"]
                     },
-                    "project_id": {"type": "STRING", "description": "Project UUID."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
                     "template_id": {"type": "STRING", "description": "Template UUID (for delete)."},
                     "name": {"type": "STRING", "description": "Template display name."},
                     "description": {"type": "STRING", "description": "Pre-filled Markdown body."},
@@ -432,7 +432,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                         "type": "STRING",
                         "enum": ["list", "create", "toggle", "trigger", "delete"]
                     },
-                    "project_id": {"type": "STRING", "description": "Project UUID."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
                     "recurring_id": {"type": "STRING", "description": "Recurring config UUID (for toggle/trigger/delete)."},
                     "title": {"type": "STRING", "description": "Issue title template."},
                     "description": {"type": "STRING", "description": "Issue description template."},
@@ -455,7 +455,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID to export."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix to export."}
                 },
                 "required": ["project_id"]
             }),
@@ -895,6 +895,52 @@ async fn exec_export_project(pool: &PgPool, org_id: &str, args: &Value) -> Resul
     })
 }
 
+// ─── Project ID Resolver ──────────────────────────────────────────────────────
+// Resolves a project_id that may be a UUID, a prefix (e.g. "HLM"), or a name.
+
+async fn resolve_project_id(pool: &PgPool, org_id: &str, raw: &str) -> Option<Uuid> {
+    if let Ok(uuid) = raw.parse::<Uuid>() {
+        return Some(uuid);
+    }
+
+    // Try prefix match (case-insensitive)
+    let by_prefix: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM projects WHERE org_id = $1 AND UPPER(prefix) = UPPER($2) LIMIT 1",
+    )
+    .bind(org_id)
+    .bind(raw)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    if by_prefix.is_some() {
+        return by_prefix;
+    }
+
+    // Try name match (case-insensitive, contains)
+    sqlx::query_scalar(
+        "SELECT id FROM projects WHERE org_id = $1 AND LOWER(name) LIKE LOWER($2) LIMIT 1",
+    )
+    .bind(org_id)
+    .bind(format!("%{}%", raw))
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Pre-process tool args: resolve any project_id field from prefix/name to UUID.
+async fn resolve_args_project_id(pool: &PgPool, org_id: &str, args: &mut Value) {
+    if let Some(raw) = args.get("project_id").and_then(|v| v.as_str()).map(String::from) {
+        if raw.parse::<Uuid>().is_err() {
+            if let Some(uuid) = resolve_project_id(pool, org_id, &raw).await {
+                args["project_id"] = Value::String(uuid.to_string());
+            }
+        }
+    }
+}
+
 pub async fn execute_tool(
     pool: &PgPool,
     org_id: &str,
@@ -902,6 +948,9 @@ pub async fn execute_tool(
     tool_name: &str,
     args: Value,
 ) -> Result<ToolResult, String> {
+    let mut args = args;
+    resolve_args_project_id(pool, org_id, &mut args).await;
+
     match tool_name {
         "search_issues" => match exec_search_issues(pool, org_id, &args).await {
             Ok(r) => Ok(r),
