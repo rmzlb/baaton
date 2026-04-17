@@ -49,7 +49,18 @@ fn sse_event(event_type: &str, data: Value) -> Event {
 }
 
 // ─── System Prompt Builder ────────────────────────────────────────────────────
-// Ported from frontend/src/lib/ai-engine.ts:buildSystemPrompt()
+// Architecture note (Manus context engineering principles):
+// The prompt is built so the STATIC part (identity, rules, templates, skills,
+// formatting, goals) forms a stable PREFIX, and the DYNAMIC part (project
+// context with issue counts) is APPENDED at the end.
+//
+// This matters because:
+// 1. Gemini implicit/explicit caching keys on prefix hash.
+// 2. Append-only structure maximizes KV-cache hit rate (Manus principle #1).
+// 3. Prepares us for adding explicit Gemini /cachedContents later with zero
+//    refactor — only the dynamic suffix needs to change per request.
+//
+// DO NOT inject dynamic content into the static blocks below.
 
 fn build_system_prompt(context: &str) -> String {
     let static_blocks = r#"# BLOCK 1 — IDENTITY
@@ -227,10 +238,16 @@ Quand l'utilisateur demande de creer une issue, tu DOIS generer une description 
 - Métriques concrètes + pourcentages
 - `backticks` pour les termes techniques
 - Flag les blockers et la dette technique proactivement
-- Emojis : ✅ done, 🔄 in progress, 📋 todo, 🚨 urgent, ⏸️ backlog, 🐛 bug, ✨ feature"#;
+- Emojis : ✅ done, 🔄 in progress, 📋 todo, 🚨 urgent, ⏸️ backlog, 🐛 bug, ✨ feature
 
+# BLOCK 4 — OBJECTIFS ACTUELS
+
+Aide l'utilisateur à être productif. Exécute efficacement. Propose des insights (bottlenecks, priorités mal calibrées). Sois proactif."#;
+
+    // Stable PREFIX (static_blocks) + volatile SUFFIX (project context).
+    // This order matters for KV-cache efficiency — do NOT reverse.
     format!(
-        "{}\n\n# BLOCK 4 — DONNÉES PROJET (DYNAMIQUE)\n\n{}\n\n# BLOCK 5 — OBJECTIFS ACTUELS\n\nAide l'utilisateur à être productif. Exécute efficacement. Propose des insights (bottlenecks, priorités mal calibrées). Sois proactif.",
+        "{}\n\n# BLOCK 5 — DONNÉES PROJET (CONTEXTE ACTUEL)\n\n{}",
         static_blocks, context
     )
 }
@@ -408,7 +425,15 @@ pub async fn agent_chat(
     // Move everything into the stream
     let user_id = auth.user_id.clone();
     let message = body.message;
-    let history = body.history;
+    // Cap history: keep only the last 40 turns (≈ 20 user+assistant pairs).
+    // Manus principle: append-only context, but bound its length. This prevents
+    // runaway token cost on long sessions while preserving recent context.
+    const MAX_HISTORY_TURNS: usize = 40;
+    let history = if body.history.len() > MAX_HISTORY_TURNS {
+        body.history[body.history.len() - MAX_HISTORY_TURNS..].to_vec()
+    } else {
+        body.history
+    };
     let project_ids = body.project_ids;
 
     let stream = async_stream::stream! {
@@ -600,7 +625,7 @@ pub async fn agent_chat(
 
                     match exec_result {
                         Ok(tool_result) => {
-                            // Emit tool_result event
+                            // Emit tool_result event (frontend gets full data via component)
                             yield Ok(sse_event("tool_result", json!({
                                 "name": tool_name,
                                 "component": tool_result.component_hint,
@@ -608,11 +633,26 @@ pub async fn agent_chat(
                                 "summary": tool_result.summary
                             })));
 
-                            // Accumulate function response for Gemini
+                            // Cap the text fed back to the model — Manus principle:
+                            // "reduce context without losing value". Large tool outputs
+                            // (e.g. search returning 50 issues) would bloat every
+                            // subsequent turn. The frontend still shows full data via
+                            // the React component; the model only needs a digest.
+                            const MAX_MODEL_CHARS: usize = 4000;
+                            let digest = if tool_result.for_model.len() > MAX_MODEL_CHARS {
+                                format!(
+                                    "{}\n\n[truncated at {} chars — full data available in the UI component]",
+                                    &tool_result.for_model[..MAX_MODEL_CHARS],
+                                    MAX_MODEL_CHARS
+                                )
+                            } else {
+                                tool_result.for_model
+                            };
+
                             function_responses.push(json!({
                                 "functionResponse": {
                                     "name": tool_name,
-                                    "response": {"result": tool_result.for_model}
+                                    "response": {"result": digest}
                                 }
                             }));
                         }
