@@ -342,7 +342,17 @@ export function AIAssistant() {
 
   const hasMessages = messages.length > 0;
 
-  if (!aiPanelOpen) return null;
+  if (!aiPanelOpen) {
+    return (
+      <button
+        onClick={toggleAiPanel}
+        aria-label={t('ai.openAssistant') || 'Open AI assistant (Cmd+J)'}
+        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500 text-black shadow-lg transition-all duration-300 hover:scale-105 hover:bg-amber-400 lg:flex"
+      >
+        <Sparkles size={20} />
+      </button>
+    );
+  }
 
   return (
     <aside className="hidden lg:flex shrink-0 w-[420px] min-w-[420px] flex-col border-l border-border bg-bg h-screen">
