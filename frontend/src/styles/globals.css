@@ -12,11 +12,10 @@
   --color-popover: var(--color-surface);
   --color-popover-foreground: var(--color-primary);
   --color-primary-foreground: var(--color-bg);
-  --color-secondary: var(--color-surface-hover);
+  /* Removed --color-secondary and --color-muted as they conflict with Baaton's text colors */
   --color-secondary-foreground: var(--color-primary);
-  --color-muted: var(--color-surface-hover);
   --color-muted-foreground: #666666;
-  --color-accent: var(--color-surface-hover);
+  /* Removed --color-accent as it conflicts with Baaton's amber brand color */
   --color-accent-foreground: var(--color-primary);
   --color-destructive: #ef4444;
   --color-destructive-foreground: #fafafa;
