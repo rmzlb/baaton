@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { Sparkles, Check, X, Loader2 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Sparkles, Check, X, Loader2, FolderKanban } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useApi } from '@/hooks/useApi';
 
 interface ProposalData {
   project_id?: string;
@@ -38,6 +40,14 @@ const TYPE_STYLE: Record<string, string> = {
 
 export default function IssueProposal({ data, onAction }: IssueProposalProps) {
   const safe = data ?? {};
+  const apiClient = useApi();
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => apiClient.projects.list(),
+    staleTime: 60_000,
+  });
+
+  const [projectId, setProjectId] = useState<string>(safe.project_id || '');
   const [title, setTitle] = useState(safe.title || '');
   const [description, setDescription] = useState(safe.description || '');
   const [type, setType] = useState<typeof TYPE_OPTIONS[number]>(
@@ -48,6 +58,9 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
   );
   const [submitted, setSubmitted] = useState<'approved' | 'cancelled' | null>(null);
 
+  const selectedProject = projects.find(p => p.id === projectId);
+  const currentPrefix = selectedProject?.prefix ?? safe.project_prefix ?? '?';
+
   const handleApprove = () => {
     if (!onAction || submitted) return;
     setSubmitted('approved');
@@ -55,7 +68,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
     const category = (safe.category || []).join(', ') || '(none)';
     onAction(
       `__INTERNAL__: User approved. Call create_issue now with EXACTLY these final values:\n` +
-      `- project_id: ${safe.project_id}\n` +
+      `- project_id: ${projectId}\n` +
       `- title: ${title}\n` +
       `- description: ${description}\n` +
       `- type: ${type}\n` +
@@ -99,15 +112,47 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
         <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
           Proposition de creation
         </span>
-        {safe.project_prefix && (
-          <span className="ml-auto font-mono text-[10px] text-[--color-muted]">
-            {safe.project_prefix}
-          </span>
-        )}
+        <span className="ml-auto font-mono text-[10px] text-[--color-muted]">
+          {currentPrefix}
+        </span>
       </div>
 
       {/* Body */}
       <div className="p-3 space-y-3 bg-[--color-bg]">
+        {/* Project dropdown */}
+        <div>
+          <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
+            Projet
+          </label>
+          <div className="relative">
+            <FolderKanban size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[--color-muted] pointer-events-none" />
+            <select
+              value={projectId}
+              onChange={e => setProjectId(e.target.value)}
+              disabled={!!submitted || projects.length === 0}
+              className="w-full appearance-none rounded-md border border-[--color-border] bg-[--color-surface] pl-8 pr-7 py-1.5 text-[13px] text-[--color-primary] outline-none focus:border-amber-500 disabled:opacity-50 cursor-pointer"
+            >
+              {projects.length === 0 && (
+                <option value="">Chargement des projets…</option>
+              )}
+              {!projectId && projects.length > 0 && (
+                <option value="" disabled>Selectionner un projet…</option>
+              )}
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.prefix})
+                </option>
+              ))}
+            </select>
+            <svg
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[--color-muted] pointer-events-none"
+              width="10" height="10" viewBox="0 0 20 20" fill="currentColor"
+            >
+              <path d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" />
+            </svg>
+          </div>
+        </div>
+
         {/* Title */}
         <div>
           <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
@@ -216,7 +261,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
         </button>
         <button
           onClick={handleApprove}
-          disabled={!!submitted || !title.trim()}
+          disabled={!!submitted || !title.trim() || !projectId}
           className="flex items-center gap-1.5 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Check size={12} />
