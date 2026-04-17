@@ -1771,6 +1771,15 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'aiChat.thinking': 'Réflexion…',
   'aiChat.skillsLabel': 'Compétences',
   'aiChat.projectsLabel': 'Projets',
+  'aiChat.suggestionSprint': 'Statut sprint',
+  'aiChat.suggestionSprintPrompt': 'Quel est le statut des sprints actifs ?',
+  'aiChat.suggestionBugs': 'Bugs prioritaires',
+  'aiChat.suggestionBugsPrompt': 'Montre-moi les bugs haute priorité',
+  'aiChat.suggestionRecap': 'Récap semaine',
+  'aiChat.suggestionRecapPrompt': 'Génère un récap de la semaine',
+  'aiChat.suggestionPriorities': 'Suggérer priorités',
+  'aiChat.suggestionPrioritiesPrompt': 'Suggère les priorités pour cette semaine',
+  'aiChat.backendAgent': 'Agent Backend',
 
   // ─── Admin ────────────────────────────────────────────────
   'sidebar.admin': 'Admin',

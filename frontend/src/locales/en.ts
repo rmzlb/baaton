@@ -1771,6 +1771,15 @@ As a [user], I want to [action] so that [benefit].
   'aiChat.thinking': 'Thinking…',
   'aiChat.skillsLabel': 'Skills',
   'aiChat.projectsLabel': 'Projects',
+  'aiChat.suggestionSprint': 'Sprint status',
+  'aiChat.suggestionSprintPrompt': "What's the status of active sprints?",
+  'aiChat.suggestionBugs': 'High priority bugs',
+  'aiChat.suggestionBugsPrompt': 'Show me high priority bugs',
+  'aiChat.suggestionRecap': 'Weekly recap',
+  'aiChat.suggestionRecapPrompt': 'Generate a weekly recap',
+  'aiChat.suggestionPriorities': 'Suggest priorities',
+  'aiChat.suggestionPrioritiesPrompt': 'Suggest priorities for this week',
+  'aiChat.backendAgent': 'Backend Agent',
 
   // ─── Admin ────────────────────────────────────────────────
   'sidebar.admin': 'Admin',

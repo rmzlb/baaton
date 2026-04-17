@@ -96,12 +96,15 @@ function makeConvo(): StoredConversation {
 
 // ─── Static suggestions ───────────────────────────────────────────────────────
 
-const SUGGESTIONS = [
-  { label: 'Sprint status', prompt: "What's the status of active sprints?" },
-  { label: 'High priority bugs', prompt: 'Show me high priority bugs' },
-  { label: 'Weekly recap', prompt: 'Generate a weekly recap' },
-  { label: 'Suggest priorities', prompt: 'Suggest priorities for this week' },
-] as const;
+function useChatSuggestions() {
+  const { t } = useTranslation();
+  return [
+    { label: t('aiChat.suggestionSprint'), prompt: t('aiChat.suggestionSprintPrompt') },
+    { label: t('aiChat.suggestionBugs'), prompt: t('aiChat.suggestionBugsPrompt') },
+    { label: t('aiChat.suggestionRecap'), prompt: t('aiChat.suggestionRecapPrompt') },
+    { label: t('aiChat.suggestionPriorities'), prompt: t('aiChat.suggestionPrioritiesPrompt') },
+  ];
+}
 
 // ─── ConvoItem ────────────────────────────────────────────────────────────────
 
@@ -113,6 +116,7 @@ const ConvoItem = memo(function ConvoItem({
   onSelect: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       onClick={onSelect}
@@ -124,7 +128,7 @@ const ConvoItem = memo(function ConvoItem({
       )}
     >
       <MessageSquare size={13} className="shrink-0 text-muted/60" />
-      <span className="flex-1 text-xs truncate">{c.title || 'New Chat'}</span>
+      <span className="flex-1 text-xs truncate">{c.title || t('aiChat.newChat')}</span>
       <button
         onClick={e => { e.stopPropagation(); onDelete(); }}
         className="shrink-0 rounded p-0.5 text-transparent group-hover:text-muted hover:!text-red-400 transition-colors"
@@ -233,6 +237,7 @@ export default function AIChat() {
   const { t } = useTranslation();
   const { getToken } = useAuth();
   const apiClient = useApi();
+  const SUGGESTIONS = useChatSuggestions();
 
   // ── Auth token ──
   const [authToken, setAuthToken] = useState('');
@@ -299,7 +304,7 @@ export default function AIChat() {
         const title =
           c.title ||
           msgs.find(m => m.role === 'user')?.content.slice(0, 50) ||
-          'New Chat';
+          t('aiChat.newChat');
         const stored = msgs.map(m => ({
           ...m,
           toolCalls: m.toolCalls?.filter(tc => tc.status !== 'executing'),
@@ -450,7 +455,7 @@ export default function AIChat() {
               {t('aiChat.context')}
             </div>
             {[
-              [t('aiChat.model'), 'Backend Agent'],
+              [t('aiChat.model'), t('aiChat.backendAgent')],
               [t('aiChat.projectsLabel'), `${projects.length}`],
             ].map(([label, val]) => (
               <div key={label} className="flex items-center justify-between text-xs">
@@ -577,7 +582,7 @@ export default function AIChat() {
             />
             <PromptInputFooter>
               <span className="text-[10px] text-muted/60">
-                Backend Agent · {projects.length} {t('aiChat.projectsLabel')}
+                {t('aiChat.backendAgent')} · {projects.length} {t('aiChat.projectsLabel')}
               </span>
               <PromptInputSubmit
                 status={chatStatus}
