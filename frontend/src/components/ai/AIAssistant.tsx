@@ -135,12 +135,13 @@ function CopyButton({ content }: { content: string }) {
 // ─── Message bubble (AI Elements SDK) ──────────
 
 const PanelMessageBubble = memo(function PanelMessageBubble({
-  msg, isLast, isStreaming, onRegenerate,
+  msg, isLast, isStreaming, onRegenerate, onAction,
 }: {
   msg: AgentMessage;
   isLast: boolean;
   isStreaming: boolean;
   onRegenerate?: () => void;
+  onAction?: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
 
@@ -162,7 +163,7 @@ const PanelMessageBubble = memo(function PanelMessageBubble({
         ) : (
           <>
             {msg.toolCalls?.map(tc => (
-              <ToolResultRenderer key={tc.id} event={tc} />
+              <ToolResultRenderer key={tc.id} event={tc} onAction={onAction} />
             ))}
 
             {msg.content && (
@@ -511,6 +512,7 @@ export function AIAssistant() {
                       msg={msg}
                       isLast={i === messages.length - 1}
                       isStreaming={isStreaming}
+                      onAction={handleSend}
                       onRegenerate={
                         msg.role === 'assistant' && i === messages.length - 1
                           ? handleRegenerate

@@ -2,7 +2,7 @@ import { lazy } from 'react';
 import type { ComponentType } from 'react';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ToolComponent = ComponentType<{ data: any }>;
+type ToolComponent = ComponentType<{ data: any; onAction?: (prompt: string) => void }>;
 
 /**
  * Registry that maps backend component hints to lazily-loaded React components.
@@ -22,4 +22,5 @@ export const TOOL_COMPONENTS: Record<string, React.LazyExoticComponent<ToolCompo
   IssueCreated: lazy(() => import('./IssueCreated')),
   IssueUpdated: lazy(() => import('./IssueUpdated')),
   PRDDocument: lazy(() => import('./PRDDocument')),
+  IssueProposal: lazy(() => import('./IssueProposal')),
 };

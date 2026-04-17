@@ -167,12 +167,13 @@ function CopyButton({ content }: { content: string }) {
 // ─── MessageBubble ────────────────────────────────────────────────────────────
 
 const MessageBubble = memo(function MessageBubble({
-  msg, isLast, isStreaming, onRegenerate,
+  msg, isLast, isStreaming, onRegenerate, onAction,
 }: {
   msg: AgentMessage;
   isLast: boolean;
   isStreaming: boolean;
   onRegenerate?: () => void;
+  onAction?: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
 
@@ -196,7 +197,7 @@ const MessageBubble = memo(function MessageBubble({
           <>
             {/* Tool calls — rendered before text */}
             {msg.toolCalls?.map(tc => (
-              <ToolResultRenderer key={tc.id} event={tc} />
+              <ToolResultRenderer key={tc.id} event={tc} onAction={onAction} />
             ))}
 
             {/* Text content */}
@@ -535,6 +536,7 @@ export default function AIChat() {
                   msg={msg}
                   isLast={i === messages.length - 1}
                   isStreaming={isStreaming}
+                  onAction={handleSend}
                   onRegenerate={
                     msg.role === 'assistant' && i === messages.length - 1
                       ? handleRegenerate

@@ -45,7 +45,7 @@ function ComponentSkeleton() {
 
 // ─── Rich output node ─────────────────────────────────────────────────────────
 
-function RichOutput({ event }: { event: ToolCallEvent }) {
+function RichOutput({ event, onAction }: { event: ToolCallEvent; onAction?: (prompt: string) => void }) {
   if (!event.result) return null;
 
   const Component = event.result.component
@@ -60,7 +60,7 @@ function RichOutput({ event }: { event: ToolCallEvent }) {
 
   return (
     <Suspense fallback={<ComponentSkeleton />}>
-      <Component data={event.result.data} />
+      <Component data={event.result.data} onAction={onAction} />
     </Suspense>
   );
 }
@@ -69,6 +69,7 @@ function RichOutput({ event }: { event: ToolCallEvent }) {
 
 export interface ToolResultRendererProps {
   event: ToolCallEvent;
+  onAction?: (prompt: string) => void;
 }
 
 /**
@@ -81,7 +82,7 @@ export interface ToolResultRendererProps {
  *   done      → output-available (green "Completed" badge)
  *   error     → output-error     (red "Error" badge)
  */
-export function ToolResultRenderer({ event }: ToolResultRendererProps) {
+export function ToolResultRenderer({ event, onAction }: ToolResultRendererProps) {
   const aiState = STATE_MAP[event.status];
   const isOpen = event.status !== 'executing';
 
@@ -106,7 +107,7 @@ export function ToolResultRenderer({ event }: ToolResultRendererProps) {
         {event.status === 'done' && event.result && (
           <ToolOutput
             // ToolOutput checks isValidElement; ReactNode is valid as output: unknown
-            output={<RichOutput event={event} />}
+            output={<RichOutput event={event} onAction={onAction} />}
             errorText={undefined}
           />
         )}

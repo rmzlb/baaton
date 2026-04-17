@@ -72,14 +72,31 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
             }),
         ),
         tool(
+            "propose_issue",
+            "PROPOSE creating a new issue (does NOT create it). Returns an editable proposal for the user to review and confirm. ALWAYS use this BEFORE create_issue. The user will see an editable form and either approve (then call create_issue with their final values) or cancel.",
+            json!({
+                "type": "OBJECT",
+                "properties": {
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required."},
+                    "title": {"type": "STRING", "description": "Short plain-text title. No brackets or prefixes."},
+                    "description": {"type": "STRING", "description": "Detailed description in Markdown."},
+                    "type": {"type": "STRING", "enum": ["bug", "feature", "improvement", "question"], "description": "Issue classification."},
+                    "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"], "description": "Urgency level."},
+                    "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Labels like ['auth', 'mobile']."},
+                    "category": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Technical domains: FRONT, BACK, API, DB, INFRA, UX, DEVOPS."}
+                },
+                "required": ["project_id", "title"]
+            }),
+        ),
+        tool(
             "create_issue",
-            "Create a new issue with full metadata. RULE: title must be plain text with NO brackets, prefixes, or type tags. Bad: '[SQX][BUG] Fix auth'. Good: 'Fix auth token refresh on session expiry'. Returns the created issue with display_id.",
+            "Create a new issue with full metadata. RULE: title must be plain text with NO brackets, prefixes, or type tags. Bad: '[SQX][BUG] Fix auth'. Good: 'Fix auth token refresh on session expiry'. Returns the created issue with display_id. ONLY call this AFTER the user has approved a propose_issue.",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "project_id": {
                         "type": "STRING",
-                        "description": "Project UUID or prefix or prefix (e.g. 'HLM'). Required."
+                        "description": "Project UUID or prefix (e.g. 'HLM'). Required."
                     },
                     "title": {
                         "type": "STRING",
@@ -941,6 +958,62 @@ async fn resolve_args_project_id(pool: &PgPool, org_id: &str, args: &mut Value) 
     }
 }
 
+/// Returns a proposal for issue creation (does NOT create). Frontend renders
+/// an editable form + Approve/Cancel buttons.
+async fn exec_propose_issue(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+    let project_id_str = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("");
+    let project_id: Option<Uuid> = project_id_str.parse().ok();
+
+    let project_info: Option<(String, String)> = match project_id {
+        Some(uid) => sqlx::query_as::<_, (String, String)>(
+            "SELECT name, prefix FROM projects WHERE id = $1 AND org_id = $2",
+        )
+        .bind(uid)
+        .bind(org_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten(),
+        None => None,
+    };
+
+    let (project_name, project_prefix) = project_info
+        .unwrap_or_else(|| ("Unknown".to_string(), "?".to_string()));
+
+    let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let description = args.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let issue_type = args.get("type").and_then(|v| v.as_str()).unwrap_or("feature").to_string();
+    let priority = args.get("priority").and_then(|v| v.as_str()).unwrap_or("medium").to_string();
+    let tags: Vec<String> = args.get("tags").and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|t| t.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let category: Vec<String> = args.get("category").and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|c| c.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    let proposal = json!({
+        "project_id": project_id_str,
+        "project_name": project_name,
+        "project_prefix": project_prefix,
+        "title": title,
+        "description": description,
+        "type": issue_type,
+        "priority": priority,
+        "tags": tags,
+        "category": category,
+    });
+
+    Ok(ToolResult {
+        data: proposal.clone(),
+        for_model: format!(
+            "Proposal ready for user review: '{}' on {} ({}). The user must now approve, edit, or cancel via the UI before you call create_issue.",
+            title, project_name, project_prefix
+        ),
+        component_hint: Some("IssueProposal".to_string()),
+        summary: format!("Proposed: '{}' on {}", title, project_prefix),
+    })
+}
+
 pub async fn execute_tool(
     pool: &PgPool,
     org_id: &str,
@@ -956,6 +1029,7 @@ pub async fn execute_tool(
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("search_issues real query failed: {e}; falling back to stub"); Ok(stub_search_issues(&args)) }
         },
+        "propose_issue" => exec_propose_issue(pool, org_id, &args).await,
         "create_issue" => create_issue_real(pool, org_id, user_id, &args).await,
         "update_issue" => update_issue_real(pool, org_id, user_id, &args).await,
         "bulk_update_issues" => bulk_update_issues_real(pool, org_id, user_id, &args).await,
