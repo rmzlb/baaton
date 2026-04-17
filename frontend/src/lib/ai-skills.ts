@@ -317,8 +317,9 @@ export function detectSkillContext(message: string, recentSkills: string[] = [])
   }
 
   // Creation intent
-  if (lower.includes('create') || lower.includes('créer') || lower.includes('ajoute') ||
+  if (lower.includes('create') || lower.includes('créer') || lower.includes('crée') || lower.includes('ajoute') ||
       lower.includes('add') || lower.includes('new issue') || lower.includes('nouveau') ||
+      lower.includes('nouveau ticket') || lower.includes('new ticket') || lower.includes('file a') ||
       lower.includes('generate prd') || lower.includes('prd')) {
     return 'creation';
   }
