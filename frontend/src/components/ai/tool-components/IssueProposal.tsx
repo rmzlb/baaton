@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sparkles, Check, X } from 'lucide-react';
+import { Sparkles, Check, X, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ProposalData {
@@ -45,15 +45,15 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
   const [priority, setPriority] = useState<typeof PRIORITY_OPTIONS[number]>(
     (data.priority as typeof PRIORITY_OPTIONS[number]) || 'medium',
   );
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState<'approved' | 'cancelled' | null>(null);
 
   const handleApprove = () => {
     if (!onAction || submitted) return;
-    setSubmitted(true);
+    setSubmitted('approved');
     const tags = (data.tags || []).join(', ') || '(none)';
     const category = (data.category || []).join(', ') || '(none)';
     onAction(
-      `J'approuve. Appelle maintenant create_issue avec EXACTEMENT ces valeurs finales (j'ai potentiellement edite) :\n` +
+      `__INTERNAL__: User approved. Call create_issue now with EXACTLY these final values:\n` +
       `- project_id: ${data.project_id}\n` +
       `- title: ${title}\n` +
       `- description: ${description}\n` +
@@ -67,9 +67,28 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
 
   const handleCancel = () => {
     if (!onAction || submitted) return;
-    setSubmitted(true);
-    onAction("Annule, ne cree pas l'issue. Demande-moi quoi faire ensuite.");
+    setSubmitted('cancelled');
+    onAction("__INTERNAL__: User cancelled. Don't create the issue. Just acknowledge briefly.");
   };
+
+  // Compact state shown after approve/cancel
+  if (submitted === 'approved') {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
+        <Loader2 size={12} className="animate-spin text-emerald-500 shrink-0" />
+        <span className="text-emerald-400 font-medium">Creation en cours…</span>
+        <span className="text-[--color-muted] truncate">{title}</span>
+      </div>
+    );
+  }
+  if (submitted === 'cancelled') {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-[--color-border] bg-[--color-surface-hover]/30 px-3 py-2 text-[12px] text-[--color-muted]">
+        <X size={12} className="shrink-0" />
+        <span>Proposition annulee</span>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
@@ -97,7 +116,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
             type="text"
             value={title}
             onChange={e => setTitle(e.target.value)}
-            disabled={submitted}
+            disabled={!!submitted}
             className="w-full rounded-md border border-[--color-border] bg-[--color-surface] px-2.5 py-1.5 text-[13px] text-[--color-primary] placeholder-[--color-muted] outline-none focus:border-amber-500 disabled:opacity-50"
             placeholder="Titre clair, sans prefix"
           />
@@ -111,7 +130,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
           <textarea
             value={description}
             onChange={e => setDescription(e.target.value)}
-            disabled={submitted}
+            disabled={!!submitted}
             rows={3}
             className="w-full rounded-md border border-[--color-border] bg-[--color-surface] px-2.5 py-1.5 text-[12px] text-[--color-primary] placeholder-[--color-muted] outline-none focus:border-amber-500 disabled:opacity-50 resize-none"
             placeholder="Details, reproduction, contexte..."
@@ -129,7 +148,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
                 <button
                   key={t}
                   onClick={() => !submitted && setType(t)}
-                  disabled={submitted}
+                  disabled={!!submitted}
                   className={cn(
                     'rounded-full px-2 py-0.5 text-[10px] font-medium border capitalize transition-all disabled:opacity-50',
                     type === t
@@ -152,7 +171,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
                 <button
                   key={p}
                   onClick={() => !submitted && setPriority(p)}
-                  disabled={submitted}
+                  disabled={!!submitted}
                   className={cn(
                     'rounded-full px-2 py-0.5 text-[10px] font-medium border capitalize transition-all disabled:opacity-50',
                     priority === p
@@ -188,7 +207,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
       <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/50">
         <button
           onClick={handleCancel}
-          disabled={submitted}
+          disabled={!!submitted}
           className="flex items-center gap-1.5 rounded-md border border-[--color-border] bg-[--color-bg] px-2.5 py-1 text-[11px] font-medium text-[--color-secondary] hover:text-[--color-primary] hover:border-[--color-muted] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <X size={12} />
@@ -196,7 +215,7 @@ export default function IssueProposal({ data, onAction }: IssueProposalProps) {
         </button>
         <button
           onClick={handleApprove}
-          disabled={submitted || !title.trim()}
+          disabled={!!submitted || !title.trim()}
           className="flex items-center gap-1.5 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Check size={12} />

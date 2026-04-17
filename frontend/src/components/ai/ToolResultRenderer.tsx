@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Wrench } from 'lucide-react';
 import {
   Tool,
   ToolContent,
@@ -22,20 +22,23 @@ const STATE_MAP: Record<ToolCallEvent['status'], AIElementsState> = {
   error: 'output-error',
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Compact executing indicator ──────────────────────────────────────────────
 
-function ToolExecutingSpinner({ name }: { name: string }) {
+function ExecutingIndicator({ name }: { name: string }) {
+  const displayName = name
+    .replace(/^propose_/, '')
+    .replace(/_/g, ' ');
   return (
-    <div className="flex items-center gap-2 py-1 text-xs text-[--color-muted]">
-      <Loader2 size={12} className="animate-spin" />
-      <span>Running {name}…</span>
+    <div className="flex items-center gap-2 rounded-lg bg-[--color-surface-hover]/50 px-3 py-1.5 text-[11px] text-[--color-muted]">
+      <Loader2 size={12} className="animate-spin text-amber-500" />
+      <span className="capitalize">{displayName}...</span>
     </div>
   );
 }
 
 function ComponentSkeleton() {
   return (
-    <div className="space-y-2 animate-pulse">
+    <div className="space-y-2 animate-pulse rounded-lg p-3">
       <div className="h-3 w-3/4 rounded bg-[--color-surface-hover]" />
       <div className="h-3 w-1/2 rounded bg-[--color-surface-hover]" />
       <div className="h-3 w-2/3 rounded bg-[--color-surface-hover]" />
@@ -43,25 +46,15 @@ function ComponentSkeleton() {
   );
 }
 
-// ─── Rich output node ─────────────────────────────────────────────────────────
+// ─── Minimal badge for background tools (metrics, search) ─────────────────────
 
-function RichOutput({ event, onAction }: { event: ToolCallEvent; onAction?: (prompt: string) => void }) {
-  if (!event.result) return null;
-
-  const Component = event.result.component
-    ? TOOL_COMPONENTS[event.result.component]
-    : null;
-
-  if (!Component) {
-    return (
-      <ToolResultFallback summary={event.result.summary} />
-    );
-  }
-
+function CompletedBadge({ name }: { name: string }) {
+  const displayName = name.replace(/_/g, ' ');
   return (
-    <Suspense fallback={<ComponentSkeleton />}>
-      <Component data={event.result.data} onAction={onAction} />
-    </Suspense>
+    <div className="flex items-center gap-1.5 text-[10px] text-[--color-muted]">
+      <Wrench size={10} />
+      <span className="capitalize">{displayName}</span>
+    </div>
   );
 }
 
@@ -73,53 +66,76 @@ export interface ToolResultRendererProps {
 }
 
 /**
- * Renders a single tool call event using AI Elements' Tool component for the
- * collapsible chrome (header + status badge), with custom data-rich components
- * embedded inside ToolOutput.
+ * Renders a tool call event.
  *
- * Map of states:
- *   executing → input-available  (spinning "Running" badge)
- *   done      → output-available (green "Completed" badge)
- *   error     → output-error     (red "Error" badge)
+ * Strategy:
+ * - If tool has a registered custom component (IssueProposal, MetricsCard, etc.)
+ *   → render the component DIRECTLY (compact, no Tool wrapper)
+ * - If executing → small spinner
+ * - If error → error card
+ * - Otherwise (raw data from unknown tool) → collapsible Tool with JSON params
+ *
+ * This matches the AI SDK Elements pattern where rich custom components replace
+ * the generic Tool chrome entirely.
  */
 export function ToolResultRenderer({ event, onAction }: ToolResultRendererProps) {
-  const aiState = STATE_MAP[event.status];
-  const isOpen = event.status !== 'executing';
+  // Still executing → tiny inline indicator
+  if (event.status === 'executing') {
+    return <ExecutingIndicator name={event.name} />;
+  }
 
-  return (
-    <Tool defaultOpen={isOpen}>
-      <ToolHeader
-        type="dynamic-tool"
-        state={aiState}
-        toolName={event.name}
-      />
-
-      <ToolContent>
-        {/* Always show inputs */}
-        <ToolInput input={event.args} />
-
-        {/* While executing: show spinner */}
-        {event.status === 'executing' && (
-          <ToolExecutingSpinner name={event.name} />
-        )}
-
-        {/* On completion: show rich output via ToolOutput */}
-        {event.status === 'done' && event.result && (
-          <ToolOutput
-            // ToolOutput checks isValidElement; ReactNode is valid as output: unknown
-            output={<RichOutput event={event} onAction={onAction} />}
-            errorText={undefined}
-          />
-        )}
-
-        {/* On error: show error text */}
-        {event.status === 'error' && (
+  // Error → always show the Tool wrapper with error state (useful for debugging)
+  if (event.status === 'error') {
+    const aiState = STATE_MAP[event.status];
+    return (
+      <Tool defaultOpen>
+        <ToolHeader type="dynamic-tool" state={aiState} toolName={event.name} />
+        <ToolContent>
+          <ToolInput input={event.args} />
           <ToolOutput
             output={undefined}
             errorText={event.result?.summary ?? 'Tool call failed'}
           />
-        )}
-      </ToolContent>
-    </Tool>
+        </ToolContent>
+      </Tool>
+    );
+  }
+
+  // Done
+  if (!event.result) return null;
+
+  const Component = event.result.component
+    ? TOOL_COMPONENTS[event.result.component]
+    : null;
+
+  // No custom component → fallback with collapsible Tool wrapper
+  if (!Component) {
+    return (
+      <Tool defaultOpen={false}>
+        <ToolHeader
+          type="dynamic-tool"
+          state={STATE_MAP[event.status]}
+          toolName={event.name}
+        />
+        <ToolContent>
+          <ToolInput input={event.args} />
+          <ToolOutput
+            output={<ToolResultFallback summary={event.result.summary} />}
+            errorText={undefined}
+          />
+        </ToolContent>
+      </Tool>
+    );
+  }
+
+  // Rich component → render DIRECTLY, no Tool chrome.
+  // This is the AI SDK Elements pattern: custom UI replaces the generic tool UI.
+  return (
+    <div className="space-y-1.5">
+      <CompletedBadge name={event.name} />
+      <Suspense fallback={<ComponentSkeleton />}>
+        <Component data={event.result.data} onAction={onAction} />
+      </Suspense>
+    </div>
   );
 }

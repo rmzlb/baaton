@@ -506,15 +506,17 @@ export function AIAssistant() {
                 </div>
               ) : (
                 <>
-                  {messages.map((msg, i) => (
+                  {messages
+                    .filter(msg => !(msg.role === 'user' && msg.content.startsWith('__INTERNAL__:')))
+                    .map((msg, i, arr) => (
                     <PanelMessageBubble
                       key={msg.id}
                       msg={msg}
-                      isLast={i === messages.length - 1}
+                      isLast={i === arr.length - 1}
                       isStreaming={isStreaming}
                       onAction={handleSend}
                       onRegenerate={
-                        msg.role === 'assistant' && i === messages.length - 1
+                        msg.role === 'assistant' && i === arr.length - 1
                           ? handleRegenerate
                           : undefined
                       }

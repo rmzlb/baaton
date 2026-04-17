@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pencil, Check, X, ArrowRight } from 'lucide-react';
+import { Pencil, Check, X, ArrowRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DiffEntry {
@@ -33,27 +33,45 @@ function DiffValue({ value, muted }: { value: string | string[]; muted?: boolean
 }
 
 export default function UpdateIssueProposal({ data, onAction }: Props) {
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState<'approved' | 'cancelled' | null>(null);
   const diff = data.diff || [];
 
   const handleApprove = () => {
     if (!onAction || submitted) return;
-    setSubmitted(true);
+    setSubmitted('approved');
     const changes = diff.map(d => {
       const to = Array.isArray(d.to) ? `[${d.to.join(', ')}]` : d.to;
       return `- ${d.field}: ${to}`;
     }).join('\n');
     onAction(
-      `J'approuve. Appelle maintenant update_issue avec EXACTEMENT ces valeurs :\n` +
+      `__INTERNAL__: User approved. Call update_issue now with EXACTLY these values:\n` +
       `- issue_id: ${data.issue_id}\n${changes}`
     );
   };
 
   const handleCancel = () => {
     if (!onAction || submitted) return;
-    setSubmitted(true);
-    onAction("Annule, ne modifie pas l'issue. Demande-moi quoi faire ensuite.");
+    setSubmitted('cancelled');
+    onAction("__INTERNAL__: User cancelled. Don't update the issue. Just acknowledge briefly.");
   };
+
+  if (submitted === 'approved') {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
+        <Loader2 size={12} className="animate-spin text-emerald-500 shrink-0" />
+        <span className="text-emerald-400 font-medium">Mise a jour en cours…</span>
+        {data.display_id && <span className="font-mono text-[11px] text-[--color-muted]">{data.display_id}</span>}
+      </div>
+    );
+  }
+  if (submitted === 'cancelled') {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-[--color-border] bg-[--color-surface-hover]/30 px-3 py-2 text-[12px] text-[--color-muted]">
+        <X size={12} className="shrink-0" />
+        <span>Modification annulee</span>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-amber-500/30 overflow-hidden">
@@ -99,7 +117,7 @@ export default function UpdateIssueProposal({ data, onAction }: Props) {
       <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/50">
         <button
           onClick={handleCancel}
-          disabled={submitted}
+          disabled={!!submitted}
           className="flex items-center gap-1.5 rounded-md border border-[--color-border] bg-[--color-bg] px-2.5 py-1 text-[11px] font-medium text-[--color-secondary] hover:text-[--color-primary] hover:border-[--color-muted] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <X size={12} />
@@ -107,7 +125,7 @@ export default function UpdateIssueProposal({ data, onAction }: Props) {
         </button>
         <button
           onClick={handleApprove}
-          disabled={submitted || diff.length === 0}
+          disabled={!!submitted || diff.length === 0}
           className="flex items-center gap-1.5 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Check size={12} />

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Layers, Check, X } from 'lucide-react';
+import { Layers, Check, X, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface BulkChange {
@@ -27,23 +27,41 @@ const PRIORITY_COLOR: Record<string, string> = {
 };
 
 export default function BulkUpdateProposal({ data, onAction }: Props) {
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState<'approved' | 'cancelled' | null>(null);
   const updates = data.updates || [];
 
   const handleApprove = () => {
     if (!onAction || submitted) return;
-    setSubmitted(true);
+    setSubmitted('approved');
     onAction(
-      `J'approuve le bulk update. Appelle maintenant bulk_update_issues avec EXACTEMENT cet array :\n` +
+      `__INTERNAL__: User approved bulk update. Call bulk_update_issues now with EXACTLY this array:\n` +
       `${JSON.stringify(updates.map(u => u.changes), null, 2)}`
     );
   };
 
   const handleCancel = () => {
     if (!onAction || submitted) return;
-    setSubmitted(true);
-    onAction('Annule, ne fais pas le bulk update.');
+    setSubmitted('cancelled');
+    onAction('__INTERNAL__: User cancelled bulk update. Just acknowledge briefly.');
   };
+
+  if (submitted === 'approved') {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
+        <Loader2 size={12} className="animate-spin text-emerald-500 shrink-0" />
+        <span className="text-emerald-400 font-medium">Bulk update en cours…</span>
+        <span className="text-[--color-muted]">{updates.length} issues</span>
+      </div>
+    );
+  }
+  if (submitted === 'cancelled') {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-[--color-border] bg-[--color-surface-hover]/30 px-3 py-2 text-[12px] text-[--color-muted]">
+        <X size={12} className="shrink-0" />
+        <span>Bulk update annule</span>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-amber-500/30 overflow-hidden">
@@ -107,7 +125,7 @@ export default function BulkUpdateProposal({ data, onAction }: Props) {
       <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/50">
         <button
           onClick={handleCancel}
-          disabled={submitted}
+          disabled={!!submitted}
           className="flex items-center gap-1.5 rounded-md border border-[--color-border] bg-[--color-bg] px-2.5 py-1 text-[11px] font-medium text-[--color-secondary] hover:text-[--color-primary] hover:border-[--color-muted] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <X size={12} />
@@ -115,7 +133,7 @@ export default function BulkUpdateProposal({ data, onAction }: Props) {
         </button>
         <button
           onClick={handleApprove}
-          disabled={submitted || updates.length === 0}
+          disabled={!!submitted || updates.length === 0}
           className="flex items-center gap-1.5 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Check size={12} />

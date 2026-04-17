@@ -529,16 +529,18 @@ export default function AIChat() {
                 </Suggestions>
               </div>
             ) : (
-              /* Message list */
-              messages.map((msg, i) => (
+              /* Message list — hide internal approval/cancel commands */
+              messages
+                .filter(msg => !(msg.role === 'user' && msg.content.startsWith('__INTERNAL__:')))
+                .map((msg, i, arr) => (
                 <MessageBubble
                   key={msg.id}
                   msg={msg}
-                  isLast={i === messages.length - 1}
+                  isLast={i === arr.length - 1}
                   isStreaming={isStreaming}
                   onAction={handleSend}
                   onRegenerate={
-                    msg.role === 'assistant' && i === messages.length - 1
+                    msg.role === 'assistant' && i === arr.length - 1
                       ? handleRegenerate
                       : undefined
                   }

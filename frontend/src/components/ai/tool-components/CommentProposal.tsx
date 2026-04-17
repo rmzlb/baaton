@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MessageSquare, Check, X } from 'lucide-react';
+import { MessageSquare, Check, X, Loader2 } from 'lucide-react';
 
 interface CommentProposalData {
   issue_id?: string;
@@ -15,13 +15,13 @@ interface Props {
 
 export default function CommentProposal({ data, onAction }: Props) {
   const [content, setContent] = useState(data.content || '');
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState<'approved' | 'cancelled' | null>(null);
 
   const handleApprove = () => {
     if (!onAction || submitted) return;
-    setSubmitted(true);
+    setSubmitted('approved');
     onAction(
-      `J'approuve. Appelle maintenant add_comment avec EXACTEMENT ces valeurs :\n` +
+      `__INTERNAL__: User approved. Call add_comment now with EXACTLY these values:\n` +
       `- issue_id: ${data.issue_id}\n` +
       `- content: ${content}`
     );
@@ -29,9 +29,27 @@ export default function CommentProposal({ data, onAction }: Props) {
 
   const handleCancel = () => {
     if (!onAction || submitted) return;
-    setSubmitted(true);
-    onAction("Annule, n'ajoute pas le commentaire.");
+    setSubmitted('cancelled');
+    onAction("__INTERNAL__: User cancelled. Don't add the comment. Just acknowledge briefly.");
   };
+
+  if (submitted === 'approved') {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
+        <Loader2 size={12} className="animate-spin text-emerald-500 shrink-0" />
+        <span className="text-emerald-400 font-medium">Ajout du commentaire…</span>
+        {data.display_id && <span className="font-mono text-[11px] text-[--color-muted]">{data.display_id}</span>}
+      </div>
+    );
+  }
+  if (submitted === 'cancelled') {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-[--color-border] bg-[--color-surface-hover]/30 px-3 py-2 text-[12px] text-[--color-muted]">
+        <X size={12} className="shrink-0" />
+        <span>Commentaire annule</span>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-amber-500/30 overflow-hidden">
@@ -56,7 +74,7 @@ export default function CommentProposal({ data, onAction }: Props) {
         <textarea
           value={content}
           onChange={e => setContent(e.target.value)}
-          disabled={submitted}
+          disabled={!!submitted}
           rows={4}
           className="w-full rounded-md border border-[--color-border] bg-[--color-surface] px-2.5 py-1.5 text-[12px] text-[--color-primary] placeholder-[--color-muted] outline-none focus:border-amber-500 disabled:opacity-50 resize-none"
           placeholder="Votre commentaire en Markdown..."
@@ -66,7 +84,7 @@ export default function CommentProposal({ data, onAction }: Props) {
       <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/50">
         <button
           onClick={handleCancel}
-          disabled={submitted}
+          disabled={!!submitted}
           className="flex items-center gap-1.5 rounded-md border border-[--color-border] bg-[--color-bg] px-2.5 py-1 text-[11px] font-medium text-[--color-secondary] hover:text-[--color-primary] hover:border-[--color-muted] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <X size={12} />
@@ -74,7 +92,7 @@ export default function CommentProposal({ data, onAction }: Props) {
         </button>
         <button
           onClick={handleApprove}
-          disabled={submitted || !content.trim()}
+          disabled={!!submitted || !content.trim()}
           className="flex items-center gap-1.5 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Check size={12} />
