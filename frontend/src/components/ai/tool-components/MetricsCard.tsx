@@ -30,7 +30,7 @@ function Stat({
 }
 
 export default function MetricsCard({ data }: MetricsCardProps) {
-  const metrics: MetricsData = Array.isArray(data) ? (data[0] ?? {}) : data;
+  const metrics: MetricsData = Array.isArray(data) ? (data[0] ?? {}) : (data ?? {});
 
   const bugPct = metrics.bug_ratio != null
     ? `${Math.round(metrics.bug_ratio * 100)}%`
