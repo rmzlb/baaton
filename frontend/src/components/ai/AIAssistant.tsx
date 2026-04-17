@@ -226,12 +226,11 @@ export function AIAssistant() {
   const queryClient = useQueryClient();
   const { getToken } = useAuth();
 
-  useEffect(() => {
-    getToken().then(tk => { if (tk) setAuthToken(tk); });
-    const id = setInterval(() => {
-      getToken().then(tk => { if (tk) setAuthToken(tk); });
-    }, 50 * 60 * 1000);
-    return () => clearInterval(id);
+  // Fresh token getter for each request (no stale timer)
+  const getAuthToken = useCallback(async () => {
+    const tk = await getToken();
+    if (tk) setAuthToken(tk);
+    return tk;
   }, [getToken]);
 
   const { data: projects = [] } = useQuery({
@@ -245,7 +244,7 @@ export function AIAssistant() {
     error: agentError, clearMessages, loadMessages, abort,
   } = useAgentChat({
     projectIds: projects.map(p => p.id),
-    authToken,
+    getAuthToken,
     onComplete: () => {
       queryClient.invalidateQueries({ queryKey: ['issues'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['milestones'], refetchType: 'all' });
@@ -370,7 +369,7 @@ export function AIAssistant() {
   }, [messages, isStreaming, loadMessages, agentSend]);
 
   const isEmpty = messages.length === 0 && !isStreaming;
-  const canSend = !isStreaming && !!authToken;
+  const canSend = !isStreaming;
   const chatStatus = (isStreaming ? 'streaming' : 'ready') as 'streaming' | 'ready';
 
   // ── FAB when closed ──
@@ -564,7 +563,7 @@ export function AIAssistant() {
                 <PromptInputSubmit
                   status={chatStatus}
                   onStop={abort}
-                  disabled={!isStreaming && !authToken}
+                  disabled={!isStreaming && false}
                 />
               </PromptInputFooter>
             </PromptInput>

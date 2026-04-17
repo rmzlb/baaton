@@ -59,8 +59,10 @@ export interface UseAgentChatReturn {
 export interface UseAgentChatOptions {
   /** Project ids to scope the agent's context. */
   projectIds: string[];
-  /** Bearer token for API authentication. */
-  authToken: string;
+  /** Bearer token for API authentication (static fallback). */
+  authToken?: string;
+  /** Async function that returns a fresh auth token. Preferred over authToken. */
+  getAuthToken?: () => Promise<string | null>;
   /** Base URL override; defaults to VITE_API_URL env var or empty string. */
   apiUrl?: string;
   /** Called when a tool_start event arrives. */
@@ -131,6 +133,7 @@ export function useAgentChat(options: UseAgentChatOptions): UseAgentChatReturn {
   const {
     projectIds,
     authToken,
+    getAuthToken,
     apiUrl = import.meta.env.VITE_API_URL ?? '',
     onToolCall,
     onComplete,
@@ -232,16 +235,31 @@ export function useAgentChat(options: UseAgentChatOptions): UseAgentChatReturn {
       const pendingToolIds = new Map<string, string[]>();
 
       try {
+        // Get a fresh token for this request
+        const token = getAuthToken ? (await getAuthToken()) : authToken;
+        if (!token) {
+          throw new Error('No auth token available');
+        }
+
         const history = currentMessages.map((m) => ({
           role: m.role,
           content: m.content,
+          tool_calls: m.role === 'assistant' && m.toolCalls?.length
+            ? m.toolCalls
+                .filter(tc => tc.status === 'done' && tc.result)
+                .map(tc => ({
+                  name: tc.name,
+                  args: tc.args,
+                  result_summary: tc.result?.summary ?? '',
+                }))
+            : undefined,
         }));
 
         const response = await fetch(`${apiUrl}/api/v1/ai/agent`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             message: content,
@@ -378,6 +396,7 @@ export function useAgentChat(options: UseAgentChatOptions): UseAgentChatReturn {
       isStreaming,
       apiUrl,
       authToken,
+      getAuthToken,
       projectIds,
       appendTextToLast,
       addToolCall,

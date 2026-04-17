@@ -240,9 +240,9 @@ export default function AIChat() {
   const SUGGESTIONS = useChatSuggestions();
 
   // ── Auth token ──
-  const [authToken, setAuthToken] = useState('');
-  useEffect(() => {
-    getToken().then(tk => setAuthToken(tk ?? '')).catch(() => {});
+  const getAuthToken = useCallback(async () => {
+    const tk = await getToken();
+    return tk;
   }, [getToken]);
 
   // ── Data ──
@@ -270,7 +270,7 @@ export default function AIChat() {
     abort,
   } = useAgentChat({
     projectIds: projects.map(p => p.id),
-    authToken,
+    getAuthToken,
   });
 
   // Refs for stable access inside effects
@@ -358,7 +358,7 @@ export default function AIChat() {
   }, [activeId, convos, loadMessages, clearMessages]);
 
   const handleSend = useCallback(async (text: string) => {
-    if (!text.trim() || isStreaming || !authToken) return;
+    if (!text.trim() || isStreaming) return;
 
     // Ensure an active conversation exists
     if (!activeId) {
@@ -372,7 +372,7 @@ export default function AIChat() {
     }
 
     await sendMessage(text);
-  }, [activeId, isStreaming, authToken, sendMessage]);
+  }, [activeId, isStreaming, sendMessage]);
 
   const handleRegenerate = useCallback(() => {
     if (isStreaming || !messages.length) return;
@@ -394,7 +394,7 @@ export default function AIChat() {
   // ── Derived ──
   const activeConvo = convos.find(c => c.id === activeId);
   const isEmpty = messages.length === 0 && !isStreaming;
-  const canSend = !isStreaming && !!authToken;
+  const canSend = !isStreaming;
   // ChatStatus type from 'ai' — we only use 'ready' | 'streaming' here
   const chatStatus = (isStreaming ? 'streaming' : 'ready') as 'streaming' | 'ready';
 
@@ -587,7 +587,7 @@ export default function AIChat() {
               <PromptInputSubmit
                 status={chatStatus}
                 onStop={abort}
-                disabled={!isStreaming && !authToken}
+                disabled={!isStreaming && false}
               />
             </PromptInputFooter>
           </PromptInput>

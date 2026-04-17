@@ -27,7 +27,19 @@ pub struct AgentChatRequest {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AgentChatMessage {
     pub role: String,
+    #[serde(default)]
     pub content: String,
+    #[serde(default)]
+    pub tool_calls: Option<Vec<HistoryToolCall>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct HistoryToolCall {
+    pub name: String,
+    #[serde(default)]
+    pub args: serde_json::Value,
+    #[serde(default)]
+    pub result_summary: String,
 }
 
 // ─── SSE Helper ───────────────────────────────────────────────────────────────
@@ -342,12 +354,50 @@ pub async fn agent_chat(
         }).collect();
 
         // Build initial contents from history + current message
-        let mut contents: Vec<Value> = history.iter().map(|m| {
-            json!({
-                "role": if m.role == "assistant" { "model" } else { "user" },
-                "parts": [{"text": m.content}]
-            })
-        }).collect();
+        let mut contents: Vec<Value> = Vec::new();
+        for m in &history {
+            let gemini_role = if m.role == "assistant" { "model" } else { "user" };
+
+            if gemini_role == "model" {
+                if let Some(ref tcs) = m.tool_calls {
+                    if !tcs.is_empty() {
+                        // Model message with function calls
+                        let mut parts: Vec<Value> = tcs.iter().map(|tc| {
+                            json!({
+                                "functionCall": {
+                                    "name": tc.name,
+                                    "args": tc.args
+                                }
+                            })
+                        }).collect();
+                        if !m.content.is_empty() {
+                            parts.push(json!({"text": m.content}));
+                        }
+                        contents.push(json!({ "role": "model", "parts": parts }));
+
+                        // Function responses (user role in Gemini)
+                        let response_parts: Vec<Value> = tcs.iter().map(|tc| {
+                            json!({
+                                "functionResponse": {
+                                    "name": tc.name,
+                                    "response": { "summary": tc.result_summary }
+                                }
+                            })
+                        }).collect();
+                        contents.push(json!({ "role": "user", "parts": response_parts }));
+                        continue;
+                    }
+                }
+            }
+
+            // Plain text message
+            if !m.content.is_empty() {
+                contents.push(json!({
+                    "role": gemini_role,
+                    "parts": [{"text": m.content}]
+                }));
+            }
+        }
 
         contents.push(json!({
             "role": "user",
