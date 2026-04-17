@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import { generateAIResponse } from '@/lib/ai-engine';
 import { createInitialState } from '@/lib/ai-state';
-import { ALL_SKILL_DECLARATIONS } from '@/lib/ai-skills';
+import { TOOL_SCHEMAS } from '@/lib/ai-skills';
 import type { AIStateContext } from '@/lib/ai-state';
 import type { SkillResult } from '@/lib/ai-skills';
 import type { Issue } from '@/lib/types';
@@ -428,7 +428,7 @@ export default function AIChat() {
   // Derived
   const active = convos.find(c => c.id === activeId) ?? null;
   const messages = active?.messages ?? [];
-  const skillCount = ALL_SKILL_DECLARATIONS.length;
+  const skillCount = Object.keys(TOOL_SCHEMAS).length;
   const isEmpty = messages.length === 0 && status === 'ready';
 
   // Data

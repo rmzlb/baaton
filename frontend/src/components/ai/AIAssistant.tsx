@@ -29,7 +29,7 @@ import {
 } from '@/components/ai/PmPlanResultPanel';
 import type { Issue, Milestone, Sprint, Project } from '@/lib/types';
 import type { SkillResult } from '@/lib/ai-skills';
-import { SKILL_TOOLS, ALL_SKILL_DECLARATIONS } from '@/lib/ai-skills';
+import { TOOL_SCHEMAS } from '@/lib/ai-skills';
 import { type AIStateContext, createInitialState } from '@/lib/ai-state';
 
 type AIMode = 'gemini' | 'openclaw';
@@ -1160,7 +1160,7 @@ export function AIAssistant() {
   };
 
   const totalIssues = Object.values(allIssuesByProject).reduce((sum, arr) => sum + arr.length, 0);
-  const skillCount = ALL_SKILL_DECLARATIONS.length;
+  const skillCount = Object.keys(TOOL_SCHEMAS).length;
 
   return (
     <>
@@ -1399,7 +1399,7 @@ export function AIAssistant() {
             </div>
             <p className="text-[9px] text-muted mt-1 text-center">
               {aiMode === 'gemini'
-                ? `Gemini Flash · ${SKILL_TOOLS[0].functionDeclarations.length} skills · ${t('ai.realTimeData')} · 📎 ${t('ai.imagesHint')}`
+                ? `Gemini Flash · ${Object.keys(TOOL_SCHEMAS).length} skills · ${t('ai.realTimeData')} · 📎 ${t('ai.imagesHint')}`
                 : `🦞 OpenClaw · ${t('ai.realTimeData')}`
               }
             </p>

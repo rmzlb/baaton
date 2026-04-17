@@ -16,10 +16,10 @@
  * - 5-block Manus system prompt
  */
 
-import { generateText, jsonSchema, type CoreMessage, type CoreTool } from 'ai';
+import { generateText, tool as aiTool, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import type { Issue, Project, Milestone } from './types';
-import { getToolsForContext, type SkillContext } from './ai-skills';
+import { getZodToolsForContext, type SkillContext } from './ai-skills';
 import { executeSkill } from './ai-executor';
 import type { SkillResult } from './ai-skills';
 import {
@@ -50,7 +50,7 @@ async function getGeminiApiKey(authToken?: string): Promise<string> {
         const data = await res.json();
         if (data.key) {
           _cachedApiKey = data.key;
-          return _cachedApiKey;
+          return _cachedApiKey as string;
         }
       }
     } catch { /* backend unreachable */ }
@@ -85,112 +85,36 @@ function mapProviderErrorToUserMessage(errorLike: unknown): string {
   return 'AI request failed unexpectedly. Please try again.';
 }
 
-// ─── Convert Gemini Tool Declarations → AI SDK Tools ────
-// Bridge: getToolsForContext returns Gemini format [{functionDeclarations: [...]}]
-// AI SDK needs Record<string, CoreTool> with jsonSchema parameters
+// ─── Tool Builder (Zod schemas → AI SDK ToolSet) ─────────
 
-function convertGeminiPropertyToJsonSchema(prop: any): any {
-  if (!prop) return { type: 'string' };
-  const schema: any = {};
-  switch (prop.type) {
-    case 'STRING':
-      schema.type = 'string';
-      break;
-    case 'NUMBER':
-      schema.type = 'number';
-      break;
-    case 'BOOLEAN':
-      schema.type = 'boolean';
-      break;
-    case 'ARRAY':
-      schema.type = 'array';
-      if (prop.items) {
-        schema.items = convertGeminiPropertyToJsonSchema(prop.items);
-      }
-      break;
-    case 'OBJECT':
-      schema.type = 'object';
-      if (prop.properties) {
-        schema.properties = {};
-        for (const [k, v] of Object.entries(prop.properties)) {
-          schema.properties[k] = convertGeminiPropertyToJsonSchema(v);
-        }
-      }
-      if (prop.required) schema.required = prop.required;
-      break;
-    default:
-      schema.type = 'string';
-  }
-  if (prop.description) schema.description = prop.description;
-  return schema;
-}
-
-function buildAISDKTools(
+function buildTools(
   skillContext: SkillContext,
   executor: (name: string, args: Record<string, unknown>) => Promise<any>,
-): Record<string, CoreTool> {
-  const geminiTools = getToolsForContext(skillContext);
-  const declarations = geminiTools.flatMap((t: any) => t.functionDeclarations || []);
-  const tools: Record<string, CoreTool> = {};
+): ToolSet {
+  const definitions = getZodToolsForContext(skillContext);
+  const tools: Record<string, any> = {};
 
-  for (const decl of declarations) {
-    // Convert Gemini params → JSON Schema
-    const params = decl.parameters || { type: 'OBJECT', properties: {} };
-    const schema = convertGeminiPropertyToJsonSchema(params);
-
-    // Gemini API requires root schema to be { type: "object" } with properties
-    // Ensure the root always has type "object" and properties defined
-    if (schema.type !== 'object') {
-      schema.type = 'object';
-    }
-    if (!schema.properties) {
-      schema.properties = {};
-    }
-    // Gemini API is strict about OBJECT schemas:
-    // - Must have type "object" with properties  
-    // - Remove empty required arrays (Gemini rejects them)
-    // - Set additionalProperties to prevent SDK from treating as "empty" schema
-    if (Array.isArray(schema.required) && schema.required.length === 0) {
-      delete schema.required;
-    }
-    // CRITICAL: The @ai-sdk/google provider's isEmptyObjectSchema() returns true
-    // when properties is empty AND no additionalProperties. When true at root,
-    // it returns undefined → Gemini gets no parameters → "should be of type OBJECT" error.
-    // Setting additionalProperties to true prevents this.
-    if (!schema.additionalProperties) {
-      schema.additionalProperties = true;
-    }
-
-    // CRITICAL FIX for Gemini "parameters schema should be of type OBJECT" error:
-    // The @ai-sdk/google SDK converts jsonSchema back to Gemini format, but can
-    // lose the OBJECT type. Ensure schema always has non-empty properties and
-    // a _dummy field to prevent the SDK from treating it as an empty schema.
-    if (Object.keys(schema.properties || {}).length === 0) {
-      schema.properties = { _context: { type: 'string', description: 'Optional context' } };
-    }
-    
-    tools[decl.name] = {
-      description: decl.description,
-      parameters: jsonSchema(schema),
+  for (const [name, def] of Object.entries(definitions)) {
+    tools[name] = aiTool({
+      description: def.description,
+      inputSchema: def.inputSchema,
       execute: async (args: any) => {
         try {
-          return await executor(decl.name, args);
+          const result = await executor(name, args);
+          // Return formattedForModel if available — this is what the model sees
+          if (result?.formattedForModel) {
+            return result.formattedForModel;
+          }
+          return result;
         } catch (error) {
-          console.error('[AI][ToolInvocationFailed]', {
-            tool: decl.name,
-            args,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return {
-            success: false,
-            error: mapProviderErrorToUserMessage(error),
-          };
+          console.error('[AI][ToolInvocationFailed]', { tool: name, error });
+          return `❌ ${name} failed: ${mapProviderErrorToUserMessage(error)}`;
         }
       },
-    };
+    });
   }
 
-  return tools;
+  return tools as ToolSet;
 }
 
 // ─── Context Builder ──────────────────────────
@@ -481,7 +405,10 @@ interface PmFullReviewData {
 }
 
 type ApiClientType = {
+  get: <T>(path: string) => Promise<T>;
   post: <T>(path: string, body: unknown) => Promise<T>;
+  patch: <T>(path: string, body: unknown) => Promise<T>;
+  delete: (path: string) => Promise<unknown>;
   issues: {
     listByProject: (id: string, params?: Record<string, unknown>) => Promise<Issue[]>;
     create: (body: Record<string, unknown>) => Promise<Issue>;
@@ -659,14 +586,14 @@ export async function generateAIResponse(
   const optimizedHistory = summarizeHistory(conversationHistory);
 
   // ── Build messages ──
-  const messages: CoreMessage[] = optimizedHistory.slice(-8).map((m) => ({
+  const messages: ModelMessage[] = optimizedHistory.slice(-8).map((m) => ({
     role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
     content: m.content,
   }));
   messages.push({ role: 'user', content: userMessage });
 
   // ── Tool masking from state ──
-  const skillContext = stateToSkillContext(state);
+  const skillContext = stateToSkillContext(state, userMessage);
   const skillsExecuted: SkillResult[] = [];
 
   // Deterministic PM full-review mode (backend endpoint, zero Gemini tool-calling)
@@ -755,7 +682,7 @@ export async function generateAIResponse(
         state = transition(state, { type: 'SKILL_FAILED', name, error: result.error || 'Unknown error' });
       }
 
-      return result.data || { success: result.success, error: result.error };
+      return result; // Return full SkillResult — buildTools will extract formattedForModel
     } catch (error) {
       const executionTime = Math.round(performance.now() - startTime);
       console.error('[AI][SkillCrash]', {
@@ -778,30 +705,34 @@ export async function generateAIResponse(
     }
   };
 
-  const tools = buildAISDKTools(skillContext, executor);
+  const tools = buildTools(skillContext, executor);
 
   try {
     // ── Vercel AI SDK: generateText with tools + maxSteps ──
     // maxSteps = 5 → agentic loop (same as our old 5-round loop)
     // The SDK handles: tool call → execute → feed result → get next response
     const result = await generateText({
-      model: google('gemini-3-flash-preview', {
-        // Disable structuredOutputs to avoid strict schema validation issues
-        // with Gemini API's OBJECT type requirements
-        structuredOutputs: false,
-      }),
+      model: google('gemini-3-flash-preview'),
       system: systemPrompt,
       messages,
       tools,
-      maxSteps: 5,
+      stopWhen: stepCountIs(5),
       temperature: 0.4,
-      maxTokens: 2000,
+      maxOutputTokens: 8000,
+      onStepFinish({ stepNumber, finishReason, usage: stepUsage, toolCalls }) {
+        console.log(`[AI][Step ${stepNumber}]`, {
+          finishReason,
+          toolCalls: toolCalls?.map((tc: any) => tc.toolName),
+          inputTokens: stepUsage?.inputTokens,
+          outputTokens: stepUsage?.outputTokens,
+        });
+      },
     });
 
     // ── Track usage from response metadata ──
-    const usage = result.usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-    const inputTokens = usage.promptTokens || estimateTokens(systemPrompt + userMessage);
-    const outputTokens = usage.completionTokens || estimateTokens(result.text || '');
+    const usage = result.usage;
+    const inputTokens = usage?.inputTokens ?? estimateTokens(systemPrompt + userMessage);
+    const outputTokens = usage?.outputTokens ?? estimateTokens(result.text || '');
 
     state = transition(state, { type: 'AI_RESPONSE', tokens: outputTokens });
 

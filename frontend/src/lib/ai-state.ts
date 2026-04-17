@@ -5,7 +5,7 @@
  * State transitions drive tool masking and conversation behavior.
  */
 
-import type { SkillContext } from './ai-skills';
+import { detectSkillContext, type SkillContext } from './ai-skills';
 
 // ─── States ───────────────────────────────────
 export type AIConversationState =
@@ -187,17 +187,28 @@ export function transition(
 }
 
 // ─── State → Tool Masking Context ─────────────
-export function stateToSkillContext(ctx: AIStateContext): SkillContext {
+export function stateToSkillContext(
+  ctx: AIStateContext,
+  userMessage?: string,
+): SkillContext {
+  // State-driven contexts take priority (these are mid-conversation states)
   switch (ctx.state) {
     case 'plan_proposed':
       return 'milestone_confirm';
     case 'planning':
       return 'milestone_planning';
+    case 'executing':
+      return 'default'; // During execution, use default tools
     case 'reporting':
       return 'read_only';
-    default:
-      return 'default';
   }
+
+  // For idle/chatting/error states: use intent detection from user message
+  if (userMessage) {
+    return detectSkillContext(userMessage, ctx.lastSkills);
+  }
+
+  return 'default';
 }
 
 // ─── Conversation Summarization ───────────────
@@ -289,9 +300,9 @@ export function incrementTurn(ctx: AIStateContext): AIStateContext {
 /** Derive skill context from state + user message. */
 export function deriveSkillContext(
   ctx: AIStateContext,
-  _userMessage: string,
+  userMessage: string,
 ): SkillContext {
-  return stateToSkillContext(ctx);
+  return stateToSkillContext(ctx, userMessage);
 }
 
 /** Check if approaching token budget. */

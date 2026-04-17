@@ -71,10 +71,7 @@ const VALID_PRIORITIES = new Set(['urgent', 'high', 'medium', 'low']);
 const VALID_STATUSES = new Set(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']);
 const VALID_CATEGORIES = new Set(['FRONT', 'BACK', 'API', 'DB', 'INFRA', 'UX', 'DEVOPS']);
 
-function normalizeOptionalStringArray(value: unknown): string[] | undefined {
-  const arr = normalizeStringArray(value);
-  return arr.length > 0 ? arr : undefined;
-}
+// normalizeOptionalStringArray removed (unused)
 
 function inferTypeFromText(text: string): string {
   const t = text.toLowerCase();
@@ -242,6 +239,23 @@ async function executeSearchIssues(
 
     results = results.slice(0, limit);
 
+    const searchQuery = (args.query as string || '');
+    const searchFormattedParts: string[] = [];
+    if (results.length === 0) {
+      searchFormattedParts.push(`No issues found${searchQuery ? ` matching "${searchQuery}"` : ''}.`);
+    } else {
+      searchFormattedParts.push(`Found ${results.length} issue${results.length !== 1 ? 's' : ''}${searchQuery ? ` matching "${searchQuery}"` : ''}:\n`);
+      results.forEach((issue, idx) => {
+        const cats = (issue.category || []).join(', ');
+        const tags = (issue.tags || []).join(', ');
+        const updated = issue.updated_at ? new Date(issue.updated_at).toISOString().split('T')[0] : 'N/A';
+        searchFormattedParts.push(`${idx + 1}. ${issue.display_id} [${issue.status}, ${issue.priority}, ${issue.type}] — ${issue.title}`);
+        searchFormattedParts.push(`   Project: ${issue.project_name || 'N/A'}${cats ? ` | Categories: ${cats}` : ''}${tags ? ` | Tags: ${tags}` : ''}`);
+        searchFormattedParts.push(`   Updated: ${updated}\n`);
+      });
+      searchFormattedParts.push(`You can: update these issues (status/priority/tags), add comments, or create related issues.`);
+    }
+
     return {
       skill: 'search_issues',
       success: true,
@@ -258,6 +272,7 @@ async function executeSearchIssues(
         updated_at: i.updated_at,
       })),
       summary: `Found ${results.length} issue${results.length !== 1 ? 's' : ''}`,
+      formattedForModel: searchFormattedParts.join('\n'),
     };
   } catch (err) {
     return { skill: 'search_issues', success: false, error: String(err), summary: 'Search failed' };
@@ -306,11 +321,23 @@ async function executeCreateIssue(
       category: normalizeCategories(args.category, text),
     });
 
+    const createCategories = (issue.category || []).join(', ');
+    const createTags = (issue.tags || []).join(', ');
     return {
       skill: 'create_issue',
       success: true,
       data: { id: issue.id, display_id: issue.display_id, title: issue.title },
       summary: `Created **${issue.display_id}** — ${issue.title}`,
+      formattedForModel: [
+        `✅ Issue created successfully:`,
+        `- ID: ${issue.display_id} (uuid: ${issue.id})`,
+        `- Title: ${issue.title}`,
+        `- Type: ${issue.type} | Priority: ${issue.priority} | Status: ${issue.status}`,
+        createCategories ? `- Categories: ${createCategories}` : '',
+        createTags ? `- Tags: ${createTags}` : '',
+        ``,
+        `The issue is now in the backlog. You can update its status or add more details.`,
+      ].filter(Boolean).join('\n'),
     };
   } catch (err) {
     const raw = String(err);
@@ -354,11 +381,13 @@ async function executeUpdateIssue(
     const updated = await api.issues.update(issueId, body);
 
     const changes = Object.keys(body).join(', ');
+    const changesFormatted = Object.entries(body).map(([k, v]) => `${k}=${Array.isArray(v) ? (v as string[]).join(',') : String(v)}`).join(', ');
     return {
       skill: 'update_issue',
       success: true,
       data: { id: updated.id, display_id: updated.display_id },
       summary: `Updated **${updated.display_id}** (${changes})`,
+      formattedForModel: `✅ Updated ${updated.display_id}:\n- Changed: ${changes}\n- New values: ${changesFormatted}\n\nThe issue has been updated.`,
     };
   } catch (err) {
     return { skill: 'update_issue', success: false, error: String(err), summary: 'Failed to update issue' };
@@ -407,6 +436,7 @@ async function executeBulkUpdateIssues(
       success: true,
       data: { updated: successCount, total: updates.length, details: results },
       summary: `Bulk updated ${successCount}/${updates.length} issues`,
+      formattedForModel: `Bulk update complete: ${successCount}/${updates.length} issues updated successfully.\n${results.join('\n')}`,
     };
   } catch (err) {
     return { skill: 'bulk_update_issues', success: false, error: String(err), summary: 'Bulk update failed' };
@@ -430,6 +460,7 @@ async function executeAddComment(
       skill: 'add_comment',
       success: true,
       summary: `Comment added to issue`,
+      formattedForModel: `✅ Comment added to issue successfully.`,
     };
   } catch (err) {
     return { skill: 'add_comment', success: false, error: String(err), summary: 'Failed to add comment' };
@@ -477,11 +508,27 @@ async function executeGetMetrics(
       });
     }
 
+    const metricsFormatted = metrics.map((m) => {
+      const mAny = m as Record<string, unknown>;
+      const statusStr = Object.entries((mAny.status as Record<string, number>) || {}).map(([k, v]) => `${k}=${v}`).join(', ');
+      const priorityStr = Object.entries((mAny.priority as Record<string, number>) || {}).map(([k, v]) => `${k}=${v}`).join(', ');
+      const categoryStr = Object.entries((mAny.category as Record<string, number>) || {}).map(([k, v]) => `${k}=${v}`).join(', ');
+      return [
+        `Project Metrics for ${mAny.project} (${mAny.prefix}):`,
+        `- Total issues: ${mAny.total_issues}`,
+        `- Completion rate: ${mAny.completion_rate}`,
+        statusStr ? `- Status: ${statusStr}` : '',
+        priorityStr ? `- Priority: ${priorityStr}` : '',
+        categoryStr ? `- Categories: ${categoryStr}` : '',
+      ].filter(Boolean).join('\n');
+    }).join('\n\n');
+
     return {
       skill: 'get_project_metrics',
       success: true,
       data: metrics,
       summary: `Metrics for ${targetProjects.length} project${targetProjects.length !== 1 ? 's' : ''}`,
+      formattedForModel: metricsFormatted || 'No metrics available.',
     };
   } catch (err) {
     return { skill: 'get_project_metrics', success: false, error: String(err), summary: 'Failed to get metrics' };
@@ -532,11 +579,35 @@ async function executeWeeklyRecap(
       });
     }
 
+    const recapFormatted = recap.map((r) => {
+      const rAny = r as Record<string, unknown>;
+      const completed = rAny.completed as Array<{display_id: string, title: string}>;
+      const inProgress = rAny.in_progress as Array<{display_id: string, title: string}>;
+      const inReview = rAny.in_review as Array<{display_id: string, title: string}>;
+      const urgentOpen = rAny.urgent_open as Array<{display_id: string, title: string}>;
+      const staleIssues = rAny.stale_issues as unknown[];
+      const completedIds = completed.map(i => i.display_id).join(', ');
+      const inProgressStr = inProgress.map(i => `${i.display_id} — ${i.title}`).join(', ');
+      const inReviewStr = inReview.map(i => `${i.display_id} — ${i.title}`).join(', ');
+      const urgentStr = urgentOpen.map(i => `${i.display_id} — ${i.title}`).join(', ');
+      return [
+        `Weekly Recap for ${rAny.project} (${rAny.period}):`,
+        `- Completed: ${rAny.completed_count} issue${(rAny.completed_count as number) !== 1 ? 's' : ''}${completedIds ? ` (${completedIds})` : ''}`,
+        `- In Progress: ${inProgress.length} issues${inProgressStr ? ` (${inProgressStr})` : ''}`,
+        `- In Review: ${inReview.length} issues${inReviewStr ? ` (${inReviewStr})` : ''}`,
+        `- Newly Created: ${rAny.newly_created}`,
+        `- Urgent/Open: ${urgentOpen.length}${urgentStr ? ` (${urgentStr})` : ''}`,
+        `- Stale (>7 days no update): ${staleIssues.length} issues`,
+        `- Velocity: ${rAny.velocity} issues/week`,
+      ].join('\n');
+    }).join('\n\n');
+
     return {
       skill: 'weekly_recap',
       success: true,
       data: recap,
       summary: `Recap for ${targetProjects.length} project(s) over ${days} days`,
+      formattedForModel: recapFormatted || 'No recap data available.',
     };
   } catch (err) {
     return { skill: 'weekly_recap', success: false, error: String(err), summary: 'Recap failed' };
@@ -593,11 +664,43 @@ async function executeSuggestPriorities(
       });
     }
 
+    const suggestFormatted = suggestions.map((s) => {
+      const sAny = s as Record<string, unknown>;
+      const urgentStuck = sAny.urgent_stuck as Array<{display_id: string, title: string, days_since_update: number}>;
+      const highInBacklog = sAny.high_in_backlog as Array<{display_id: string, title: string}>;
+      const stale = sAny.stale as Array<{display_id: string, title: string, status: string, days_since_update: number}>;
+      const dist = sAny.priority_distribution as Record<string, number>;
+      const lines: string[] = [
+        `Priority Analysis for ${sAny.project} (${sAny.prefix}):`,
+        `- Total open: ${sAny.total_open} issues`,
+        Object.keys(dist).length > 0 ? `- Distribution: ${Object.entries(dist).map(([k, v]) => `${k}=${v}`).join(', ')}` : '',
+      ];
+      if (urgentStuck.length > 0) {
+        lines.push(`\n⚠️ Urgent issues stuck (no update >2 days):`);
+        urgentStuck.forEach(i => lines.push(`- ${i.display_id} — ${i.title} (${i.days_since_update} days stale)`));
+      }
+      if (highInBacklog.length > 0) {
+        lines.push(`\n📋 High priority in backlog (should be todo):`);
+        highInBacklog.forEach(i => lines.push(`- ${i.display_id} — ${i.title}`));
+      }
+      if (stale.length > 0) {
+        lines.push(`\n🕐 Stale issues (>14 days, not backlog):`);
+        stale.forEach(i => lines.push(`- ${i.display_id} — ${i.status} for ${i.days_since_update} days — ${i.title}`));
+      }
+      const recs: string[] = [];
+      if (highInBacklog.length > 0) recs.push(`Move ${highInBacklog.map(i => i.display_id).join(', ')} to todo`);
+      if (urgentStuck.length > 0) recs.push(`Investigate ${urgentStuck.map(i => i.display_id).join(', ')} blockers`);
+      if (stale.length > 0) recs.push(`Close or deprioritize stale issues`);
+      if (recs.length > 0) lines.push(`\nRecommendations: ${recs.join(', ')}.`);
+      return lines.filter(l => l !== '').join('\n');
+    }).join('\n\n');
+
     return {
       skill: 'suggest_priorities',
       success: true,
       data: suggestions,
       summary: `Priority analysis for ${targetProjects.length} project(s)`,
+      formattedForModel: suggestFormatted || 'No suggestions available.',
     };
   } catch (err) {
     return { skill: 'suggest_priorities', success: false, error: String(err), summary: 'Priority analysis failed' };
@@ -828,9 +931,10 @@ async function executePlanMilestones(
         ? velocity.issues_per_week_8w * teamSize
         : null;
 
-    const estimatedWeeks = effectiveVelocity
+    const estimatedWeeks: number | null = effectiveVelocity
       ? Math.round((openIssues.length / effectiveVelocity) * 10) / 10
       : null;
+    void estimatedWeeks; // Used in formattedForModel below
 
     // ── Smart auto-grouping for dev teams (Baaton-specific) ──
     // Strategy: dev-first grouping optimized for software projects
@@ -990,6 +1094,23 @@ async function executePlanMilestones(
         instructions: 'IMPORTANT: Present this plan to the user. Show each milestone with its issues (display_id + title + type + priority). Show velocity and total estimated weeks. Ask if they want to apply. When they confirm, call create_milestones_batch with project_id and the milestones array (name, description, target_date, order, issue_ids).',
       },
       summary: `Analyzed ${openIssues.length} issues → proposed ${proposedMilestones.length} milestones over ~${cumulativeWeeks} weeks (${realisticVelocity} issues/week realistic)`,
+      formattedForModel: [
+        `Milestone Plan for ${project?.name || projectId} (${openIssues.length} open issues):`,
+        ``,
+        `Velocity: ${effectiveVelocity ?? 'unknown'} issues/week (historical avg)`,
+        `Estimated completion: ~${cumulativeWeeks} weeks with ${teamSize} dev`,
+        ``,
+        ...proposedMilestones.map((ms, idx) => {
+          const issueLines = (ms.issues_summary as Array<{display_id: string, priority: string, type: string, title: string}>)
+            .map(i => `   - ${i.display_id} [${i.priority}, ${i.type}] — ${i.title}`).join('\n');
+          return `${idx + 1}. ${ms.name} (${ms.issues_summary.length} issues) — Target: ${ms.target_date}\n${issueLines}`;
+        }),
+        dependencies.length > 0
+          ? `\nDependencies detected:\n${dependencies.slice(0, 5).map(d => `- ${d.from_display_id} → ${d.to_display_id} (${d.reason})`).join('\n')}`
+          : '',
+        ``,
+        `To apply this plan, confirm and I'll create the milestones.`,
+      ].filter(s => s !== '').join('\n'),
     };
   } catch (err) {
     return { skill: 'plan_milestones', success: false, error: String(err), summary: 'Failed to fetch issues for planning' };
@@ -1061,6 +1182,7 @@ async function executeCreateMilestonesBatch(
         details: results,
       },
       summary: `Created ${milestonesCreated} milestone${milestonesCreated !== 1 ? 's' : ''}, assigned ${issuesAssigned} issue${issuesAssigned !== 1 ? 's' : ''}`,
+      formattedForModel: `Milestones created: ${milestonesCreated}/${milestones.length}, issues assigned: ${issuesAssigned}.\n${results.join('\n')}`,
     };
   } catch (err) {
     return { skill: 'create_milestones_batch', success: false, error: String(err), summary: 'Batch milestone creation failed' };
@@ -1127,6 +1249,18 @@ async function executeAdjustTimeline(
         total_open_issues: openIssues.length,
       },
       summary: `Fetched ${milestones.length} milestones, ${openIssues.length} open issues, and ${dependencies.length} dependencies for timeline adjustment`,
+      formattedForModel: [
+        `Timeline Adjustment for ${project?.name || projectId}:`,
+        `Constraint: "${constraint}"`,
+        ``,
+        `Milestones (${milestones.length}):`,
+        ...milestones.map(m => `- ${m.name} (${m.status || 'active'})${m.target_date ? ` — Target: ${m.target_date}` : ''}`),
+        ``,
+        `Open Issues: ${openIssues.length}`,
+        `Velocity: ${velocity.issues_per_week_4w} issues/week (4-week avg)`,
+        ``,
+        `Analyze the constraint and propose updated target dates for milestones. You can update milestones via manage_milestones or reschedule issues as needed.`,
+      ].join('\n'),
     };
   } catch (err) {
     return { skill: 'adjust_timeline', success: false, error: String(err), summary: 'Failed to fetch data for timeline adjustment' };
@@ -1178,6 +1312,7 @@ export async function executeSkill(
         success: true,
         data: { brief: args.brief, project_id: args.project_id },
         summary: 'PRD context ready — generating document',
+        formattedForModel: `✅ PRD context ready. Brief: "${args.brief || 'N/A'}". Generate a full Product Requirements Document based on this brief and the project context.`,
       };
       break;
     case 'plan_milestones':
@@ -1224,7 +1359,7 @@ async function executeTriageIssue(args: Record<string, unknown>, api: ApiClient)
   const issueId = args.issue_id as string;
   if (!issueId) return { skill: 'triage_issue', success: false, error: 'issue_id required', summary: 'Missing issue_id' };
   const result = await api.post(`/issues/${issueId}/triage`, {});
-  return { skill: 'triage_issue', success: true, data: result, summary: `AI triage completed for issue ${issueId}` };
+  return { skill: 'triage_issue', success: true, data: result, summary: `AI triage completed for issue ${issueId}`, formattedForModel: `✅ AI triage completed for issue ${issueId}. The issue has been analyzed and categorized automatically.` };
 }
 
 async function executeManageInitiatives(args: Record<string, unknown>, api: ApiClient): Promise<SkillResult> {
@@ -1232,11 +1367,11 @@ async function executeManageInitiatives(args: Record<string, unknown>, api: ApiC
   switch (action) {
     case 'list': {
       const data = await api.get('/initiatives');
-      return { skill: 'manage_initiatives', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} initiatives` };
+      return { skill: 'manage_initiatives', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} initiatives`, formattedForModel: Array.isArray(data) && data.length > 0 ? `Found ${data.length} initiatives:\n${(data as Array<Record<string, unknown>>).map(i => `- ${i.name}${i.status ? ` [${i.status}]` : ''}`).join('\n')}\n\nYou can create, update, or add projects to these initiatives.` : 'No initiatives found. You can create one with manage_initiatives(action=create).' };
     }
     case 'create': {
       const data = await api.post('/initiatives', { name: args.name, description: args.description });
-      return { skill: 'manage_initiatives', success: true, data, summary: `Created initiative "${args.name}"` };
+      return { skill: 'manage_initiatives', success: true, data, summary: `Created initiative "${args.name}"`, formattedForModel: `✅ Initiative created: "${args.name}"${args.description ? `\n${args.description}` : ''}\n\nYou can add projects to this initiative using manage_initiatives(action=add_project).` };
     }
     case 'update': {
       const body: Record<string, unknown> = {};
@@ -1244,15 +1379,15 @@ async function executeManageInitiatives(args: Record<string, unknown>, api: ApiC
       if (args.description) body.description = args.description;
       if (args.status) body.status = args.status;
       const data = await api.patch(`/initiatives/${args.initiative_id}`, body);
-      return { skill: 'manage_initiatives', success: true, data, summary: `Updated initiative` };
+      return { skill: 'manage_initiatives', success: true, data, summary: `Updated initiative`, formattedForModel: `✅ Initiative updated successfully. Changed: ${Object.keys(body).join(', ')}.` };
     }
     case 'add_project': {
       await api.post(`/initiatives/${args.initiative_id}/projects/${args.project_id}`, {});
-      return { skill: 'manage_initiatives', success: true, data: {}, summary: `Added project to initiative` };
+      return { skill: 'manage_initiatives', success: true, data: {}, summary: `Added project to initiative`, formattedForModel: `✅ Project added to initiative successfully.` };
     }
     case 'remove_project': {
       await api.delete(`/initiatives/${args.initiative_id}/projects/${args.project_id}`);
-      return { skill: 'manage_initiatives', success: true, data: {}, summary: `Removed project from initiative` };
+      return { skill: 'manage_initiatives', success: true, data: {}, summary: `Removed project from initiative`, formattedForModel: `✅ Project removed from initiative successfully.` };
     }
     default:
       return { skill: 'manage_initiatives', success: false, error: `Unknown action: ${action}`, summary: `Unknown action` };
@@ -1266,7 +1401,7 @@ async function executeManageAutomations(args: Record<string, unknown>, api: ApiC
   switch (action) {
     case 'list': {
       const data = await api.get(`/projects/${projectId}/automations`);
-      return { skill: 'manage_automations', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} automations` };
+      return { skill: 'manage_automations', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} automations`, formattedForModel: Array.isArray(data) && data.length > 0 ? `Found ${data.length} automations:\n${(data as Array<Record<string, unknown>>).map(a => `- ${a.name} [${a.enabled ? 'enabled' : 'disabled'}] trigger: ${a.trigger_type} → action: ${a.action_type}`).join('\n')}\n\nYou can create, toggle, or delete automations.` : 'No automations configured. You can create one with manage_automations(action=create).' };
     }
     case 'create': {
       const body = {
@@ -1277,15 +1412,15 @@ async function executeManageAutomations(args: Record<string, unknown>, api: ApiC
         action_config: args.action_config ? JSON.parse(args.action_config as string) : {},
       };
       const data = await api.post(`/projects/${projectId}/automations`, body);
-      return { skill: 'manage_automations', success: true, data, summary: `Created automation "${args.name}"` };
+      return { skill: 'manage_automations', success: true, data, summary: `Created automation "${args.name}"`, formattedForModel: `✅ Automation "${args.name}" created.\nTrigger: ${args.trigger_type} → Action: ${args.action_type}\n\nThe automation is active. You can toggle or delete it using manage_automations.` };
     }
     case 'toggle': {
       const data = await api.patch(`/automations/${args.automation_id}`, { enabled: args.enabled !== false });
-      return { skill: 'manage_automations', success: true, data, summary: `Toggled automation` };
+      return { skill: 'manage_automations', success: true, data, summary: `Toggled automation`, formattedForModel: `✅ Automation ${args.enabled !== false ? 'enabled' : 'disabled'} successfully.` };
     }
     case 'delete': {
       await api.delete(`/automations/${args.automation_id}`);
-      return { skill: 'manage_automations', success: true, data: {}, summary: `Deleted automation` };
+      return { skill: 'manage_automations', success: true, data: {}, summary: `Deleted automation`, formattedForModel: `✅ Automation deleted successfully.` };
     }
     default:
       return { skill: 'manage_automations', success: false, error: `Unknown action: ${action}`, summary: `Unknown action` };
@@ -1299,19 +1434,19 @@ async function executeManageSla(args: Record<string, unknown>, api: ApiClient): 
   switch (action) {
     case 'list_rules': {
       const data = await api.get(`/projects/${projectId}/sla-rules`);
-      return { skill: 'manage_sla', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} SLA rules` };
+      return { skill: 'manage_sla', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} SLA rules`, formattedForModel: Array.isArray(data) && data.length > 0 ? `Found ${data.length} SLA rules:\n${(data as Array<Record<string, unknown>>).map(r => `- ${r.priority}: ${r.deadline_hours}h`).join('\n')}\n\nYou can add, delete, or check SLA stats.` : 'No SLA rules configured. You can create one with manage_sla(action=create_rule).' };
     }
     case 'stats': {
       const data = await api.get(`/projects/${projectId}/sla-stats`);
-      return { skill: 'manage_sla', success: true, data, summary: `SLA stats retrieved` };
+      return { skill: 'manage_sla', success: true, data, summary: `SLA stats retrieved`, formattedForModel: `SLA stats retrieved for project. Check the data for breach rates and compliance details.` };
     }
     case 'create_rule': {
       const data = await api.post(`/projects/${projectId}/sla-rules`, { priority: args.priority, deadline_hours: args.deadline_hours });
-      return { skill: 'manage_sla', success: true, data, summary: `Created SLA rule: ${args.priority} = ${args.deadline_hours}h` };
+      return { skill: 'manage_sla', success: true, data, summary: `Created SLA rule: ${args.priority} = ${args.deadline_hours}h`, formattedForModel: `✅ SLA rule created: ${args.priority} issues must be resolved within ${args.deadline_hours}h.` };
     }
     case 'delete_rule': {
       await api.delete(`/sla-rules/${args.rule_id}`);
-      return { skill: 'manage_sla', success: true, data: {}, summary: `Deleted SLA rule` };
+      return { skill: 'manage_sla', success: true, data: {}, summary: `Deleted SLA rule`, formattedForModel: `✅ SLA rule deleted successfully.` };
     }
     default:
       return { skill: 'manage_sla', success: false, error: `Unknown action: ${action}`, summary: `Unknown action` };
@@ -1325,16 +1460,16 @@ async function executeManageTemplates(args: Record<string, unknown>, api: ApiCli
   switch (action) {
     case 'list': {
       const data = await api.get(`/projects/${projectId}/templates`);
-      return { skill: 'manage_templates', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} templates` };
+      return { skill: 'manage_templates', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} templates`, formattedForModel: Array.isArray(data) && data.length > 0 ? `Found ${data.length} templates:\n${(data as Array<Record<string, unknown>>).map(t => `- ${t.name}${t.default_type ? ` [type: ${t.default_type}]` : ''}${t.default_priority ? ` [priority: ${t.default_priority}]` : ''}`).join('\n')}\n\nYou can create issues from these templates.` : 'No templates found. You can create one with manage_templates(action=create).' };
     }
     case 'create': {
       const body = { name: args.name, description: args.description, default_priority: args.default_priority, default_type: args.default_type };
       const data = await api.post(`/projects/${projectId}/templates`, body);
-      return { skill: 'manage_templates', success: true, data, summary: `Created template "${args.name}"` };
+      return { skill: 'manage_templates', success: true, data, summary: `Created template "${args.name}"`, formattedForModel: `✅ Template "${args.name}" created.${args.default_type ? ` Default type: ${args.default_type}.` : ''}${args.default_priority ? ` Default priority: ${args.default_priority}.` : ''}` };
     }
     case 'delete': {
       await api.delete(`/templates/${args.template_id}`);
-      return { skill: 'manage_templates', success: true, data: {}, summary: `Deleted template` };
+      return { skill: 'manage_templates', success: true, data: {}, summary: `Deleted template`, formattedForModel: `✅ Template deleted successfully.` };
     }
     default:
       return { skill: 'manage_templates', success: false, error: `Unknown action: ${action}`, summary: `Unknown action` };
@@ -1348,24 +1483,24 @@ async function executeManageRecurring(args: Record<string, unknown>, api: ApiCli
   switch (action) {
     case 'list': {
       const data = await api.get(`/projects/${projectId}/recurring`);
-      return { skill: 'manage_recurring', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} recurring configs` };
+      return { skill: 'manage_recurring', success: true, data, summary: `Found ${Array.isArray(data) ? data.length : 0} recurring configs`, formattedForModel: Array.isArray(data) && data.length > 0 ? `Found ${data.length} recurring issue configs:\n${(data as Array<Record<string, unknown>>).map(r => `- "${r.title}" [${r.enabled ? 'enabled' : 'disabled'}] cron: ${r.cron_expression}`).join('\n')}\n\nYou can toggle, trigger, or delete these configs.` : 'No recurring issues configured. You can create one with manage_recurring(action=create).' };
     }
     case 'create': {
       const body = { title: args.title, description: args.description, priority: args.priority, issue_type: args.issue_type, cron_expression: args.cron_expression };
       const data = await api.post(`/projects/${projectId}/recurring`, body);
-      return { skill: 'manage_recurring', success: true, data, summary: `Created recurring issue "${args.title}"` };
+      return { skill: 'manage_recurring', success: true, data, summary: `Created recurring issue "${args.title}"`, formattedForModel: `✅ Recurring issue "${args.title}" created.\nSchedule: ${args.cron_expression}\nPriority: ${args.priority || 'medium'}, Type: ${args.issue_type || 'task'}\n\nIssues will be created automatically on schedule.` };
     }
     case 'toggle': {
       const data = await api.patch(`/recurring/${args.recurring_id}`, { enabled: args.enabled !== false });
-      return { skill: 'manage_recurring', success: true, data, summary: `Toggled recurring issue` };
+      return { skill: 'manage_recurring', success: true, data, summary: `Toggled recurring issue`, formattedForModel: `✅ Recurring issue ${args.enabled !== false ? 'enabled' : 'disabled'} successfully.` };
     }
     case 'trigger': {
       const data = await api.post(`/recurring/${args.recurring_id}/trigger`, {});
-      return { skill: 'manage_recurring', success: true, data, summary: `Manually triggered recurring issue` };
+      return { skill: 'manage_recurring', success: true, data, summary: `Manually triggered recurring issue`, formattedForModel: `✅ Recurring issue manually triggered. A new issue has been created from the template.` };
     }
     case 'delete': {
       await api.delete(`/recurring/${args.recurring_id}`);
-      return { skill: 'manage_recurring', success: true, data: {}, summary: `Deleted recurring config` };
+      return { skill: 'manage_recurring', success: true, data: {}, summary: `Deleted recurring config`, formattedForModel: `✅ Recurring issue config deleted. No more issues will be created automatically.` };
     }
     default:
       return { skill: 'manage_recurring', success: false, error: `Unknown action: ${action}`, summary: `Unknown action` };
@@ -1376,5 +1511,5 @@ async function executeExportProject(args: Record<string, unknown>, api: ApiClien
   const projectId = args.project_id as string;
   if (!projectId) return { skill: 'export_project', success: false, error: 'project_id required', summary: 'Missing project_id' };
   const data = await api.get(`/projects/${projectId}/export`);
-  return { skill: 'export_project', success: true, data, summary: `Exported project data` };
+  return { skill: 'export_project', success: true, data, summary: `Exported project data`, formattedForModel: `✅ Project data exported successfully. The export contains all issues, milestones, and metadata for the project.` };
 }
