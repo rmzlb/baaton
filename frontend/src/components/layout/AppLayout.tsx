@@ -29,8 +29,20 @@ export function AppLayout() {
   useOnboarding();
   useSSE();
 
+  // App-shell mode: lock document scroll only while the authenticated layout
+  // is mounted. Public routes (Landing, Docs, sign-in) render *without*
+  // AppLayout and keep their natural document scroll. Without this the iOS
+  // Safari pull-to-refresh and macOS rubber-band can leak past the inner
+  // <main> scroll container and visually break the app-shell illusion.
+  useEffect(() => {
+    document.documentElement.classList.add('app-shell-locked');
+    return () => {
+      document.documentElement.classList.remove('app-shell-locked');
+    };
+  }, []);
+
   return (
-    <div className="flex h-screen overflow-hidden bg-bg text-primary">
+    <div className="flex h-dvh [@supports_not(height:100dvh)]:h-screen overflow-hidden overscroll-contain bg-bg text-primary">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-black focus:text-sm focus:font-medium focus:shadow-lg"
@@ -55,7 +67,11 @@ export function AppLayout() {
         )}
       >
         <TopBar />
-        <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
+        <main
+          id="main-content"
+          className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+          tabIndex={-1}
+        >
           <Outlet />
         </main>
       </div>

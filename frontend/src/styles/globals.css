@@ -68,6 +68,27 @@ html:not(.dark) {
 html:not(.dark) ::-webkit-scrollbar-thumb { background: #c4c4c4; }
 html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
 
+/* ─── App-Shell Mode (authenticated routes) ──
+   AppLayout adds `.app-shell-locked` to <html> on mount and removes it on
+   unmount. This guarantees that *only* the inner <main> scroll container
+   moves — the document never scrolls. Stops iOS pull-to-refresh, macOS
+   rubber-band leak, and any rogue child overflow from creating a vertical
+   scrollbar on <body>.
+
+   Public routes (Landing /, Docs /docs, /sign-in, /submit/...) render
+   without AppLayout, so the class is absent and their natural document
+   scroll is preserved. */
+html.app-shell-locked,
+html.app-shell-locked body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  /* Prevent iOS bounce + ensure the layout uses the dynamic viewport.
+     Order matters: 100vh first as fallback, 100dvh overrides where supported. */
+  height: 100vh;
+  height: 100dvh;
+  position: relative;
+}
+
 /* ─── Custom Scrollbar ─────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
