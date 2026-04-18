@@ -390,24 +390,84 @@ pub fn build_stream(
                 model, api_key
             );
 
-            let resp = match client.post(&url).json(&request_body).send().await {
-                Ok(r) => r,
-                Err(e) => {
-                    tracing::error!("Gemini request failed: {}", e);
-                    yield sse_chunk(&UIMessageChunk::Error {
-                        error_text: "Failed to reach AI service".into(),
-                    });
-                    break 'agent_loop;
+            // Retry with exponential backoff on 429 (rate limit) or 503 (overloaded).
+            // Gemini quotas reset quickly; a short wait usually fixes it.
+            const MAX_RETRIES: usize = 3;
+            let backoff_ms = [1000_u64, 2000, 4000];
+            let resp: Option<reqwest::Response> = {
+                let mut r = None;
+                for attempt in 0..=MAX_RETRIES {
+                    match client.post(&url).json(&request_body).send().await {
+                        Ok(raw) => {
+                            let s = raw.status();
+                            let is_retryable = s == 429 || s == 503;
+                            if !is_retryable || attempt == MAX_RETRIES {
+                                r = Some(raw);
+                                break;
+                            }
+                            let wait = backoff_ms[attempt.min(backoff_ms.len() - 1)];
+                            tracing::warn!(
+                                "Gemini {} — retrying in {}ms (attempt {}/{})",
+                                s.as_u16(),
+                                wait,
+                                attempt + 1,
+                                MAX_RETRIES
+                            );
+                            tokio::time::sleep(tokio::time::Duration::from_millis(wait)).await;
+                        }
+                        Err(e) => {
+                            tracing::error!("Gemini request failed (attempt {}): {}", attempt + 1, e);
+                            if attempt == MAX_RETRIES {
+                                yield sse_chunk(&UIMessageChunk::Error {
+                                    error_text: "Impossible de joindre l'IA. Verifie ta connexion et reessaie.".into(),
+                                });
+                                break 'agent_loop;
+                            }
+                            let wait = backoff_ms[attempt.min(backoff_ms.len() - 1)];
+                            tokio::time::sleep(tokio::time::Duration::from_millis(wait)).await;
+                        }
+                    }
                 }
+                r
             };
+            let Some(resp) = resp else { break 'agent_loop };
 
             let status = resp.status();
             if !status.is_success() {
                 let err_body = resp.text().await.unwrap_or_default();
                 tracing::error!("Gemini error {}: {}", status.as_u16(), err_body);
-                yield sse_chunk(&UIMessageChunk::Error {
-                    error_text: format!("AI service returned {}", status.as_u16()),
-                });
+
+                // Extract a human-readable error message from Gemini's body if possible
+                let gemini_reason: Option<String> = serde_json::from_str::<Value>(&err_body)
+                    .ok()
+                    .and_then(|v| {
+                        v.pointer("/error/message")
+                            .and_then(|m| m.as_str())
+                            .map(String::from)
+                    });
+
+                let user_msg = match status.as_u16() {
+                    429 => format!(
+                        "L'IA est debordee (quota Gemini atteint). Reessaie dans quelques secondes. {}",
+                        gemini_reason.as_deref().unwrap_or("")
+                    ).trim().to_string(),
+                    503 => "L'IA est temporairement indisponible. Reessaie dans un instant.".into(),
+                    500..=599 => format!(
+                        "Erreur interne de l'IA (code {}). Reessaie dans un moment.",
+                        status.as_u16()
+                    ),
+                    401 | 403 => "L'IA n'est pas configuree correctement (cle API). Contacte l'admin.".into(),
+                    400 => gemini_reason
+                        .map(|r| format!("Requete invalide : {}", r))
+                        .unwrap_or_else(|| "Requete invalide a l'IA.".into()),
+                    _ => format!(
+                        "Erreur IA (code {}). {}",
+                        status.as_u16(),
+                        gemini_reason.unwrap_or_default()
+                    ),
+                };
+
+                yield sse_chunk(&UIMessageChunk::Error { error_text: user_msg });
                 break 'agent_loop;
             }
 
