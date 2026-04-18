@@ -47,141 +47,151 @@ pub fn is_client_interactive(tool_name: &str) -> bool {
 
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     vec![
+        // ── 1. search_issues ─────────────────────────────────────────────
         tool(
             "search_issues",
-            "Search and filter issues using full-text search and structured filters (status, priority, category, project). Use to find tickets, list what's in progress, identify blockers, or check duplicates before creating.",
+            "Search and filter issues across the user's projects. Returns a summary with counts and up to `limit` matching issues (display_id, title, status, priority, assignee). Use this when the user asks to find, list, or count issues matching criteria. Cross-org by default. Combine multiple filters (status + priority + type) for precision.\n\nGood cases: 'Show me all high-priority bugs in HLM', 'List open issues assigned to Jean', 'How many in_progress tickets do we have?'.\n\nNot for: Getting details of ONE specific issue (cite it from search results instead). Aggregate metrics like velocity or cycle time (use get_project_metrics). Just browsing everything without criteria (ask user to narrow first).\n\nReturns: { display_id, title, status, priority, category[], project_name, updated_at } per issue, plus a total count. When response_format='concise', only { display_id, title, status } is returned per issue.",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "query": {
                         "type": "STRING",
-                        "description": "Free-text search against issue title and description."
+                        "description": "Free-text search against issue title and description. Example: 'auth token' matches any issue mentioning those words. Omit to return all issues matching other filters."
                     },
                     "project_id": {
                         "type": "STRING",
-                        "description": "UUID or prefix of project to search within. Omit to search all."
+                        "description": "Project UUID or prefix (e.g. 'HLM') to scope the search. Omit to search across all user's projects."
                     },
                     "status": {
                         "type": "STRING",
                         "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
-                        "description": "Filter by workflow status."
+                        "description": "Filter by workflow status. Only one value allowed per call. Example: 'in_progress' returns all active work."
                     },
                     "priority": {
                         "type": "STRING",
                         "enum": ["urgent", "high", "medium", "low"],
-                        "description": "Filter by priority level."
+                        "description": "Filter by priority level. Example: 'urgent' returns only critical issues."
                     },
                     "category": {
                         "type": "STRING",
                         "enum": ["FRONT", "BACK", "API", "DB", "INFRA", "UX", "DEVOPS"],
-                        "description": "Filter by technical domain."
+                        "description": "Filter by technical domain tag. Example: 'BACK' returns backend issues only."
                     },
                     "limit": {
                         "type": "NUMBER",
-                        "description": "Max results (default 20, max 100)."
+                        "description": "Maximum number of issues to return (default 20, max 100). Use a small limit (5-10) for quick summaries, larger for exhaustive lists."
+                    },
+                    "response_format": {
+                        "type": "STRING",
+                        "enum": ["concise", "detailed"],
+                        "description": "Output verbosity. 'concise' (default): only display_id, title, status per issue. 'detailed': full issue data including priority, category, project_name, updated_at."
                     }
                 }
             }),
         ),
+        // ── 2. propose_issue ─────────────────────────────────────────────
         tool(
             "propose_issue",
-            "PROPOSE creating a new issue (does NOT create it). Returns an editable proposal for the user to review and confirm. ALWAYS use this BEFORE create_issue. The user will see an editable form and either approve (then call create_issue with their final values) or cancel.",
+            "PROPOSE creating a new issue. MANDATORY before create_issue — never call create_issue directly. Returns a proposal data payload that the frontend renders as an editable approval form. The user can edit any field and approve/cancel via buttons. Use this tool immediately when the user asks to create/add/open an issue. Fill in ALL fields you can reasonably infer (type, priority, category, tags) to minimize user editing. The description field MUST use a structured Markdown template (bug template, feature template, etc. — see system prompt).\n\nWhen user's request is ambiguous about project: if multiple projects match, ASK the user to clarify. If only one match (via prefix or name), proceed without asking.\n\nAfter the user approves, you'll see the proposal's output in history with approved=true and finalValues. Then call create_issue with those finalValues. Do not re-generate the proposal — use finalValues verbatim.\n\nReturns: { project_id, project_name, project_prefix, title, description, type, priority, tags[], category[] }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required."},
-                    "title": {"type": "STRING", "description": "Short plain-text title. No brackets or prefixes."},
-                    "description": {"type": "STRING", "description": "Detailed description in Markdown."},
-                    "type": {"type": "STRING", "enum": ["bug", "feature", "improvement", "question"], "description": "Issue classification."},
-                    "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"], "description": "Urgency level."},
-                    "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Labels like ['auth', 'mobile']."},
-                    "category": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Technical domains: FRONT, BACK, API, DB, INFRA, UX, DEVOPS."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required. Resolves prefixes and partial names automatically."},
+                    "title": {"type": "STRING", "description": "Short plain-text title. No brackets, prefixes, or type tags. Good: 'Fix auth token refresh'. Bad: '[HLM][BUG] Fix auth'."},
+                    "description": {"type": "STRING", "description": "Detailed description in Markdown. Use structured templates: bug reports should include Steps to Reproduce, Expected vs Actual; features should include User Story and Acceptance Criteria."},
+                    "type": {"type": "STRING", "enum": ["bug", "feature", "improvement", "question"], "description": "Issue classification. Infer from context: error/crash → bug, new capability → feature, refactor/optimize → improvement, unclear requirement → question."},
+                    "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"], "description": "Urgency level. urgent = production-breaking, high = blocking work, medium = normal, low = nice-to-have."},
+                    "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Free-form labels for grouping, e.g. ['auth', 'mobile', 'security']. Infer from description context."},
+                    "category": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Technical domains. Allowed values: FRONT, BACK, API, DB, INFRA, UX, DEVOPS. Example: ['BACK', 'API'] for a backend API issue."}
                 },
                 "required": ["project_id", "title"]
             }),
         ),
+        // ── 3. create_issue ──────────────────────────────────────────────
         tool(
             "create_issue",
-            "Create a new issue with full metadata. RULE: title must be plain text with NO brackets, prefixes, or type tags. Bad: '[SQX][BUG] Fix auth'. Good: 'Fix auth token refresh on session expiry'. Returns the created issue with display_id. ONLY call this AFTER the user has approved a propose_issue.",
+            "Create a new issue with full metadata and persist it to the database. ONLY call this AFTER the user has approved a propose_issue — never call directly. Use the finalValues from the approved proposal verbatim. Returns the created issue with its auto-generated display_id (e.g. 'HLM-42').\n\nTitle RULE: must be plain text with NO brackets, prefixes, or type tags. Bad: '[SQX][BUG] Fix auth'. Good: 'Fix auth token refresh on session expiry'.\n\nNot for: Creating issues without user approval (use propose_issue first). Updating existing issues (use update_issue). Batch creation (create one at a time).\n\nReturns: { id, display_id, title, status, priority, type, category[], tags[] }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "project_id": {
                         "type": "STRING",
-                        "description": "Project UUID or prefix (e.g. 'HLM'). Required."
+                        "description": "Project UUID or prefix (e.g. 'HLM'). Required. Must match the project from the approved proposal."
                     },
                     "title": {
                         "type": "STRING",
-                        "description": "Short plain-text title. No brackets or prefixes."
+                        "description": "Short plain-text title. No brackets or prefixes. Copy from proposal finalValues."
                     },
                     "description": {
                         "type": "STRING",
-                        "description": "Detailed description in Markdown."
+                        "description": "Detailed description in Markdown. Copy from proposal finalValues."
                     },
                     "type": {
                         "type": "STRING",
                         "enum": ["bug", "feature", "improvement", "question"],
-                        "description": "Issue classification."
+                        "description": "Issue classification from the approved proposal."
                     },
                     "priority": {
                         "type": "STRING",
                         "enum": ["urgent", "high", "medium", "low"],
-                        "description": "Urgency level."
+                        "description": "Urgency level from the approved proposal."
                     },
                     "status": {
                         "type": "STRING",
                         "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
-                        "description": "Initial status. Defaults to backlog."
+                        "description": "Initial workflow status. Defaults to 'backlog' if omitted."
                     },
                     "tags": {
                         "type": "ARRAY",
                         "items": {"type": "STRING"},
-                        "description": "Labels like ['auth', 'mobile']."
+                        "description": "Labels from the approved proposal, e.g. ['auth', 'mobile']."
                     },
                     "category": {
                         "type": "ARRAY",
                         "items": {"type": "STRING"},
-                        "description": "Technical domains: FRONT, BACK, API, DB, INFRA, UX, DEVOPS."
+                        "description": "Technical domains from the approved proposal: FRONT, BACK, API, DB, INFRA, UX, DEVOPS."
                     }
                 },
                 "required": ["project_id", "title"]
             }),
         ),
+        // ── 4. propose_update_issue ──────────────────────────────────────
         tool(
             "propose_update_issue",
-            "PROPOSE updating an existing issue (does NOT modify). Returns a diff of current vs proposed values for user review. ALWAYS use this BEFORE update_issue. Only include fields you want to change.",
+            "PROPOSE updating an existing issue (does NOT modify the database). Fetches the current state and returns a side-by-side diff of current vs proposed values for user review. ALWAYS use this BEFORE update_issue — never call update_issue directly. Only include the fields you want to change; unchanged fields should be omitted.\n\nUse when the user says 'change status of HLM-42 to done', 'mark that bug as urgent', 'update the description of issue X'.\n\nAfter user approves, call update_issue with the approved finalValues. Do not re-generate the proposal.\n\nNot for: Creating new issues (use propose_issue). Updating multiple issues at once (use propose_bulk_update).\n\nReturns: { issue_id, display_id, title, diff[] } where diff contains { field, from, to } for each changed field.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "issue_id": {"type": "STRING", "description": "Internal UUID of the issue to update."},
-                    "title": {"type": "STRING", "description": "New plain-text title."},
-                    "description": {"type": "STRING", "description": "New Markdown description."},
-                    "status": {"type": "STRING", "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]},
-                    "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"]},
-                    "type": {"type": "STRING", "enum": ["bug", "feature", "improvement", "question"]},
-                    "tags": {"type": "ARRAY", "items": {"type": "STRING"}},
-                    "category": {"type": "ARRAY", "items": {"type": "STRING"}}
+                    "issue_id": {"type": "STRING", "description": "UUID or display_id of the issue to update (e.g. 'HLM-42' or full UUID). Required."},
+                    "title": {"type": "STRING", "description": "New plain-text title. Omit if not changing."},
+                    "description": {"type": "STRING", "description": "New Markdown description. Omit if not changing."},
+                    "status": {"type": "STRING", "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"], "description": "New workflow status. Omit if not changing."},
+                    "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"], "description": "New priority level. Omit if not changing."},
+                    "type": {"type": "STRING", "enum": ["bug", "feature", "improvement", "question"], "description": "New issue type. Omit if not changing."},
+                    "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "New complete tag set (replaces existing). Omit if not changing."},
+                    "category": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "New technical domains (replaces existing). Omit if not changing."}
                 },
                 "required": ["issue_id"]
             }),
         ),
+        // ── 5. propose_bulk_update ───────────────────────────────────────
         tool(
             "propose_bulk_update",
-            "PROPOSE bulk updating N issues (does NOT modify). Returns the list of affected issues and the changes for user review. ALWAYS use this BEFORE bulk_update_issues.",
+            "PROPOSE bulk updating multiple issues at once (does NOT modify the database). Returns the list of affected issues with their current state and proposed changes for user review. ALWAYS use this BEFORE bulk_update_issues — never call bulk_update_issues directly.\n\nUse when the user wants to change status/priority/tags on 2+ issues simultaneously. Example: 'Move all in_progress issues to in_review', 'Set priority to high on HLM-10, HLM-11, HLM-12'.\n\nAfter user approves, call bulk_update_issues with the approved values.\n\nNot for: Updating a single issue (use propose_update_issue). Creating issues (use propose_issue).\n\nReturns: { updates[] } where each entry has { issue_id, display_id, title, current, changes }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "updates": {
                         "type": "ARRAY",
-                        "description": "Array of per-issue update objects.",
+                        "description": "Array of per-issue update objects. Each specifies which issue to change and which fields to modify.",
                         "items": {
                             "type": "OBJECT",
                             "properties": {
-                                "issue_id": {"type": "STRING"},
-                                "status": {"type": "STRING", "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]},
-                                "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"]},
-                                "tags": {"type": "ARRAY", "items": {"type": "STRING"}},
-                                "category": {"type": "ARRAY", "items": {"type": "STRING"}}
+                                "issue_id": {"type": "STRING", "description": "UUID or display_id of the issue (e.g. 'HLM-42'). Required."},
+                                "status": {"type": "STRING", "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"], "description": "New workflow status."},
+                                "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"], "description": "New priority level."},
+                                "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "New complete tag set (replaces existing)."},
+                                "category": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "New technical domains (replaces existing)."}
                             },
                             "required": ["issue_id"]
                         }
@@ -190,84 +200,94 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["updates"]
             }),
         ),
+        // ── 6. propose_comment ───────────────────────────────────────────
         tool(
             "propose_comment",
-            "PROPOSE adding a comment to an issue (does NOT add it). Returns an editable preview for user review. ALWAYS use this BEFORE add_comment.",
+            "PROPOSE adding a comment to an issue (does NOT add it to the database). Returns an editable preview showing the issue context and proposed comment body for user review. ALWAYS use this BEFORE add_comment — never call add_comment directly.\n\nUse when the user says 'add a comment to HLM-42', 'note on that issue that...', 'leave feedback on the bug'.\n\nAfter user approves, call add_comment with the approved content.\n\nNot for: Updating issue fields (use propose_update_issue). Creating new issues (use propose_issue).\n\nReturns: { issue_id, display_id, title, content }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "issue_id": {"type": "STRING", "description": "UUID of the issue."},
-                    "content": {"type": "STRING", "description": "Proposed comment body in Markdown."}
+                    "issue_id": {"type": "STRING", "description": "UUID or display_id of the issue to comment on (e.g. 'HLM-42' or full UUID). Required."},
+                    "content": {"type": "STRING", "description": "Proposed comment body in Markdown. Supports headings, lists, code blocks. Required."}
                 },
                 "required": ["issue_id", "content"]
             }),
         ),
+        // ── 7. update_issue ──────────────────────────────────────────────
         tool(
             "update_issue",
-            "Update fields of an existing issue by UUID. Only changed fields need to be provided. ONLY call after propose_update_issue has been approved by the user.",
+            "Update fields of an existing issue in the database. ONLY call after propose_update_issue has been approved by the user — never call directly. Use the finalValues from the approved proposal verbatim. Only include fields that are changing; unchanged fields should be omitted.\n\nReturns: { issue_id, display_id, changes[], status, priority } showing what was actually modified.\n\nNot for: Creating new issues (use create_issue after propose_issue). Bulk updates (use bulk_update_issues). Adding comments (use add_comment).",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "issue_id": {
                         "type": "STRING",
-                        "description": "Internal UUID of the issue to update."
+                        "description": "UUID or display_id of the issue to update (e.g. 'HLM-42' or full UUID). Required."
                     },
-                    "title": {"type": "STRING", "description": "New plain-text title."},
-                    "description": {"type": "STRING", "description": "New Markdown description (replaces existing)."},
+                    "title": {"type": "STRING", "description": "New plain-text title. Omit if not changing."},
+                    "description": {"type": "STRING", "description": "New Markdown description (replaces existing entirely). Omit if not changing."},
                     "status": {
                         "type": "STRING",
-                        "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]
+                        "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
+                        "description": "New workflow status. Omit if not changing."
                     },
                     "priority": {
                         "type": "STRING",
-                        "enum": ["urgent", "high", "medium", "low"]
+                        "enum": ["urgent", "high", "medium", "low"],
+                        "description": "New priority level. Omit if not changing."
                     },
                     "type": {
                         "type": "STRING",
-                        "enum": ["bug", "feature", "improvement", "question"]
+                        "enum": ["bug", "feature", "improvement", "question"],
+                        "description": "New issue classification. Omit if not changing."
                     },
                     "tags": {
                         "type": "ARRAY",
                         "items": {"type": "STRING"},
-                        "description": "New complete tag set (replaces existing)."
+                        "description": "New complete tag set (replaces existing entirely). Omit if not changing."
                     },
                     "category": {
                         "type": "ARRAY",
                         "items": {"type": "STRING"},
-                        "description": "New technical domains (replaces existing)."
+                        "description": "New technical domains (replaces existing entirely). Omit if not changing."
                     }
                 },
                 "required": ["issue_id"]
             }),
         ),
+        // ── 8. bulk_update_issues ────────────────────────────────────────
         tool(
             "bulk_update_issues",
-            "Apply updates to multiple issues atomically. ONLY call after propose_bulk_update has been approved by the user.",
+            "Apply updates to multiple issues atomically in a single database transaction. ONLY call after propose_bulk_update has been approved by the user — never call directly. Use the approved values verbatim. Skips any issue_id that cannot be resolved or doesn't belong to the user's orgs.\n\nReturns: { updated_count, issues[] } where each issue has { display_id, changes[] }.\n\nNot for: Updating a single issue (use update_issue). Creating issues (use create_issue).",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "updates": {
                         "type": "ARRAY",
-                        "description": "Array of per-issue update objects.",
+                        "description": "Array of per-issue update objects. Each must include issue_id and at least one field to change.",
                         "items": {
                             "type": "OBJECT",
                             "properties": {
-                                "issue_id": {"type": "STRING", "description": "Issue UUID."},
+                                "issue_id": {"type": "STRING", "description": "UUID or display_id of the issue (e.g. 'HLM-42'). Required."},
                                 "status": {
                                     "type": "STRING",
-                                    "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]
+                                    "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
+                                    "description": "New workflow status."
                                 },
                                 "priority": {
                                     "type": "STRING",
-                                    "enum": ["urgent", "high", "medium", "low"]
+                                    "enum": ["urgent", "high", "medium", "low"],
+                                    "description": "New priority level."
                                 },
                                 "tags": {
                                     "type": "ARRAY",
-                                    "items": {"type": "STRING"}
+                                    "items": {"type": "STRING"},
+                                    "description": "New complete tag set (replaces existing)."
                                 },
                                 "category": {
                                     "type": "ARRAY",
-                                    "items": {"type": "STRING"}
+                                    "items": {"type": "STRING"},
+                                    "description": "New technical domains (replaces existing)."
                                 }
                             },
                             "required": ["issue_id"]
@@ -277,106 +297,115 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["updates"]
             }),
         ),
+        // ── 9. add_comment ───────────────────────────────────────────────
         tool(
             "add_comment",
-            "Append a threaded comment to an issue. ONLY call after propose_comment has been approved by the user.",
+            "Append a threaded comment to an issue in the database. ONLY call after propose_comment has been approved by the user — never call directly. Use the approved content verbatim.\n\nReturns: { id, issue_id, author_id, author_name, body, created_at }.\n\nNot for: Updating issue fields like status or priority (use update_issue). Creating new issues (use create_issue).",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "issue_id": {"type": "STRING", "description": "UUID of the issue to comment on."},
-                    "content": {"type": "STRING", "description": "Comment body in Markdown."},
-                    "author_name": {"type": "STRING", "description": "Display name of the author (optional)."}
+                    "issue_id": {"type": "STRING", "description": "UUID or display_id of the issue to comment on (e.g. 'HLM-42' or full UUID). Required."},
+                    "content": {"type": "STRING", "description": "Comment body in Markdown. Supports headings, lists, code blocks. Required."},
+                    "author_name": {"type": "STRING", "description": "Display name shown as comment author. Defaults to 'Baaton AI' if omitted. Optional."}
                 },
                 "required": ["issue_id", "content"]
             }),
         ),
+        // ── 10. generate_prd ─────────────────────────────────────────────
         tool(
             "generate_prd",
-            "Generate a complete PRD (Product Requirements Document) from a brief description. Returns Markdown with user stories, acceptance criteria, and technical considerations.",
+            "Generate a complete PRD (Product Requirements Document) from a brief feature or problem description. When a project_id is provided, enriches the PRD with real data: open issues grouped by domain, milestones as objectives, and question-type issues as open questions. Without project_id, generates a generic template.\n\nUse when the user says 'write a PRD for...', 'document requirements for...', 'create a spec for...'.\n\nNot for: Creating individual issues (use propose_issue). Getting project metrics (use get_project_metrics). Sprint analysis (use analyze_sprint).\n\nReturns: { title, sections[] } where each section has { heading, content } in Markdown.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "brief": {"type": "STRING", "description": "Feature/problem description to document."},
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix for context (optional)."}
+                    "brief": {"type": "STRING", "description": "Feature or problem description to document. Example: 'User authentication with OAuth2 and social login'. Required."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM') to enrich the PRD with real project data. Optional — omit for a generic PRD template."}
                 },
                 "required": ["brief"]
             }),
         ),
+        // ── 11. analyze_sprint ───────────────────────────────────────────
         tool(
             "analyze_sprint",
-            "Analyze current sprint velocity, throughput, stuck issues, and capacity. Returns structured analysis with next-sprint recommendations.",
+            "Analyze the current active sprint: velocity, completion percentage, stuck/blocked issues, and carried-over work. Returns structured analysis with a velocity trend indicator (on_track / at_risk / behind).\n\nUse when the user asks 'how is the sprint going?', 'sprint status', 'are we on track?', 'what's stuck?'.\n\nNot for: Historical metrics or completion rates over time (use get_project_metrics). Weekly activity summaries (use weekly_recap). Reprioritizing issues (use suggest_priorities).\n\nReturns: { sprint_name, planned, completed, pct, carried_over, blocked, velocity_trend }. Returns null sprint_name if no active sprint exists.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix. Omit for all projects."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Omit to analyze the most recent active sprint across all projects."}
                 }
             }),
         ),
+        // ── 12. get_project_metrics ──────────────────────────────────────
         tool(
             "get_project_metrics",
-            "Fetch metrics dashboard: status breakdown, priority distribution, category split, completion rate, and recent activity.",
+            "Fetch a project health dashboard with aggregate metrics: total/open/in_progress/done issue counts, 14-day velocity, bug ratio, and average cycle time in hours. Provides a high-level quantitative overview of project health.\n\nUse when the user asks 'how is the project doing?', 'show me metrics', 'what's our velocity?', 'completion rate?', 'bug ratio?'.\n\nNot for: Listing individual issues (use search_issues). Sprint-specific analysis (use analyze_sprint). Weekly activity recap (use weekly_recap). Reprioritization suggestions (use suggest_priorities).\n\nReturns: { total, open, in_progress, done, velocity, bug_ratio, avg_cycle_time_hours }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix. Omit to aggregate across all projects."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Omit to aggregate metrics across all user's projects."}
                 }
             }),
         ),
+        // ── 13. weekly_recap ─────────────────────────────────────────────
         tool(
             "weekly_recap",
-            "Generate a weekly activity recap: completed issues, in-progress, newly created, and blocked/stale. Use for standups or end-of-week reviews.",
+            "Generate an activity recap for the last N days: count of completed issues, newly created issues, stale/blocked high-priority issues, and the top contributor by activity volume. Ideal for standups, end-of-week reviews, or manager summaries.\n\nUse when the user asks 'weekly recap', 'what happened this week?', 'standup summary', 'give me an update'.\n\nNot for: Detailed sprint analysis with velocity (use analyze_sprint). Aggregate project health metrics (use get_project_metrics). Listing specific issues (use search_issues).\n\nReturns: { completed, new_created, blockers, top_contributor, period }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix. Omit for cross-project recap."},
-                    "days": {"type": "NUMBER", "description": "Days to look back (default 7)."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Omit for a cross-project recap."},
+                    "days": {"type": "NUMBER", "description": "Number of days to look back. Default 7, range 1-30. Example: 14 for a biweekly recap."},
+                    "limit": {"type": "NUMBER", "description": "Maximum number of issues to list per category (completed, in_progress, new, blocked). Default 20, max 50. Use smaller values for concise summaries."}
                 }
             }),
         ),
+        // ── 14. suggest_priorities ───────────────────────────────────────
         tool(
             "suggest_priorities",
-            "Analyze open issues and generate AI reprioritization recommendations. Detects stale urgent issues, blocking chains, and priority imbalances. Returns ranked suggestions — does NOT apply changes automatically.",
+            "Analyze all open issues and generate AI-powered reprioritization recommendations. Scores issues by combining current priority weight with staleness (days since last update). Detects stale urgent issues, underrated blockers, and priority inflation. Returns ranked suggestions — does NOT apply changes automatically.\n\nUse when the user asks 'what should I work on next?', 'reprioritize my backlog', 'which issues are stale?', 'priority review'.\n\nAfter reviewing suggestions with the user, apply via propose_bulk_update then bulk_update_issues.\n\nNot for: Sprint-specific analysis (use analyze_sprint). Aggregate metrics (use get_project_metrics). Searching for specific issues (use search_issues).\n\nReturns: array of { id, display_id, title, priority, score, reason } sorted by urgency score descending (top 10).",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix. Omit for cross-project suggestions."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Omit for cross-project priority suggestions."}
                 }
             }),
         ),
+        // ── 15. plan_milestones ──────────────────────────────────────────
         tool(
             "plan_milestones",
-            "Auto-group open issues into a sequenced milestone plan based on priority, category, and velocity. Returns a proposed plan — do NOT create milestones yet; wait for user confirmation, then call create_milestones_batch.",
+            "Auto-group open issues into a sequenced milestone plan based on domain tags (FRONT, BACK, API, DB, INFRA, UX) and estimated velocity. Returns a proposed plan with milestone names, target dates, and assigned issue IDs. Does NOT create milestones — wait for user confirmation, then call create_milestones_batch.\n\nUse when the user asks 'plan milestones for HLM', 'create a roadmap', 'organize the backlog into phases', 'group issues by milestone'.\n\nNot for: Adjusting existing milestone dates (use adjust_timeline). Creating milestones without a plan (use create_milestones_batch directly only after plan approval). Sprint analysis (use analyze_sprint).\n\nReturns: { proposed_milestones[] } where each has { name, target_date, issue_ids[], estimated_weeks }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix. Required."},
-                    "target_date": {"type": "STRING", "description": "Hard deadline in YYYY-MM-DD format."},
-                    "team_size": {"type": "NUMBER", "description": "Number of active developers (default 1)."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required — milestones are project-scoped."},
+                    "target_date": {"type": "STRING", "description": "Hard deadline in YYYY-MM-DD format. The plan will fit milestones before this date. Optional — omit for auto-calculated dates."},
+                    "team_size": {"type": "NUMBER", "description": "Number of active developers. Affects velocity estimates and timeline. Default 1."}
                 },
                 "required": ["project_id"]
             }),
         ),
+        // ── 16. create_milestones_batch ──────────────────────────────────
         tool(
             "create_milestones_batch",
-            "Create multiple milestones and assign issues atomically. Call this only after user has confirmed the plan from plan_milestones.",
+            "Create multiple milestones and assign issues to them atomically. ONLY call after the user has confirmed the plan from plan_milestones. Each milestone is inserted with its name, description, target date, and display order, then the specified issues are assigned to it.\n\nUse when the user says 'yes, create those milestones', 'looks good, go ahead' after reviewing a plan_milestones proposal.\n\nNot for: Planning milestones (use plan_milestones first). Adjusting existing milestone dates (use adjust_timeline). Updating individual issues (use update_issue).\n\nReturns: { created_count, milestones[] } where each has { id, name, issue_count }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required."},
                     "milestones": {
                         "type": "ARRAY",
-                        "description": "Ordered list of milestones to create.",
+                        "description": "Ordered list of milestones to create. Copy from the approved plan_milestones output.",
                         "items": {
                             "type": "OBJECT",
                             "properties": {
-                                "name": {"type": "STRING", "description": "Milestone name."},
-                                "description": {"type": "STRING", "description": "Markdown description."},
-                                "target_date": {"type": "STRING", "description": "Target date YYYY-MM-DD."},
-                                "order": {"type": "NUMBER", "description": "Display order (1-based)."},
+                                "name": {"type": "STRING", "description": "Milestone name. Example: 'Backend Stability'."},
+                                "description": {"type": "STRING", "description": "Markdown description of the milestone scope and goals."},
+                                "target_date": {"type": "STRING", "description": "Target completion date in YYYY-MM-DD format."},
+                                "order": {"type": "NUMBER", "description": "Display order (1-based). Determines sequence in the timeline."},
                                 "issue_ids": {
                                     "type": "ARRAY",
                                     "items": {"type": "STRING"},
-                                    "description": "Issue UUIDs to assign."
+                                    "description": "UUIDs or display_ids (e.g. 'HLM-42') of issues to assign to this milestone."
                                 }
                             },
                             "required": ["name", "issue_ids"]
@@ -386,160 +415,180 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["project_id", "milestones"]
             }),
         ),
+        // ── 17. adjust_timeline ──────────────────────────────────────────
         tool(
             "adjust_timeline",
-            "Recalculate milestone schedule given a new deadline or scope change. Returns a revised plan proposal — does NOT apply changes automatically.",
+            "Recalculate milestone schedule given a new deadline or scope change constraint. Proportionally rescales all milestone dates to fit the new timeline. Returns a revised plan proposal — does NOT apply changes automatically. User must confirm before you persist.\n\nUse when the user says 'we need to ship by March 15', 'deadline moved up 2 weeks', 'we lost a developer', 'compress the timeline'.\n\nNot for: Creating milestones from scratch (use plan_milestones). Updating individual issue fields (use update_issue). Sprint analysis (use analyze_sprint).\n\nReturns: { milestones[] } with { name, old_date, new_date } per milestone, plus the constraint applied.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
-                    "constraint": {"type": "STRING", "description": "Natural-language constraint, e.g. 'finish by 2026-03-15' or 'we lost one dev'."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required."},
+                    "constraint": {"type": "STRING", "description": "Natural-language constraint describing the timeline change. Examples: 'finish by 2026-03-15', 'we lost one dev', 'scope reduced by 30%'. Required."}
                 },
                 "required": ["project_id", "constraint"]
             }),
         ),
+        // ── 18. triage_issue ─────────────────────────────────────────────
         tool(
             "triage_issue",
-            "AI-powered triage of a single issue: suggests priority, tags, category, and surfaces similar/duplicate issues. Returns suggestions with confidence scores.",
+            "AI-powered triage of a single issue: marks it as qualified, moves it from backlog to todo (if currently in backlog), and adds a triage comment. Use for processing new issues that haven't been reviewed yet.\n\nUse when the user says 'triage HLM-42', 'qualify this issue', 'review and triage the new tickets'.\n\nNot for: Suggesting priority changes across many issues (use suggest_priorities). Updating specific fields like status or tags (use propose_update_issue). Searching for issues (use search_issues).\n\nReturns: { issue_id, display_id, status, qualified_by }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "issue_id": {"type": "STRING", "description": "UUID of the issue to triage."}
+                    "issue_id": {"type": "STRING", "description": "UUID or display_id of the issue to triage (e.g. 'HLM-42' or full UUID). Required."}
                 },
                 "required": ["issue_id"]
             }),
         ),
+        // ── 19. manage_initiatives ───────────────────────────────────────
         tool(
             "manage_initiatives",
-            "CRUD for strategic initiatives (high-level goals spanning multiple projects). Actions: list, create, update, add_project, remove_project.",
+            "CRUD operations for strategic initiatives — high-level goals that span multiple projects. Use action='list' to see all initiatives, 'create' to start a new one, 'update' to change name/description/status, 'add_project'/'remove_project' to link or unlink projects.\n\nUse when the user talks about OKRs, strategic goals, cross-project initiatives, or portfolio-level planning. Example: 'Create a Q3 launch initiative', 'Link the HLM project to the security initiative', 'List all active initiatives'.\n\nNot for: Project-level milestone planning (use plan_milestones). Issue-level operations (use search_issues, propose_issue, etc.).\n\nReturns: For 'list': array of { id, name, description, status, target_date, project_count }. For mutations: { id, updated/created confirmation }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "action": {
                         "type": "STRING",
                         "enum": ["list", "create", "update", "add_project", "remove_project"],
-                        "description": "Operation to perform."
+                        "description": "Operation to perform. 'list' needs no extra params. 'create' needs name. 'update' needs initiative_id. 'add_project'/'remove_project' need both initiative_id and project_id."
                     },
-                    "initiative_id": {"type": "STRING", "description": "Initiative UUID (required for update, add_project, remove_project)."},
-                    "name": {"type": "STRING", "description": "Initiative name (required for create)."},
-                    "description": {"type": "STRING", "description": "Markdown goal description."},
+                    "initiative_id": {"type": "STRING", "description": "Initiative UUID. Required for update, add_project, remove_project."},
+                    "name": {"type": "STRING", "description": "Initiative name. Required for create, optional for update."},
+                    "description": {"type": "STRING", "description": "Markdown goal description. Optional."},
                     "status": {
                         "type": "STRING",
-                        "enum": ["active", "completed", "archived"]
+                        "enum": ["active", "completed", "archived"],
+                        "description": "Initiative lifecycle status. Optional for create (defaults to 'active') and update."
                     },
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (required for add_project, remove_project)."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required for add_project and remove_project."}
                 },
                 "required": ["action"]
             }),
         ),
+        // ── 20. manage_automations ───────────────────────────────────────
         tool(
             "manage_automations",
-            "Configure event-driven workflow automations. Actions: list, create, toggle (enable/disable), delete.",
+            "Configure event-driven workflow automations that trigger actions when issue fields change. Use action='list' to see existing rules, 'create' to add a new rule, 'toggle' to enable/disable, 'delete' to remove.\n\nUse when the user says 'auto-escalate urgent bugs', 'when status changes to in_review, add a comment', 'list automations for HLM', 'disable the auto-assign rule'.\n\nNot for: Manually updating issues (use update_issue). SLA rules (use manage_sla). Recurring scheduled issues (use manage_recurring).\n\nReturns: For 'list': array of { id, name, trigger, conditions, actions, enabled }. For mutations: { id, confirmation }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "action": {
                         "type": "STRING",
-                        "enum": ["list", "create", "toggle", "delete"]
+                        "enum": ["list", "create", "toggle", "delete"],
+                        "description": "Operation to perform. 'list' shows all rules. 'create' needs name + trigger_type. 'toggle' needs automation_id. 'delete' needs automation_id."
                     },
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
-                    "automation_id": {"type": "STRING", "description": "Automation UUID (for toggle/delete)."},
-                    "name": {"type": "STRING", "description": "Human-readable automation name."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required for all actions — automations are project-scoped."},
+                    "automation_id": {"type": "STRING", "description": "Automation rule UUID. Required for toggle and delete."},
+                    "name": {"type": "STRING", "description": "Human-readable automation name. Required for create. Example: 'Auto-escalate stale urgents'."},
                     "trigger_type": {
                         "type": "STRING",
-                        "enum": ["status_changed", "priority_changed", "assignee_changed", "label_added", "due_date_passed"]
+                        "enum": ["status_changed", "priority_changed", "assignee_changed", "label_added", "due_date_passed"],
+                        "description": "Event that fires the automation. Required for create."
                     },
-                    "trigger_config": {"type": "STRING", "description": "JSON string of trigger parameters."},
+                    "trigger_config": {"type": "STRING", "description": "JSON string of trigger parameters. Example: '{\"from_status\": \"in_progress\", \"to_status\": \"in_review\"}'. Optional."},
                     "action_type": {
                         "type": "STRING",
-                        "enum": ["set_status", "set_priority", "add_label", "assign_user", "send_webhook", "add_comment"]
+                        "enum": ["set_status", "set_priority", "add_label", "assign_user", "send_webhook", "add_comment"],
+                        "description": "What happens when the trigger fires. Optional — defaults to 'add_comment'."
                     },
-                    "action_config": {"type": "STRING", "description": "JSON string of action parameters."}
+                    "action_config": {"type": "STRING", "description": "JSON string of action parameters. Example: '{\"status\": \"in_review\"}'. Optional."}
                 },
                 "required": ["action", "project_id"]
             }),
         ),
+        // ── 21. manage_sla ───────────────────────────────────────────────
         tool(
             "manage_sla",
-            "Manage SLA rules and monitor compliance. Actions: list_rules, stats, create_rule, delete_rule.",
+            "Manage SLA (Service Level Agreement) rules and monitor compliance for a project. Use action='list_rules' to see current SLA definitions, 'stats' to get compliance metrics, 'create_rule' to set a deadline per priority, 'delete_rule' to remove one.\n\nUse when the user says 'set SLA for urgent bugs to 4 hours', 'show SLA compliance', 'what's our breach rate?', 'list SLA rules for HLM'.\n\nNot for: Automation triggers when SLA is breached (use manage_automations). Updating individual issue fields (use update_issue). Project-wide metrics beyond SLA (use get_project_metrics).\n\nReturns: For 'list_rules': array of { id, priority, deadline_hours }. For 'stats': { total_open, breached_count, compliance_rate }. For mutations: { id, confirmation }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "action": {
                         "type": "STRING",
-                        "enum": ["list_rules", "stats", "create_rule", "delete_rule"]
+                        "enum": ["list_rules", "stats", "create_rule", "delete_rule"],
+                        "description": "Operation to perform. 'list_rules' shows current SLA definitions. 'stats' shows compliance metrics. 'create_rule' needs priority + deadline_hours. 'delete_rule' needs rule_id."
                     },
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
-                    "rule_id": {"type": "STRING", "description": "SLA rule UUID (for delete_rule)."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required for all actions — SLA rules are project-scoped."},
+                    "rule_id": {"type": "STRING", "description": "SLA rule UUID. Required for delete_rule only."},
                     "priority": {
                         "type": "STRING",
-                        "enum": ["urgent", "high", "medium", "low"]
+                        "enum": ["urgent", "high", "medium", "low"],
+                        "description": "Priority tier for the SLA rule. Required for create_rule. One rule per priority per project."
                     },
-                    "deadline_hours": {"type": "NUMBER", "description": "Max resolution time in hours (for create_rule)."}
+                    "deadline_hours": {"type": "NUMBER", "description": "Maximum resolution time in hours. Required for create_rule. Example: 4 for urgent, 24 for high."}
                 },
                 "required": ["action", "project_id"]
             }),
         ),
+        // ── 22. manage_templates ─────────────────────────────────────────
         tool(
             "manage_templates",
-            "Manage reusable issue templates. Actions: list, create, delete.",
+            "Manage reusable issue templates for a project. Templates pre-fill description, priority, and type when creating new issues. Use action='list' to see available templates, 'create' to add a new one, 'delete' to remove.\n\nUse when the user says 'create a bug report template', 'list templates for HLM', 'delete the feature request template', 'set up issue templates'.\n\nNot for: Creating actual issues (use propose_issue). Managing recurring scheduled issues (use manage_recurring). Project-level settings beyond templates.\n\nReturns: For 'list': array of { id, name, description, default_priority, default_type, default_tags[], is_default }. For mutations: { id, confirmation }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "action": {
                         "type": "STRING",
-                        "enum": ["list", "create", "delete"]
+                        "enum": ["list", "create", "delete"],
+                        "description": "Operation to perform. 'list' shows all templates. 'create' needs name. 'delete' needs template_id."
                     },
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
-                    "template_id": {"type": "STRING", "description": "Template UUID (for delete)."},
-                    "name": {"type": "STRING", "description": "Template display name."},
-                    "description": {"type": "STRING", "description": "Pre-filled Markdown body."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required for all actions — templates are project-scoped."},
+                    "template_id": {"type": "STRING", "description": "Template UUID. Required for delete only."},
+                    "name": {"type": "STRING", "description": "Template display name. Required for create. Example: 'Bug Report', 'Feature Request'."},
+                    "description": {"type": "STRING", "description": "Pre-filled Markdown body for issues using this template. Optional."},
                     "default_priority": {
                         "type": "STRING",
-                        "enum": ["urgent", "high", "medium", "low"]
+                        "enum": ["urgent", "high", "medium", "low"],
+                        "description": "Default priority for issues created from this template. Optional, defaults to 'medium'."
                     },
                     "default_type": {
                         "type": "STRING",
-                        "enum": ["bug", "feature", "improvement", "question"]
+                        "enum": ["bug", "feature", "improvement", "question"],
+                        "description": "Default issue type for issues created from this template. Optional, defaults to 'feature'."
                     }
                 },
                 "required": ["action", "project_id"]
             }),
         ),
+        // ── 23. manage_recurring ─────────────────────────────────────────
         tool(
             "manage_recurring",
-            "Manage recurring issue configs that auto-create tickets on a cron schedule. Actions: list, create, toggle, trigger, delete.",
+            "Manage recurring issue configurations that auto-create tickets on a cron schedule. Use action='list' to see scheduled configs, 'create' to add a new recurring rule, 'toggle' to pause/resume, 'trigger' to force immediate creation, 'delete' to remove.\n\nUse when the user says 'create a weekly security review ticket', 'schedule monthly dependency audits', 'list recurring tasks for HLM', 'pause the weekly standup ticket'.\n\nNot for: Creating one-off issues (use propose_issue). Event-driven automations (use manage_automations). SLA rules (use manage_sla).\n\nReturns: For 'list': array of { id, title, priority, issue_type, cron, enabled, next_run, occurrence_count }. For mutations: { id, confirmation }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
                     "action": {
                         "type": "STRING",
-                        "enum": ["list", "create", "toggle", "trigger", "delete"]
+                        "enum": ["list", "create", "toggle", "trigger", "delete"],
+                        "description": "Operation to perform. 'list' shows all configs. 'create' needs title + cron_expression. 'toggle' needs recurring_id. 'trigger' needs recurring_id. 'delete' needs recurring_id."
                     },
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix."},
-                    "recurring_id": {"type": "STRING", "description": "Recurring config UUID (for toggle/trigger/delete)."},
-                    "title": {"type": "STRING", "description": "Issue title template."},
-                    "description": {"type": "STRING", "description": "Issue description template."},
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required for all actions — recurring configs are project-scoped."},
+                    "recurring_id": {"type": "STRING", "description": "Recurring config UUID. Required for toggle, trigger, and delete."},
+                    "title": {"type": "STRING", "description": "Issue title template for auto-created tickets. Required for create. Example: 'Weekly Security Review'."},
+                    "description": {"type": "STRING", "description": "Issue description template in Markdown. Optional."},
                     "priority": {
                         "type": "STRING",
-                        "enum": ["urgent", "high", "medium", "low"]
+                        "enum": ["urgent", "high", "medium", "low"],
+                        "description": "Default priority for auto-created tickets. Optional, defaults to 'medium'."
                     },
                     "issue_type": {
                         "type": "STRING",
-                        "enum": ["bug", "feature", "improvement", "question"]
+                        "enum": ["bug", "feature", "improvement", "question"],
+                        "description": "Default issue type for auto-created tickets. Optional, defaults to 'feature'."
                     },
-                    "cron_expression": {"type": "STRING", "description": "5-field cron, e.g. '0 9 * * 1' (every Monday 9am UTC)."}
+                    "cron_expression": {"type": "STRING", "description": "5-field cron expression in UTC. Required for create. Examples: '0 9 * * 1' (every Monday 9am), '0 10 1 * *' (1st of month 10am)."}
                 },
                 "required": ["action", "project_id"]
             }),
         ),
+        // ── 24. export_project ───────────────────────────────────────────
         tool(
             "export_project",
-            "Export all issues in a project as structured JSON with all fields including comments. Use for data dumps, backups, or external analysis.",
+            "Export all issues, milestones, and sprints in a project as structured JSON. Returns complete data with all fields including descriptions, tags, categories, assignees, and timestamps. Use for data dumps, backups, external analysis, or migration.\n\nUse when the user says 'export HLM', 'dump all issues to JSON', 'back up the project data', 'I need all issue data for analysis'.\n\nNot for: Searching or filtering specific issues (use search_issues). Getting aggregate metrics (use get_project_metrics). Generating PRDs (use generate_prd).\n\nReturns: { issues[], milestones[], sprints[], exported_at } with full detail per entity.",
             json!({
                 "type": "OBJECT",
                 "properties": {
-                    "project_id": {"type": "STRING", "description": "Project UUID or prefix to export."}
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required — export is always for a single project."}
                 },
                 "required": ["project_id"]
             }),
@@ -624,6 +673,7 @@ async fn exec_search_issues(pool: &PgPool, org_ids: &[String], args: &Value) -> 
     let priority_filter = args.get("priority").and_then(|v| v.as_str()).map(String::from);
     let category_filter = args.get("category").and_then(|v| v.as_str()).map(String::from);
     let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(20).min(100);
+    let response_format = args.get("response_format").and_then(|v| v.as_str()).unwrap_or("concise");
 
     let rows = sqlx::query_as::<_, SearchIssueRow>(
         r#"SELECT i.id, i.display_id, i.title, i.status, i.priority, i.category,
@@ -660,19 +710,27 @@ async fn exec_search_issues(pool: &PgPool, org_ids: &[String], args: &Value) -> 
         .collect::<Vec<_>>()
         .join("\n");
 
-    let data: Vec<Value> = rows.into_iter().map(|r| json!({
-        "id": r.id,
-        "display_id": r.display_id,
-        "title": r.title,
-        "status": r.status,
-        "priority": r.priority,
-        "category": r.category.unwrap_or_default(),
-        "project_name": r.project_name,
-        "updated_at": r.updated_at,
-    })).collect();
+    let data: Vec<Value> = if response_format == "detailed" {
+        rows.into_iter().map(|r| json!({
+            "id": r.id,
+            "display_id": r.display_id,
+            "title": r.title,
+            "status": r.status,
+            "priority": r.priority,
+            "category": r.category.unwrap_or_default(),
+            "project_name": r.project_name,
+            "updated_at": r.updated_at,
+        })).collect()
+    } else {
+        rows.into_iter().map(|r| json!({
+            "display_id": r.display_id,
+            "title": r.title,
+            "status": r.status,
+        })).collect()
+    };
 
     Ok(ToolResult {
-        data: json!(data),
+        data: json!({ "count": n, "issues": data, "response_format": response_format }),
         for_model: format!("\u{1f4cb} Found {} issues:\n{}", n, lines),
         component_hint: Some("IssueTable".to_string()),
         summary: format!("Found {} issues", n),
@@ -803,6 +861,7 @@ async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> R
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
     let days = args.get("days").and_then(|v| v.as_i64()).unwrap_or(7).clamp(1, 30);
+    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(20).min(50);
     let since = chrono::Utc::now() - chrono::Duration::days(days);
 
     let completed: i64 = sqlx::query_scalar(
@@ -821,13 +880,43 @@ async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> R
         "SELECT user_name FROM activity_log WHERE org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR project_id = $2) AND created_at >= $3 AND user_name IS NOT NULL GROUP BY user_name ORDER BY COUNT(*) DESC LIMIT 1"
     ).bind(org_ids).bind(project_id).bind(since).fetch_optional(pool).await.unwrap_or(None);
 
+    let completed_issues = sqlx::query_as::<_, SearchIssueRow>(
+        r#"SELECT i.id, i.display_id, i.title, i.status, i.priority, i.category,
+                  p.name AS project_name, i.updated_at
+           FROM issues i JOIN projects p ON p.id = i.project_id
+           WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2)
+             AND i.status = 'done' AND i.updated_at >= $3
+           ORDER BY i.updated_at DESC LIMIT $4"#,
+    ).bind(org_ids).bind(project_id).bind(since).bind(limit)
+    .fetch_all(pool).await.unwrap_or_default();
+
+    let blocked_issues = sqlx::query_as::<_, SearchIssueRow>(
+        r#"SELECT i.id, i.display_id, i.title, i.status, i.priority, i.category,
+                  p.name AS project_name, i.updated_at
+           FROM issues i JOIN projects p ON p.id = i.project_id
+           WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2)
+             AND i.priority IN ('urgent', 'high') AND i.status NOT IN ('done', 'cancelled')
+             AND i.updated_at < NOW() - INTERVAL '2 days'
+           ORDER BY i.updated_at ASC LIMIT $3"#,
+    ).bind(org_ids).bind(project_id).bind(limit)
+    .fetch_all(pool).await.unwrap_or_default();
+
+    let completed_json: Vec<Value> = completed_issues.into_iter().map(|r| json!({
+        "display_id": r.display_id, "title": r.title, "status": r.status,
+    })).collect();
+    let blocked_json: Vec<Value> = blocked_issues.into_iter().map(|r| json!({
+        "display_id": r.display_id, "title": r.title, "priority": r.priority,
+    })).collect();
+
     Ok(ToolResult {
         data: json!({
-            "completed": completed,
-            "new_created": new_created,
-            "blockers": blockers,
+            "completed_count": completed,
+            "new_created_count": new_created,
+            "blocker_count": blockers,
             "top_contributor": top_contributor,
             "period": format!("Last {} days", days),
+            "completed_issues": completed_json,
+            "blocked_issues": blocked_json,
         }),
         for_model: format!(
             "\u{1f4c5} Weekly recap ({} days): {} completed, {} new, {} blockers. Top contributor: {}.",
@@ -914,10 +1003,12 @@ async fn exec_suggest_priorities(pool: &PgPool, org_ids: &[String], args: &Value
 }
 
 async fn exec_export_project(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
-    let project_id: Uuid = args.get("project_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| "export_project requires a valid project_id".to_string())?;
+    let raw_project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("");
+    let project_id: Uuid = raw_project_id.parse()
+        .map_err(|_| format!(
+            "export_project requires a valid 'project_id'. '{}' could not be resolved. Provide a project prefix (e.g. 'HLM') or full UUID.",
+            raw_project_id
+        ))?;
 
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = ANY($2::text[]))"
@@ -925,7 +1016,10 @@ async fn exec_export_project(pool: &PgPool, org_ids: &[String], args: &Value) ->
         .map_err(|e| format!("export project check: {}", e))?;
 
     if !exists {
-        return Err("Project not found or access denied".to_string());
+        return Err(format!(
+            "Project '{}' not found or you don't have access. Double-check the project UUID or prefix.",
+            raw_project_id
+        ));
     }
 
     let issues = sqlx::query_as::<_, ExportIssueRow>(
@@ -1014,12 +1108,85 @@ async fn resolve_project_id(pool: &PgPool, org_ids: &[String], raw: &str) -> Opt
     .flatten()
 }
 
-/// Pre-process tool args: resolve any project_id field from prefix/name to UUID.
-async fn resolve_args_project_id(pool: &PgPool, org_ids: &[String], args: &mut Value) {
+// ─── Issue ID Resolver ────────────────────────────────────────────────────────
+// Resolves an issue_id that may be a UUID or a display_id (e.g. "HLM-42").
+
+async fn resolve_issue_id(pool: &PgPool, org_ids: &[String], raw: &str) -> Option<Uuid> {
+    if let Ok(uuid) = raw.parse::<Uuid>() {
+        return Some(uuid);
+    }
+    sqlx::query_scalar(
+        "SELECT i.id FROM issues i
+         JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[]) AND UPPER(i.display_id) = UPPER($2)
+         LIMIT 1",
+    )
+    .bind(org_ids)
+    .bind(raw)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Lists available project prefixes for error messages.
+async fn list_project_prefixes(pool: &PgPool, org_ids: &[String]) -> Vec<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT prefix FROM projects WHERE org_id = ANY($1::text[]) ORDER BY prefix LIMIT 20",
+    )
+    .bind(org_ids)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+}
+
+/// Pre-process tool args: resolve project_id, issue_id, and nested issue_ids
+/// from user-friendly values (prefix, display_id) to UUIDs.
+async fn resolve_args_ids(pool: &PgPool, org_ids: &[String], args: &mut Value) {
+    // Resolve top-level project_id
     if let Some(raw) = args.get("project_id").and_then(|v| v.as_str()).map(String::from) {
         if raw.parse::<Uuid>().is_err() {
             if let Some(uuid) = resolve_project_id(pool, org_ids, &raw).await {
                 args["project_id"] = Value::String(uuid.to_string());
+            }
+        }
+    }
+
+    // Resolve top-level issue_id
+    if let Some(raw) = args.get("issue_id").and_then(|v| v.as_str()).map(String::from) {
+        if raw.parse::<Uuid>().is_err() {
+            if let Some(uuid) = resolve_issue_id(pool, org_ids, &raw).await {
+                args["issue_id"] = Value::String(uuid.to_string());
+            }
+        }
+    }
+
+    // Resolve issue_ids in updates[] array (for bulk tools)
+    if let Some(updates) = args.get_mut("updates").and_then(|v| v.as_array_mut()) {
+        for item in updates.iter_mut() {
+            if let Some(raw) = item.get("issue_id").and_then(|v| v.as_str()).map(String::from) {
+                if raw.parse::<Uuid>().is_err() {
+                    if let Some(uuid) = resolve_issue_id(pool, org_ids, &raw).await {
+                        item["issue_id"] = Value::String(uuid.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Resolve issue_ids in milestones[].issue_ids[] array
+    if let Some(milestones) = args.get_mut("milestones").and_then(|v| v.as_array_mut()) {
+        for ms in milestones.iter_mut() {
+            if let Some(ids) = ms.get_mut("issue_ids").and_then(|v| v.as_array_mut()) {
+                for id_val in ids.iter_mut() {
+                    if let Some(raw) = id_val.as_str().map(String::from) {
+                        if raw.parse::<Uuid>().is_err() {
+                            if let Some(uuid) = resolve_issue_id(pool, org_ids, &raw).await {
+                                *id_val = Value::String(uuid.to_string());
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1086,7 +1253,10 @@ async fn exec_propose_issue(pool: &PgPool, org_ids: &[String], args: &Value) -> 
 async fn exec_propose_update_issue(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let issue_id_str = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
     let issue_id: Uuid = issue_id_str.parse()
-        .map_err(|_| format!("Invalid issue_id UUID: {}", issue_id_str))?;
+        .map_err(|_| format!(
+            "Issue '{}' could not be resolved. Provide a valid display_id (e.g. 'HLM-42') or UUID. Use search_issues to find the right issue.",
+            issue_id_str
+        ))?;
 
     #[derive(sqlx::FromRow)]
     struct IssueRow {
@@ -1109,7 +1279,10 @@ async fn exec_propose_update_issue(pool: &PgPool, org_ids: &[String], args: &Val
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("DB error: {e}"))?
-    .ok_or_else(|| "Issue not found".to_string())?;
+    .ok_or_else(|| format!(
+        "Issue '{}' not found or you don't have access. Verify the issue exists with search_issues.",
+        issue_id_str
+    ))?;
 
     let mut diff: Vec<Value> = Vec::new();
     let field_str = |name: &str, cur: &str, args: &Value| {
@@ -1195,7 +1368,10 @@ async fn exec_propose_bulk_update(pool: &PgPool, org_ids: &[String], args: &Valu
 async fn exec_propose_comment(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let issue_id_str = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
     let issue_id: Uuid = issue_id_str.parse()
-        .map_err(|_| format!("Invalid issue_id UUID: {}", issue_id_str))?;
+        .map_err(|_| format!(
+            "Issue '{}' could not be resolved. Provide a valid display_id (e.g. 'HLM-42') or UUID. Use search_issues to find the right issue.",
+            issue_id_str
+        ))?;
     let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
     let issue: Option<(String, String)> = sqlx::query_as(
@@ -1231,7 +1407,7 @@ pub async fn execute_tool(
     args: Value,
 ) -> Result<ToolResult, String> {
     let mut args = args;
-    resolve_args_project_id(pool, org_ids, &mut args).await;
+    resolve_args_ids(pool, org_ids, &mut args).await;
 
     match tool_name {
         "search_issues" => match exec_search_issues(pool, org_ids, &args).await {
@@ -1769,11 +1945,17 @@ async fn create_issue_real(
     args: &Value,
 ) -> Result<ToolResult, String> {
     let project_id_str = args.get("project_id").and_then(|v| v.as_str())
-        .ok_or_else(|| "project_id required".to_string())?;
+        .ok_or_else(|| "create_issue requires 'project_id'. Provide a project prefix (e.g. 'HLM') or full UUID.".to_string())?;
     let project_id: Uuid = project_id_str.parse()
-        .map_err(|_| "invalid project_id".to_string())?;
+        .map_err(|_| {
+            let raw = project_id_str.to_string();
+            format!(
+                "Project '{}' could not be resolved to a UUID. It may not exist or the prefix is misspelled. Use search_issues with no project_id to discover available projects, or check the prefix spelling.",
+                raw
+            )
+        })?;
     let title = args.get("title").and_then(|v| v.as_str())
-        .ok_or_else(|| "title required".to_string())?;
+        .ok_or_else(|| "create_issue requires 'title'. Provide a short plain-text title (no brackets, no prefix). Good: 'Fix auth token refresh'. Bad: '[HLM][BUG] Fix auth'.".to_string())?;
     let description = args.get("description").and_then(|v| v.as_str());
     let issue_type = args.get("type").and_then(|v| v.as_str()).unwrap_or("feature");
     let priority = args.get("priority").and_then(|v| v.as_str());
@@ -1795,7 +1977,10 @@ async fn create_issue_real(
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;
-    let (prefix,) = row.ok_or_else(|| "Project not found or access denied".to_string())?;
+    let (prefix,) = row.ok_or_else(|| format!(
+        "Project '{}' not found or you don't have access. Double-check the project UUID or prefix.",
+        project_id_str
+    ))?;
 
     // Generate display_id: MAX existing number + 1
     let (next_num,): (i64,) = sqlx::query_as(
@@ -1870,9 +2055,12 @@ async fn update_issue_real(
     _user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
-    let issue_id: Uuid = args.get("issue_id").and_then(|v| v.as_str())
-        .ok_or_else(|| "issue_id required".to_string())?
-        .parse().map_err(|_| "invalid issue_id".to_string())?;
+    let raw_issue_id = args.get("issue_id").and_then(|v| v.as_str())
+        .ok_or_else(|| "update_issue requires 'issue_id'. Provide a display_id (e.g. 'HLM-42') or full UUID.".to_string())?;
+    let issue_id: Uuid = raw_issue_id.parse().map_err(|_| format!(
+        "Issue '{}' could not be resolved. Check that the display_id (e.g. 'HLM-42') or UUID is correct. Use search_issues to find the right issue.",
+        raw_issue_id
+    ))?;
 
     // Verify issue belongs to org and capture current state
     let existing: Option<(String, String, Option<String>)> = sqlx::query_as(
@@ -1886,7 +2074,10 @@ async fn update_issue_real(
     .await
     .map_err(|e| format!("DB error: {}", e))?;
     let (display_id, old_status, old_priority) =
-        existing.ok_or_else(|| "Issue not found or access denied".to_string())?;
+        existing.ok_or_else(|| format!(
+            "Issue '{}' not found or you don't have access. Verify the issue exists with search_issues.",
+            raw_issue_id
+        ))?;
 
     // Extract optional update fields
     let new_title    = args.get("title").and_then(|v| v.as_str());
@@ -1985,7 +2176,7 @@ async fn bulk_update_issues_real(
     args: &Value,
 ) -> Result<ToolResult, String> {
     let updates = args.get("updates").and_then(|v| v.as_array())
-        .ok_or_else(|| "updates array required".to_string())?;
+        .ok_or_else(|| "bulk_update_issues requires 'updates' as an array. Each element must have 'issue_id' (UUID or display_id like 'HLM-42') and at least one field to change (status, priority, tags, or category).".to_string())?;
 
     let mut updated_count: usize = 0;
     let mut result_issues: Vec<Value> = Vec::new();
@@ -2059,14 +2250,17 @@ async fn add_comment_real(
     user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
-    let issue_id: Uuid = args.get("issue_id").and_then(|v| v.as_str())
-        .ok_or_else(|| "issue_id required".to_string())?
-        .parse().map_err(|_| "invalid issue_id".to_string())?;
+    let raw_issue_id = args.get("issue_id").and_then(|v| v.as_str())
+        .ok_or_else(|| "add_comment requires 'issue_id'. Provide a display_id (e.g. 'HLM-42') or full UUID.".to_string())?;
+    let issue_id: Uuid = raw_issue_id.parse().map_err(|_| format!(
+        "Issue '{}' could not be resolved. Check that the display_id (e.g. 'HLM-42') or UUID is correct. Use search_issues to find the right issue.",
+        raw_issue_id
+    ))?;
 
     // Tool uses "content" key; also accept "body" as alias
     let body = args.get("content").or_else(|| args.get("body"))
         .and_then(|v| v.as_str())
-        .ok_or_else(|| "content required".to_string())?;
+        .ok_or_else(|| "add_comment requires 'content'. Provide the comment body as a Markdown string.".to_string())?;
 
     let author_name = args.get("author_name").and_then(|v| v.as_str())
         .unwrap_or("Baaton AI");
@@ -2084,7 +2278,10 @@ async fn add_comment_real(
     .await
     .unwrap_or(false);
     if !exists {
-        return Err("Issue not found or access denied".to_string());
+        return Err(format!(
+            "Issue '{}' not found or you don't have access. Verify the issue exists with search_issues.",
+            raw_issue_id
+        ));
     }
 
     let (comment_id, created_at_str): (Uuid, String) = sqlx::query_as(
@@ -2123,9 +2320,12 @@ async fn triage_issue_real(
     user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
-    let issue_id: Uuid = args.get("issue_id").and_then(|v| v.as_str())
-        .ok_or_else(|| "issue_id required".to_string())?
-        .parse().map_err(|_| "invalid issue_id".to_string())?;
+    let raw_issue_id = args.get("issue_id").and_then(|v| v.as_str())
+        .ok_or_else(|| "triage_issue requires 'issue_id'. Provide a display_id (e.g. 'HLM-42') or full UUID.".to_string())?;
+    let issue_id: Uuid = raw_issue_id.parse().map_err(|_| format!(
+        "Issue '{}' could not be resolved. Check that the display_id (e.g. 'HLM-42') or UUID is correct. Use search_issues to find the right issue.",
+        raw_issue_id
+    ))?;
 
     // Verify issue belongs to org and get current state
     let existing: Option<(String, String)> = sqlx::query_as(
@@ -2139,7 +2339,10 @@ async fn triage_issue_real(
     .await
     .map_err(|e| format!("DB error: {}", e))?;
     let (display_id, current_status) =
-        existing.ok_or_else(|| "Issue not found or access denied".to_string())?;
+        existing.ok_or_else(|| format!(
+            "Issue '{}' not found or you don't have access. Verify the issue exists with search_issues.",
+            raw_issue_id
+        ))?;
 
     // Move backlog → todo; leave other statuses unchanged
     let new_status: &str = if current_status == "backlog" { "todo" } else { current_status.as_str() };
@@ -2199,11 +2402,14 @@ async fn create_milestones_batch_real(
     args: &Value,
 ) -> Result<ToolResult, String> {
     let project_id_str = args.get("project_id").and_then(|v| v.as_str())
-        .ok_or_else(|| "project_id required".to_string())?;
+        .ok_or_else(|| "create_milestones_batch requires 'project_id'. Provide a project prefix (e.g. 'HLM') or full UUID.".to_string())?;
     let project_id: Uuid = project_id_str.parse()
-        .map_err(|_| "invalid project_id".to_string())?;
+        .map_err(|_| format!(
+            "Project '{}' could not be resolved to a UUID. It may not exist or the prefix is misspelled.",
+            project_id_str
+        ))?;
     let milestones_arr = args.get("milestones").and_then(|v| v.as_array())
-        .ok_or_else(|| "milestones array required".to_string())?;
+        .ok_or_else(|| "create_milestones_batch requires 'milestones' as an array. Each element must have 'name' (string) and 'issue_ids' (array of UUIDs or display_ids).".to_string())?;
 
     // Verify project belongs to user's orgs and get its org_id for INSERT
     let project_org: Option<String> = sqlx::query_scalar(
@@ -2214,7 +2420,10 @@ async fn create_milestones_batch_real(
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;
-    let project_org = project_org.ok_or_else(|| "Project not found or access denied".to_string())?;
+    let project_org = project_org.ok_or_else(|| format!(
+        "Project '{}' not found or you don't have access. Double-check the project UUID or prefix.",
+        project_id_str
+    ))?;
 
     let mut created_count: usize = 0;
     let mut result_milestones: Vec<Value> = Vec::new();
