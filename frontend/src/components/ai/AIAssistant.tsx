@@ -417,7 +417,7 @@ export function AIAssistant() {
   }
 
   return (
-    <aside className="hidden lg:flex shrink-0 w-[420px] min-w-[420px] flex-col border-l border-border bg-bg h-screen">
+    <aside className="flex shrink-0 w-[420px] min-w-[420px] max-w-[90vw] flex-col border-l border-border bg-bg h-screen fixed right-0 top-0 bottom-0 z-40 lg:static lg:z-auto shadow-2xl lg:shadow-none">
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
