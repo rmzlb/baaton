@@ -587,7 +587,7 @@ export function AIAssistant() {
         aria-label={t('ai.title') || 'AI assistant'}
         // Mobile: full screen overlay (no min-width fight). sm+: 420px sidebar.
         // lg+: docks into layout flow (static).
-        className="flex shrink-0 w-full sm:w-[420px] sm:min-w-[420px] sm:max-w-[90vw] flex-col border-l border-border bg-bg h-screen fixed right-0 top-0 bottom-0 z-40 lg:static lg:z-auto shadow-2xl lg:shadow-none"
+        className="flex shrink-0 w-full sm:w-[420px] sm:min-w-[420px] sm:max-w-[90vw] flex-col border-l border-border bg-bg h-dvh [@supports_not(height:100dvh)]:h-screen fixed right-0 top-0 bottom-0 z-40 lg:static lg:z-auto shadow-2xl lg:shadow-none"
       >
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-3 sm:px-4 py-2 border-b border-border shrink-0 min-h-[48px]">

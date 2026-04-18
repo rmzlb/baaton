@@ -68,6 +68,35 @@ html:not(.dark) {
 html:not(.dark) ::-webkit-scrollbar-thumb { background: #c4c4c4; }
 html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
 
+/* ─── Modern Browser Defaults (2026 baseline) ──
+   Applied globally — improves text rendering and prevents iOS Safari from
+   auto-resizing text on landscape rotate (legacy bug that breaks our
+   carefully-tuned typography). */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Reserve space for the scrollbar even when not needed → prevents the
+     entire layout from jumping by ~15px when content grows past the
+     viewport (a Mac/Linux issue, harmless on iOS where scrollbars overlay). */
+  scrollbar-gutter: stable;
+}
+
+/* ─── Reduced Motion (WCAG 2.1 AAA) ──────────
+   Users with `prefers-reduced-motion: reduce` get near-instant transitions
+   instead of our spring-y animations. We don't kill animations entirely
+   (some are functional, e.g. progress indicators) — we just neutralize the
+   long ones. Pattern adopted from Tailwind's own utility classes. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ─── App-Shell Mode (authenticated routes) ──
    AppLayout adds `.app-shell-locked` to <html> on mount and removes it on
    unmount. This guarantees that *only* the inner <main> scroll container

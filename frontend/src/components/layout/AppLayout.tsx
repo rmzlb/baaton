@@ -69,7 +69,7 @@ export function AppLayout() {
         <TopBar />
         <main
           id="main-content"
-          className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+          className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable] [scroll-padding-top:3rem] [scroll-padding-bottom:env(safe-area-inset-bottom)]"
           tabIndex={-1}
         >
           <Outlet />
