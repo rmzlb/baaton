@@ -1,7 +1,7 @@
 import { Layers, Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import type { DynamicToolUIPart } from 'ai';
 
 interface BulkChange {
@@ -37,20 +37,17 @@ export default function BulkUpdateProposal({ part, addToolOutput, inBatch }: Pro
     const output = part.output as { approved: boolean } | undefined;
     if (output?.approved) {
       return (
-        <Alert className="border-emerald-500/30 bg-emerald-500/5">
-          <Check size={16} className="text-emerald-500" />
-          <AlertTitle className="flex items-center gap-2 text-[12px]">
-            <span className="text-emerald-400 font-medium">Approuvé</span>
-            <span className="text-[--color-muted]">{updates.length} issues</span>
-          </AlertTitle>
-        </Alert>
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+          <Check size={14} className="text-emerald-500 shrink-0" />
+          <span className="text-[12px] font-medium text-emerald-500">{updates.length} issues mises à jour</span>
+        </div>
       );
     }
     return (
-      <Alert className="border-[--color-border] bg-[--color-surface-hover]/30">
-        <X size={16} className="text-[--color-muted]" />
-        <AlertTitle className="text-[12px] text-[--color-muted]">Bulk update annulé</AlertTitle>
-      </Alert>
+      <div className="flex items-center gap-2 rounded-xl border border-[--color-border] bg-[--color-surface] px-3 py-2">
+        <X size={14} className="text-[--color-muted] shrink-0" />
+        <span className="text-[12px] text-[--color-muted]">Bulk update annulé</span>
+      </div>
     );
   }
 
@@ -73,18 +70,20 @@ export default function BulkUpdateProposal({ part, addToolOutput, inBatch }: Pro
   };
 
   return (
-    <Alert className="border-amber-500/30 bg-amber-500/5">
-      <Layers size={16} className="text-amber-500" />
-      <AlertTitle className="flex items-center gap-2">
-        <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
+    <div className="rounded-2xl border border-[--color-border] bg-[--color-surface] overflow-hidden relative">
+      <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-500" />
+
+      <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+        <Layers size={14} className="text-amber-500 shrink-0" />
+        <span className="text-[10px] font-semibold text-[--color-muted] uppercase tracking-wider">
           Bulk update
         </span>
-        <span className="ml-auto text-[10px] text-[--color-muted] font-medium">
+        <Badge variant="secondary" className="ml-auto h-5 font-mono text-[10px]">
           {updates.length} issue{updates.length > 1 ? 's' : ''}
-        </span>
-      </AlertTitle>
+        </Badge>
+      </div>
 
-      <AlertDescription>
+      <div className="px-4 pb-4 space-y-3">
         {updates.length === 0 ? (
           <p className="text-[11px] text-[--color-muted] italic py-2">
             Aucune modification proposée.
@@ -131,10 +130,10 @@ export default function BulkUpdateProposal({ part, addToolOutput, inBatch }: Pro
             </ul>
           </div>
         )}
-      </AlertDescription>
+      </div>
 
       {!inBatch && (
-        <div className="col-start-2 flex items-center justify-end gap-2 pt-2">
+        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-[--color-border] bg-[--color-surface-hover]/30">
           <Button onClick={handleCancel} variant="secondary" size="sm">
             <X size={12} />
             Annuler
@@ -150,6 +149,6 @@ export default function BulkUpdateProposal({ part, addToolOutput, inBatch }: Pro
           </Button>
         </div>
       )}
-    </Alert>
+    </div>
   );
 }

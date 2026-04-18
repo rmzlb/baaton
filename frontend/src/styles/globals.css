@@ -317,3 +317,26 @@ body, .bg-transition {
 /* Hide scrollbar but keep scroll functionality */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── AI Chat: inline code → Baaton status pill vibe ─── */
+/* Streamdown renders inline markdown code as <code>. We restyle them
+   to feel like Baaton status badges (rounded pill, subtle bg). */
+[data-streamdown] code:not(pre code) {
+  display: inline-block;
+  padding: 0.05em 0.5em;
+  border-radius: 9999px;
+  background: var(--color-surface-hover);
+  color: var(--color-primary);
+  font-size: 0.85em;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  line-height: 1.4;
+  border: 1px solid var(--color-border);
+}
+
+/* ─── AI Chat: tighter spacing in markdown responses ─── */
+[data-streamdown] > * + * { margin-top: 0.5rem; }
+[data-streamdown] h3 { font-size: 0.95em; font-weight: 600; margin-top: 0.75rem; }
+[data-streamdown] ul, [data-streamdown] ol { padding-left: 1.25rem; margin-top: 0.25rem; }
+[data-streamdown] li { margin-top: 0.1rem; line-height: 1.5; }
+[data-streamdown] li::marker { color: var(--color-muted); }
