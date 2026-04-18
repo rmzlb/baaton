@@ -1,6 +1,7 @@
 import { Layers, Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import type { DynamicToolUIPart } from 'ai';
 
 interface BulkChange {
@@ -18,6 +19,7 @@ interface BulkInput {
 interface Props {
   part: DynamicToolUIPart;
   addToolOutput: (opts: { tool: string; toolCallId: string; output: unknown }) => void;
+  inBatch?: boolean;
 }
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -27,35 +29,29 @@ const PRIORITY_COLOR: Record<string, string> = {
   low: 'text-emerald-500',
 };
 
-function ApprovedBadge({ count }: { count: number }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
-      <Check size={12} className="text-emerald-500 shrink-0" />
-      <span className="text-emerald-400 font-medium">Approuve</span>
-      <span className="text-[--color-muted]">{count} issues</span>
-    </div>
-  );
-}
-
-function CancelledBadge() {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-[--color-border] bg-[--color-surface-hover]/30 px-3 py-2 text-[12px] text-[--color-muted]">
-      <X size={12} className="shrink-0" />
-      <span>Bulk update annule</span>
-    </div>
-  );
-}
-
-export default function BulkUpdateProposal({ part, addToolOutput }: Props) {
+export default function BulkUpdateProposal({ part, addToolOutput, inBatch }: Props) {
   const input = (part.input ?? {}) as BulkInput;
   const updates = input.updates ?? [];
 
   if (part.state === 'output-available') {
     const output = part.output as { approved: boolean } | undefined;
     if (output?.approved) {
-      return <ApprovedBadge count={updates.length} />;
+      return (
+        <Alert className="border-emerald-500/30 bg-emerald-500/5">
+          <Check size={16} className="text-emerald-500" />
+          <AlertTitle className="flex items-center gap-2 text-[12px]">
+            <span className="text-emerald-400 font-medium">Approuvé</span>
+            <span className="text-[--color-muted]">{updates.length} issues</span>
+          </AlertTitle>
+        </Alert>
+      );
     }
-    return <CancelledBadge />;
+    return (
+      <Alert className="border-[--color-border] bg-[--color-surface-hover]/30">
+        <X size={16} className="text-[--color-muted]" />
+        <AlertTitle className="text-[12px] text-[--color-muted]">Bulk update annulé</AlertTitle>
+      </Alert>
+    );
   }
 
   if (part.state !== 'input-available') return null;
@@ -77,83 +73,83 @@ export default function BulkUpdateProposal({ part, addToolOutput }: Props) {
   };
 
   return (
-    <div className="rounded-xl border border-amber-500/30 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-amber-500/20 bg-amber-500/5">
-        <Layers size={13} className="text-amber-500 shrink-0" />
+    <Alert className="border-amber-500/30 bg-amber-500/5">
+      <Layers size={16} className="text-amber-500" />
+      <AlertTitle className="flex items-center gap-2">
         <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
           Bulk update
         </span>
         <span className="ml-auto text-[10px] text-[--color-muted] font-medium">
           {updates.length} issue{updates.length > 1 ? 's' : ''}
         </span>
-      </div>
+      </AlertTitle>
 
-      <div className="max-h-64 overflow-y-auto bg-[--color-bg]">
+      <AlertDescription>
         {updates.length === 0 ? (
-          <p className="p-3 text-[11px] text-[--color-muted] italic">
-            Aucune modification proposee.
+          <p className="text-[11px] text-[--color-muted] italic py-2">
+            Aucune modification proposée.
           </p>
         ) : (
-          <ul className="divide-y divide-[--color-border]/40">
-            {updates.map((u, i) => {
-              const changes = u.changes as Record<string, unknown> | undefined;
-              const newStatus = changes?.status as string | undefined;
-              const newPriority = changes?.priority as string | undefined;
+          <div className="max-h-64 overflow-y-auto -mx-4 px-4">
+            <ul className="divide-y divide-[--color-border]/40">
+              {updates.map((u, i) => {
+                const changes = u.changes as Record<string, unknown> | undefined;
+                const newStatus = changes?.status as string | undefined;
+                const newPriority = changes?.priority as string | undefined;
 
-              return (
-                <li key={i} className="px-3 py-2 text-[11px] hover:bg-[--color-surface-hover]/30">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] text-[--color-muted] shrink-0">
-                      {u.display_id || '?'}
-                    </span>
-                    <span className="truncate text-[--color-primary]" title={u.title}>
-                      {u.title || '(sans titre)'}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 pl-0">
-                    {newStatus && newStatus !== u.current?.status && (
-                      <span className="text-[10px]">
-                        <span className="text-[--color-muted] line-through">{u.current?.status || '—'}</span>
-                        <span className="mx-1 text-[--color-muted]">→</span>
-                        <span className="text-amber-500 font-medium">{newStatus}</span>
+                return (
+                  <li key={i} className="py-2 text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] text-[--color-muted] shrink-0">
+                        {u.display_id || '?'}
                       </span>
-                    )}
-                    {newPriority && newPriority !== u.current?.priority && (
-                      <span className="text-[10px]">
-                        <span className="text-[--color-muted] line-through">{u.current?.priority || '—'}</span>
-                        <span className="mx-1 text-[--color-muted]">→</span>
-                        <span className={cn('font-medium', PRIORITY_COLOR[newPriority] || 'text-amber-500')}>
-                          {newPriority}
+                      <span className="truncate text-[--color-primary]" title={u.title}>
+                        {u.title || '(sans titre)'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                      {newStatus && newStatus !== u.current?.status && (
+                        <span className="text-[10px]">
+                          <span className="text-[--color-muted] line-through">{u.current?.status || '—'}</span>
+                          <span className="mx-1 text-[--color-muted]">→</span>
+                          <span className="text-amber-500 font-medium">{newStatus}</span>
                         </span>
-                      </span>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                      )}
+                      {newPriority && newPriority !== u.current?.priority && (
+                        <span className="text-[10px]">
+                          <span className="text-[--color-muted] line-through">{u.current?.priority || '—'}</span>
+                          <span className="mx-1 text-[--color-muted]">→</span>
+                          <span className={cn('font-medium', PRIORITY_COLOR[newPriority] || 'text-amber-500')}>
+                            {newPriority}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
-      </div>
+      </AlertDescription>
 
-      <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/50">
-        <Button
-          onClick={handleCancel}
-          variant="secondary"
-          size="sm"
-        >
-          <X size={12} />
-          Annuler
-        </Button>
-        <Button
-          onClick={handleApprove}
-          disabled={updates.length === 0}
-          size="sm"
-          className="bg-amber-500 text-black hover:bg-amber-400"
-        >
-          <Check size={12} />
-          Appliquer
-        </Button>
-      </div>
-    </div>
+      {!inBatch && (
+        <div className="col-start-2 flex items-center justify-end gap-2 pt-2">
+          <Button onClick={handleCancel} variant="secondary" size="sm">
+            <X size={12} />
+            Annuler
+          </Button>
+          <Button
+            onClick={handleApprove}
+            disabled={updates.length === 0}
+            size="sm"
+            className="bg-amber-500 text-black hover:bg-amber-400"
+          >
+            <Check size={12} />
+            Appliquer
+          </Button>
+        </div>
+      )}
+    </Alert>
   );
 }

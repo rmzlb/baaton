@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ interface ProposalInput {
 interface IssueProposalProps {
   part: DynamicToolUIPart;
   addToolOutput: (opts: { tool: string; toolCallId: string; output: unknown }) => void;
+  inBatch?: boolean;
 }
 
 const TYPE_OPTIONS = ['bug', 'feature', 'improvement', 'question'] as const;
@@ -57,26 +59,7 @@ function shortOrg(orgId: string): string {
   return orgId.slice(0, 8);
 }
 
-function ApprovedBadge({ title }: { title: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
-      <Check size={12} className="text-emerald-500 shrink-0" />
-      <span className="text-emerald-400 font-medium">Approuve</span>
-      <span className="text-[--color-muted] truncate">{title}</span>
-    </div>
-  );
-}
-
-function CancelledBadge() {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-[--color-border] bg-[--color-surface-hover]/30 px-3 py-2 text-[12px] text-[--color-muted]">
-      <X size={12} className="shrink-0" />
-      <span>Proposition annulee</span>
-    </div>
-  );
-}
-
-export default function IssueProposal({ part, addToolOutput }: IssueProposalProps) {
+export default function IssueProposal({ part, addToolOutput, inBatch }: IssueProposalProps) {
   const input = (part.input ?? {}) as ProposalInput;
   const apiClient = useApi();
 
@@ -99,9 +82,22 @@ export default function IssueProposal({ part, addToolOutput }: IssueProposalProp
   if (part.state === 'output-available') {
     const output = part.output as { approved: boolean; finalValues?: { title?: string } } | undefined;
     if (output?.approved) {
-      return <ApprovedBadge title={output.finalValues?.title ?? title} />;
+      return (
+        <Alert className="border-emerald-500/30 bg-emerald-500/5">
+          <Check size={16} className="text-emerald-500" />
+          <AlertTitle className="flex items-center gap-2 text-[12px]">
+            <span className="text-emerald-400 font-medium">Approuvé</span>
+            <span className="text-[--color-muted] truncate">{output.finalValues?.title ?? title}</span>
+          </AlertTitle>
+        </Alert>
+      );
     }
-    return <CancelledBadge />;
+    return (
+      <Alert className="border-[--color-border] bg-[--color-surface-hover]/30">
+        <X size={16} className="text-[--color-muted]" />
+        <AlertTitle className="text-[12px] text-[--color-muted]">Proposition annulée</AlertTitle>
+      </Alert>
+    );
   }
 
   if (part.state !== 'input-available') return null;
@@ -150,25 +146,25 @@ export default function IssueProposal({ part, addToolOutput }: IssueProposalProp
   const isMultiOrg = projectsByOrg.length > 1;
 
   return (
-    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-amber-500/20 bg-amber-500/5">
-        <Sparkles size={13} className="text-amber-500 shrink-0" />
+    <Alert className="border-amber-500/30 bg-amber-500/5">
+      <Sparkles size={16} className="text-amber-500" />
+      <AlertTitle className="flex items-center gap-2">
         <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
-          Proposition de creation
+          Proposition de création
         </span>
         <Badge variant="secondary" className="ml-auto h-5 font-mono text-[10px]">
           {currentPrefix}
         </Badge>
-      </div>
+      </AlertTitle>
 
-      <div className="p-3 space-y-3 bg-[--color-bg]">
+      <AlertDescription className="space-y-3">
         <div>
           <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
             Projet
           </label>
           <Select value={projectId} onValueChange={setProjectId}>
             <SelectTrigger className="w-full h-9 text-[13px]">
-              <SelectValue placeholder={projects.length === 0 ? "Chargement…" : "Selectionner un projet"} />
+              <SelectValue placeholder={projects.length === 0 ? "Chargement…" : "Sélectionner un projet"} />
             </SelectTrigger>
             <SelectContent>
               {isMultiOrg ? (
@@ -217,7 +213,7 @@ export default function IssueProposal({ part, addToolOutput }: IssueProposalProp
             value={description}
             onChange={e => setDescription(e.target.value)}
             rows={4}
-            placeholder="Details, reproduction, contexte..."
+            placeholder="Détails, reproduction, contexte..."
             className="text-[12px] resize-none"
           />
         </div>
@@ -248,7 +244,7 @@ export default function IssueProposal({ part, addToolOutput }: IssueProposalProp
 
           <div>
             <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
-              Priorite
+              Priorité
             </label>
             <div className="flex flex-wrap gap-1">
               {PRIORITY_OPTIONS.map(p => (
@@ -284,27 +280,25 @@ export default function IssueProposal({ part, addToolOutput }: IssueProposalProp
             ))}
           </div>
         )}
-      </div>
+      </AlertDescription>
 
-      <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/50">
-        <Button
-          onClick={handleCancel}
-          variant="secondary"
-          size="sm"
-        >
-          <X size={12} />
-          Annuler
-        </Button>
-        <Button
-          onClick={handleApprove}
-          disabled={!title.trim() || !projectId}
-          size="sm"
-          className="bg-amber-500 text-black hover:bg-amber-400"
-        >
-          <Check size={12} />
-          Creer
-        </Button>
-      </div>
-    </div>
+      {!inBatch && (
+        <div className="col-start-2 flex items-center justify-end gap-2 pt-2">
+          <Button onClick={handleCancel} variant="secondary" size="sm">
+            <X size={12} />
+            Annuler
+          </Button>
+          <Button
+            onClick={handleApprove}
+            disabled={!title.trim() || !projectId}
+            size="sm"
+            className="bg-amber-500 text-black hover:bg-amber-400"
+          >
+            <Check size={12} />
+            Créer
+          </Button>
+        </div>
+      )}
+    </Alert>
   );
 }

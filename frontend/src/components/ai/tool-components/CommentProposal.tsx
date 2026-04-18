@@ -3,6 +3,7 @@ import { MessageSquare, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import type { DynamicToolUIPart } from 'ai';
 
 interface CommentInput {
@@ -15,37 +16,32 @@ interface CommentInput {
 interface Props {
   part: DynamicToolUIPart;
   addToolOutput: (opts: { tool: string; toolCallId: string; output: unknown }) => void;
+  inBatch?: boolean;
 }
 
-function ApprovedBadge({ displayId }: { displayId?: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
-      <Check size={12} className="text-emerald-500 shrink-0" />
-      <span className="text-emerald-400 font-medium">Approuve</span>
-      {displayId && <span className="font-mono text-[11px] text-[--color-muted]">{displayId}</span>}
-    </div>
-  );
-}
-
-function CancelledBadge() {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-[--color-border] bg-[--color-surface-hover]/30 px-3 py-2 text-[12px] text-[--color-muted]">
-      <X size={12} className="shrink-0" />
-      <span>Commentaire annule</span>
-    </div>
-  );
-}
-
-export default function CommentProposal({ part, addToolOutput }: Props) {
+export default function CommentProposal({ part, addToolOutput, inBatch }: Props) {
   const input = (part.input ?? {}) as CommentInput;
   const [content, setContent] = useState(input.content || '');
 
   if (part.state === 'output-available') {
     const output = part.output as { approved: boolean } | undefined;
     if (output?.approved) {
-      return <ApprovedBadge displayId={input.display_id} />;
+      return (
+        <Alert className="border-emerald-500/30 bg-emerald-500/5">
+          <Check size={16} className="text-emerald-500" />
+          <AlertTitle className="flex items-center gap-2 text-[12px]">
+            <span className="text-emerald-400 font-medium">Approuvé</span>
+            {input.display_id && <span className="font-mono text-[11px] text-[--color-muted]">{input.display_id}</span>}
+          </AlertTitle>
+        </Alert>
+      );
     }
-    return <CancelledBadge />;
+    return (
+      <Alert className="border-[--color-border] bg-[--color-surface-hover]/30">
+        <X size={16} className="text-[--color-muted]" />
+        <AlertTitle className="text-[12px] text-[--color-muted]">Commentaire annulé</AlertTitle>
+      </Alert>
+    );
   }
 
   if (part.state !== 'input-available') return null;
@@ -67,9 +63,9 @@ export default function CommentProposal({ part, addToolOutput }: Props) {
   };
 
   return (
-    <div className="rounded-xl border border-amber-500/30 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-amber-500/20 bg-amber-500/5">
-        <MessageSquare size={13} className="text-amber-500 shrink-0" />
+    <Alert className="border-amber-500/30 bg-amber-500/5">
+      <MessageSquare size={16} className="text-amber-500" />
+      <AlertTitle className="flex items-center gap-2">
         <span className="text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
           Proposition de commentaire
         </span>
@@ -78,9 +74,9 @@ export default function CommentProposal({ part, addToolOutput }: Props) {
             {input.display_id}
           </Badge>
         )}
-      </div>
+      </AlertTitle>
 
-      <div className="p-3 space-y-2 bg-[--color-bg]">
+      <AlertDescription className="space-y-2">
         {input.title && (
           <p className="text-[11px] text-[--color-muted] italic line-clamp-1">
             sur : {input.title}
@@ -93,27 +89,25 @@ export default function CommentProposal({ part, addToolOutput }: Props) {
           placeholder="Votre commentaire en Markdown..."
           className="text-[12px] resize-none"
         />
-      </div>
+      </AlertDescription>
 
-      <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/50">
-        <Button
-          onClick={handleCancel}
-          variant="secondary"
-          size="sm"
-        >
-          <X size={12} />
-          Annuler
-        </Button>
-        <Button
-          onClick={handleApprove}
-          disabled={!content.trim()}
-          size="sm"
-          className="bg-amber-500 text-black hover:bg-amber-400"
-        >
-          <Check size={12} />
-          Commenter
-        </Button>
-      </div>
-    </div>
+      {!inBatch && (
+        <div className="col-start-2 flex items-center justify-end gap-2 pt-2">
+          <Button onClick={handleCancel} variant="secondary" size="sm">
+            <X size={12} />
+            Annuler
+          </Button>
+          <Button
+            onClick={handleApprove}
+            disabled={!content.trim()}
+            size="sm"
+            className="bg-amber-500 text-black hover:bg-amber-400"
+          >
+            <Check size={12} />
+            Commenter
+          </Button>
+        </div>
+      )}
+    </Alert>
   );
 }

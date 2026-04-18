@@ -8,7 +8,7 @@
 import { useRef, useEffect, useCallback, useState, useMemo, memo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Sparkles, Trash2, Bot, Copy, Check, RefreshCw,
+  Sparkles, Trash2, Bot, Copy, Check, RefreshCw, ThumbsUp, ThumbsDown,
   Wrench, ChevronDown, Plus, MessageSquare, PanelRightClose, AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
@@ -43,10 +43,19 @@ import {
   PromptInputSubmit,
 } from '@/components/ai-elements/prompt-input';
 import { Shimmer } from '@/components/ai-elements/shimmer';
+import { Reasoning, ReasoningTrigger, ReasoningContent } from '@/components/ai-elements/reasoning';
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion';
 import { ToolPartRenderer } from '@/components/ai/ToolPartRenderer';
+import { BatchConfirmation } from '@/components/ai/BatchConfirmation';
 
 // ─── Helpers ────────────────────────────────────
+
+const PROPOSE_TOOLS = ['propose_issue', 'propose_update_issue', 'propose_bulk_update', 'propose_comment'];
+
+function isPendingProposal(part: { type: string; state?: string }): boolean {
+  const toolName = part.type.replace(/^tool-/, '');
+  return PROPOSE_TOOLS.includes(toolName) && (part as any).state === 'input-available';
+}
 
 function getTextFromMessage(msg: UIMessage): string {
   return msg.parts
@@ -183,6 +192,38 @@ function CopyButton({ content }: { content: string }) {
     <MessageAction tooltip={copied ? t('aiChat.copied') : t('aiChat.copy')} onClick={handleCopy}>
       {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
     </MessageAction>
+  );
+}
+
+// ─── Last message actions (hover) ──────────────
+
+function LastMessageActions({
+  text,
+  onRegenerate,
+  isStreaming,
+}: {
+  text: string;
+  onRegenerate?: () => void;
+  isStreaming: boolean;
+}) {
+  const { t } = useTranslation();
+  if (isStreaming || !text) return null;
+
+  return (
+    <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+      <CopyButton content={text} />
+      {onRegenerate && (
+        <MessageAction tooltip={t('aiChat.regenerate')} onClick={onRegenerate}>
+          <RefreshCw size={12} />
+        </MessageAction>
+      )}
+      <MessageAction tooltip="J'aime">
+        <ThumbsUp size={12} />
+      </MessageAction>
+      <MessageAction tooltip="Je n'aime pas">
+        <ThumbsDown size={12} />
+      </MessageAction>
+    </MessageActions>
   );
 }
 
@@ -550,31 +591,66 @@ export function AIAssistant() {
                                 <Bot size={14} className="text-accent shrink-0" />
                                 <Shimmer className="text-sm text-muted/70">{t('aiChat.thinking')}</Shimmer>
                               </div>
-                            ) : (
-                              msg.parts.map((part, idx) => {
+                            ) : (() => {
+                              if (msg.role === 'user') {
+                                return msg.parts.map((part, idx) =>
+                                  part.type === 'text'
+                                    ? <p key={idx} className="whitespace-pre-wrap text-[13px]">{(part as any).text}</p>
+                                    : null
+                                );
+                              }
+                              const pending = msg.parts.filter(isPendingProposal);
+                              const isBatch = pending.length >= 2;
+                              if (isBatch) {
+                                return (
+                                  <>
+                                    {msg.parts.filter(p => !isPendingProposal(p)).map((part, idx) => {
+                                      if (part.type === 'text') {
+                                        return <MessageResponse key={idx} isAnimating={isLast && status === 'streaming'}>{(part as any).text}</MessageResponse>;
+                                      }
+                                      if (isToolPart(part)) {
+                                        return <ToolPartRenderer key={idx} part={part} addToolOutput={addToolOutput} />;
+                                      }
+                                      return null;
+                                    })}
+                                    <BatchConfirmation parts={pending} addToolOutput={addToolOutput} />
+                                  </>
+                                );
+                              }
+                              const textParts = msg.parts.filter(p => p.type === 'text');
+                              const toolParts = msg.parts.filter(isToolPart);
+                              const combinedText = textParts.map(p => (p as any).text).join('\n');
+                              if (toolParts.length > 0 && combinedText.length > 0) {
+                                return (
+                                  <>
+                                    <Reasoning isStreaming={isStreaming && isLast} defaultOpen={isStreaming && isLast}>
+                                      <ReasoningTrigger />
+                                      <ReasoningContent>{combinedText}</ReasoningContent>
+                                    </Reasoning>
+                                    {toolParts.map((part, idx) => (
+                                      <ToolPartRenderer key={`tool-${idx}`} part={part} addToolOutput={addToolOutput} />
+                                    ))}
+                                  </>
+                                );
+                              }
+                              return msg.parts.map((part, idx) => {
                                 if (part.type === 'text') {
-                                  const text = (part as any).text as string;
-                                  return msg.role === 'user'
-                                    ? <p key={idx} className="whitespace-pre-wrap text-[13px]">{text}</p>
-                                    : <MessageResponse key={idx} isAnimating={isLast && status === 'streaming'}>{text}</MessageResponse>;
+                                  return <MessageResponse key={idx} isAnimating={isLast && status === 'streaming'}>{(part as any).text}</MessageResponse>;
                                 }
                                 if (isToolPart(part)) {
                                   return <ToolPartRenderer key={idx} part={part} addToolOutput={addToolOutput} />;
                                 }
                                 return null;
-                              })
-                            )}
+                              });
+                            })()}
                           </MessageContent>
 
-                          {!isThinking && msgText && (
-                            <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
-                              <CopyButton content={msgText} />
-                              {msg.role === 'assistant' && isLast && !isStreaming && (
-                                <MessageAction tooltip={t('aiChat.regenerate')} onClick={handleRegenerate}>
-                                  <RefreshCw size={12} />
-                                </MessageAction>
-                              )}
-                            </MessageActions>
+                          {isLast && msg.role === 'assistant' && (
+                            <LastMessageActions
+                              text={msgText}
+                              onRegenerate={handleRegenerate}
+                              isStreaming={isStreaming}
+                            />
                           )}
                         </Message>
                       );

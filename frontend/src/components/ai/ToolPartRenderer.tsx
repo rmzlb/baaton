@@ -34,6 +34,7 @@ function getToolName(part: AnyToolPart): string {
 interface ToolPartRendererProps {
   part: AnyToolPart;
   addToolOutput: (opts: { tool: string; toolCallId: string; output: unknown }) => void;
+  inBatch?: boolean;
 }
 
 const PROPOSAL_TOOLS = new Set([
@@ -43,7 +44,7 @@ const PROPOSAL_TOOLS = new Set([
   'propose_comment',
 ]);
 
-export function ToolPartRenderer({ part, addToolOutput }: ToolPartRendererProps) {
+export function ToolPartRenderer({ part, addToolOutput, inBatch }: ToolPartRendererProps) {
   const toolName = getToolName(part);
   const dynPart = part as DynamicToolUIPart;
 
@@ -53,13 +54,13 @@ export function ToolPartRenderer({ part, addToolOutput }: ToolPartRendererProps)
 
   switch (toolName) {
     case 'propose_issue':
-      return <Suspense fallback={<Skeleton />}><IssueProposal part={dynPart} addToolOutput={addToolOutput} /></Suspense>;
+      return <Suspense fallback={<Skeleton />}><IssueProposal part={dynPart} addToolOutput={addToolOutput} inBatch={inBatch} /></Suspense>;
     case 'propose_update_issue':
-      return <Suspense fallback={<Skeleton />}><UpdateIssueProposal part={dynPart} addToolOutput={addToolOutput} /></Suspense>;
+      return <Suspense fallback={<Skeleton />}><UpdateIssueProposal part={dynPart} addToolOutput={addToolOutput} inBatch={inBatch} /></Suspense>;
     case 'propose_bulk_update':
-      return <Suspense fallback={<Skeleton />}><BulkUpdateProposal part={dynPart} addToolOutput={addToolOutput} /></Suspense>;
+      return <Suspense fallback={<Skeleton />}><BulkUpdateProposal part={dynPart} addToolOutput={addToolOutput} inBatch={inBatch} /></Suspense>;
     case 'propose_comment':
-      return <Suspense fallback={<Skeleton />}><CommentProposal part={dynPart} addToolOutput={addToolOutput} /></Suspense>;
+      return <Suspense fallback={<Skeleton />}><CommentProposal part={dynPart} addToolOutput={addToolOutput} inBatch={inBatch} /></Suspense>;
   }
 
   if (part.state === 'input-streaming' || part.state === 'input-available') {
