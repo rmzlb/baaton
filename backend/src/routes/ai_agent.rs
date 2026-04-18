@@ -622,9 +622,10 @@ pub async fn agent_chat(
                     })));
 
                     // Execute tool
+                    let org_ids_compat = vec![org_id.clone()];
                     let exec_result = crate::routes::ai_tools::execute_tool(
                         &pool,
-                        &org_id,
+                        &org_ids_compat,
                         &user_id,
                         &tool_name,
                         tool_args,

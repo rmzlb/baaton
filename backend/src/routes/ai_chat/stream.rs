@@ -45,6 +45,11 @@ Baaton = "You orchestrate. AI executes." C'est un Kanban/projet tracker spécial
 - Gérer des tags colorés pour le contexte (ex: "ElevenLabs", "Auth", "Perf")
 - Connecter des agents IA (OpenClaw) pour automatiser le triage et l'exécution
 
+Tu opères sur les données de toutes les organisations auxquelles l'utilisateur
+appartient (cross-org par défaut, comme la page /all-issues). Les projets
+sont identifiables par leur prefix unique (ex: HLM, SQX). Si plusieurs orgs
+ont des projets avec des prefix différents, tu peux travailler dessus tous.
+
 ## Ton Rôle
 Tu es le PM assistant de l'équipe. Tu ne codes pas, mais tu :
 - Tries et priorises les issues intelligemment
@@ -101,6 +106,7 @@ Tu es le PM assistant de l'équipe. Tu ne codes pas, mais tu :
 8. **Qualification obligatoire** : déduis type/priority/category si l'utilisateur ne les précise pas
 9. **Après create_issue/update_issue/add_comment/bulk_update_issues** : réponds en UNE phrase courte (ex: "Fait. HLM-42 créé.").
 10. **Tool calls PARALLÈLES quand pertinent** : si l'utilisateur demande explicitement plusieurs actions d'écriture dans le même tour (ex: "crée 3 issues : X, Y, Z"), émets TOUS les `propose_*` en PARALLÈLE dans la MÊME réponse — un functionCall par item. NE FAIS PAS séquentiellement (un par tour). Le frontend groupera automatiquement les N propositions dans une UI batch avec boutons "Tout approuver / Tout annuler". Exemple : pour "crée 3 issues HLM: A, B, C" → 3 functionCalls `propose_issue` dans la même réponse, pas 3 tours séquentiels.
+11. **Clarification**: quand un update ou une création manque d'information ambiguë (ex: 2 projets ont le même prefix, plusieurs issues matchent la recherche, type/priorité non déductibles), DEMANDE au user avant d'appeler le tool. Mais si le contexte te donne la réponse sans doute (ex: l'user dit "crée sur HLM" et HLM est unique), PROCÈDE sans poser de question pour être rapide. Règle: doute raisonnable → clarifier ; contexte clair → exécuter.
 
 ## Templates de Description (OBLIGATOIRES pour propose_issue)
 
@@ -231,7 +237,7 @@ Aide l'utilisateur à être productif. Exécute efficacement. Propose des insigh
 
 pub(super) async fn build_project_context(
     pool: &PgPool,
-    org_id: &str,
+    org_ids: &[String],
     project_ids: &[String],
 ) -> String {
     #[derive(sqlx::FromRow)]
@@ -250,17 +256,17 @@ pub(super) async fn build_project_context(
 
     let projects: Vec<ProjectRow> = if project_ids.is_empty() {
         sqlx::query_as::<_, ProjectRow>(
-            "SELECT id, name, prefix FROM projects WHERE org_id = $1 ORDER BY name ASC LIMIT 20",
+            "SELECT id, name, prefix FROM projects WHERE org_id = ANY($1::text[]) ORDER BY name ASC LIMIT 20",
         )
-        .bind(org_id)
+        .bind(org_ids)
         .fetch_all(pool)
         .await
         .unwrap_or_default()
     } else {
         sqlx::query_as::<_, ProjectRow>(
-            "SELECT id, name, prefix FROM projects WHERE org_id = $1 AND id = ANY($2::uuid[]) ORDER BY name ASC",
+            "SELECT id, name, prefix FROM projects WHERE org_id = ANY($1::text[]) AND id = ANY($2::uuid[]) ORDER BY name ASC",
         )
-        .bind(org_id)
+        .bind(org_ids)
         .bind(project_ids)
         .fetch_all(pool)
         .await
@@ -277,12 +283,12 @@ pub(super) async fn build_project_context(
             SELECT p.name AS project_name, i.status, COUNT(*) AS cnt
             FROM issues i
             JOIN projects p ON p.id = i.project_id
-            WHERE p.org_id = $1 AND LOWER(i.status) NOT IN ('done', 'cancelled')
+            WHERE p.org_id = ANY($1::text[]) AND LOWER(i.status) NOT IN ('done', 'cancelled')
             GROUP BY p.name, i.status
             ORDER BY p.name ASC
             "#,
         )
-        .bind(org_id)
+        .bind(org_ids)
         .fetch_all(pool)
         .await
         .unwrap_or_default()
@@ -292,12 +298,12 @@ pub(super) async fn build_project_context(
             SELECT p.name AS project_name, i.status, COUNT(*) AS cnt
             FROM issues i
             JOIN projects p ON p.id = i.project_id
-            WHERE p.org_id = $1 AND p.id = ANY($2::uuid[]) AND LOWER(i.status) NOT IN ('done', 'cancelled')
+            WHERE p.org_id = ANY($1::text[]) AND p.id = ANY($2::uuid[]) AND LOWER(i.status) NOT IN ('done', 'cancelled')
             GROUP BY p.name, i.status
             ORDER BY p.name ASC
             "#,
         )
-        .bind(org_id)
+        .bind(org_ids)
         .bind(project_ids)
         .fetch_all(pool)
         .await
@@ -335,14 +341,14 @@ pub(super) async fn build_project_context(
 /// UIMessageChunk events per the AI SDK v5 protocol.
 pub fn build_stream(
     pool: PgPool,
-    org_id: String,
+    org_ids: Vec<String>,
     user_id: String,
     project_ids: Vec<String>,
     mut contents: Vec<Value>,
     api_key: String,
 ) -> impl futures::Stream<Item = Result<Event, Infallible>> {
     async_stream::stream! {
-        let context = build_project_context(&pool, &org_id, &project_ids).await;
+        let context = build_project_context(&pool, &org_ids, &project_ids).await;
         let system_prompt = build_system_prompt(&context);
 
         let tool_defs = crate::routes::ai_tools::get_tool_definitions();
@@ -482,7 +488,7 @@ pub fn build_stream(
                     }
 
                     match crate::routes::ai_tools::execute_tool(
-                        &pool, &org_id, &user_id, &tool_name, input,
+                        &pool, &org_ids, &user_id, &tool_name, input,
                     )
                     .await
                     {
@@ -564,7 +570,7 @@ pub fn build_stream(
         let _ = sqlx::query(
             "INSERT INTO ai_usage (org_id, user_id, event_type, tokens_in, tokens_out, model) VALUES ($1, $2, 'ai_chat', $3, $4, $5)",
         )
-        .bind(&org_id)
+        .bind(org_ids.first().map(|s| s.as_str()).unwrap_or(""))
         .bind(&user_id)
         .bind(total_tokens_in)
         .bind(total_tokens_out)

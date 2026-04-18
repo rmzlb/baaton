@@ -16,6 +16,7 @@ use sqlx::PgPool;
 use std::time::Duration;
 
 use crate::middleware::AuthUser;
+use crate::routes::issues::resolve_user_org_ids_from_auth;
 use types::ChatRequest;
 
 const MAX_HISTORY_MESSAGES: usize = 40;
@@ -35,6 +36,13 @@ pub async fn chat_handler(
             )
         })?
         .to_string();
+
+    let org_ids: Vec<String> = match resolve_user_org_ids_from_auth(&auth).await {
+        Ok(ids) if !ids.is_empty() => ids,
+        _ => {
+            auth.org_id.as_ref().map(|id| vec![id.clone()]).unwrap_or_default()
+        }
+    };
 
     // ── Quota check (same as ai_agent.rs) ──
     let plan =
@@ -97,7 +105,7 @@ pub async fn chat_handler(
 
     let sse_stream = stream::build_stream(
         pool,
-        org_id,
+        org_ids,
         auth.user_id,
         body.project_ids,
         contents,

@@ -614,7 +614,7 @@ struct ExportSprintRow {
 
 // ─── Real SQL Executor Functions (Phase 2A) ───────────────────────────────────
 
-async fn exec_search_issues(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn exec_search_issues(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let query_text = args.get("query").and_then(|v| v.as_str())
         .map(|q| format!("%{}%", q));
     let project_id: Option<Uuid> = args.get("project_id")
@@ -630,7 +630,7 @@ async fn exec_search_issues(pool: &PgPool, org_id: &str, args: &Value) -> Result
                   p.name AS project_name, i.updated_at
            FROM issues i
            JOIN projects p ON p.id = i.project_id
-           WHERE p.org_id = $1
+           WHERE p.org_id = ANY($1::text[])
              AND ($2::uuid IS NULL OR i.project_id = $2)
              AND ($3::text IS NULL OR i.status = $3)
              AND ($4::text IS NULL OR i.priority = $4)
@@ -639,7 +639,7 @@ async fn exec_search_issues(pool: &PgPool, org_id: &str, args: &Value) -> Result
            ORDER BY i.updated_at DESC
            LIMIT $7"#,
     )
-    .bind(org_id)
+    .bind(org_ids)
     .bind(project_id)
     .bind(status_filter)
     .bind(priority_filter)
@@ -679,38 +679,38 @@ async fn exec_search_issues(pool: &PgPool, org_id: &str, args: &Value) -> Result
     })
 }
 
-async fn exec_get_project_metrics(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn exec_get_project_metrics(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let project_id: Option<Uuid> = args.get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
 
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR i.project_id = $2)"
-    ).bind(org_id).bind(project_id).fetch_one(pool).await.unwrap_or(0);
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2)"
+    ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
 
     let open: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status NOT IN ('done', 'cancelled')"
-    ).bind(org_id).bind(project_id).fetch_one(pool).await.unwrap_or(0);
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status NOT IN ('done', 'cancelled')"
+    ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
 
     let in_progress: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status = 'in_progress'"
-    ).bind(org_id).bind(project_id).fetch_one(pool).await.unwrap_or(0);
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status = 'in_progress'"
+    ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
 
     let done: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status = 'done'"
-    ).bind(org_id).bind(project_id).fetch_one(pool).await.unwrap_or(0);
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status = 'done'"
+    ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
 
     let velocity: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status = 'done' AND i.updated_at >= NOW() - INTERVAL '14 days'"
-    ).bind(org_id).bind(project_id).fetch_one(pool).await.unwrap_or(0);
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status = 'done' AND i.updated_at >= NOW() - INTERVAL '14 days'"
+    ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
 
     let bug_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR i.project_id = $2) AND i.type = 'bug'"
-    ).bind(org_id).bind(project_id).fetch_one(pool).await.unwrap_or(0);
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.type = 'bug'"
+    ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
 
     let avg_cycle_time: Option<f64> = sqlx::query_scalar::<_, Option<f64>>(
-        "SELECT AVG(EXTRACT(EPOCH FROM (i.closed_at - i.created_at)) / 3600.0) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR i.project_id = $2) AND i.closed_at IS NOT NULL"
-    ).bind(org_id).bind(project_id).fetch_one(pool).await.unwrap_or(None);
+        "SELECT AVG(EXTRACT(EPOCH FROM (i.closed_at - i.created_at)) / 3600.0) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.closed_at IS NOT NULL"
+    ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(None);
 
     let bug_ratio = if total > 0 { bug_count as f64 / total as f64 } else { 0.0 };
     let avg_ct_str = avg_cycle_time.map(|h| format!("{:.1}", h)).unwrap_or_else(|| "N/A".to_string());
@@ -734,15 +734,15 @@ async fn exec_get_project_metrics(pool: &PgPool, org_id: &str, args: &Value) -> 
     })
 }
 
-async fn exec_analyze_sprint(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn exec_analyze_sprint(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let project_id: Option<Uuid> = args.get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
 
     let sprint = sqlx::query_as::<_, SprintSummaryRow>(
-        "SELECT s.id, s.name FROM sprints s JOIN projects p ON p.id = s.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR s.project_id = $2) AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1"
+        "SELECT s.id, s.name FROM sprints s JOIN projects p ON p.id = s.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR s.project_id = $2) AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1"
     )
-    .bind(org_id)
+    .bind(org_ids)
     .bind(project_id)
     .fetch_optional(pool)
     .await
@@ -798,7 +798,7 @@ async fn exec_analyze_sprint(pool: &PgPool, org_id: &str, args: &Value) -> Resul
     })
 }
 
-async fn exec_weekly_recap(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let project_id: Option<Uuid> = args.get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
@@ -806,20 +806,20 @@ async fn exec_weekly_recap(pool: &PgPool, org_id: &str, args: &Value) -> Result<
     let since = chrono::Utc::now() - chrono::Duration::days(days);
 
     let completed: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status = 'done' AND i.updated_at >= $3"
-    ).bind(org_id).bind(project_id).bind(since).fetch_one(pool).await.unwrap_or(0);
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status = 'done' AND i.updated_at >= $3"
+    ).bind(org_ids).bind(project_id).bind(since).fetch_one(pool).await.unwrap_or(0);
 
     let new_created: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR i.project_id = $2) AND i.created_at >= $3"
-    ).bind(org_id).bind(project_id).bind(since).fetch_one(pool).await.unwrap_or(0);
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.created_at >= $3"
+    ).bind(org_ids).bind(project_id).bind(since).fetch_one(pool).await.unwrap_or(0);
 
     let blockers: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1 AND ($2::uuid IS NULL OR i.project_id = $2) AND i.priority IN ('urgent', 'high') AND i.status NOT IN ('done', 'cancelled') AND i.updated_at < NOW() - INTERVAL '2 days'"
-    ).bind(org_id).bind(project_id).fetch_one(pool).await.unwrap_or(0);
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.priority IN ('urgent', 'high') AND i.status NOT IN ('done', 'cancelled') AND i.updated_at < NOW() - INTERVAL '2 days'"
+    ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
 
     let top_contributor: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT user_name FROM activity_log WHERE org_id = $1 AND ($2::uuid IS NULL OR project_id = $2) AND created_at >= $3 AND user_name IS NOT NULL GROUP BY user_name ORDER BY COUNT(*) DESC LIMIT 1"
-    ).bind(org_id).bind(project_id).bind(since).fetch_optional(pool).await.unwrap_or(None);
+        "SELECT user_name FROM activity_log WHERE org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR project_id = $2) AND created_at >= $3 AND user_name IS NOT NULL GROUP BY user_name ORDER BY COUNT(*) DESC LIMIT 1"
+    ).bind(org_ids).bind(project_id).bind(since).fetch_optional(pool).await.unwrap_or(None);
 
     Ok(ToolResult {
         data: json!({
@@ -839,7 +839,7 @@ async fn exec_weekly_recap(pool: &PgPool, org_id: &str, args: &Value) -> Result<
     })
 }
 
-async fn exec_suggest_priorities(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn exec_suggest_priorities(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let project_id: Option<Uuid> = args.get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
@@ -858,13 +858,13 @@ async fn exec_suggest_priorities(pool: &PgPool, org_id: &str, args: &Value) -> R
                AS score
            FROM issues i
            JOIN projects p ON p.id = i.project_id
-           WHERE p.org_id = $1
+           WHERE p.org_id = ANY($1::text[])
              AND ($2::uuid IS NULL OR i.project_id = $2)
              AND i.status NOT IN ('done', 'cancelled')
            ORDER BY score DESC
            LIMIT 10"#,
     )
-    .bind(org_id)
+    .bind(org_ids)
     .bind(project_id)
     .fetch_all(pool)
     .await
@@ -913,15 +913,15 @@ async fn exec_suggest_priorities(pool: &PgPool, org_id: &str, args: &Value) -> R
     })
 }
 
-async fn exec_export_project(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn exec_export_project(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let project_id: Uuid = args.get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| "export_project requires a valid project_id".to_string())?;
 
     let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
-    ).bind(project_id).bind(org_id).fetch_one(pool).await
+        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = ANY($2::text[]))"
+    ).bind(project_id).bind(org_ids).fetch_one(pool).await
         .map_err(|e| format!("export project check: {}", e))?;
 
     if !exists {
@@ -982,16 +982,16 @@ async fn exec_export_project(pool: &PgPool, org_id: &str, args: &Value) -> Resul
 // ─── Project ID Resolver ──────────────────────────────────────────────────────
 // Resolves a project_id that may be a UUID, a prefix (e.g. "HLM"), or a name.
 
-async fn resolve_project_id(pool: &PgPool, org_id: &str, raw: &str) -> Option<Uuid> {
+async fn resolve_project_id(pool: &PgPool, org_ids: &[String], raw: &str) -> Option<Uuid> {
     if let Ok(uuid) = raw.parse::<Uuid>() {
         return Some(uuid);
     }
 
     // Try prefix match (case-insensitive)
     let by_prefix: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM projects WHERE org_id = $1 AND UPPER(prefix) = UPPER($2) LIMIT 1",
+        "SELECT id FROM projects WHERE org_id = ANY($1::text[]) AND UPPER(prefix) = UPPER($2) LIMIT 1",
     )
-    .bind(org_id)
+    .bind(org_ids)
     .bind(raw)
     .fetch_optional(pool)
     .await
@@ -1004,9 +1004,9 @@ async fn resolve_project_id(pool: &PgPool, org_id: &str, raw: &str) -> Option<Uu
 
     // Try name match (case-insensitive, contains)
     sqlx::query_scalar(
-        "SELECT id FROM projects WHERE org_id = $1 AND LOWER(name) LIKE LOWER($2) LIMIT 1",
+        "SELECT id FROM projects WHERE org_id = ANY($1::text[]) AND LOWER(name) LIKE LOWER($2) LIMIT 1",
     )
-    .bind(org_id)
+    .bind(org_ids)
     .bind(format!("%{}%", raw))
     .fetch_optional(pool)
     .await
@@ -1015,10 +1015,10 @@ async fn resolve_project_id(pool: &PgPool, org_id: &str, raw: &str) -> Option<Uu
 }
 
 /// Pre-process tool args: resolve any project_id field from prefix/name to UUID.
-async fn resolve_args_project_id(pool: &PgPool, org_id: &str, args: &mut Value) {
+async fn resolve_args_project_id(pool: &PgPool, org_ids: &[String], args: &mut Value) {
     if let Some(raw) = args.get("project_id").and_then(|v| v.as_str()).map(String::from) {
         if raw.parse::<Uuid>().is_err() {
-            if let Some(uuid) = resolve_project_id(pool, org_id, &raw).await {
+            if let Some(uuid) = resolve_project_id(pool, org_ids, &raw).await {
                 args["project_id"] = Value::String(uuid.to_string());
             }
         }
@@ -1027,16 +1027,16 @@ async fn resolve_args_project_id(pool: &PgPool, org_id: &str, args: &mut Value) 
 
 /// Returns a proposal for issue creation (does NOT create). Frontend renders
 /// an editable form + Approve/Cancel buttons.
-async fn exec_propose_issue(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn exec_propose_issue(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let project_id_str = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("");
     let project_id: Option<Uuid> = project_id_str.parse().ok();
 
     let project_info: Option<(String, String)> = match project_id {
         Some(uid) => sqlx::query_as::<_, (String, String)>(
-            "SELECT name, prefix FROM projects WHERE id = $1 AND org_id = $2",
+            "SELECT name, prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
         )
         .bind(uid)
-        .bind(org_id)
+        .bind(org_ids)
         .fetch_optional(pool)
         .await
         .ok()
@@ -1083,7 +1083,7 @@ async fn exec_propose_issue(pool: &PgPool, org_id: &str, args: &Value) -> Result
 
 /// Propose an update to an existing issue. Fetches current state and returns
 /// a diff for user review.
-async fn exec_propose_update_issue(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn exec_propose_update_issue(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let issue_id_str = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
     let issue_id: Uuid = issue_id_str.parse()
         .map_err(|_| format!("Invalid issue_id UUID: {}", issue_id_str))?;
@@ -1102,10 +1102,10 @@ async fn exec_propose_update_issue(pool: &PgPool, org_id: &str, args: &Value) ->
 
     let current = sqlx::query_as::<_, IssueRow>(
         "SELECT display_id, title, description, status, priority, type, tags, category
-         FROM issues WHERE id = $1 AND org_id = $2",
+         FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2::text[])",
     )
     .bind(issue_id)
-    .bind(org_id)
+    .bind(org_ids)
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("DB error: {e}"))?
@@ -1152,7 +1152,7 @@ async fn exec_propose_update_issue(pool: &PgPool, org_id: &str, args: &Value) ->
 
 /// Propose a bulk update to N issues. Fetches current state for each and returns
 /// the list of changes for user review.
-async fn exec_propose_bulk_update(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn exec_propose_bulk_update(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let updates = args.get("updates").and_then(|v| v.as_array())
         .ok_or_else(|| "updates must be an array".to_string())?;
 
@@ -1162,10 +1162,10 @@ async fn exec_propose_bulk_update(pool: &PgPool, org_id: &str, args: &Value) -> 
         let Ok(issue_id) = issue_id_str.parse::<Uuid>() else { continue };
 
         let cur: Option<(String, String, String, String)> = sqlx::query_as(
-            "SELECT display_id, title, status, priority FROM issues WHERE id = $1 AND org_id = $2",
+            "SELECT i.display_id, i.title, i.status, i.priority FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2::text[])",
         )
         .bind(issue_id)
-        .bind(org_id)
+        .bind(org_ids)
         .fetch_optional(pool)
         .await
         .ok()
@@ -1192,17 +1192,17 @@ async fn exec_propose_bulk_update(pool: &PgPool, org_id: &str, args: &Value) -> 
 }
 
 /// Propose adding a comment. Fetches issue info and returns the proposed content.
-async fn exec_propose_comment(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn exec_propose_comment(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     let issue_id_str = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
     let issue_id: Uuid = issue_id_str.parse()
         .map_err(|_| format!("Invalid issue_id UUID: {}", issue_id_str))?;
     let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
     let issue: Option<(String, String)> = sqlx::query_as(
-        "SELECT display_id, title FROM issues WHERE id = $1 AND org_id = $2",
+        "SELECT i.display_id, i.title FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2::text[])",
     )
     .bind(issue_id)
-    .bind(org_id)
+    .bind(org_ids)
     .fetch_optional(pool)
     .await
     .ok()
@@ -1225,78 +1225,78 @@ async fn exec_propose_comment(pool: &PgPool, org_id: &str, args: &Value) -> Resu
 
 pub async fn execute_tool(
     pool: &PgPool,
-    org_id: &str,
+    org_ids: &[String],
     user_id: &str,
     tool_name: &str,
     args: Value,
 ) -> Result<ToolResult, String> {
     let mut args = args;
-    resolve_args_project_id(pool, org_id, &mut args).await;
+    resolve_args_project_id(pool, org_ids, &mut args).await;
 
     match tool_name {
-        "search_issues" => match exec_search_issues(pool, org_id, &args).await {
+        "search_issues" => match exec_search_issues(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("search_issues real query failed: {e}; falling back to stub"); Ok(stub_search_issues(&args)) }
         },
-        "propose_issue" => exec_propose_issue(pool, org_id, &args).await,
-        "propose_update_issue" => exec_propose_update_issue(pool, org_id, &args).await,
-        "propose_bulk_update" => exec_propose_bulk_update(pool, org_id, &args).await,
-        "propose_comment" => exec_propose_comment(pool, org_id, &args).await,
-        "create_issue" => create_issue_real(pool, org_id, user_id, &args).await,
-        "update_issue" => update_issue_real(pool, org_id, user_id, &args).await,
-        "bulk_update_issues" => bulk_update_issues_real(pool, org_id, user_id, &args).await,
-        "add_comment" => add_comment_real(pool, org_id, user_id, &args).await,
-        "generate_prd" => match ai_generate_prd(pool, org_id, &args).await {
+        "propose_issue" => exec_propose_issue(pool, org_ids, &args).await,
+        "propose_update_issue" => exec_propose_update_issue(pool, org_ids, &args).await,
+        "propose_bulk_update" => exec_propose_bulk_update(pool, org_ids, &args).await,
+        "propose_comment" => exec_propose_comment(pool, org_ids, &args).await,
+        "create_issue" => create_issue_real(pool, org_ids, user_id, &args).await,
+        "update_issue" => update_issue_real(pool, org_ids, user_id, &args).await,
+        "bulk_update_issues" => bulk_update_issues_real(pool, org_ids, user_id, &args).await,
+        "add_comment" => add_comment_real(pool, org_ids, user_id, &args).await,
+        "generate_prd" => match ai_generate_prd(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("generate_prd real query failed: {e}; falling back to stub"); Ok(stub_generate_prd(&args)) }
         },
-        "analyze_sprint" => match exec_analyze_sprint(pool, org_id, &args).await {
+        "analyze_sprint" => match exec_analyze_sprint(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("analyze_sprint real query failed: {e}; falling back to stub"); Ok(stub_analyze_sprint(&args)) }
         },
-        "get_project_metrics" => match exec_get_project_metrics(pool, org_id, &args).await {
+        "get_project_metrics" => match exec_get_project_metrics(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("get_project_metrics real query failed: {e}; falling back to stub"); Ok(stub_get_project_metrics(&args)) }
         },
-        "weekly_recap" => match exec_weekly_recap(pool, org_id, &args).await {
+        "weekly_recap" => match exec_weekly_recap(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("weekly_recap real query failed: {e}; falling back to stub"); Ok(stub_weekly_recap(&args)) }
         },
-        "suggest_priorities" => match exec_suggest_priorities(pool, org_id, &args).await {
+        "suggest_priorities" => match exec_suggest_priorities(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("suggest_priorities real query failed: {e}; falling back to stub"); Ok(stub_suggest_priorities(&args)) }
         },
-        "plan_milestones" => match ai_plan_milestones(pool, org_id, &args).await {
+        "plan_milestones" => match ai_plan_milestones(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("plan_milestones real query failed: {e}; falling back to stub"); Ok(stub_plan_milestones(&args)) }
         },
-        "create_milestones_batch" => create_milestones_batch_real(pool, org_id, user_id, &args).await,
-        "adjust_timeline" => match ai_adjust_timeline(pool, org_id, &args).await {
+        "create_milestones_batch" => create_milestones_batch_real(pool, org_ids, user_id, &args).await,
+        "adjust_timeline" => match ai_adjust_timeline(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("adjust_timeline real query failed: {e}; falling back to stub"); Ok(stub_adjust_timeline(&args)) }
         },
-        "triage_issue" => triage_issue_real(pool, org_id, user_id, &args).await,
-        "manage_initiatives" => match ai_manage_initiatives(pool, org_id, &args).await {
+        "triage_issue" => triage_issue_real(pool, org_ids, user_id, &args).await,
+        "manage_initiatives" => match ai_manage_initiatives(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("manage_initiatives real query failed: {e}; falling back to stub"); Ok(stub_manage_initiatives(&args)) }
         },
-        "manage_automations" => match ai_manage_automations(pool, org_id, &args).await {
+        "manage_automations" => match ai_manage_automations(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("manage_automations real query failed: {e}; falling back to stub"); Ok(stub_manage_automations(&args)) }
         },
-        "manage_sla" => match ai_manage_sla(pool, org_id, &args).await {
+        "manage_sla" => match ai_manage_sla(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("manage_sla real query failed: {e}; falling back to stub"); Ok(stub_manage_sla(&args)) }
         },
-        "manage_templates" => match ai_manage_templates(pool, org_id, &args).await {
+        "manage_templates" => match ai_manage_templates(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("manage_templates real query failed: {e}; falling back to stub"); Ok(stub_manage_templates(&args)) }
         },
-        "manage_recurring" => match ai_manage_recurring(pool, org_id, &args).await {
+        "manage_recurring" => match ai_manage_recurring(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("manage_recurring real query failed: {e}; falling back to stub"); Ok(stub_manage_recurring(&args)) }
         },
-        "export_project" => match exec_export_project(pool, org_id, &args).await {
+        "export_project" => match exec_export_project(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("export_project real query failed: {e}; falling back to stub"); Ok(stub_export_project(&args)) }
         },
@@ -1764,7 +1764,7 @@ fn stub_export_project(args: &Value) -> ToolResult {
 
 async fn create_issue_real(
     pool: &PgPool,
-    org_id: &str,
+    org_ids: &[String],
     user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
@@ -1788,10 +1788,10 @@ async fn create_issue_real(
 
     // Verify project belongs to org + get prefix
     let row: Option<(String,)> = sqlx::query_as(
-        "SELECT prefix FROM projects WHERE id = $1 AND org_id = $2",
+        "SELECT prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
     )
     .bind(project_id)
-    .bind(org_id)
+    .bind(org_ids)
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;
@@ -1866,7 +1866,7 @@ async fn create_issue_real(
 
 async fn update_issue_real(
     pool: &PgPool,
-    org_id: &str,
+    org_ids: &[String],
     _user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
@@ -1878,10 +1878,10 @@ async fn update_issue_real(
     let existing: Option<(String, String, Option<String>)> = sqlx::query_as(
         r#"SELECT i.display_id, i.status, i.priority
            FROM issues i JOIN projects p ON p.id = i.project_id
-           WHERE i.id = $1 AND p.org_id = $2"#,
+           WHERE i.id = $1 AND p.org_id = ANY($2::text[])"#,
     )
     .bind(issue_id)
-    .bind(org_id)
+    .bind(org_ids)
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;
@@ -1980,7 +1980,7 @@ async fn update_issue_real(
 
 async fn bulk_update_issues_real(
     pool: &PgPool,
-    org_id: &str,
+    org_ids: &[String],
     _user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
@@ -2015,7 +2015,7 @@ async fn bulk_update_issues_real(
                 category = CASE WHEN $7::boolean THEN $8::text[] ELSE category  END,
                 updated_at = now()
                WHERE id = $1
-                 AND project_id IN (SELECT id FROM projects WHERE org_id = $9)
+                 AND project_id IN (SELECT id FROM projects WHERE org_id = ANY($9::text[]))
                RETURNING display_id, status, priority"#,
         )
         .bind(issue_id)
@@ -2026,7 +2026,7 @@ async fn bulk_update_issues_real(
         .bind(&new_tags)
         .bind(new_category.is_some())
         .bind(&new_category)
-        .bind(org_id)
+        .bind(org_ids)
         .fetch_optional(pool)
         .await
         .unwrap_or(None);
@@ -2055,7 +2055,7 @@ async fn bulk_update_issues_real(
 
 async fn add_comment_real(
     pool: &PgPool,
-    org_id: &str,
+    org_ids: &[String],
     user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
@@ -2075,11 +2075,11 @@ async fn add_comment_real(
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(
             SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id
-            WHERE i.id = $1 AND p.org_id = $2
+            WHERE i.id = $1 AND p.org_id = ANY($2::text[])
          )",
     )
     .bind(issue_id)
-    .bind(org_id)
+    .bind(org_ids)
     .fetch_one(pool)
     .await
     .unwrap_or(false);
@@ -2119,7 +2119,7 @@ async fn add_comment_real(
 
 async fn triage_issue_real(
     pool: &PgPool,
-    org_id: &str,
+    org_ids: &[String],
     user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
@@ -2131,10 +2131,10 @@ async fn triage_issue_real(
     let existing: Option<(String, String)> = sqlx::query_as(
         r#"SELECT i.display_id, i.status
            FROM issues i JOIN projects p ON p.id = i.project_id
-           WHERE i.id = $1 AND p.org_id = $2"#,
+           WHERE i.id = $1 AND p.org_id = ANY($2::text[])"#,
     )
     .bind(issue_id)
-    .bind(org_id)
+    .bind(org_ids)
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;
@@ -2194,7 +2194,7 @@ async fn triage_issue_real(
 
 async fn create_milestones_batch_real(
     pool: &PgPool,
-    org_id: &str,
+    org_ids: &[String],
     _user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
@@ -2205,18 +2205,16 @@ async fn create_milestones_batch_real(
     let milestones_arr = args.get("milestones").and_then(|v| v.as_array())
         .ok_or_else(|| "milestones array required".to_string())?;
 
-    // Verify project belongs to org
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)",
+    // Verify project belongs to user's orgs and get its org_id for INSERT
+    let project_org: Option<String> = sqlx::query_scalar(
+        "SELECT org_id FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
     )
     .bind(project_id)
-    .bind(org_id)
-    .fetch_one(pool)
+    .bind(org_ids)
+    .fetch_optional(pool)
     .await
-    .unwrap_or(false);
-    if !exists {
-        return Err("Project not found or access denied".to_string());
-    }
+    .map_err(|e| format!("DB error: {}", e))?;
+    let project_org = project_org.ok_or_else(|| "Project not found or access denied".to_string())?;
 
     let mut created_count: usize = 0;
     let mut result_milestones: Vec<Value> = Vec::new();
@@ -2245,7 +2243,7 @@ async fn create_milestones_batch_real(
         .bind(description)
         .bind(target_date)
         .bind(order)
-        .bind(org_id)
+        .bind(&project_org)
         .fetch_one(pool)
         .await
         .map_err(|e| format!("Failed to create milestone '{}': {}", name, e))?;
@@ -2255,11 +2253,11 @@ async fn create_milestones_batch_real(
             sqlx::query(
                 r#"UPDATE issues SET milestone_id = $1, updated_at = now()
                    WHERE id = ANY($2)
-                     AND project_id IN (SELECT id FROM projects WHERE org_id = $3)"#,
+                     AND project_id IN (SELECT id FROM projects WHERE org_id = ANY($3::text[]))"#,
             )
             .bind(milestone_id)
             .bind(&issue_ids)
-            .bind(org_id)
+            .bind(org_ids)
             .execute(pool)
             .await
             .map(|r| r.rows_affected() as usize)
@@ -2292,7 +2290,7 @@ async fn create_milestones_batch_real(
 
 // ─── Phase 2C: Complex Tool Executors ────────────────────────────────────────
 
-async fn ai_plan_milestones(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn ai_plan_milestones(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     use sqlx::Row;
     let project_id_str = args.get("project_id").and_then(|v| v.as_str())
         .ok_or_else(|| "project_id is required".to_string())?;
@@ -2303,12 +2301,12 @@ async fn ai_plan_milestones(pool: &PgPool, org_id: &str, args: &Value) -> Result
         "SELECT i.id::text as id, i.title, COALESCE(i.tags, ARRAY[]::text[]) as tags
          FROM issues i
          JOIN projects p ON p.id = i.project_id
-         WHERE i.project_id = $1 AND p.org_id = $2
+         WHERE i.project_id = $1 AND p.org_id = ANY($2::text[])
            AND i.status NOT IN ('done', 'cancelled')
          ORDER BY i.created_at ASC"
     )
     .bind(project_id)
-    .bind(org_id)
+    .bind(org_ids)
     .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -2381,7 +2379,7 @@ async fn ai_plan_milestones(pool: &PgPool, org_id: &str, args: &Value) -> Result
     })
 }
 
-async fn ai_adjust_timeline(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn ai_adjust_timeline(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     use sqlx::Row;
     let project_id_str = args.get("project_id").and_then(|v| v.as_str())
         .ok_or_else(|| "project_id is required".to_string())?;
@@ -2395,12 +2393,12 @@ async fn ai_adjust_timeline(pool: &PgPool, org_id: &str, args: &Value) -> Result
         "SELECT m.name, m.target_date
          FROM milestones m
          JOIN projects p ON p.id = m.project_id
-         WHERE m.project_id = $1 AND p.org_id = $2
+         WHERE m.project_id = $1 AND p.org_id = ANY($2::text[])
            AND m.target_date IS NOT NULL
          ORDER BY m.target_date ASC"
     )
     .bind(project_id)
-    .bind(org_id)
+    .bind(org_ids)
     .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -2460,7 +2458,7 @@ async fn ai_adjust_timeline(pool: &PgPool, org_id: &str, args: &Value) -> Result
     })
 }
 
-async fn ai_generate_prd(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     use sqlx::Row;
 
     let project_id_str = match args.get("project_id").and_then(|v| v.as_str()) {
@@ -2484,10 +2482,10 @@ async fn ai_generate_prd(pool: &PgPool, org_id: &str, args: &Value) -> Result<To
         .map_err(|_| "Invalid project_id".to_string())?;
 
     let proj_row = sqlx::query(
-        "SELECT name, description FROM projects WHERE id = $1 AND org_id = $2"
+        "SELECT name, description FROM projects WHERE id = $1 AND org_id = ANY($2::text[])"
     )
     .bind(project_id)
-    .bind(org_id)
+    .bind(org_ids)
     .fetch_optional(pool)
     .await
     .map_err(|e| e.to_string())?
@@ -2626,7 +2624,7 @@ async fn ai_generate_prd(pool: &PgPool, org_id: &str, args: &Value) -> Result<To
     })
 }
 
-async fn ai_manage_initiatives(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn ai_manage_initiatives(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     use sqlx::Row;
     let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
 
@@ -2638,11 +2636,11 @@ async fn ai_manage_initiatives(pool: &PgPool, org_id: &str, args: &Value) -> Res
                         COUNT(ip.project_id) as project_count
                  FROM initiatives i
                  LEFT JOIN initiative_projects ip ON ip.initiative_id = i.id
-                 WHERE i.org_id = $1
+                 WHERE i.org_id = ANY($1::text[])
                  GROUP BY i.id
                  ORDER BY i.created_at DESC"
             )
-            .bind(org_id)
+            .bind(org_ids)
             .fetch_all(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -2671,12 +2669,13 @@ async fn ai_manage_initiatives(pool: &PgPool, org_id: &str, args: &Value) -> Res
             let status      = args.get("status").and_then(|v| v.as_str()).unwrap_or("active");
             let target_date = args.get("target_date").and_then(|v| v.as_str());
 
+            let primary_org = org_ids.first().ok_or_else(|| "No org context".to_string())?;
             let new_id: String = sqlx::query(
                 "INSERT INTO initiatives (org_id, name, description, status, target_date)
                  VALUES ($1, $2, $3, $4, $5::date)
                  RETURNING id::text"
             )
-            .bind(org_id)
+            .bind(primary_org)
             .bind(name)
             .bind(description)
             .bind(status)
@@ -2705,10 +2704,10 @@ async fn ai_manage_initiatives(pool: &PgPool, org_id: &str, args: &Value) -> Res
                  SET name        = COALESCE($3, name),
                      description = COALESCE($4, description),
                      status      = COALESCE($5, status)
-                 WHERE id = $1 AND org_id = $2"
+                 WHERE id = $1 AND org_id = ANY($2::text[])"
             )
             .bind(initiative_uuid)
-            .bind(org_id)
+            .bind(org_ids)
             .bind(args.get("name").and_then(|v| v.as_str()))
             .bind(args.get("description").and_then(|v| v.as_str()))
             .bind(args.get("status").and_then(|v| v.as_str()))
@@ -2783,7 +2782,7 @@ async fn ai_manage_initiatives(pool: &PgPool, org_id: &str, args: &Value) -> Res
     }
 }
 
-async fn ai_manage_automations(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn ai_manage_automations(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     use sqlx::Row;
     let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
     let project_id_str = args.get("project_id").and_then(|v| v.as_str())
@@ -2796,11 +2795,11 @@ async fn ai_manage_automations(pool: &PgPool, org_id: &str, args: &Value) -> Res
             let rows = sqlx::query(
                 "SELECT id::text, name, trigger, conditions, actions, enabled
                  FROM automation_rules
-                 WHERE project_id = $1 AND org_id = $2
+                 WHERE project_id = $1 AND org_id = ANY($2::text[])
                  ORDER BY created_at DESC"
             )
             .bind(project_id)
-            .bind(org_id)
+            .bind(org_ids)
             .fetch_all(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -2838,11 +2837,10 @@ async fn ai_manage_automations(pool: &PgPool, org_id: &str, args: &Value) -> Res
 
             let new_id: String = sqlx::query(
                 "INSERT INTO automation_rules (project_id, org_id, name, trigger, conditions, actions)
-                 VALUES ($1, $2, $3, $4, $5, $6)
+                 VALUES ($1, (SELECT org_id FROM projects WHERE id = $1), $2, $3, $4, $5)
                  RETURNING id::text"
             )
             .bind(project_id)
-            .bind(org_id)
             .bind(name)
             .bind(trigger)
             .bind(&conditions)
@@ -2868,12 +2866,12 @@ async fn ai_manage_automations(pool: &PgPool, org_id: &str, args: &Value) -> Res
 
             let row = sqlx::query(
                 "UPDATE automation_rules SET enabled = NOT enabled
-                 WHERE id = $1 AND project_id = $2 AND org_id = $3
+                 WHERE id = $1 AND project_id = $2 AND org_id = ANY($3::text[])
                  RETURNING enabled"
             )
             .bind(automation_uuid)
             .bind(project_id)
-            .bind(org_id)
+            .bind(org_ids)
             .fetch_one(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -2895,11 +2893,11 @@ async fn ai_manage_automations(pool: &PgPool, org_id: &str, args: &Value) -> Res
                 .map_err(|_| "Invalid automation_id".to_string())?;
 
             sqlx::query(
-                "DELETE FROM automation_rules WHERE id = $1 AND project_id = $2 AND org_id = $3"
+                "DELETE FROM automation_rules WHERE id = $1 AND project_id = $2 AND org_id = ANY($3::text[])"
             )
             .bind(automation_uuid)
             .bind(project_id)
-            .bind(org_id)
+            .bind(org_ids)
             .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -2916,7 +2914,7 @@ async fn ai_manage_automations(pool: &PgPool, org_id: &str, args: &Value) -> Res
     }
 }
 
-async fn ai_manage_sla(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     use sqlx::Row;
     let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list_rules");
     let project_id_str = args.get("project_id").and_then(|v| v.as_str())
@@ -2929,13 +2927,13 @@ async fn ai_manage_sla(pool: &PgPool, org_id: &str, args: &Value) -> Result<Tool
             let rows = sqlx::query(
                 "SELECT id::text, priority, deadline_hours
                  FROM sla_rules
-                 WHERE project_id = $1 AND org_id = $2
+                 WHERE project_id = $1 AND org_id = ANY($2::text[])
                  ORDER BY CASE priority
                    WHEN 'urgent' THEN 1 WHEN 'high' THEN 2
                    WHEN 'medium' THEN 3 ELSE 4 END"
             )
             .bind(project_id)
-            .bind(org_id)
+            .bind(org_ids)
             .fetch_all(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -3001,13 +2999,12 @@ async fn ai_manage_sla(pool: &PgPool, org_id: &str, args: &Value) -> Result<Tool
 
             let new_id: String = sqlx::query(
                 "INSERT INTO sla_rules (project_id, org_id, priority, deadline_hours)
-                 VALUES ($1, $2, $3, $4)
+                 VALUES ($1, (SELECT org_id FROM projects WHERE id = $1), $2, $3)
                  ON CONFLICT (project_id, priority)
                  DO UPDATE SET deadline_hours = EXCLUDED.deadline_hours
                  RETURNING id::text"
             )
             .bind(project_id)
-            .bind(org_id)
             .bind(priority)
             .bind(deadline_hours)
             .fetch_one(pool)
@@ -3030,11 +3027,11 @@ async fn ai_manage_sla(pool: &PgPool, org_id: &str, args: &Value) -> Result<Tool
                 .map_err(|_| "Invalid rule_id".to_string())?;
 
             sqlx::query(
-                "DELETE FROM sla_rules WHERE id = $1 AND project_id = $2 AND org_id = $3"
+                "DELETE FROM sla_rules WHERE id = $1 AND project_id = $2 AND org_id = ANY($3::text[])"
             )
             .bind(rule_uuid)
             .bind(project_id)
-            .bind(org_id)
+            .bind(org_ids)
             .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -3052,7 +3049,7 @@ async fn ai_manage_sla(pool: &PgPool, org_id: &str, args: &Value) -> Result<Tool
 }
 
 // Table: issue_templates (migration 031)
-async fn ai_manage_templates(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn ai_manage_templates(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     use sqlx::Row;
     let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
     let project_id_str = args.get("project_id").and_then(|v| v.as_str())
@@ -3066,11 +3063,11 @@ async fn ai_manage_templates(pool: &PgPool, org_id: &str, args: &Value) -> Resul
                 "SELECT id::text, name, description, default_priority,
                         default_issue_type, default_tags, is_default
                  FROM issue_templates
-                 WHERE project_id = $1 AND org_id = $2
+                 WHERE project_id = $1 AND org_id = ANY($2::text[])
                  ORDER BY is_default DESC, created_at DESC"
             )
             .bind(project_id)
-            .bind(org_id)
+            .bind(org_ids)
             .fetch_all(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -3103,11 +3100,10 @@ async fn ai_manage_templates(pool: &PgPool, org_id: &str, args: &Value) -> Resul
             let new_id: String = sqlx::query(
                 "INSERT INTO issue_templates
                    (project_id, org_id, name, description, default_priority, default_issue_type)
-                 VALUES ($1, $2, $3, $4, $5, $6)
+                 VALUES ($1, (SELECT org_id FROM projects WHERE id = $1), $2, $3, $4, $5)
                  RETURNING id::text"
             )
             .bind(project_id)
-            .bind(org_id)
             .bind(name)
             .bind(description)
             .bind(priority)
@@ -3132,11 +3128,11 @@ async fn ai_manage_templates(pool: &PgPool, org_id: &str, args: &Value) -> Resul
                 .map_err(|_| "Invalid template_id".to_string())?;
 
             sqlx::query(
-                "DELETE FROM issue_templates WHERE id = $1 AND project_id = $2 AND org_id = $3"
+                "DELETE FROM issue_templates WHERE id = $1 AND project_id = $2 AND org_id = ANY($3::text[])"
             )
             .bind(template_uuid)
             .bind(project_id)
-            .bind(org_id)
+            .bind(org_ids)
             .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -3154,7 +3150,7 @@ async fn ai_manage_templates(pool: &PgPool, org_id: &str, args: &Value) -> Resul
 }
 
 // Table: recurrence_rules (migration 026)
-async fn ai_manage_recurring(pool: &PgPool, org_id: &str, args: &Value) -> Result<ToolResult, String> {
+async fn ai_manage_recurring(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
     use sqlx::Row;
     let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
     let project_id_str = args.get("project_id").and_then(|v| v.as_str())
@@ -3169,11 +3165,11 @@ async fn ai_manage_recurring(pool: &PgPool, org_id: &str, args: &Value) -> Resul
                         to_char(next_run_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as next_run_str,
                         occurrence_count
                  FROM recurrence_rules
-                 WHERE project_id = $1 AND org_id = $2
+                 WHERE project_id = $1 AND org_id = ANY($2::text[])
                  ORDER BY created_at DESC"
             )
             .bind(project_id)
-            .bind(org_id)
+            .bind(org_ids)
             .fetch_all(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -3210,11 +3206,10 @@ async fn ai_manage_recurring(pool: &PgPool, org_id: &str, args: &Value) -> Resul
             let new_id: String = sqlx::query(
                 "INSERT INTO recurrence_rules
                    (project_id, org_id, title_template, description, priority, issue_type, rrule, next_run_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 VALUES ($1, (SELECT org_id FROM projects WHERE id = $1), $2, $3, $4, $5, $6, $7)
                  RETURNING id::text"
             )
             .bind(project_id)
-            .bind(org_id)
             .bind(title)
             .bind(description)
             .bind(priority)
@@ -3242,12 +3237,12 @@ async fn ai_manage_recurring(pool: &PgPool, org_id: &str, args: &Value) -> Resul
 
             let row = sqlx::query(
                 "UPDATE recurrence_rules SET paused = NOT paused
-                 WHERE id = $1 AND project_id = $2 AND org_id = $3
+                 WHERE id = $1 AND project_id = $2 AND org_id = ANY($3::text[])
                  RETURNING paused"
             )
             .bind(recurring_uuid)
             .bind(project_id)
-            .bind(org_id)
+            .bind(org_ids)
             .fetch_one(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -3269,11 +3264,11 @@ async fn ai_manage_recurring(pool: &PgPool, org_id: &str, args: &Value) -> Resul
                 .map_err(|_| "Invalid recurring_id".to_string())?;
 
             sqlx::query(
-                "DELETE FROM recurrence_rules WHERE id = $1 AND project_id = $2 AND org_id = $3"
+                "DELETE FROM recurrence_rules WHERE id = $1 AND project_id = $2 AND org_id = ANY($3::text[])"
             )
             .bind(recurring_uuid)
             .bind(project_id)
-            .bind(org_id)
+            .bind(org_ids)
             .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
