@@ -99,10 +99,13 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
   if (part.state === 'output-available') {
     const output = part.output as { approved: boolean; finalValues?: { title?: string } } | undefined;
     if (output?.approved) {
+      // This is the approval step only — the actual DB insert happens in the
+      // next agent turn via create_issue. We say "Approuvé" to avoid showing
+      // "Créé" twice (once here, once when create_issue's result renders).
       return (
         <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
           <Check size={14} className="text-emerald-500 shrink-0" />
-          <span className="text-[12px] font-medium text-emerald-500">Créé</span>
+          <span className="text-[12px] font-medium text-emerald-500">Approuvé</span>
           <span className="text-[12px] text-[--color-muted] truncate">{output.finalValues?.title ?? title}</span>
         </div>
       );
@@ -159,6 +162,9 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
   };
 
   const isMultiOrg = projectsByOrg.length > 1;
+  const titleMissing = !title.trim();
+  const projectMissing = !projectId || !projects.find(p => p.id === projectId);
+  const canApprove = !titleMissing && !projectMissing;
 
   return (
     <div className="rounded-2xl border border-[--color-border] bg-[--color-surface] overflow-hidden relative">
@@ -178,10 +184,15 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
       <div className="px-4 pb-4 space-y-3">
         <div>
           <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
-            Projet
+            Projet {projectMissing && <span className="text-red-500 normal-case">— requis</span>}
           </label>
           <Select value={projectId} onValueChange={setProjectId}>
-            <SelectTrigger className="w-full h-9 text-[13px]">
+            <SelectTrigger
+              className={cn(
+                'w-full h-9 text-[13px]',
+                projectMissing && 'border-red-500/50 focus:ring-red-500/30',
+              )}
+            >
               <SelectValue placeholder={projects.length === 0 ? "Chargement…" : "Sélectionner un projet"} />
             </SelectTrigger>
             <SelectContent>
@@ -213,13 +224,16 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
 
         <div>
           <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
-            Titre
+            Titre {titleMissing && <span className="text-red-500 normal-case">— requis</span>}
           </label>
           <Input
             value={title}
             onChange={e => setTitle(e.target.value)}
             placeholder="Titre clair, sans prefix"
-            className="h-9 text-[13px]"
+            className={cn(
+              'h-9 text-[13px]',
+              titleMissing && 'border-red-500/50 focus-visible:ring-red-500/30',
+            )}
           />
         </div>
 
@@ -301,20 +315,29 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
       </div>
 
       {!inBatch && (
-        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-[--color-border] bg-[--color-surface-hover]/30">
-          <Button onClick={handleCancel} variant="secondary" size="sm">
-            <X size={12} />
-            Annuler
-          </Button>
-          <Button
-            onClick={handleApprove}
-            disabled={!title.trim() || !projectId}
-            size="sm"
-            className="bg-amber-500 text-black hover:bg-amber-400"
-          >
-            <Check size={12} />
-            Créer
-          </Button>
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-t border-[--color-border] bg-[--color-surface-hover]/30">
+          <span className="text-[11px] text-[--color-muted]">
+            {!canApprove ? (
+              <span className="text-red-500">Remplis les champs requis avant d'approuver</span>
+            ) : (
+              <span>Prêt à créer</span>
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button onClick={handleCancel} variant="secondary" size="sm">
+              <X size={12} />
+              Annuler
+            </Button>
+            <Button
+              onClick={handleApprove}
+              disabled={!canApprove}
+              size="sm"
+              className="bg-amber-500 text-black hover:bg-amber-400"
+            >
+              <Check size={12} />
+              Approuver
+            </Button>
+          </div>
         </div>
       )}
     </div>

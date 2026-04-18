@@ -55,6 +55,16 @@ pub enum UIMessageChunk {
         #[serde(rename = "toolName")]
         tool_name: String,
         input: Value,
+        /// Opaque per-provider metadata attached to the tool call — notably
+        /// Gemini's `thoughtSignature` which must round-trip back to the model
+        /// on the next turn or Gemini returns "Function call is missing a
+        /// thought_signature" (400). AI SDK v5 stores this as
+        /// `callProviderMetadata` on the tool part.
+        #[serde(
+            rename = "providerMetadata",
+            skip_serializing_if = "Option::is_none"
+        )]
+        provider_metadata: Option<Value>,
     },
     ToolOutputAvailable {
         #[serde(rename = "toolCallId")]

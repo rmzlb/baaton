@@ -84,12 +84,27 @@ pub fn ui_messages_to_gemini_contents(messages: &[UIMessage]) -> Vec<Value> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
 
-                model_parts.push(json!({
+                // AI SDK v5 stores provider metadata from the original model
+                // response under `callProviderMetadata`. Gemini 2.5+ / 3.x
+                // requires the opaque `thoughtSignature` to round-trip with
+                // each functionCall or the API returns 400. Re-attach it here
+                // as a sibling key on the part.
+                let thought_signature = part
+                    .pointer("/callProviderMetadata/google/thoughtSignature")
+                    .cloned();
+
+                let mut fc_part = json!({
                     "functionCall": {
                         "name": tool_name,
                         "args": input,
                     }
-                }));
+                });
+                if let Some(sig) = thought_signature {
+                    if let Some(obj) = fc_part.as_object_mut() {
+                        obj.insert("thoughtSignature".to_string(), sig);
+                    }
+                }
+                model_parts.push(fc_part);
 
                 if state == "output-available" {
                     let output = part.get("output").cloned().unwrap_or(json!({}));

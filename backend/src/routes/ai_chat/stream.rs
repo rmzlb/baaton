@@ -392,10 +392,20 @@ pub fn build_stream(
                     // resolve_args_ids again — it's idempotent on UUIDs.
                     crate::routes::ai_tools::resolve_args_ids(&pool, &org_ids, &mut input).await;
 
+                    // Capture Gemini's per-call thoughtSignature and forward it
+                    // as AI SDK `providerMetadata`. Without this round-trip,
+                    // Gemini 2.5+/3.x returns 400 "Function call is missing a
+                    // thought_signature" on the very next turn.
+                    let provider_metadata = part
+                        .get("thoughtSignature")
+                        .cloned()
+                        .map(|sig| json!({ "google": { "thoughtSignature": sig } }));
+
                     yield sse_chunk(&UIMessageChunk::ToolInputAvailable {
                         tool_call_id: tool_call_id.clone(),
                         tool_name: tool_name.clone(),
                         input: input.clone(),
+                        provider_metadata,
                     });
 
                     if crate::routes::ai_tools::is_client_interactive(&tool_name)
