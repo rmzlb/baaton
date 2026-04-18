@@ -418,6 +418,11 @@ const fr = {
 
   // ─── AIAssistant ────────────────────────────
   'ai.title': 'Baaton AI',
+  'ai.openAssistant': "Ouvrir l'assistant IA (⌘J)",
+  'ai.greetingNight': 'Bonne nuit.',
+  'ai.greetingMorning': 'Bonjour.',
+  'ai.greetingAfternoon': 'Bon retour.',
+  'ai.greetingEvening': 'Bonsoir.',
   'ai.skills': '{{count}} skills',
   'ai.loading': 'Chargement…',
   'ai.analyzing': 'Analyse en cours…',
