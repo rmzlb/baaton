@@ -50,7 +50,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 1. search_issues ─────────────────────────────────────────────
         tool(
             "search_issues",
-            "Search and filter issues across the user's projects. Returns a summary with counts and up to `limit` matching issues (display_id, title, status, priority, assignee). Use this when the user asks to find, list, or count issues matching criteria. Cross-org by default. Combine multiple filters (status + priority + type) for precision.\n\nGood cases: 'Show me all high-priority bugs in HLM', 'List open issues assigned to Jean', 'How many in_progress tickets do we have?'.\n\nNot for: Getting details of ONE specific issue (cite it from search results instead). Aggregate metrics like velocity or cycle time (use get_project_metrics). Just browsing everything without criteria (ask user to narrow first).\n\nReturns: { display_id, title, status, priority, category[], project_name, updated_at } per issue, plus a total count. When response_format='concise', only { display_id, title, status } is returned per issue.",
+            "Search and filter issues across the user's projects. Returns a summary with counts and up to `limit` matching issues (display_id, title, status, priority, assignee). Use this when the user asks to find, list, or count issues matching criteria. Cross-org by default. Combine multiple filters (status + priority + type) for precision.\n\nGood cases: 'Show me all high-priority bugs in HLM', 'List open issues assigned to Jean', 'How many in_progress tickets do we have?'.\n\nNot for: Getting details of ONE specific issue (cite it from search results instead). Aggregate metrics like velocity or cycle time (use get_project_metrics). Just browsing everything without criteria (ask user to narrow first).\n\nReturns: { display_id, title, status, priority, category[], project_name, updated_at } per issue, plus a total count. When response_format='concise', only { display_id, title, status } is returned per issue.\n\nExamples (user intent → JSON args):\n- High-priority bugs in HLM → {\"project_id\":\"HLM\",\"priority\":\"high\",\"query\":\"bug\",\"limit\":20}\n- In-progress tickets only → {\"status\":\"in_progress\",\"response_format\":\"concise\"}\n- Quick scan of urgent items → {\"priority\":\"urgent\",\"limit\":10,\"response_format\":\"concise\"}",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -92,7 +92,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 2. propose_issue ─────────────────────────────────────────────
         tool(
             "propose_issue",
-            "PROPOSE creating a new issue. MANDATORY before create_issue — never call create_issue directly. Returns a proposal data payload that the frontend renders as an editable approval form. The user can edit any field and approve/cancel via buttons. Use this tool immediately when the user asks to create/add/open an issue. Fill in ALL fields you can reasonably infer (type, priority, category, tags) to minimize user editing. The description field MUST use a structured Markdown template (bug template, feature template, etc. — see system prompt).\n\nWhen user's request is ambiguous about project: if multiple projects match, ASK the user to clarify. If only one match (via prefix or name), proceed without asking.\n\nAfter the user approves, you'll see the proposal's output in history with approved=true and finalValues. Then call create_issue with those finalValues. Do not re-generate the proposal — use finalValues verbatim.\n\nReturns: { project_id, project_name, project_prefix, title, description, type, priority, tags[], category[] }.",
+            "Propose creating a new issue (required before create_issue; do not call create_issue directly). Returns a proposal payload rendered as an editable approval form. Use as soon as the user asks to create/add/open an issue. Infer type, priority, category, tags when reasonable. Description: structured Markdown per issue type (see system prompt).\n\nIf several projects match, ask which one; if the prefix is unique, proceed.\n\nAfter approval, call create_issue with the same fields as `finalValues` in the tool output.\n\nReturns: { project_id, project_name, project_prefix, title, description, type, priority, tags[], category[] }.\n\nExamples:\n- « Crée un bug auth sur HLM » → {\"project_id\":\"HLM\",\"title\":\"Erreur refresh token\",\"type\":\"bug\",\"priority\":\"high\",\"description\":\"## Contexte\\n...\"}\n- « Feature export CSV sur SQX » → {\"project_id\":\"SQX\",\"title\":\"Export CSV des issues\",\"type\":\"feature\",\"priority\":\"medium\"}",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -110,7 +110,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 3. create_issue ──────────────────────────────────────────────
         tool(
             "create_issue",
-            "Create a new issue with full metadata and persist it to the database. ONLY call this AFTER the user has approved a propose_issue — never call directly. Use the finalValues from the approved proposal verbatim. Returns the created issue with its auto-generated display_id (e.g. 'HLM-42').\n\nTitle RULE: must be plain text with NO brackets, prefixes, or type tags. Bad: '[SQX][BUG] Fix auth'. Good: 'Fix auth token refresh on session expiry'.\n\nNot for: Creating issues without user approval (use propose_issue first). Updating existing issues (use update_issue). Batch creation (create one at a time).\n\nReturns: { id, display_id, title, status, priority, type, category[], tags[] }.",
+            "Create a new issue with full metadata and persist it to the database. Call only after propose_issue was approved. Copy fields from `finalValues` exactly. Returns the created issue with display_id (e.g. 'HLM-42').\n\nTitle: plain text, no brackets or project prefix in the title.\n\nNot for: unapproved creation (use propose_issue first). Updates (use update_issue).\n\nReturns: { id, display_id, title, status, priority, type, category[], tags[] }.\n\nExample (after approval): {\"project_id\":\"…uuid…\",\"title\":\"Fix auth refresh\",\"description\":\"…\",\"type\":\"bug\",\"priority\":\"high\",\"status\":\"backlog\"}",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -158,7 +158,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 4. propose_update_issue ──────────────────────────────────────
         tool(
             "propose_update_issue",
-            "PROPOSE updating an existing issue (does NOT modify the database). Fetches the current state and returns a side-by-side diff of current vs proposed values for user review. ALWAYS use this BEFORE update_issue — never call update_issue directly. Only include the fields you want to change; unchanged fields should be omitted.\n\nUse when the user says 'change status of HLM-42 to done', 'mark that bug as urgent', 'update the description of issue X'.\n\nAfter user approves, call update_issue with the approved finalValues. Do not re-generate the proposal.\n\nNot for: Creating new issues (use propose_issue). Updating multiple issues at once (use propose_bulk_update).\n\nReturns: { issue_id, display_id, title, diff[] } where diff contains { field, from, to } for each changed field.",
+            "Propose updating an issue (no DB write). Shows current vs proposed fields for approval. Use before every update_issue.\n\nTypical asks: status change, priority, description edit. Omit unchanged fields.\n\nAfter approval, call update_issue with `finalValues`.\n\nNot for: new issues (propose_issue). Many issues (propose_bulk_update).\n\nReturns: { issue_id, display_id, title, diff[] }.\n\nExamples:\n- « Passe HLM-42 en done » → {\"issue_id\":\"HLM-42\",\"status\":\"done\"}\n- « Urgent sur ce bug » → {\"issue_id\":\"HLM-42\",\"priority\":\"urgent\"}",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -203,7 +203,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 6. propose_comment ───────────────────────────────────────────
         tool(
             "propose_comment",
-            "PROPOSE adding a comment to an issue (does NOT add it to the database). Returns an editable preview showing the issue context and proposed comment body for user review. ALWAYS use this BEFORE add_comment — never call add_comment directly.\n\nUse when the user says 'add a comment to HLM-42', 'note on that issue that...', 'leave feedback on the bug'.\n\nAfter user approves, call add_comment with the approved content.\n\nNot for: Updating issue fields (use propose_update_issue). Creating new issues (use propose_issue).\n\nReturns: { issue_id, display_id, title, content }.",
+            "Propose a comment on an issue (no DB write until approved). Use before add_comment.\n\nReturns: { issue_id, display_id, title, content }.\n\nExamples:\n- « Note sur HLM-42 : bloqué par API » → {\"issue_id\":\"HLM-42\",\"content\":\"Bloqué par la dépendance API X.\"}\n- « Commentaire : PR en review » → {\"issue_id\":\"uuid\",\"content\":\"PR #120 en review.\"}",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -216,7 +216,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 7. update_issue ──────────────────────────────────────────────
         tool(
             "update_issue",
-            "Update fields of an existing issue in the database. ONLY call after propose_update_issue has been approved by the user — never call directly. Use the finalValues from the approved proposal verbatim. Only include fields that are changing; unchanged fields should be omitted.\n\nReturns: { issue_id, display_id, changes[], status, priority } showing what was actually modified.\n\nNot for: Creating new issues (use create_issue after propose_issue). Bulk updates (use bulk_update_issues). Adding comments (use add_comment).",
+            "Update an issue in the database after propose_update_issue was approved. Pass only changing fields from `finalValues`.\n\nReturns: { issue_id, display_id, changes[], status, priority }.\n\nNot for: create (create_issue). Bulk (bulk_update_issues). Comments (add_comment).\n\nExample: {\"issue_id\":\"uuid-or-HLM-42\",\"status\":\"in_review\",\"priority\":\"high\"}",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -338,7 +338,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 12. get_project_metrics ──────────────────────────────────────
         tool(
             "get_project_metrics",
-            "Fetch a project health dashboard with aggregate metrics: total/open/in_progress/done issue counts, 14-day velocity, bug ratio, and average cycle time in hours. Provides a high-level quantitative overview of project health.\n\nUse when the user asks 'how is the project doing?', 'show me metrics', 'what's our velocity?', 'completion rate?', 'bug ratio?'.\n\nNot for: Listing individual issues (use search_issues). Sprint-specific analysis (use analyze_sprint). Weekly activity recap (use weekly_recap). Reprioritization suggestions (use suggest_priorities).\n\nReturns: { total, open, in_progress, done, velocity, bug_ratio, avg_cycle_time_hours }.",
+            "Fetch a project health dashboard: total/open/in_progress/done counts, 14-day velocity, bug ratio, avg cycle time (hours).\n\nUse for health/velocity/ratio questions.\n\nNot for: listing tickets (search_issues). Active sprint deep-dive (analyze_sprint).\n\nReturns: { total, open, in_progress, done, velocity, bug_ratio, avg_cycle_time_hours }.\n\nExamples:\n- « Santé du projet HLM » → {\"project_id\":\"HLM\"}\n- « Métriques globales » → {}",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -596,7 +596,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 25. find_similar_issues ─────────────────────────────────────────
         tool(
             "find_similar_issues",
-            "Find issues that are potentially similar or duplicates of a reference issue or a free-text query. Returns up to `limit` candidate issues ranked by similarity score (title word overlap). Use BEFORE creating a new issue to check for duplicates, or during triage to cluster related reports. Similarity is based on case-insensitive title word overlap — results include display_id, title, status, and a similarity_score (0-1). Results are cross-org by default; narrow with project_id (prefix or UUID).\n\nUse when the user says 'is this a duplicate?', 'find similar issues', 'any duplicates of HLM-42?', 'check before creating'.\n\nNot for: Full-text search with filters (use search_issues). Getting a specific issue's details (use search_issues with display_id). Aggregate metrics (use get_project_metrics).\n\nReturns: { reference_title, candidates[{ display_id, title, status, similarity_score }] }.",
+            "Find potentially duplicate or similar issues (title word overlap). Use before creating a ticket or when triaging. Cross-org unless project_id is set.\n\nNot for: filtered search (search_issues). Metrics (get_project_metrics).\n\nReturns: { reference_title, candidates[{ display_id, title, status, similarity_score }] }.\n\nExamples:\n- « Doublons de HLM-42 » → {\"reference_issue_id\":\"HLM-42\",\"limit\":10}\n- « Similaire à auth refresh bug » → {\"query\":\"auth refresh bug\",\"project_id\":\"HLM\"}",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -610,7 +610,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 26. workload_by_assignee ────────────────────────────────────────
         tool(
             "workload_by_assignee",
-            "Aggregate open issues count per assignee across the user's projects. Shows who is loaded on what. Use when the user asks 'who has most work', 'workload distribution', 'who is busy with bugs', 'charge de travail'. Returns a list of assignees sorted by total open issues, with a breakdown by status. Unassigned issues are grouped under 'unassigned'. Scope with project_id or leave empty for cross-project view.\n\nNot for: Searching specific issues (use search_issues). Getting project-level metrics (use get_project_metrics). Updating assignees (use propose_update_issue).\n\nReturns: { assignees[{ assignee_id, is_unassigned, total, by_status }], scope }.",
+            "Open-issue counts per assignee (workload). Sorted by load; unassigned grouped. Optional project scope.\n\nNot for: listing specific issues (search_issues). Project KPIs alone (get_project_metrics).\n\nReturns: { assignees[{ assignee_id, is_unassigned, total, by_status }], scope }.\n\nExamples:\n- « Charge sur HLM » → {\"project_id\":\"HLM\"}\n- « Qui est le plus chargé ? » → {}",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -622,7 +622,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 27. compare_projects ────────────────────────────────────────────
         tool(
             "compare_projects",
-            "Compare metrics across 2-5 projects side by side: total issues, open/done counts, velocity (done in last 14 days), bug ratio, and completion rate. Use when the user asks 'compare HLM and SQX', 'which project is fastest', 'how does project X perform vs Y'. Returns a comparison table structured for side-by-side rendering. Accepts prefixes (HLM) or UUIDs.\n\nNot for: Deep dive into one project (use get_project_metrics). Sprint analysis (use analyze_sprint). Searching issues (use search_issues).\n\nReturns: { projects[{ prefix, name, total, open, done, velocity_14d, bug_ratio, completion_ratio }] }.",
+            "Side-by-side metrics for 2-5 projects (totals, open/done, 14d velocity, bug ratio, completion). Prefixes or UUIDs.\n\nNot for: single-project drill-down (get_project_metrics). Sprint (analyze_sprint).\n\nReturns: { projects[{ prefix, name, total, open, done, velocity_14d, bug_ratio, completion_ratio }] }.\n\nExamples:\n- « HLM vs SQX » → {\"project_ids\":[\"HLM\",\"SQX\"]}\n- « Compare tous mes projets » → {}",
             json!({
                 "type": "OBJECT",
                 "properties": {

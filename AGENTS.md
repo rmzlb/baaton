@@ -1,58 +1,22 @@
 # Baaton — Agent Instructions
 
-## Project Overview
-Baaton is a multi-tenant orchestration board for AI coding agents.
-- **Frontend**: React 19 + Vite 8 + TypeScript 5.9 (SPA)
-- **Backend**: Rust (Axum 0.8) + sqlx + PostgreSQL (Supabase)
-- **Auth**: Clerk (frontend + backend via clerk-rs)
-- **Deploy**: Railway
+## Project
+Multi-tenant Kanban for AI coding agents. **Stack:** React 19 + Vite, Rust (Axum) + sqlx + PostgreSQL on Supabase, Clerk, Railway deploy.
 
-## Structure
-```
-baaton/
-├── frontend/         # React SPA (Vite)
-│   ├── src/
-│   │   ├── components/   # UI components
-│   │   ├── pages/        # Route pages
-│   │   ├── stores/       # Zustand stores
-│   │   ├── hooks/        # Custom hooks (TanStack Query)
-│   │   ├── lib/          # Utils, API client
-│   │   └── styles/       # Global styles
-│   └── package.json
-├── backend/          # Rust API
-│   ├── src/
-│   │   ├── routes/       # Axum route handlers
-│   │   ├── models/       # DB models (sqlx)
-│   │   ├── middleware/   # Auth, rate-limit
-│   │   └── main.rs
-│   ├── migrations/       # SQL migrations
-│   └── Cargo.toml
-├── docs/             # PRD, brand, API docs
-└── shared/           # Shared types (generated)
-```
+## Repo layout
+- `frontend/` — SPA (`components`, `pages`, `stores`, `hooks`, `lib`, `styles`)
+- `backend/` — API, `migrations/`, `main.rs`
+- `docs/` — PRD, API notes
+- `shared/` — shared types
 
-## Key Conventions
-- All API responses: `{ "data": T }` or `{ "error": { "message": string, "code": string } }`
-- Dates: ISO 8601 (UTC)
-- IDs: UUID v4
-- Display IDs: `PREFIX-N` (e.g. BAA-42)
-- Markdown: GitHub Flavored Markdown
-- Colors: Hex (#f59e0b)
+## Conventions
+JSON API: `{ "data": T }` or `{ "error": { "message", "code" } }`. Dates UTC ISO 8601. IDs UUID v4; human display `PREFIX-N` (e.g. BAA-42). Markdown: GFM. Accent amber `#f59e0b`.
 
-## Database
-- Supabase hosted PostgreSQL
-- RLS enforced on all tables
-- Clerk JWT provides `org_id` via `auth.jwt()->>'org_id'`
-- sqlx compile-time checked queries
-
-## Auth
-- Frontend: `@clerk/clerk-react` components
-- Backend: `clerk-rs` with `ClerkLayer` (tower middleware)
-- Agent API: Custom API key auth (SHA-256 hashed, stored in `api_keys` table)
-- Public routes: No auth, rate-limited
+## Database & auth
+Supabase Postgres with RLS; Clerk JWT carries `org_id`. Frontend `@clerk/clerk-react`; backend `clerk-rs`. Agent access: API keys (hashed in `api_keys`). Public routes rate-limited.
 
 ## Brand
-- Accent: Amber (#f59e0b)
-- Dark-first design
-- Mascot: Pixel Tanuki
-- Font: Inter + JetBrains Mono
+Dark-first, Inter + JetBrains Mono, Pixel Tanuki mascot.
+
+## AI chat (in-app agent)
+Backend route `/api/v1/ai/chat` uses Gemini via `GEMINI_API_KEY`. Default model is **`gemini-3-flash-preview`** (same family as the legacy proxy in `ai.rs`). Override with **`GEMINI_CHAT_MODEL`** (e.g. `gemini-2.5-flash`, `gemini-2.0-flash`) if the preview is unavailable. Token usage is stored in `ai_usage` with `metadata.cached_prompt_tokens` when the API returns `cachedContentTokenCount` (implicit cache).

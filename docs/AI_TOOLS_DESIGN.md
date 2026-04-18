@@ -1,45 +1,17 @@
 # AI Tools Design — Baaton Agent Tooling
 
-> Design document for the 27 tools available to the Baaton AI agent (Gemini 2.0 Flash).
-> Applies [Anthropic's "Writing effective tools for agents"](https://www.anthropic.com/engineering/writing-tools-for-agents) best practices.
+> 27 tools for the in-app agent (default model `gemini-3-flash-preview`, env `GEMINI_CHAT_MODEL` to override). See [Anthropic tool-writing guidance](https://www.anthropic.com/engineering/writing-tools-for-agents).
 
-## Design Principles
+## Principles (short)
 
-### 1. Descriptive Disambiguation
-Every tool description follows a 4-part structure:
-- **What it does** — one-sentence summary with context
-- **When to use it** — concrete use-case scenarios with example user phrases
-- **When NOT to use it** — disambiguates from similar tools, prevents misrouting
-- **Return shape hint** — what the model gets back, enabling it to plan follow-up actions
-
-### 2. Human-Friendly Identifiers
-All `project_id` and `issue_id` parameters accept both UUIDs and human-readable identifiers:
-- `project_id`: UUID, prefix (`HLM`), or partial name
-- `issue_id`: UUID or display_id (`HLM-42`)
-- Bulk arrays (`updates[].issue_id`, `milestones[].issue_ids[]`) are resolved recursively
-
-### 3. Proposal → Confirmation → Execution
-Write operations follow a strict 3-step flow to prevent unintended mutations:
-1. **Propose** — `propose_issue`, `propose_update_issue`, `propose_bulk_update`, `propose_comment`
-2. **User reviews** — frontend renders an editable approval form
-3. **Execute** — `create_issue`, `update_issue`, `bulk_update_issues`, `add_comment` (only after approval)
-
-### 4. Actionable Error Messages
-Every validation failure returns a message that tells the model:
-- What was wrong
-- What was expected
-- How to fix it (e.g., "Use search_issues to find the right issue")
-
-### 5. Response Format Control
-Heavy-read tools support `response_format` parameter:
-- `"concise"` (default) — minimal fields for quick summaries
-- `"detailed"` — full data for deep analysis
-
-### 6. Gemini-Specific Optimizations
-- All enum values are explicitly listed in `"enum"` arrays (Gemini performs better with constrained values)
-- Required fields are marked in `"required"` arrays
-- Descriptions include concrete examples (Gemini generalizes better from examples)
-- `"type": "OBJECT"` / `"STRING"` / `"NUMBER"` / `"ARRAY"` use Gemini's JSON schema format
+| Topic | Rule |
+|-------|------|
+| Descriptions | What / when / not-for / return shape; top tools include **query → JSON args** examples |
+| IDs | `project_id`: UUID, prefix, or name; `issue_id`: UUID or `HLM-42`; bulk fields resolved recursively |
+| Writes | `propose_*` → UI → `create_issue` / `update_issue` / `bulk_update_issues` / `add_comment` with `finalValues` |
+| Errors | Actionable: what failed, expected input, hint (e.g. use `search_issues`) |
+| Verbosity | `search_issues` etc.: `response_format` concise vs detailed |
+| Schema | Gemini-style JSON Schema: explicit `enum`, `required`, stable key order in code |
 
 ---
 
