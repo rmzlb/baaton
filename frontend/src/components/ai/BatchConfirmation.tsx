@@ -101,7 +101,9 @@ export function BatchConfirmation({ parts, addToolOutput }: BatchConfirmationPro
               checked={selected[part.toolCallId] ?? true}
               onChange={e => setSelected(s => ({ ...s, [part.toolCallId]: e.target.checked }))}
               disabled={submitted}
-              className="mt-2 accent-amber-500 cursor-pointer"
+              aria-label={`Sélectionner la proposition ${getToolName(part)}`}
+              // h-4 w-4 keeps tap zone reasonable; mt-2 aligns with first text line.
+              className="mt-2 h-4 w-4 accent-amber-500 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
             />
             <div className="flex-1 min-w-0">
               <ToolPartRenderer part={part} addToolOutput={addToolOutput} inBatch />

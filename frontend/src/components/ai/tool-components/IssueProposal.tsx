@@ -189,7 +189,9 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
           <Select value={projectId} onValueChange={setProjectId}>
             <SelectTrigger
               className={cn(
-                'w-full h-9 text-[13px]',
+                // h-10 + text-base on mobile prevents iOS auto-zoom and meets ~40px tap target.
+                // sm+: density-optimized 36px row.
+                'w-full h-10 sm:h-9 text-base sm:text-[13px]',
                 projectMissing && 'border-red-500/50 focus:ring-red-500/30',
               )}
             >
@@ -230,8 +232,9 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
             value={title}
             onChange={e => setTitle(e.target.value)}
             placeholder="Titre clair, sans prefix"
+            // text-base on mobile to prevent iOS auto-zoom on focus.
             className={cn(
-              'h-9 text-[13px]',
+              'h-10 sm:h-9 text-base sm:text-[13px]',
               titleMissing && 'border-red-500/50 focus-visible:ring-red-500/30',
             )}
           />
@@ -246,23 +249,27 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
             onChange={e => setDescription(e.target.value)}
             rows={4}
             placeholder="Détails, reproduction, contexte..."
-            className="text-[12px] resize-none"
+            // text-base on mobile to prevent iOS auto-zoom on focus.
+            className="text-base sm:text-[12px] resize-none"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
+            <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1.5">
               Type
             </label>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Type">
               {TYPE_OPTIONS.map(t => (
                 <button
                   key={t}
                   type="button"
+                  role="radio"
+                  aria-checked={type === t}
                   onClick={() => setType(t)}
+                  // min-h 32px tap target with comfortable padding on mobile.
                   className={cn(
-                    'rounded-full px-2 py-0.5 text-[10px] font-medium border capitalize transition-all',
+                    'rounded-full px-3 py-1.5 sm:px-2.5 sm:py-1 text-[12px] sm:text-[11px] font-medium border capitalize transition-all min-h-[32px] inline-flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40',
                     type === t
                       ? TYPE_STYLE[t]
                       : 'border-[--color-border] text-[--color-muted] hover:text-[--color-primary]',
@@ -275,17 +282,19 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
           </div>
 
           <div>
-            <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
+            <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1.5">
               Priorité
             </label>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Priorité">
               {PRIORITY_OPTIONS.map(p => (
                 <button
                   key={p}
                   type="button"
+                  role="radio"
+                  aria-checked={priority === p}
                   onClick={() => setPriority(p)}
                   className={cn(
-                    'rounded-full px-2 py-0.5 text-[10px] font-medium border capitalize transition-all',
+                    'rounded-full px-3 py-1.5 sm:px-2.5 sm:py-1 text-[12px] sm:text-[11px] font-medium border capitalize transition-all min-h-[32px] inline-flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40',
                     priority === p
                       ? PRIORITY_STYLE[p]
                       : 'border-[--color-border] text-[--color-muted] hover:text-[--color-primary]',

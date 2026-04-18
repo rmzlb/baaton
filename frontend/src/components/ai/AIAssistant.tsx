@@ -560,56 +560,79 @@ export function AIAssistant() {
       <button
         onClick={toggleAiPanel}
         aria-label={t('ai.openAssistant') || 'Open AI assistant (Cmd+J)'}
-        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500 text-black shadow-lg transition-all duration-300 hover:scale-105 hover:bg-amber-400"
+        // env(safe-area-inset-bottom) keeps the FAB above iOS home indicator in PWA mode.
+        // Touch target 48×48 (above WCAG 2.5.5 minimum of 44).
+        style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))' }}
+        className="fixed right-4 sm:right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500 text-black shadow-lg transition-all duration-300 hover:scale-105 hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[--color-bg]"
       >
-        <Sparkles size={20} />
+        <Sparkles size={20} aria-hidden="true" />
       </button>
     );
   }
 
   return (
-    <aside className="flex shrink-0 w-[420px] min-w-[420px] max-w-[90vw] flex-col border-l border-border bg-bg h-screen fixed right-0 top-0 bottom-0 z-40 lg:static lg:z-auto shadow-2xl lg:shadow-none">
+    <>
+      {/* Backdrop on mobile/tablet (lg- only). Hidden on lg+ where panel is docked. */}
+      <button
+        type="button"
+        aria-label={t('ai.closeAssistant') || 'Close AI panel'}
+        onClick={() => setAiPanelOpen(false)}
+        className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
+      />
+
+      <aside
+        role="complementary"
+        aria-label={t('ai.title') || 'AI assistant'}
+        // Mobile: full screen overlay (no min-width fight). sm+: 420px sidebar.
+        // lg+: docks into layout flow (static).
+        className="flex shrink-0 w-full sm:w-[420px] sm:min-w-[420px] sm:max-w-[90vw] flex-col border-l border-border bg-bg h-screen fixed right-0 top-0 bottom-0 z-40 lg:static lg:z-auto shadow-2xl lg:shadow-none"
+      >
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-500">
-            <Sparkles size={14} />
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2 border-b border-border shrink-0 min-h-[48px]">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/20 text-amber-500 shrink-0">
+            <Sparkles size={14} aria-hidden="true" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-xs font-bold text-primary flex items-center gap-1.5">
-              {t('ai.title')}
-              <span className="rounded-full bg-emerald-500/20 text-emerald-400 px-1.5 py-0 text-[9px] font-medium">
+              <span className="truncate">{t('ai.title')}</span>
+              <span className="rounded-full bg-emerald-500/20 text-emerald-400 px-1.5 py-0 text-[9px] font-medium shrink-0">
                 {skillCount} skills
               </span>
             </h3>
-            <p className="text-[10px] text-muted">
+            <p className="text-[10px] text-muted truncate">
               {projects.length} {t('aiChat.projectsLabel')} · {t('aiChat.backendAgent')}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 shrink-0">
           <button
             onClick={() => setSessionsView(!sessionsView)}
+            aria-label={sessionsView ? t('aiChat.closeSessions') || 'Close sessions' : t('aiChat.openSessions') || 'Sessions'}
+            aria-pressed={sessionsView}
             className={cn(
-              'rounded-md p-1.5 transition-colors',
+              'rounded-md inline-flex items-center justify-center min-w-[36px] min-h-[36px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40',
               sessionsView ? 'bg-surface-hover text-primary' : 'text-muted hover:text-secondary hover:bg-surface-hover',
             )}
             title="Sessions"
           >
-            <MessageSquare size={14} />
+            <MessageSquare size={16} aria-hidden="true" />
           </button>
           <button
             onClick={handleNewSession}
-            className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
+            aria-label={t('aiChat.newChat')}
+            className="rounded-md inline-flex items-center justify-center min-w-[36px] min-h-[36px] text-muted hover:text-secondary hover:bg-surface-hover transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
             title={t('aiChat.newChat')}
           >
-            <Plus size={14} />
+            <Plus size={16} aria-hidden="true" />
           </button>
           <button
             onClick={() => setAiPanelOpen(false)}
-            className="rounded-md p-1.5 text-muted hover:text-secondary hover:bg-surface-hover transition-colors"
+            aria-label={t('ai.closeAssistant') || 'Close AI panel'}
+            className="rounded-md inline-flex items-center justify-center min-w-[36px] min-h-[36px] text-muted hover:text-secondary hover:bg-surface-hover transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
+            title={t('ai.closeAssistant') || 'Close'}
           >
-            <PanelRightClose size={14} />
+            <PanelRightClose size={16} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -755,16 +778,24 @@ export function AIAssistant() {
             </div>
           )}
 
-          {/* Input — AI Elements PromptInput */}
-          <div className="shrink-0 border-t border-[--color-border] bg-[--color-bg] px-3 pb-4 pt-3">
+          {/* Input — AI Elements PromptInput. Bottom padding includes iOS safe-area. */}
+          <div
+            className="shrink-0 border-t border-[--color-border] bg-[--color-bg] px-3 pt-3"
+            style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
+          >
             <PromptInput onSubmit={({ text }) => { if (text.trim()) void handleSend(text); }}>
               <PromptInputTextarea
                 placeholder={t('ai.placeholder')}
                 disabled={!canSend}
-                className="text-[13px]"
+                // text-base (16px) on mobile prevents iOS from auto-zooming the field on focus.
+                // Drops back to 13px on sm+ for density.
+                className="text-base sm:text-[13px]"
+                enterKeyHint="send"
+                autoCapitalize="sentences"
+                autoCorrect="on"
               />
               <PromptInputFooter>
-                <span className="text-[10px] text-[--color-muted]">
+                <span className="text-[10px] text-[--color-muted] truncate">
                   {t('aiChat.backendAgent')} · {skillCount} skills
                 </span>
                 <PromptInputSubmit
@@ -777,6 +808,7 @@ export function AIAssistant() {
           </div>
         </>
       )}
-    </aside>
+      </aside>
+    </>
   );
 }

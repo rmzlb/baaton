@@ -295,36 +295,64 @@ export function Sidebar() {
           <div className={cn('flex items-center', isCompact ? 'flex-col gap-2' : 'gap-1 px-1')}>
             <UserButton appearance={{ elements: { avatarBox: 'h-7 w-7' } }} />
             {!isCompact && (
-              <div className="flex items-center gap-1 ml-auto">
-                <button onClick={toggleAiPanel} className={cn(
-                  'rounded-lg p-1.5 transition-colors',
-                  aiPanelOpen ? 'bg-amber-500/20 text-amber-500' : 'text-muted hover:bg-surface-hover hover:text-secondary',
-                )} title={aiPanelOpen ? 'Close AI panel' : 'Open AI panel (Cmd+J)'}>
-                  <Sparkles size={14} />
+              <div className="flex items-center gap-0.5 ml-auto">
+                <button
+                  onClick={toggleAiPanel}
+                  aria-label={aiPanelOpen ? 'Close AI panel' : 'Open AI panel (Cmd+J)'}
+                  aria-pressed={aiPanelOpen}
+                  className={cn(
+                    'rounded-lg inline-flex items-center justify-center min-w-[36px] min-h-[36px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40',
+                    aiPanelOpen ? 'bg-amber-500/20 text-amber-500' : 'text-muted hover:bg-surface-hover hover:text-secondary',
+                  )}
+                  title={aiPanelOpen ? 'Close AI panel' : 'Open AI panel (Cmd+J)'}
+                >
+                  <Sparkles size={14} aria-hidden="true" />
                 </button>
-                <button onClick={toggleTheme} className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors"
-                  title={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}>
-                  {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+                <button
+                  onClick={toggleTheme}
+                  aria-label={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}
+                  className="rounded-lg inline-flex items-center justify-center min-w-[36px] min-h-[36px] text-muted hover:bg-surface-hover hover:text-secondary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
+                  title={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}
+                >
+                  {theme === 'dark' ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
                 </button>
-                <button onClick={toggleLanguage} className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors"
-                  title={t('sidebar.language')}>
-                  <Globe size={14} />
+                <button
+                  onClick={toggleLanguage}
+                  aria-label={t('sidebar.language')}
+                  className="rounded-lg inline-flex items-center justify-center min-w-[36px] min-h-[36px] text-muted hover:bg-surface-hover hover:text-secondary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
+                  title={t('sidebar.language')}
+                >
+                  <Globe size={14} aria-hidden="true" />
                 </button>
               </div>
             )}
             {isCompact && (
               <>
-                <button onClick={toggleAiPanel} className={cn(
-                  'rounded-lg p-1.5 transition-colors',
-                  aiPanelOpen ? 'bg-amber-500/20 text-amber-500' : 'text-muted hover:bg-surface-hover hover:text-secondary',
-                )} title={aiPanelOpen ? 'Close AI panel' : 'Open AI panel (Cmd+J)'}>
-                  <Sparkles size={14} />
+                <button
+                  onClick={toggleAiPanel}
+                  aria-label={aiPanelOpen ? 'Close AI panel' : 'Open AI panel (Cmd+J)'}
+                  aria-pressed={aiPanelOpen}
+                  className={cn(
+                    'rounded-lg inline-flex items-center justify-center min-w-[36px] min-h-[36px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40',
+                    aiPanelOpen ? 'bg-amber-500/20 text-amber-500' : 'text-muted hover:bg-surface-hover hover:text-secondary',
+                  )}
+                  title={aiPanelOpen ? 'Close AI panel' : 'Open AI panel (Cmd+J)'}
+                >
+                  <Sparkles size={14} aria-hidden="true" />
                 </button>
-                <button onClick={toggleTheme} className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors">
-                  {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+                <button
+                  onClick={toggleTheme}
+                  aria-label={theme === 'dark' ? t('sidebar.lightMode') : t('sidebar.darkMode')}
+                  className="rounded-lg inline-flex items-center justify-center min-w-[36px] min-h-[36px] text-muted hover:bg-surface-hover hover:text-secondary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
+                >
+                  {theme === 'dark' ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
                 </button>
-                <button onClick={toggleLanguage} className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors">
-                  <Globe size={14} />
+                <button
+                  onClick={toggleLanguage}
+                  aria-label={t('sidebar.language')}
+                  className="rounded-lg inline-flex items-center justify-center min-w-[36px] min-h-[36px] text-muted hover:bg-surface-hover hover:text-secondary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
+                >
+                  <Globe size={14} aria-hidden="true" />
                 </button>
               </>
             )}

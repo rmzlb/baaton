@@ -19,7 +19,7 @@ import {
 import type { UIMessage } from 'ai';
 import {
   Bot, Copy, Check, RefreshCw, ThumbsUp, ThumbsDown, Plus, Trash2,
-  MessageSquare, PanelLeftClose, PanelLeft, AlertCircle,
+  MessageSquare, PanelLeftClose, PanelLeft, AlertCircle, Sparkles,
   LayoutDashboard, Inbox, PlusCircle, CalendarDays, FileText, TrendingUp,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -287,13 +287,13 @@ function ChatEmptyState({
   ];
 
   return (
-    <div className="flex flex-col gap-8 px-6 pt-16 pb-8 max-w-3xl mx-auto w-full">
+    <div className="flex flex-col gap-6 sm:gap-8 px-4 sm:px-6 pt-8 sm:pt-16 pb-8 max-w-3xl mx-auto w-full">
       {/* Greeting — Baaton "Good morning." style */}
       <div>
-        <h1 className="text-4xl font-bold text-[--color-primary] tracking-tight">
+        <h1 className="text-2xl sm:text-4xl font-bold text-[--color-primary] tracking-tight">
           {greeting}
         </h1>
-        <p className="text-[15px] text-[--color-muted] mt-2">
+        <p className="text-[13px] sm:text-[15px] text-[--color-muted] mt-1.5 sm:mt-2">
           {projectCount} projet{projectCount > 1 ? 's' : ''} · agent cross-org
         </p>
       </div>
@@ -350,7 +350,12 @@ export default function AIChat() {
   const [activeId, setActiveId] = useState<string | null>(
     () => loadConvos()[0]?.id ?? null,
   );
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Sidebar starts closed on mobile (< md) so the chat is the first thing visible.
+  // Open by default on tablet/desktop. Reads window once to avoid hydration mismatch.
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.matchMedia('(min-width: 768px)').matches;
+  });
 
   // ── AI SDK transport & hook ──
 
@@ -525,24 +530,26 @@ export default function AIChat() {
       )}>
         <div className={cn('flex flex-col h-full', !sidebarOpen && 'hidden')}>
           {/* Sidebar header */}
-          <div className="flex items-center justify-between px-3 py-3 border-b border-border shrink-0">
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-accent" />
-              <span className="text-sm font-semibold text-primary">{t('aiChat.title')}</span>
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0 min-h-[48px]">
+            <div className="flex items-center gap-2 min-w-0">
+              <Sparkles size={14} className="text-accent shrink-0" aria-hidden="true" />
+              <span className="text-sm font-semibold text-primary truncate">{t('aiChat.title')}</span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5 shrink-0">
               <button
                 onClick={handleNewChat}
                 title={t('aiChat.newChat')}
-                className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors"
+                aria-label={t('aiChat.newChat')}
+                className="rounded-lg inline-flex items-center justify-center min-w-[36px] min-h-[36px] text-muted hover:bg-surface-hover hover:text-secondary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
               >
-                <Plus size={14} />
+                <Plus size={16} aria-hidden="true" />
               </button>
               <button
                 onClick={() => setSidebarOpen(false)}
-                className="rounded-lg p-1.5 text-muted hover:bg-surface-hover hover:text-secondary transition-colors md:hidden"
+                aria-label={t('aiChat.closeSidebar') || 'Close sidebar'}
+                className="rounded-lg inline-flex items-center justify-center min-w-[36px] min-h-[36px] text-muted hover:bg-surface-hover hover:text-secondary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 md:hidden"
               >
-                <PanelLeftClose size={14} />
+                <PanelLeftClose size={16} aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -595,13 +602,15 @@ export default function AIChat() {
       {/* ─── Main area ────────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Top bar */}
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border shrink-0">
+        <div className="flex items-center gap-2 px-3 sm:px-4 py-2 border-b border-border shrink-0 min-h-[48px]">
           {!sidebarOpen && (
             <button
               onClick={() => setSidebarOpen(true)}
-              className="rounded-lg p-1.5 text-muted hover:bg-surface-hover transition-colors"
+              aria-label={t('aiChat.openSidebar') || 'Open conversations'}
+              title={t('aiChat.openSidebar') || 'Conversations'}
+              className="rounded-lg inline-flex items-center justify-center min-w-[36px] min-h-[36px] text-muted hover:bg-surface-hover transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
             >
-              <PanelLeft size={15} />
+              <PanelLeft size={16} aria-hidden="true" />
             </button>
           )}
           <span className="text-sm font-medium text-primary truncate flex-1">
@@ -609,9 +618,10 @@ export default function AIChat() {
           </span>
           <button
             onClick={handleNewChat}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted hover:bg-surface-hover hover:text-secondary transition-colors"
+            aria-label={t('aiChat.newChat')}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 min-h-[36px] text-xs text-muted hover:bg-surface-hover hover:text-secondary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40"
           >
-            <Plus size={13} />
+            <Plus size={14} aria-hidden="true" />
             <span className="hidden sm:inline">{t('aiChat.newChat')}</span>
           </button>
         </div>
@@ -723,8 +733,11 @@ export default function AIChat() {
           <ConversationScrollButton />
         </Conversation>
 
-        {/* Input area */}
-        <div className="shrink-0 border-t border-border bg-bg px-4 pb-4 pt-3 space-y-2">
+        {/* Input area — bottom padding includes iOS safe-area for PWA / mobile Safari */}
+        <div
+          className="shrink-0 border-t border-border bg-bg px-3 sm:px-4 pt-3 space-y-2"
+          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
+        >
           {/* Quick suggestions for early conversations */}
           {messages.length > 0 && messages.length < 3 && !isStreaming && (
             <Suggestions>
@@ -745,10 +758,14 @@ export default function AIChat() {
             <PromptInputTextarea
               placeholder={t('ai.placeholder')}
               disabled={!canSend}
-              className="text-[13px]"
+              // text-base on mobile to prevent iOS auto-zoom on focus.
+              className="text-base sm:text-[13px]"
+              enterKeyHint="send"
+              autoCapitalize="sentences"
+              autoCorrect="on"
             />
             <PromptInputFooter>
-              <span className="text-[10px] text-[--color-muted]">
+              <span className="text-[10px] text-[--color-muted] truncate">
                 {t('aiChat.backendAgent')} · {projects.length} {t('aiChat.projectsLabel')}
               </span>
               <PromptInputSubmit

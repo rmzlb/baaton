@@ -41,7 +41,11 @@ export function AppLayout() {
       {/* Left sidebar */}
       <Sidebar />
 
-      {/* Main content — shrinks when AI panel opens */}
+      {/*
+        Main content — left margin matches sidebar width so it doesn't slide under it.
+        On lg+ the AI panel docks (static), so no width compensation is needed here.
+        On < lg the AI panel is an overlay (with backdrop) — main stays full width.
+      */}
       <div
         className={cn(
           'flex flex-1 flex-col overflow-hidden transition-all duration-200 min-w-0',
