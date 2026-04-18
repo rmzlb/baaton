@@ -23,6 +23,9 @@ const MilestoneTimeline = lazy(() => import('./tool-components/MilestoneTimeline
 const IssueCreated = lazy(() => import('./tool-components/IssueCreated'));
 const IssueUpdated = lazy(() => import('./tool-components/IssueUpdated'));
 const PRDDocument = lazy(() => import('./tool-components/PRDDocument'));
+const SimilarIssuesList = lazy(() => import('./tool-components/SimilarIssuesList'));
+const WorkloadDistribution = lazy(() => import('./tool-components/WorkloadDistribution'));
+const ProjectComparison = lazy(() => import('./tool-components/ProjectComparison'));
 
 type AnyToolPart = ToolUIPart | DynamicToolUIPart;
 
@@ -101,6 +104,12 @@ function renderContent(
         return <Suspense fallback={<Skeleton />}><IssueUpdated data={data} /></Suspense>;
       case 'generate_prd':
         return <Suspense fallback={<Skeleton />}><PRDDocument data={data} /></Suspense>;
+      case 'find_similar_issues':
+        return <Suspense fallback={<Skeleton />}><SimilarIssuesList data={data} /></Suspense>;
+      case 'workload_by_assignee':
+        return <Suspense fallback={<Skeleton />}><WorkloadDistribution data={data} /></Suspense>;
+      case 'compare_projects':
+        return <Suspense fallback={<Skeleton />}><ProjectComparison data={data} /></Suspense>;
     }
 
     const summary = typeof output?.summary === 'string' ? output.summary : undefined;

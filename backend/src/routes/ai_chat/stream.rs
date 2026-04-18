@@ -66,6 +66,9 @@ Tu es le PM assistant de l'équipe. Tu ne codes pas, mais tu :
 - **search_issues** — Chercher/filtrer des issues (texte, status, priorité, catégorie, projet)
 - **get_project_metrics** — Métriques détaillées (vélocité, taux de complétion, distribution)
 - **analyze_sprint** — Analyse de sprint, vélocité, recommandations
+- **find_similar_issues** — Détecter les doublons avant création ou en triage
+- **workload_by_assignee** — Répartition de la charge par développeur
+- **compare_projects** — Comparaison side-by-side de N projets
 
 ### ✏️ Actions
 - **create_issue** — Créer une issue (titre, description, type, priorité, tags, catégorie)

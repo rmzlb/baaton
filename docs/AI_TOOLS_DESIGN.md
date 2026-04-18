@@ -1,6 +1,6 @@
 # AI Tools Design — Baaton Agent Tooling
 
-> Design document for the 24 tools available to the Baaton AI agent (Gemini 2.0 Flash).
+> Design document for the 27 tools available to the Baaton AI agent (Gemini 2.0 Flash).
 > Applies [Anthropic's "Writing effective tools for agents"](https://www.anthropic.com/engineering/writing-tools-for-agents) best practices.
 
 ## Design Principles
@@ -43,7 +43,7 @@ Heavy-read tools support `response_format` parameter:
 
 ---
 
-## Tool Catalog (24 tools)
+## Tool Catalog (27 tools)
 
 ### Search & Read Tools
 
@@ -55,6 +55,9 @@ Heavy-read tools support `response_format` parameter:
 | 4 | `weekly_recap` | Activity recap for last N days (completed, new, blocked) | `{ completed_count, new_created_count, blocker_count, top_contributor, completed_issues[], blocked_issues[] }` |
 | 5 | `suggest_priorities` | AI reprioritization recommendations (staleness × priority) | `[{ display_id, title, priority, score, reason }]` |
 | 6 | `export_project` | Full JSON dump of all issues, milestones, sprints | `{ issues[], milestones[], sprints[], exported_at }` |
+| 25 | `find_similar_issues` | Detect duplicate/similar issues by title word overlap | `{ reference_title, candidates[{ display_id, title, status, similarity_score }] }` |
+| 26 | `workload_by_assignee` | Aggregate open issues per assignee with status breakdown | `{ assignees[{ assignee_id, total, by_status }], scope }` |
+| 27 | `compare_projects` | Side-by-side metrics comparison for 2-5 projects | `{ projects[{ prefix, total, open, done, velocity_14d, bug_ratio, completion_ratio }] }` |
 
 ### Proposal Tools (User Approval Required)
 
@@ -119,6 +122,12 @@ Heavy-read tools support `response_format` parameter:
 | "Create a weekly security review" | `manage_recurring` | `{ action: "create", project_id: "HLM", title: "Weekly Security Review", cron_expression: "0 9 * * 1" }` |
 | "Create a Q3 launch initiative" | `manage_initiatives` | `{ action: "create", name: "Q3 Launch" }` |
 | "Auto-escalate stale urgents" | `manage_automations` | `{ action: "create", project_id: "HLM", name: "Auto-escalate", trigger_type: "due_date_passed", action_type: "set_priority" }` |
+| "Is this a duplicate?" | `find_similar_issues` | `{ reference_issue_id: "HLM-42" }` |
+| "Find similar issues to auth bug" | `find_similar_issues` | `{ query: "auth token refresh bug" }` |
+| "Who has most work on HLM?" | `workload_by_assignee` | `{ project_id: "HLM" }` |
+| "Workload distribution" | `workload_by_assignee` | `{}` |
+| "Compare HLM and SQX" | `compare_projects` | `{ project_ids: ["HLM", "SQX"] }` |
+| "Which project is fastest?" | `compare_projects` | `{}` |
 
 ---
 
@@ -171,7 +180,7 @@ backend/src/routes/ai_tools/mod.rs
 Structure:
 1. **Type definitions** (`ToolResult`, `ToolDefinition`)
 2. **Client-interactive detection** (`is_client_interactive`)
-3. **Tool definitions** (`get_tool_definitions`) — 24 tools
+3. **Tool definitions** (`get_tool_definitions`) — 27 tools
 4. **SQL row structs** (`SearchIssueRow`, etc.)
 5. **Real executors** (`exec_search_issues`, `create_issue_real`, etc.)
 6. **ID resolvers** (`resolve_project_id`, `resolve_issue_id`, `resolve_args_ids`)

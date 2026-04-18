@@ -593,6 +593,47 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["project_id"]
             }),
         ),
+        // ── 25. find_similar_issues ─────────────────────────────────────────
+        tool(
+            "find_similar_issues",
+            "Find issues that are potentially similar or duplicates of a reference issue or a free-text query. Returns up to `limit` candidate issues ranked by similarity score (title word overlap). Use BEFORE creating a new issue to check for duplicates, or during triage to cluster related reports. Similarity is based on case-insensitive title word overlap — results include display_id, title, status, and a similarity_score (0-1). Results are cross-org by default; narrow with project_id (prefix or UUID).\n\nUse when the user says 'is this a duplicate?', 'find similar issues', 'any duplicates of HLM-42?', 'check before creating'.\n\nNot for: Full-text search with filters (use search_issues). Getting a specific issue's details (use search_issues with display_id). Aggregate metrics (use get_project_metrics).\n\nReturns: { reference_title, candidates[{ display_id, title, status, similarity_score }] }.",
+            json!({
+                "type": "OBJECT",
+                "properties": {
+                    "reference_issue_id": {"type": "STRING", "description": "Optional: UUID or display_id of a reference issue to find duplicates of (e.g. 'HLM-42')."},
+                    "query": {"type": "STRING", "description": "Optional: free-text query to find issues matching this description (use if no reference_issue_id)."},
+                    "project_id": {"type": "STRING", "description": "Optional: Project UUID or prefix (e.g. 'HLM') to scope search. Omit for cross-project."},
+                    "limit": {"type": "NUMBER", "description": "Max results (default 10, max 50)."}
+                }
+            }),
+        ),
+        // ── 26. workload_by_assignee ────────────────────────────────────────
+        tool(
+            "workload_by_assignee",
+            "Aggregate open issues count per assignee across the user's projects. Shows who is loaded on what. Use when the user asks 'who has most work', 'workload distribution', 'who is busy with bugs', 'charge de travail'. Returns a list of assignees sorted by total open issues, with a breakdown by status. Unassigned issues are grouped under 'unassigned'. Scope with project_id or leave empty for cross-project view.\n\nNot for: Searching specific issues (use search_issues). Getting project-level metrics (use get_project_metrics). Updating assignees (use propose_update_issue).\n\nReturns: { assignees[{ assignee_id, is_unassigned, total, by_status }], scope }.",
+            json!({
+                "type": "OBJECT",
+                "properties": {
+                    "project_id": {"type": "STRING", "description": "Optional: Project UUID or prefix to scope."},
+                    "status_filter": {"type": "STRING", "enum": ["open", "all"], "description": "open = backlog/todo/in_progress/in_review (default). all = everything."}
+                }
+            }),
+        ),
+        // ── 27. compare_projects ────────────────────────────────────────────
+        tool(
+            "compare_projects",
+            "Compare metrics across 2-5 projects side by side: total issues, open/done counts, velocity (done in last 14 days), bug ratio, and completion rate. Use when the user asks 'compare HLM and SQX', 'which project is fastest', 'how does project X perform vs Y'. Returns a comparison table structured for side-by-side rendering. Accepts prefixes (HLM) or UUIDs.\n\nNot for: Deep dive into one project (use get_project_metrics). Sprint analysis (use analyze_sprint). Searching issues (use search_issues).\n\nReturns: { projects[{ prefix, name, total, open, done, velocity_14d, bug_ratio, completion_ratio }] }.",
+            json!({
+                "type": "OBJECT",
+                "properties": {
+                    "project_ids": {
+                        "type": "ARRAY",
+                        "items": {"type": "STRING"},
+                        "description": "Array of 2-5 project UUIDs or prefixes (e.g. ['HLM', 'SQX']). Omit to compare all user's projects."
+                    }
+                }
+            }),
+        ),
     ]
 }
 
@@ -1399,6 +1440,258 @@ async fn exec_propose_comment(pool: &PgPool, org_ids: &[String], args: &Value) -
     })
 }
 
+// ─── find_similar_issues executor ─────────────────────────────────────────────
+
+async fn exec_find_similar_issues(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+    let reference_id_raw = args.get("reference_issue_id").and_then(|v| v.as_str());
+    let query_text = args.get("query").and_then(|v| v.as_str());
+    let project_id_raw = args.get("project_id").and_then(|v| v.as_str());
+    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10).clamp(1, 50);
+
+    let (reference_title, reference_uuid): (String, Option<Uuid>) = match reference_id_raw {
+        Some(raw) => {
+            let uuid = resolve_issue_id(pool, org_ids, raw).await
+                .ok_or_else(|| format!("Reference issue '{}' not found. Use a valid display_id (e.g. HLM-42) or UUID.", raw))?;
+            let row: Option<(String,)> = sqlx::query_as(
+                "SELECT title FROM issues WHERE id = $1"
+            ).bind(uuid).fetch_optional(pool).await.map_err(|e| format!("DB error: {e}"))?;
+            (row.map(|r| r.0).unwrap_or_default(), Some(uuid))
+        }
+        None => (
+            query_text.unwrap_or("").to_string(),
+            None,
+        ),
+    };
+
+    if reference_title.is_empty() {
+        return Err("find_similar_issues requires either 'reference_issue_id' or 'query'. Provide the issue ID (e.g. 'HLM-42') or a free-text description.".into());
+    }
+
+    let keywords: Vec<String> = reference_title
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+        .filter(|w| w.len() >= 4)
+        .collect();
+
+    if keywords.is_empty() {
+        return Ok(ToolResult {
+            data: json!({"candidates": [], "reference_title": reference_title}),
+            for_model: "No significant keywords in the reference — cannot search for similar issues.".into(),
+            component_hint: Some("SimilarIssuesList".to_string()),
+            summary: "0 similar issues".into(),
+        });
+    }
+
+    let project_uuid: Option<Uuid> = match project_id_raw {
+        Some(raw) => resolve_project_id(pool, org_ids, raw).await,
+        None => None,
+    };
+
+    let ilike_pattern: Vec<String> = keywords.iter().map(|k| format!("%{}%", k)).collect();
+
+    let rows: Vec<(Uuid, String, String, String)> = sqlx::query_as(
+        "SELECT i.id, i.display_id, i.title, i.status
+         FROM issues i
+         JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[])
+           AND ($2::uuid IS NULL OR i.project_id = $2)
+           AND ($3::uuid IS NULL OR i.id != $3)
+           AND i.title ILIKE ANY($4::text[])
+         ORDER BY i.updated_at DESC
+         LIMIT 200"
+    )
+    .bind(org_ids)
+    .bind(project_uuid)
+    .bind(reference_uuid)
+    .bind(&ilike_pattern)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("DB error: {e}"))?;
+
+    let mut candidates: Vec<(f64, Uuid, String, String, String)> = rows.into_iter()
+        .map(|(id, dispid, title, status)| {
+            let title_lower = title.to_lowercase();
+            let matches = keywords.iter().filter(|k| title_lower.contains(k.as_str())).count();
+            let score = matches as f64 / keywords.len() as f64;
+            (score, id, dispid, title, status)
+        })
+        .filter(|(s, _, _, _, _)| *s > 0.0)
+        .collect();
+    candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.truncate(limit as usize);
+
+    let n = candidates.len();
+    let top3 = candidates.iter().take(3)
+        .map(|(s, _, dispid, title, _)| format!("- {} ({:.0}%): {}", dispid, s * 100.0, title))
+        .collect::<Vec<_>>().join("\n");
+
+    Ok(ToolResult {
+        data: json!({
+            "reference_title": reference_title,
+            "reference_issue_id": reference_id_raw,
+            "candidates": candidates.iter().map(|(s, id, dispid, title, status)| json!({
+                "id": id.to_string(),
+                "display_id": dispid,
+                "title": title,
+                "status": status,
+                "similarity_score": (*s * 100.0).round() / 100.0,
+            })).collect::<Vec<_>>(),
+        }),
+        for_model: format!("Found {} similar issues.\nTop 3:\n{}", n, top3),
+        component_hint: Some("SimilarIssuesList".to_string()),
+        summary: format!("{} similar issues", n),
+    })
+}
+
+// ─── workload_by_assignee executor ────────────────────────────────────────────
+
+async fn exec_workload_by_assignee(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+    let project_id_raw = args.get("project_id").and_then(|v| v.as_str());
+    let status_filter = args.get("status_filter").and_then(|v| v.as_str()).unwrap_or("open");
+
+    let project_uuid: Option<Uuid> = match project_id_raw {
+        Some(raw) => resolve_project_id(pool, org_ids, raw).await,
+        None => None,
+    };
+
+    let rows: Vec<(Option<String>, String, i64)> = sqlx::query_as(
+        "SELECT unnested.assignee_id, i.status, COUNT(*)::bigint
+         FROM issues i
+         JOIN projects p ON p.id = i.project_id,
+              LATERAL (
+                SELECT unnest(i.assignee_ids) AS assignee_id
+                WHERE cardinality(i.assignee_ids) > 0
+                UNION ALL
+                SELECT NULL WHERE cardinality(i.assignee_ids) = 0 OR i.assignee_ids IS NULL
+              ) AS unnested
+         WHERE p.org_id = ANY($1::text[])
+           AND ($2::uuid IS NULL OR i.project_id = $2)
+           AND ($3 = 'all' OR i.status NOT IN ('done', 'cancelled'))
+         GROUP BY unnested.assignee_id, i.status
+         ORDER BY COUNT(*) DESC
+         LIMIT 200"
+    )
+    .bind(org_ids)
+    .bind(project_uuid)
+    .bind(status_filter)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("DB error: {e}"))?;
+
+    use std::collections::HashMap;
+    let mut by_assignee: HashMap<Option<String>, HashMap<String, i64>> = HashMap::new();
+    for (aid, status, cnt) in rows {
+        by_assignee.entry(aid).or_default().insert(status, cnt);
+    }
+
+    let mut entries: Vec<Value> = by_assignee.iter().map(|(aid, statuses)| {
+        let total: i64 = statuses.values().sum();
+        json!({
+            "assignee_id": aid,
+            "is_unassigned": aid.is_none(),
+            "total": total,
+            "by_status": {
+                "backlog": statuses.get("backlog").copied().unwrap_or(0),
+                "todo": statuses.get("todo").copied().unwrap_or(0),
+                "in_progress": statuses.get("in_progress").copied().unwrap_or(0),
+                "in_review": statuses.get("in_review").copied().unwrap_or(0),
+                "done": statuses.get("done").copied().unwrap_or(0),
+                "cancelled": statuses.get("cancelled").copied().unwrap_or(0),
+            }
+        })
+    }).collect();
+
+    entries.sort_by(|a, b| {
+        b["total"].as_i64().unwrap_or(0).cmp(&a["total"].as_i64().unwrap_or(0))
+    });
+
+    let top3 = entries.iter().take(3).map(|e| {
+        let aid = e["assignee_id"].as_str().unwrap_or("unassigned");
+        format!("- {}: {} issues", aid, e["total"].as_i64().unwrap_or(0))
+    }).collect::<Vec<_>>().join("\n");
+
+    Ok(ToolResult {
+        data: json!({ "assignees": entries, "scope": status_filter }),
+        for_model: format!("Workload breakdown ({} mode), {} assignees:\n{}", status_filter, entries.len(), top3),
+        component_hint: Some("WorkloadDistribution".to_string()),
+        summary: format!("{} assignees, {} scope", entries.len(), status_filter),
+    })
+}
+
+// ─── compare_projects executor ────────────────────────────────────────────────
+
+async fn exec_compare_projects(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+    let project_ids_raw: Vec<String> = args.get("project_ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    let mut project_uuids: Vec<Uuid> = Vec::new();
+    for raw in &project_ids_raw {
+        if let Some(uuid) = resolve_project_id(pool, org_ids, raw).await {
+            project_uuids.push(uuid);
+        }
+    }
+
+    if project_uuids.is_empty() {
+        let all: Vec<(Uuid,)> = sqlx::query_as(
+            "SELECT id FROM projects WHERE org_id = ANY($1::text[]) LIMIT 10"
+        ).bind(org_ids).fetch_all(pool).await.map_err(|e| format!("DB error: {e}"))?;
+        project_uuids = all.into_iter().map(|(id,)| id).collect();
+    }
+
+    if project_uuids.len() < 2 {
+        return Err("compare_projects needs at least 2 projects. Specify project_ids with 2-5 prefixes (e.g. ['HLM', 'SQX']) or ensure your org has 2+ projects.".into());
+    }
+
+    let mut rows = Vec::new();
+    for uuid in &project_uuids {
+        let info: Option<(String, String)> = sqlx::query_as(
+            "SELECT name, prefix FROM projects WHERE id = $1"
+        ).bind(uuid).fetch_optional(pool).await.ok().flatten();
+
+        let (name, prefix) = info.unwrap_or_else(|| (uuid.to_string(), "?".into()));
+
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1")
+            .bind(uuid).fetch_one(pool).await.unwrap_or(0);
+        let open: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1 AND status NOT IN ('done', 'cancelled')")
+            .bind(uuid).fetch_one(pool).await.unwrap_or(0);
+        let done: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1 AND status = 'done'")
+            .bind(uuid).fetch_one(pool).await.unwrap_or(0);
+        let velocity: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1 AND status = 'done' AND updated_at >= NOW() - INTERVAL '14 days'")
+            .bind(uuid).fetch_one(pool).await.unwrap_or(0);
+        let bugs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1 AND type = 'bug'")
+            .bind(uuid).fetch_one(pool).await.unwrap_or(0);
+
+        let bug_ratio = if total > 0 { bugs as f64 / total as f64 } else { 0.0 };
+        let completion_ratio = if total > 0 { done as f64 / total as f64 } else { 0.0 };
+
+        rows.push(json!({
+            "project_id": uuid.to_string(),
+            "name": name,
+            "prefix": prefix,
+            "total": total,
+            "open": open,
+            "done": done,
+            "velocity_14d": velocity,
+            "bug_ratio": (bug_ratio * 100.0).round() / 100.0,
+            "completion_ratio": (completion_ratio * 100.0).round() / 100.0,
+        }));
+    }
+
+    let n = rows.len();
+    let fastest = rows.iter().max_by_key(|r| r["velocity_14d"].as_i64().unwrap_or(0))
+        .and_then(|r| r["prefix"].as_str())
+        .unwrap_or("?");
+
+    Ok(ToolResult {
+        data: json!({ "projects": rows }),
+        for_model: format!("Comparison of {} projects. Fastest last 14d: {}.", n, fastest),
+        component_hint: Some("ProjectComparison".to_string()),
+        summary: format!("Comparing {} projects", n),
+    })
+}
+
 pub async fn execute_tool(
     pool: &PgPool,
     org_ids: &[String],
@@ -1476,6 +1769,9 @@ pub async fn execute_tool(
             Ok(r) => Ok(r),
             Err(e) => { tracing::warn!("export_project real query failed: {e}; falling back to stub"); Ok(stub_export_project(&args)) }
         },
+        "find_similar_issues" => exec_find_similar_issues(pool, org_ids, &args).await,
+        "workload_by_assignee" => exec_workload_by_assignee(pool, org_ids, &args).await,
+        "compare_projects" => exec_compare_projects(pool, org_ids, &args).await,
         unknown => Err(format!("Unknown tool: {}", unknown)),
     }
 }
