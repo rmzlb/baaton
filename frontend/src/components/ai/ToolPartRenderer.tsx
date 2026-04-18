@@ -48,6 +48,17 @@ export function ToolPartRenderer({ part, addToolOutput, inBatch }: ToolPartRende
   const toolName = getToolName(part);
   const dynPart = part as DynamicToolUIPart;
 
+  const content = renderContent(toolName, part, dynPart, addToolOutput, inBatch);
+  return <div className="animate-tool-in">{content}</div>;
+}
+
+function renderContent(
+  toolName: string,
+  part: ToolPartRendererProps['part'],
+  dynPart: DynamicToolUIPart,
+  addToolOutput: ToolPartRendererProps['addToolOutput'],
+  inBatch?: boolean,
+) {
   if (part.state === 'input-streaming' && !PROPOSAL_TOOLS.has(toolName)) {
     return <ExecutingIndicator name={toolName} />;
   }

@@ -9,7 +9,8 @@ import { useRef, useEffect, useCallback, useState, useMemo, memo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles, Trash2, Bot, Copy, Check, RefreshCw, ThumbsUp, ThumbsDown,
-  Wrench, ChevronDown, Plus, MessageSquare, PanelRightClose, AlertCircle,
+  Plus, MessageSquare, PanelRightClose, AlertCircle,
+  LayoutDashboard, Inbox, PlusCircle, CalendarDays, FileText, TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useChat } from '@ai-sdk/react';
@@ -238,6 +239,115 @@ function useSuggestions() {
     { label: t('ai.suggestionSprint'), prompt: t('ai.suggestionSprintPrompt') },
     { label: t('ai.suggestionRecap'), prompt: t('ai.suggestionRecapPrompt') },
   ];
+}
+
+// ─── Empty State (Baaton dashboard vibe) ───────
+
+function getTimeGreeting(t: (key: string) => string): string {
+  const hour = new Date().getHours();
+  if (hour < 6) return t('ai.greetingNight') || 'Bonne nuit.';
+  if (hour < 12) return t('ai.greetingMorning') || 'Bonjour.';
+  if (hour < 18) return t('ai.greetingAfternoon') || 'Bon retour.';
+  return t('ai.greetingEvening') || 'Bonsoir.';
+}
+
+interface EmptyStateProps {
+  skillCount: number;
+  projectCount: number;
+  canSend: boolean;
+  onSend: (text: string) => void;
+}
+
+function EmptyState({ skillCount, projectCount, canSend, onSend }: EmptyStateProps) {
+  const { t } = useTranslation();
+  const greeting = getTimeGreeting(t);
+
+  const quickActions = [
+    {
+      id: 'overview',
+      icon: LayoutDashboard,
+      title: t('ai.suggestionSummary').replace(/^[\p{Emoji}\s]+/u, '') || "Vue d'ensemble",
+      subtitle: 'Issues, sprints, milestones, SLA',
+      prompt: t('ai.suggestionSummaryPrompt'),
+    },
+    {
+      id: 'triage',
+      icon: Inbox,
+      title: t('ai.suggestionTriage').replace(/^[\p{Emoji}\s]+/u, '') || "Trier l'inbox",
+      subtitle: 'Labels, priorité, assignés',
+      prompt: t('ai.suggestionTriagePrompt'),
+    },
+    {
+      id: 'create',
+      icon: PlusCircle,
+      title: t('ai.suggestionCreate').replace(/^[\p{Emoji}\s]+/u, '') || 'Créer une issue',
+      subtitle: 'Avec description structurée',
+      prompt: t('ai.suggestionCreatePrompt'),
+    },
+    {
+      id: 'sprint',
+      icon: TrendingUp,
+      title: t('ai.suggestionSprint').replace(/^[\p{Emoji}\s]+/u, '') || 'Statut sprint',
+      subtitle: 'Velocité, blockers, progrès',
+      prompt: t('ai.suggestionSprintPrompt'),
+    },
+    {
+      id: 'recap',
+      icon: CalendarDays,
+      title: t('ai.suggestionRecap').replace(/^[\p{Emoji}\s]+/u, '') || 'Récap semaine',
+      subtitle: 'Fait, en cours, bloqué',
+      prompt: t('ai.suggestionRecapPrompt'),
+    },
+    {
+      id: 'prd',
+      icon: FileText,
+      title: 'Générer un PRD',
+      subtitle: 'User stories + criteria',
+      prompt: "Aide-moi à rédiger un PRD pour une nouvelle fonctionnalité. Demande-moi d'abord les détails.",
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-5 py-4 px-1">
+      {/* Greeting — Baaton "Good morning." style */}
+      <div>
+        <h2 className="text-2xl font-bold text-[--color-primary] tracking-tight">
+          {greeting}
+        </h2>
+        <p className="text-[13px] text-[--color-muted] mt-1">
+          {projectCount} projet{projectCount > 1 ? 's' : ''} · {skillCount} skills
+        </p>
+      </div>
+
+      {/* Quick-action cards grid (Baaton metric card vibe) */}
+      <div className="grid grid-cols-2 gap-2">
+        {quickActions.map(action => {
+          const Icon = action.icon;
+          return (
+            <button
+              key={action.id}
+              onClick={() => onSend(action.prompt)}
+              disabled={!canSend}
+              className="group relative text-left rounded-xl border border-[--color-border] bg-[--color-surface] p-3 hover:border-amber-500/40 hover:bg-amber-500/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+            >
+              <Icon size={14} className="text-amber-500 mb-1.5" />
+              <div className="text-[11px] font-semibold text-[--color-primary] leading-tight">
+                {action.title}
+              </div>
+              <div className="text-[10px] text-[--color-muted] mt-0.5 line-clamp-2 leading-snug">
+                {action.subtitle}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Footer hint */}
+      <p className="text-center text-[10px] text-[--color-muted]/70">
+        Ou tape une demande en langage naturel
+      </p>
+    </div>
+  );
 }
 
 // ─── Main Component ────────────────────────────
@@ -527,53 +637,12 @@ export function AIAssistant() {
           <Conversation>
             <ConversationContent className="gap-4 p-3">
               {isEmpty ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center mb-3">
-                    <Sparkles size={24} className="text-accent" />
-                  </div>
-                  <h4 className="text-sm font-semibold text-primary mb-1">{t('ai.agentWithSkills')}</h4>
-                  <p className="text-xs text-muted mb-4 max-w-[280px]">{t('ai.agentDesc')}</p>
-
-                  <details className="w-full mb-4 px-2 group">
-                    <summary className="flex items-center justify-center gap-1 cursor-pointer text-[10px] text-muted hover:text-secondary transition-colors">
-                      <Wrench size={10} />
-                      {t('ai.availableSkills')}
-                      <ChevronDown size={10} className="group-open:rotate-180 transition-transform" />
-                    </summary>
-                    <div className="mt-2 grid grid-cols-2 gap-1 text-[9px]">
-                      {[
-                        ['search_issues', t('ai.skillSearch')],
-                        ['create_issue', t('ai.skillCreate')],
-                        ['update_issue', t('ai.skillUpdate')],
-                        ['bulk_update', t('ai.skillBulkUpdate')],
-                        ['add_comment', t('ai.skillComment')],
-                        ['plan_milestones', t('ai.skillPlanMilestones')],
-                        ['generate_prd', t('ai.skillPrd')],
-                        ['analyze_sprint', t('ai.skillSprint')],
-                        ['get_metrics', t('ai.skillMetrics')],
-                        ['adjust_timeline', t('ai.skillAdjustTimeline')],
-                      ].map(([skill, label]) => (
-                        <div key={skill} className="flex items-center gap-1 rounded border border-border/50 bg-surface/50 px-2 py-1">
-                          <span className="text-accent">*</span>
-                          <span className="text-secondary">{label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-
-                  <Suggestions>
-                    {PANEL_SUGGESTIONS.map(s => (
-                      <Suggestion
-                        key={s.label}
-                        suggestion={s.prompt}
-                        onClick={handleSend}
-                        disabled={!canSend}
-                      >
-                        {s.label}
-                      </Suggestion>
-                    ))}
-                  </Suggestions>
-                </div>
+                <EmptyState
+                  skillCount={skillCount}
+                  projectCount={projects.length}
+                  canSend={canSend}
+                  onSend={handleSend}
+                />
               ) : (
                 <>
                   {messages

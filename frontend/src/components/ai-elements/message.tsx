@@ -323,6 +323,59 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 const streamdownPlugins = { cjk, code, math, mermaid };
 
+// ─── Baaton status/priority/type badge styling ────────────────────────────────
+// Streamdown renders inline markdown code as <code>. We intercept specific
+// status/priority/type tokens and render them as colored pills (mimics
+// Baaton Kanban card badges). Multi-token code spans fall back to default.
+
+const BAATON_TOKEN_STYLES: Record<string, string> = {
+  // Statuses
+  backlog: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+  todo: "bg-blue-500/15 text-blue-500 border-blue-500/30",
+  in_progress: "bg-amber-500/15 text-amber-500 border-amber-500/30",
+  in_review: "bg-violet-500/15 text-violet-500 border-violet-500/30",
+  done: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30",
+  cancelled: "bg-red-500/15 text-red-400 border-red-500/30",
+  // Priorities
+  urgent: "bg-red-500/15 text-red-500 border-red-500/30",
+  high: "bg-orange-500/15 text-orange-500 border-orange-500/30",
+  medium: "bg-amber-500/15 text-amber-500 border-amber-500/30",
+  low: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30",
+  // Types
+  bug: "bg-red-500/15 text-red-500 border-red-500/30",
+  feature: "bg-violet-500/15 text-violet-500 border-violet-500/30",
+  improvement: "bg-blue-500/15 text-blue-500 border-blue-500/30",
+  question: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+};
+
+const BaatonInlineCode = ({ className, children, ...props }: ComponentProps<"code">) => {
+  // Pre-fenced code blocks get a language class (e.g. "language-json") — pass through
+  if (className) {
+    return <code className={className} {...props}>{children}</code>;
+  }
+  const raw = String(children ?? "").trim();
+  const key = raw.toLowerCase();
+  const tokenClass = BAATON_TOKEN_STYLES[key];
+  if (tokenClass) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center rounded-full border px-1.5 py-0 text-[0.85em] font-medium",
+          tokenClass,
+        )}
+      >
+        {raw.replace(/_/g, " ")}
+      </span>
+    );
+  }
+  // Fallback to default inline code (styled by globals.css pill look)
+  return <code {...props}>{children}</code>;
+};
+
+const streamdownComponents = {
+  code: BaatonInlineCode,
+};
+
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
@@ -331,6 +384,7 @@ export const MessageResponse = memo(
         className
       )}
       plugins={streamdownPlugins}
+      components={streamdownComponents}
       {...props}
     />
   ),

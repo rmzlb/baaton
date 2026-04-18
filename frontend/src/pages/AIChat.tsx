@@ -18,8 +18,9 @@ import {
 } from 'ai';
 import type { UIMessage } from 'ai';
 import {
-  Bot, Copy, Check, RefreshCw, ThumbsUp, ThumbsDown, Plus, Trash2, Sparkles,
+  Bot, Copy, Check, RefreshCw, ThumbsUp, ThumbsDown, Plus, Trash2,
   MessageSquare, PanelLeftClose, PanelLeft, AlertCircle,
+  LayoutDashboard, Inbox, PlusCircle, CalendarDays, FileText, TrendingUp,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useApi } from '@/hooks/useApi';
@@ -251,6 +252,79 @@ function LastMessageActions({
         <ThumbsDown size={12} />
       </MessageAction>
     </MessageActions>
+  );
+}
+
+// ─── Empty state (Baaton dashboard vibe) ─────────────────────────────────────
+
+function getTimeGreeting(t: (k: string) => string): string {
+  const hour = new Date().getHours();
+  if (hour < 6) return t('ai.greetingNight') || 'Bonne nuit.';
+  if (hour < 12) return t('ai.greetingMorning') || 'Bonjour.';
+  if (hour < 18) return t('ai.greetingAfternoon') || 'Bon retour.';
+  return t('ai.greetingEvening') || 'Bonsoir.';
+}
+
+function ChatEmptyState({
+  projectCount,
+  canSend,
+  onSend,
+}: {
+  projectCount: number;
+  canSend: boolean;
+  onSend: (text: string) => void;
+}) {
+  const { t } = useTranslation();
+  const greeting = getTimeGreeting(t);
+
+  const cards = [
+    { id: 'overview', icon: LayoutDashboard, title: "Vue d'ensemble", subtitle: 'Issues par projet, sprints, milestones, SLA', prompt: t('ai.suggestionSummaryPrompt') },
+    { id: 'triage', icon: Inbox, title: "Trier l'inbox", subtitle: 'Labels, priorité, assignés automatiquement', prompt: t('ai.suggestionTriagePrompt') },
+    { id: 'create', icon: PlusCircle, title: 'Créer une issue', subtitle: 'Avec description structurée par template', prompt: t('ai.suggestionCreatePrompt') },
+    { id: 'sprint', icon: TrendingUp, title: 'Statut sprint', subtitle: 'Vélocité, blockers, progression', prompt: t('ai.suggestionSprintPrompt') },
+    { id: 'recap', icon: CalendarDays, title: 'Récap semaine', subtitle: 'Ce qui est fait, en cours, bloqué', prompt: t('ai.suggestionRecapPrompt') },
+    { id: 'prd', icon: FileText, title: 'Générer un PRD', subtitle: 'User stories + critères d’acceptation', prompt: "Aide-moi à rédiger un PRD complet pour une nouvelle fonctionnalité. Demande-moi les détails." },
+  ];
+
+  return (
+    <div className="flex flex-col gap-8 px-6 pt-16 pb-8 max-w-3xl mx-auto w-full">
+      {/* Greeting — Baaton "Good morning." style */}
+      <div>
+        <h1 className="text-4xl font-bold text-[--color-primary] tracking-tight">
+          {greeting}
+        </h1>
+        <p className="text-[15px] text-[--color-muted] mt-2">
+          {projectCount} projet{projectCount > 1 ? 's' : ''} · agent cross-org
+        </p>
+      </div>
+
+      {/* Quick action cards grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {cards.map(card => {
+          const Icon = card.icon;
+          return (
+            <button
+              key={card.id}
+              onClick={() => onSend(card.prompt)}
+              disabled={!canSend}
+              className="group relative text-left rounded-xl border border-[--color-border] bg-[--color-surface] p-4 hover:border-amber-500/40 hover:bg-amber-500/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+            >
+              <Icon size={18} className="text-amber-500 mb-2.5" />
+              <div className="text-sm font-semibold text-[--color-primary] leading-tight">
+                {card.title}
+              </div>
+              <div className="text-[12px] text-[--color-muted] mt-1 leading-snug line-clamp-2">
+                {card.subtitle}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="text-center text-[12px] text-[--color-muted]/70">
+        Ou tape une demande en langage naturel ci-dessous
+      </p>
+    </div>
   );
 }
 
@@ -546,30 +620,11 @@ export default function AIChat() {
         <Conversation>
           <ConversationContent>
             {isEmpty ? (
-              /* Empty state */
-              <div className="flex flex-col items-center justify-center min-h-[50vh] px-6">
-                <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center mb-5">
-                  <Sparkles size={32} className="text-accent" />
-                </div>
-                <h2 className="text-xl font-semibold text-primary mb-2">
-                  {t('aiChat.emptyTitle')}
-                </h2>
-                <p className="text-sm text-muted mb-8 max-w-md text-center leading-relaxed">
-                  {t('aiChat.emptyDesc')}
-                </p>
-                <Suggestions>
-                  {SUGGESTIONS.map(s => (
-                    <Suggestion
-                      key={s.label}
-                      suggestion={s.prompt}
-                      onClick={handleSend}
-                      disabled={!canSend}
-                    >
-                      {s.label}
-                    </Suggestion>
-                  ))}
-                </Suggestions>
-              </div>
+              <ChatEmptyState
+                projectCount={projects.length}
+                canSend={canSend}
+                onSend={handleSend}
+              />
             ) : (
               /* Message list */
               <>
