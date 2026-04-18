@@ -1183,7 +1183,7 @@ async fn list_project_prefixes(pool: &PgPool, org_ids: &[String]) -> Vec<String>
 
 /// Pre-process tool args: resolve project_id, issue_id, and nested issue_ids
 /// from user-friendly values (prefix, display_id) to UUIDs.
-async fn resolve_args_ids(pool: &PgPool, org_ids: &[String], args: &mut Value) {
+pub async fn resolve_args_ids(pool: &PgPool, org_ids: &[String], args: &mut Value) {
     // Resolve top-level project_id
     if let Some(raw) = args.get("project_id").and_then(|v| v.as_str()).map(String::from) {
         if raw.parse::<Uuid>().is_err() {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sparkles, Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -69,6 +69,24 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
   });
 
   const [projectId, setProjectId] = useState<string>(input.project_id || '');
+
+  // Defensive fallback: if the agent passes a prefix (e.g. "HLM") or name instead of a UUID,
+  // resolve it client-side once projects load so the Select preselects correctly. The backend
+  // also resolves before emitting, but this keeps the form robust if that path is bypassed
+  // (older deployment, partial outage, user on slow network). Runs once per project list load.
+  useEffect(() => {
+    if (!projectId || projects.length === 0) return;
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (UUID_RE.test(projectId)) return;
+    const raw = projectId.trim();
+    const rawUpper = raw.toUpperCase();
+    const byPrefix = projects.find(p => (p.prefix || '').toUpperCase() === rawUpper);
+    if (byPrefix) { setProjectId(byPrefix.id); return; }
+    const byName = projects.find(p => (p.name || '').toLowerCase() === raw.toLowerCase());
+    if (byName) { setProjectId(byName.id); return; }
+    const byNameHint = projects.find(p => (p.name || '').toLowerCase().includes(raw.toLowerCase()));
+    if (byNameHint) setProjectId(byNameHint.id);
+  }, [projects, projectId]);
   const [title, setTitle] = useState(input.title || '');
   const [description, setDescription] = useState(input.description || '');
   const [type, setType] = useState<typeof TYPE_OPTIONS[number]>(

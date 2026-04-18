@@ -383,7 +383,14 @@ pub fn build_stream(
                         .as_str()
                         .unwrap_or("")
                         .to_string();
-                    let input = fc["args"].clone();
+                    let mut input = fc["args"].clone();
+
+                    // Resolve prefixes (e.g. "HLM") and display_ids (e.g. "HLM-42")
+                    // to UUIDs BEFORE emitting to the client, so proposal forms
+                    // can preselect the right project/issue in their dropdowns.
+                    // For non-client-interactive tools, execute_tool will call
+                    // resolve_args_ids again — it's idempotent on UUIDs.
+                    crate::routes::ai_tools::resolve_args_ids(&pool, &org_ids, &mut input).await;
 
                     yield sse_chunk(&UIMessageChunk::ToolInputAvailable {
                         tool_call_id: tool_call_id.clone(),
