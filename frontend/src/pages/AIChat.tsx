@@ -12,11 +12,9 @@ import { useState, useCallback, useEffect, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-react';
 import { useChat } from '@ai-sdk/react';
-import {
-  DefaultChatTransport,
-  lastAssistantMessageIsCompleteWithToolCalls,
-} from 'ai';
+import { DefaultChatTransport } from 'ai';
 import type { UIMessage } from 'ai';
+import { shouldAutoContinueAfterApproval } from '@/lib/ai-continue';
 import {
   Bot, Copy, Check, RefreshCw, ThumbsUp, ThumbsDown, Plus, Trash2,
   MessageSquare, PanelLeftClose, PanelLeft, AlertCircle, Sparkles,
@@ -383,7 +381,9 @@ export default function AIChat() {
     id: activeId ?? 'default',
     transport,
     messages: initialMessages,
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    // See lib/ai-continue.ts: only auto-resend after a propose_* approval,
+    // never after read tools (backend already runs the full agent loop).
+    sendAutomaticallyWhen: shouldAutoContinueAfterApproval,
     onFinish: () => {
       queryClient.invalidateQueries({ queryKey: ['issues'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['milestones'], refetchType: 'all' });

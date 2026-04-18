@@ -14,11 +14,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useChat } from '@ai-sdk/react';
-import {
-  DefaultChatTransport,
-  lastAssistantMessageIsCompleteWithToolCalls,
-} from 'ai';
+import { DefaultChatTransport } from 'ai';
 import type { UIMessage } from 'ai';
+import { shouldAutoContinueAfterApproval } from '@/lib/ai-continue';
 import { useUIStore } from '@/stores/ui';
 import { useNotificationStore } from '@/stores/notifications';
 import { useApi } from '@/hooks/useApi';
@@ -400,7 +398,11 @@ export function AIAssistant() {
     id: activeId ?? 'default',
     transport,
     messages: initialMessages,
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    // Only auto-continue after the user approves a propose_* tool. The default
+    // helper would re-fire a request whenever ALL tool calls have outputs —
+    // which is true for our server-resolved read tools too, causing duplicate
+    // turns ("état des lieux" rendered twice, etc).
+    sendAutomaticallyWhen: shouldAutoContinueAfterApproval,
     onFinish: () => {
       queryClient.invalidateQueries({ queryKey: ['issues'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['milestones'], refetchType: 'all' });
