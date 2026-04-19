@@ -171,6 +171,7 @@ struct AssignedRow {
 }
 
 #[derive(sqlx::FromRow)]
+#[allow(dead_code)] // org_id/project_id required by SELECT * but not surfaced in response
 struct ActivityRow {
     id: Uuid,
     org_id: String,

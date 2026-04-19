@@ -1,3 +1,7 @@
+#![allow(dead_code)]
+// Rate-limit infra is partially used today (constants for plan-based quotas)
+// while the per-request enforcement helpers wait for their guard wiring.
+
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use chrono::{Datelike, Timelike};
 use serde_json::json;

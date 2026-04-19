@@ -282,6 +282,7 @@ pub async fn get_me(
 
     // ── Action breakdown (this week) ──
     #[derive(sqlx::FromRow)]
+    #[allow(dead_code)] // assignments/tags_added stay in the row for upcoming UI columns
     struct BreakdownRow {
         issues_created: i64,
         issues_closed: i64,
@@ -663,6 +664,7 @@ async fn get_velocity_scoped(pool: &PgPool, where_clause: &str, bind_val: &str, 
 }
 
 /// Org-wide velocity (all users combined) — fallback when personal data is empty
+#[allow(dead_code)] // public helper kept for upcoming velocity panels
 async fn get_velocity_org(pool: &PgPool, org_id: &str, days: i64) -> f64 {
     let since = Utc::now().date_naive() - chrono::Duration::days(days);
     let count: i64 = sqlx::query_scalar(

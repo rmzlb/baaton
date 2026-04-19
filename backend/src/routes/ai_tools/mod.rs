@@ -1244,6 +1244,7 @@ async fn resolve_issue_id(pool: &PgPool, org_ids: &[String], raw: &str) -> Optio
 }
 
 /// Lists available project prefixes for error messages.
+#[allow(dead_code)] // helper kept for richer error UX in future tool failures
 async fn list_project_prefixes(pool: &PgPool, org_ids: &[String]) -> Vec<String> {
     sqlx::query_scalar::<_, String>(
         "SELECT prefix FROM projects WHERE org_id = ANY($1::text[]) ORDER BY prefix LIMIT 20",
@@ -2300,6 +2301,7 @@ fn stub_search_issues(args: &Value) -> ToolResult {
     }
 }
 
+#[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_create_issue(args: &Value) -> ToolResult {
     let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("New issue");
     let display_id = "PHI-42";
@@ -2319,6 +2321,7 @@ fn stub_create_issue(args: &Value) -> ToolResult {
     }
 }
 
+#[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_update_issue(args: &Value) -> ToolResult {
     let issue_id = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("unknown");
     let changes: Vec<String> = ["status", "priority", "title", "type", "tags", "category"]
@@ -2333,6 +2336,7 @@ fn stub_update_issue(args: &Value) -> ToolResult {
     }
 }
 
+#[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_bulk_update_issues(args: &Value) -> ToolResult {
     let count = args.get("updates")
         .and_then(|v| v.as_array())
@@ -2346,6 +2350,7 @@ fn stub_bulk_update_issues(args: &Value) -> ToolResult {
     }
 }
 
+#[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_add_comment(args: &Value) -> ToolResult {
     let issue_id = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("unknown");
     let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("(empty)");
@@ -2561,6 +2566,7 @@ fn stub_plan_milestones(args: &Value) -> ToolResult {
     }
 }
 
+#[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_create_milestones_batch(args: &Value) -> ToolResult {
     let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("unknown");
     let count = args.get("milestones")
@@ -2596,6 +2602,7 @@ fn stub_adjust_timeline(args: &Value) -> ToolResult {
     }
 }
 
+#[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_triage_issue(args: &Value) -> ToolResult {
     let issue_id = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("unknown");
     ToolResult {

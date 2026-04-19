@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Centralized event bus for Baaton.
 //!
 //! All side effects from mutations (SSE, webhooks, activity log, notifications,

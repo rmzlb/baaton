@@ -30,6 +30,7 @@ pub struct FilterClause {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // variants carry parsed values consumed via match-binding by query builders
 pub enum FilterParam {
     String(String),
     StringList(Vec<String>),
@@ -294,6 +295,7 @@ fn value_to_param(val: &Value, _kind: FieldKind) -> Option<FilterParam> {
 
 /// Build a dynamic SQL query with filter applied.
 /// Returns the full WHERE clause (including base conditions) and all params.
+#[allow(dead_code)] // public helper kept for future filterable list endpoints
 pub fn apply_filter_to_query(
     filter_json: Option<&str>,
     base_conditions: &str,
@@ -316,6 +318,7 @@ pub fn apply_filter_to_query(
 
 /// Pagination cursor — encodes (created_at, id) or (updated_at, id)
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // public type kept for future cursor-paginated list endpoints
 pub struct CursorParams {
     /// Cursor from previous response (base64 encoded)
     pub after: Option<String>,

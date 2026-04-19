@@ -1,10 +1,10 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{sse::{Event, Sse}, IntoResponse},
+    response::sse::{Event, Sse},
     Extension, Json,
 };
-use futures::stream::{self, Stream};
+use futures::stream::Stream;
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::PgPool;

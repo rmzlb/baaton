@@ -16,6 +16,7 @@ use crate::routes::issues::fetch_user_org_ids;
 
 /// What resource is being quota-checked
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)] // Orgs/AiMessages kept for upcoming plan-guard call-sites
 pub enum QuotaKind {
     Orgs,
     Issues,

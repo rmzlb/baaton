@@ -25,6 +25,7 @@ pub struct UIMessage {
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
+#[allow(dead_code)] // ToolInputStart preserved for upcoming streaming-input UX
 pub enum UIMessageChunk {
     Start {
         #[serde(rename = "messageId")]

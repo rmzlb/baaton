@@ -1,12 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Circle,
-  Clock,
   Flag,
   Inbox,
   PauseCircle,
@@ -16,6 +12,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
+import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -92,64 +89,31 @@ function initialsOf(name: string): string {
     .join('');
 }
 
-function formatDate(s?: string | null): string {
-  if (!s) return '—';
-  try {
-    return new Date(s).toLocaleDateString(undefined, {
-      day: '2-digit',
-      month: 'short',
-    });
-  } catch {
-    return '—';
-  }
-}
-
-// ─── Hero KPI tile ────────────────────────────────────────────────────────
+// ─── Hero KPI tile (flat, no individual borders) ──────────────────────────
 
 function HeroStat({
-  icon: Icon,
   label,
   value,
   tone = 'neutral',
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
   value: number | string;
-  tone?: 'neutral' | 'amber' | 'red' | 'emerald';
+  tone?: 'neutral' | 'amber' | 'red' | 'emerald' | 'blue';
 }) {
-  const toneRing = {
-    neutral: 'border-[--color-border]',
-    amber: 'border-amber-500/30 bg-amber-500/[0.04]',
-    red: 'border-red-500/40 bg-red-500/[0.06]',
-    emerald: 'border-emerald-500/30 bg-emerald-500/[0.04]',
-  }[tone];
-  const toneIcon = {
-    neutral: 'text-[--color-muted]',
-    amber: 'text-amber-400',
-    red: 'text-red-400',
-    emerald: 'text-emerald-400',
-  }[tone];
-  const toneValue = {
+  const valueColor = {
     neutral: 'text-[--color-primary]',
+    blue: 'text-blue-300',
     amber: 'text-amber-300',
     red: 'text-red-300',
     emerald: 'text-emerald-300',
   }[tone];
 
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-1.5 rounded-lg border bg-[--color-surface] px-3 py-2.5 transition-colors',
-        toneRing,
-      )}
-    >
-      <div className="flex items-center gap-1.5">
-        <Icon size={11} className={toneIcon} />
-        <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
-          {label}
-        </span>
-      </div>
-      <span className={cn('text-2xl font-semibold leading-none tabular-nums', toneValue)}>
+    <div className="flex flex-col gap-1 min-w-0">
+      <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted] truncate">
+        {label}
+      </span>
+      <span className={cn('text-2xl font-semibold leading-none tabular-nums', valueColor)}>
         {value}
       </span>
     </div>
@@ -173,9 +137,9 @@ function ActionChip({
 }) {
   if (count === 0) return null;
   const toneClass = {
-    red: 'border-red-500/40 bg-red-500/[0.08] text-red-300 hover:bg-red-500/[0.14]',
-    amber: 'border-amber-500/40 bg-amber-500/[0.08] text-amber-300 hover:bg-amber-500/[0.14]',
-    blue: 'border-blue-500/40 bg-blue-500/[0.08] text-blue-300 hover:bg-blue-500/[0.14]',
+    red: 'bg-red-500/10 hover:bg-red-500/15 text-red-300',
+    amber: 'bg-amber-500/10 hover:bg-amber-500/15 text-amber-300',
+    blue: 'bg-blue-500/10 hover:bg-blue-500/15 text-blue-300',
   }[tone];
   const iconColor = {
     red: 'text-red-400',
@@ -186,13 +150,13 @@ function ActionChip({
   const inner = (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors whitespace-nowrap',
         toneClass,
       )}
     >
       <Icon size={11} className={iconColor} />
-      <span className="text-[--color-primary]">{count}</span>
-      <span className="text-[--color-muted]">{label}</span>
+      <span className="text-[--color-primary] tabular-nums">{count}</span>
+      <span className="opacity-80">{label}</span>
     </span>
   );
 
@@ -218,7 +182,7 @@ function SprintRow({ s }: { s: NonNullable<OrgOverviewData['active_sprints']>[nu
             style={{ width: `${Math.min(100, s.pct)}%` }}
           />
         </div>
-        <span className="text-[10px] tabular-nums text-[--color-muted] w-16 text-right">
+        <span className="text-[10px] tabular-nums text-[--color-muted] w-12 text-right">
           {s.completed}/{s.planned}
         </span>
       </div>
@@ -230,18 +194,14 @@ function SprintRow({ s }: { s: NonNullable<OrgOverviewData['active_sprints']>[nu
 
 function MilestoneRow({
   m,
+  daysLabel,
 }: {
   m: NonNullable<OrgOverviewData['upcoming_milestones']>[number];
+  daysLabel: string;
 }) {
   const urgent = m.days_until <= 3;
   const soon = m.days_until <= 7;
   const dotColor = urgent ? 'bg-red-400' : soon ? 'bg-amber-400' : 'bg-emerald-400';
-  const daysLabel =
-    m.days_until === 0
-      ? "aujourd'hui"
-      : m.days_until === 1
-        ? 'demain'
-        : `dans ${m.days_until}j`;
 
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0">
@@ -262,7 +222,7 @@ function MilestoneRow({
   );
 }
 
-// ─── Project rollup row ───────────────────────────────────────────────────
+// ─── Project rollup row (with NAME visible, not just prefix) ──────────────
 
 function ProjectRow({
   p,
@@ -271,21 +231,18 @@ function ProjectRow({
 }) {
   const completionPct = Math.round(p.completion * 100);
   const bugPct = Math.round(p.bug_ratio * 100);
-  const hasStale = p.stale_open > 0;
 
   return (
     <Link
       to={`/all-issues?project=${encodeURIComponent(p.prefix)}`}
-      className="grid grid-cols-[auto_1fr_auto_auto_auto] sm:grid-cols-[auto_1fr_60px_60px_80px_60px_60px] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors text-[12px]"
+      className="grid grid-cols-[60px_1fr_auto_auto] sm:grid-cols-[60px_1fr_44px_44px_92px_44px_44px] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors text-[12px]"
     >
-      <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0 w-12">
-        {p.prefix}
-      </span>
+      <span className="font-mono text-[10px] font-bold text-amber-400 truncate">{p.prefix}</span>
       <span className="text-[--color-primary] truncate min-w-0">{p.name}</span>
       <span className="hidden sm:inline tabular-nums text-blue-300 text-right">{p.open}</span>
       <span className="tabular-nums text-amber-300 text-right">{p.in_progress}</span>
-      <div className="flex items-center gap-1.5">
-        <div className="h-1 w-10 sm:w-14 rounded-full bg-[--color-border] overflow-hidden">
+      <div className="flex items-center gap-1.5 justify-end">
+        <div className="h-1 w-10 sm:w-12 rounded-full bg-[--color-border] overflow-hidden">
           <div
             className="h-full bg-emerald-400 transition-all"
             style={{ width: `${completionPct}%` }}
@@ -297,14 +254,12 @@ function ProjectRow({
       </div>
       <span className="hidden sm:inline tabular-nums text-[--color-muted] text-right">
         {p.velocity_14d}
-        <span className="text-[10px]">/14d</span>
       </span>
       <span
         className={cn(
           'hidden sm:inline tabular-nums text-right text-[11px]',
           bugPct > 30 ? 'text-red-300' : bugPct > 15 ? 'text-amber-300' : 'text-[--color-muted]',
         )}
-        title={hasStale ? `${p.stale_open} stale` : undefined}
       >
         {bugPct}%
       </span>
@@ -312,40 +267,51 @@ function ProjectRow({
   );
 }
 
-// ─── Sparkline ────────────────────────────────────────────────────────────
+// ─── Sparkline (with empty-state) ─────────────────────────────────────────
 
 function Sparkline({
   points,
+  total,
+  emptyLabel,
+  totalLabel,
 }: {
   points: NonNullable<OrgOverviewData['activity_sparkline']>;
+  total: number;
+  emptyLabel: string;
+  totalLabel: string;
 }) {
-  if (points.length === 0) return null;
+  // Show a friendly empty state when fewer than 3 days have any activity.
+  // Avoids the "broken" look of a sparkline with 1-2 lonely bars.
+  const activeDays = points.filter((p) => p.closed > 0).length;
+  if (activeDays < 3) {
+    return (
+      <span className="text-[11px] text-[--color-muted] italic">{emptyLabel}</span>
+    );
+  }
+
   const max = Math.max(1, ...points.map((p) => p.closed));
-  const total = points.reduce((acc, p) => acc + p.closed, 0);
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
-          Activité 14j
-        </span>
-        <span className="text-[10px] tabular-nums text-[--color-muted]">
-          {total} closed
-        </span>
-      </div>
-      <div className="flex items-end gap-[2px] h-8">
+    <div className="space-y-1">
+      <div className="flex items-end gap-[2px] h-7">
         {points.map((p, i) => {
-          const h = Math.max(2, (p.closed / max) * 28);
+          const h = Math.max(2, (p.closed / max) * 24);
           return (
             <div
               key={i}
-              className="flex-1 bg-amber-500/60 rounded-sm transition-all hover:bg-amber-400"
+              className={cn(
+                'flex-1 rounded-sm transition-colors',
+                p.closed > 0 ? 'bg-amber-500/70 hover:bg-amber-400' : 'bg-[--color-border]',
+              )}
               style={{ height: `${h}px` }}
               title={`${p.day}: ${p.closed}`}
             />
           );
         })}
       </div>
+      <span className="text-[10px] tabular-nums text-[--color-muted]">
+        {totalLabel.replace('{count}', String(total))}
+      </span>
     </div>
   );
 }
@@ -353,6 +319,7 @@ function Sparkline({
 // ─── Main component ───────────────────────────────────────────────────────
 
 export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
+  const { t } = useTranslation();
   const hero = data.hero ?? {};
   const actions = data.action_items ?? {};
   const sprints = data.active_sprints ?? [];
@@ -363,8 +330,9 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
 
   const periodDays = hero.period_days ?? 7;
   const slaBreached = hero.sla_breached ?? 0;
+  const inProgressCount = hero.in_progress ?? 0;
 
-  // Collapse project table by default when >6 projects to keep the card scannable.
+  // Collapse project table to 6 rows when >6 projects to keep the card scannable.
   const [projectsExpanded, setProjectsExpanded] = useState(projects.length <= 6);
   const visibleProjects = useMemo(
     () => (projectsExpanded ? projects : projects.slice(0, 6)),
@@ -378,121 +346,172 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
       (actions.overdue_milestones ?? 0) >
     0;
 
+  const totalClosedActivity = activity.reduce((acc, p) => acc + p.closed, 0);
+
+  // Localized "in N days" string for milestones
+  const dayLabel = (days: number) =>
+    days === 0
+      ? t('aiChat.overview.dayInTime.today', { defaultValue: 'today' })
+      : days === 1
+        ? t('aiChat.overview.dayInTime.tomorrow', { defaultValue: 'tomorrow' })
+        : t('aiChat.overview.dayInTime.inDays', {
+            days,
+            defaultValue: `in ${days}d`,
+          });
+
   return (
+    // ── Single-surface card. NO nested borders — only horizontal dividers ──
     <div className="rounded-xl border border-[--color-border] bg-[--color-surface] overflow-hidden">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[--color-border]">
-        <div className="flex items-center gap-2">
-          <Sparkles size={13} className="text-amber-400" />
-          <span className="text-[12px] font-semibold text-[--color-primary]">Vue d'ensemble</span>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Sparkles size={12} className="text-amber-400 shrink-0" />
+          <span className="text-[12px] font-semibold text-[--color-primary] truncate">
+            {t('aiChat.overview.title', { defaultValue: 'Overview' })}
+          </span>
         </div>
-        <span className="text-[10px] uppercase tracking-wider text-[--color-muted] tabular-nums">
-          {projects.length} projet{projects.length > 1 ? 's' : ''} · {periodDays}j
+        <span className="text-[10px] uppercase tracking-wider text-[--color-muted] tabular-nums shrink-0">
+          {t('aiChat.overview.projects', {
+            count: projects.length,
+            defaultValue: `${projects.length} projects`,
+          })}{' '}
+          · {periodDays}
+          {t('aiChat.overview.dayInTime.dayShort', { defaultValue: 'd' })}
         </span>
       </div>
 
-      {/* ── Hero KPIs ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
-        <HeroStat icon={Circle} label="Ouvertes" value={hero.open ?? 0} />
+      <div className="border-t border-[--color-border]" />
+
+      {/* Hero KPIs — flat, no individual borders, short labels that don't wrap */}
+      <div className="grid grid-cols-4 gap-3 px-3.5 py-3">
         <HeroStat
-          icon={Clock}
-          label="In progress"
-          value={hero.in_progress ?? 0}
-          tone={(hero.in_progress ?? 0) > 0 ? 'amber' : 'neutral'}
+          label={t('aiChat.overview.kpi.open', { defaultValue: 'Open' })}
+          value={hero.open ?? 0}
+          tone="blue"
         />
         <HeroStat
-          icon={CheckCircle2}
-          label={`Closed ${periodDays}j`}
+          label={t('aiChat.overview.kpi.active', { defaultValue: 'Active' })}
+          value={inProgressCount}
+          tone={inProgressCount > 0 ? 'amber' : 'neutral'}
+        />
+        <HeroStat
+          label={t('aiChat.overview.kpi.closed', {
+            days: periodDays,
+            defaultValue: `Closed ${periodDays}d`,
+          })}
           value={hero.closed_period ?? 0}
           tone="emerald"
         />
         <HeroStat
-          icon={AlertTriangle}
-          label="SLA breached"
+          label={t('aiChat.overview.kpi.sla', { defaultValue: 'SLA' })}
           value={slaBreached}
           tone={slaBreached > 0 ? 'red' : 'neutral'}
         />
       </div>
 
-      {/* ── Action items (only if non-zero) ── */}
+      {/* Action items — only renders when something needs attention */}
       {hasActions && (
-        <div className="px-3 pb-3">
-          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-[--color-border] bg-[--color-bg] px-3 py-2">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted] mr-1">
-              Action requise
+        <>
+          <div className="border-t border-[--color-border]" />
+          <div className="flex flex-wrap items-center gap-1.5 px-3.5 py-2.5">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted] mr-0.5">
+              {t('aiChat.overview.action.title', { defaultValue: 'Needs attention' })}
             </span>
             <ActionChip
               icon={PauseCircle}
-              label="bloquées"
+              label={t('aiChat.overview.action.blocked', { defaultValue: 'blocked' })}
               count={actions.blocked ?? 0}
               tone="red"
               href="/all-issues?priority=urgent"
             />
             <ActionChip
               icon={Inbox}
-              label="à trier"
+              label={t('aiChat.overview.action.triage', { defaultValue: 'to triage' })}
               count={actions.triage_backlog ?? 0}
               tone="amber"
               href="/triage"
             />
             <ActionChip
               icon={Timer}
-              label="stale > 7j"
+              label={t('aiChat.overview.action.stale', { defaultValue: 'stale 7d+' })}
               count={actions.stale ?? 0}
               tone="amber"
             />
             <ActionChip
               icon={Flag}
-              label="milestones en retard"
+              label={t('aiChat.overview.action.overdueMilestones', {
+                defaultValue: 'overdue milestones',
+              })}
               count={actions.overdue_milestones ?? 0}
               tone="red"
               href="/milestones"
             />
           </div>
-        </div>
+        </>
       )}
 
-      {/* ── Sprints + Milestones (2-col) ── */}
+      {/* Sprints + Milestones (2-col on desktop, stack on mobile) */}
       {(sprints.length > 0 || milestones.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 px-3 pb-3">
-          {sprints.length > 0 && (
-            <Section title="Sprints actifs" icon={Target} count={sprints.length}>
-              {sprints.slice(0, 5).map((s) => (
-                <SprintRow key={s.sprint_id} s={s} />
-              ))}
-            </Section>
-          )}
-          {milestones.length > 0 && (
-            <Section title="Milestones (14j)" icon={Flag} count={milestones.length}>
-              {milestones.slice(0, 5).map((m) => (
-                <MilestoneRow key={m.milestone_id} m={m} />
-              ))}
-            </Section>
-          )}
-        </div>
+        <>
+          <div className="border-t border-[--color-border]" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 px-2 py-2">
+            {sprints.length > 0 && (
+              <Section
+                title={t('aiChat.overview.activeSprints', { defaultValue: 'Active sprints' })}
+                icon={Target}
+                count={sprints.length}
+              >
+                {sprints.slice(0, 5).map((s) => (
+                  <SprintRow key={s.sprint_id} s={s} />
+                ))}
+              </Section>
+            )}
+            {milestones.length > 0 && (
+              <Section
+                title={t('aiChat.overview.upcomingMilestones', {
+                  defaultValue: 'Milestones (14d)',
+                })}
+                icon={Flag}
+                count={milestones.length}
+              >
+                {milestones.slice(0, 5).map((m) => (
+                  <MilestoneRow key={m.milestone_id} m={m} daysLabel={dayLabel(m.days_until)} />
+                ))}
+              </Section>
+            )}
+          </div>
+        </>
       )}
 
-      {/* ── Per-project rollup ── */}
+      {/* Per-project rollup */}
       {projects.length > 0 && (
-        <div className="px-3 pb-3">
-          <div className="rounded-lg border border-[--color-border] bg-[--color-bg]">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-[--color-border]">
-              <div className="flex items-center gap-1.5">
+        <>
+          <div className="border-t border-[--color-border]" />
+          <div className="px-2 pt-2 pb-1">
+            <div className="grid grid-cols-[60px_1fr_auto_auto] sm:grid-cols-[60px_1fr_44px_44px_92px_44px_44px] items-center gap-2 px-2 py-1.5">
+              <div className="flex items-center gap-1 col-span-2">
                 <TrendingUp size={11} className="text-[--color-muted]" />
                 <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
-                  Par projet
+                  {t('aiChat.overview.byProject', { defaultValue: 'By project' })}
                 </span>
               </div>
-              {/* Header columns (desktop only) */}
-              <div className="hidden sm:grid grid-cols-[60px_60px_80px_60px_60px] gap-2 text-[9px] uppercase tracking-wider text-[--color-muted]">
-                <span className="text-right">Open</span>
-                <span className="text-right">WIP</span>
-                <span className="text-right">Done %</span>
-                <span className="text-right">Vel.</span>
-                <span className="text-right">Bug %</span>
-              </div>
+              <span className="hidden sm:block text-[9px] uppercase tracking-wider text-[--color-muted] text-right">
+                {t('aiChat.overview.col.open', { defaultValue: 'Open' })}
+              </span>
+              <span className="text-[9px] uppercase tracking-wider text-[--color-muted] text-right">
+                {t('aiChat.overview.col.wip', { defaultValue: 'WIP' })}
+              </span>
+              <span className="text-[9px] uppercase tracking-wider text-[--color-muted] text-right">
+                {t('aiChat.overview.col.done', { defaultValue: 'Done' })}
+              </span>
+              <span className="hidden sm:block text-[9px] uppercase tracking-wider text-[--color-muted] text-right">
+                {t('aiChat.overview.col.velocity', { defaultValue: 'Vel' })}
+              </span>
+              <span className="hidden sm:block text-[9px] uppercase tracking-wider text-[--color-muted] text-right">
+                {t('aiChat.overview.col.bug', { defaultValue: 'Bug' })}
+              </span>
             </div>
-            <div className="py-1">
+            <div>
               {visibleProjects.map((p) => (
                 <ProjectRow key={p.project_id} p={p} />
               ))}
@@ -501,68 +520,89 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
               <button
                 type="button"
                 onClick={() => setProjectsExpanded((v) => !v)}
-                className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-[11px] text-[--color-muted] hover:text-[--color-primary] hover:bg-[--color-surface-hover] transition-colors border-t border-[--color-border]"
+                className="w-full flex items-center justify-center gap-1 px-3 py-1.5 mt-1 text-[11px] text-[--color-muted] hover:text-[--color-primary] hover:bg-[--color-surface-hover] rounded-md transition-colors"
               >
                 {projectsExpanded ? (
                   <>
                     <ChevronDown size={11} />
-                    Réduire
+                    {t('aiChat.overview.collapse', { defaultValue: 'Collapse' })}
                   </>
                 ) : (
                   <>
                     <ChevronRight size={11} />
-                    Voir les {projects.length - 6} autres
+                    {t('aiChat.overview.expandRest', {
+                      count: projects.length - 6,
+                      defaultValue: `Show ${projects.length - 6} more`,
+                    })}
                   </>
                 )}
               </button>
             )}
           </div>
-        </div>
+        </>
       )}
 
-      {/* ── Contributors + Sparkline ── */}
+      {/* Contributors + Sparkline */}
       {(contributors.length > 0 || activity.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 px-3 pb-3 items-start">
-          {contributors.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <Users size={11} className="text-[--color-muted]" />
-                <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
-                  Top contributeurs ({periodDays}j)
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {contributors.map((c) => (
-                  <span
-                    key={c.assignee_id}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-[--color-border] bg-[--color-bg] px-2 py-1 text-[11px]"
-                  >
-                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/15 text-amber-300 text-[9px] font-semibold">
-                      {initialsOf(c.assignee_id) || '?'}
-                    </span>
-                    <span className="text-[--color-secondary] truncate max-w-[120px]">
-                      {c.assignee_id.replace(/^@/, '')}
-                    </span>
-                    <span className="tabular-nums font-semibold text-emerald-300">
-                      {c.done_count}
-                    </span>
+        <>
+          <div className="border-t border-[--color-border]" />
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 px-3.5 py-2.5 items-end">
+            {contributors.length > 0 && (
+              <div className="space-y-1.5 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <Users size={11} className="text-[--color-muted]" />
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
+                    {t('aiChat.overview.contributors', {
+                      days: periodDays,
+                      defaultValue: `Top contributors (${periodDays}d)`,
+                    })}
                   </span>
-                ))}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {contributors.map((c) => (
+                    <span
+                      key={c.assignee_id}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[--color-surface-hover] px-2 py-1 text-[11px]"
+                    >
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/15 text-amber-300 text-[9px] font-semibold">
+                        {initialsOf(c.assignee_id) || '?'}
+                      </span>
+                      <span className="text-[--color-secondary] truncate max-w-[120px]">
+                        {c.assignee_id.replace(/^@/, '')}
+                      </span>
+                      <span className="tabular-nums font-semibold text-emerald-300">
+                        {c.done_count}
+                      </span>
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-          {activity.length > 0 && (
-            <div className="md:w-48">
-              <Sparkline points={activity} />
-            </div>
-          )}
-        </div>
+            )}
+            {activity.length > 0 && (
+              <div className="md:w-44 min-w-0 space-y-1">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
+                  {t('aiChat.overview.activity', { defaultValue: 'Activity 14d' })}
+                </span>
+                <Sparkline
+                  points={activity}
+                  total={totalClosedActivity}
+                  emptyLabel={t('aiChat.overview.activityCalm', {
+                    defaultValue: 'Quiet period',
+                  })}
+                  totalLabel={t('aiChat.overview.activityClosed', {
+                    defaultValue: '{count} closed',
+                  })}
+                />
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-// ─── Section wrapper ──────────────────────────────────────────────────────
+// ─── Section wrapper (NO outer border, just a column with a label) ────────
 
 function Section({
   title,
@@ -576,8 +616,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-[--color-border] bg-[--color-bg] overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[--color-border]">
+    <div className="px-1.5 py-1">
+      <div className="flex items-center justify-between px-2 py-1">
         <div className="flex items-center gap-1.5">
           <Icon size={11} className="text-[--color-muted]" />
           <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
@@ -586,7 +626,7 @@ function Section({
         </div>
         <span className="text-[10px] tabular-nums text-[--color-muted]">{count}</span>
       </div>
-      <div className="py-1 px-1">{children}</div>
+      <div>{children}</div>
     </div>
   );
 }
