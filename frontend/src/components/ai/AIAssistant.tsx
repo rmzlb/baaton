@@ -575,12 +575,16 @@ export function AIAssistant() {
 
   return (
     <>
-      {/* Backdrop on mobile/tablet (lg- only). Hidden on lg+ where panel is docked. */}
+      {/* Backdrop only on small viewports (< md = 768px) where the panel is
+          a full-width overlay. From md+ the panel is a 420px floating column
+          and the user MUST be able to click through to the visible portion
+          of the page (parallel actions). The backdrop also intercepts clicks
+          to close — keeping it on md+ would defeat the whole purpose. */}
       <button
         type="button"
         aria-label={t('ai.closeAssistant') || 'Close AI panel'}
         onClick={() => setAiPanelOpen(false)}
-        className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
+        className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm md:hidden"
       />
 
       <aside
