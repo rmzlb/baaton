@@ -165,12 +165,21 @@ function ActionChip({
 
 // ─── Sprint row ───────────────────────────────────────────────────────────
 
-function SprintRow({ s }: { s: NonNullable<OrgOverviewData['active_sprints']>[number] }) {
+function SprintRow({
+  s,
+  index = 0,
+}: {
+  s: NonNullable<OrgOverviewData['active_sprints']>[number];
+  index?: number;
+}) {
   const trendColor =
     s.pct >= 60 ? 'bg-emerald-400' : s.pct >= 30 ? 'bg-amber-400' : 'bg-red-400';
 
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0">
+    <div
+      className="animate-row-in flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
+      style={{ '--row-index': index } as React.CSSProperties}
+    >
       <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0">
         {s.project_prefix}
       </span>
@@ -195,16 +204,21 @@ function SprintRow({ s }: { s: NonNullable<OrgOverviewData['active_sprints']>[nu
 function MilestoneRow({
   m,
   daysLabel,
+  index = 0,
 }: {
   m: NonNullable<OrgOverviewData['upcoming_milestones']>[number];
   daysLabel: string;
+  index?: number;
 }) {
   const urgent = m.days_until <= 3;
   const soon = m.days_until <= 7;
   const dotColor = urgent ? 'bg-red-400' : soon ? 'bg-amber-400' : 'bg-emerald-400';
 
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0">
+    <div
+      className="animate-row-in flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
+      style={{ '--row-index': index } as React.CSSProperties}
+    >
       <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', dotColor)} aria-hidden="true" />
       <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0">
         {m.project_prefix}
@@ -226,8 +240,10 @@ function MilestoneRow({
 
 function ProjectRow({
   p,
+  index = 0,
 }: {
   p: NonNullable<OrgOverviewData['projects']>[number];
+  index?: number;
 }) {
   const completionPct = Math.round(p.completion * 100);
   const bugPct = Math.round(p.bug_ratio * 100);
@@ -235,7 +251,8 @@ function ProjectRow({
   return (
     <Link
       to={`/all-issues?project=${encodeURIComponent(p.prefix)}`}
-      className="grid grid-cols-[60px_1fr_auto_auto] sm:grid-cols-[60px_1fr_44px_44px_92px_44px_44px] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors text-[12px]"
+      style={{ '--row-index': index } as React.CSSProperties}
+      className="animate-row-in grid grid-cols-[60px_1fr_auto_auto] sm:grid-cols-[60px_1fr_44px_44px_92px_44px_44px] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] active:scale-[0.99] active:bg-[--color-surface-hover] transition-[transform,colors,background-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] text-[12px] will-change-transform"
     >
       <span className="font-mono text-[10px] font-bold text-amber-400 truncate">{p.prefix}</span>
       <span className="text-[--color-primary] truncate min-w-0">{p.name}</span>
@@ -461,8 +478,8 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
                 icon={Target}
                 count={sprints.length}
               >
-                {sprints.slice(0, 5).map((s) => (
-                  <SprintRow key={s.sprint_id} s={s} />
+                {sprints.slice(0, 5).map((s, i) => (
+                  <SprintRow key={s.sprint_id} s={s} index={i} />
                 ))}
               </Section>
             )}
@@ -474,8 +491,13 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
                 icon={Flag}
                 count={milestones.length}
               >
-                {milestones.slice(0, 5).map((m) => (
-                  <MilestoneRow key={m.milestone_id} m={m} daysLabel={dayLabel(m.days_until)} />
+                {milestones.slice(0, 5).map((m, i) => (
+                  <MilestoneRow
+                    key={m.milestone_id}
+                    m={m}
+                    daysLabel={dayLabel(m.days_until)}
+                    index={i}
+                  />
                 ))}
               </Section>
             )}
@@ -512,8 +534,8 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
               </span>
             </div>
             <div>
-              {visibleProjects.map((p) => (
-                <ProjectRow key={p.project_id} p={p} />
+              {visibleProjects.map((p, i) => (
+                <ProjectRow key={p.project_id} p={p} index={i} />
               ))}
             </div>
             {projects.length > 6 && (

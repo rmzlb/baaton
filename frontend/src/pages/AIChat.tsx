@@ -306,7 +306,7 @@ function ChatEmptyState({
               key={card.id}
               onClick={() => onSend(card.prompt)}
               disabled={!canSend}
-              className="group relative text-left rounded-xl border border-[--color-border] bg-[--color-surface] p-4 hover:border-amber-500/40 hover:bg-amber-500/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+              className="group relative text-left rounded-xl border border-[--color-border] bg-[--color-surface] p-4 hover:border-amber-500/40 hover:bg-amber-500/5 active:scale-[0.98] active:bg-amber-500/10 transition-[transform,colors,background-color,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-500/30 will-change-transform"
             >
               <Icon size={18} className="text-amber-500 mb-2.5" />
               <div className="text-sm font-semibold text-[--color-primary] leading-tight">

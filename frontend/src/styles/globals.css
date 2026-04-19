@@ -79,7 +79,15 @@ html {
      entire layout from jumping by ~15px when content grows past the
      viewport (a Mac/Linux issue, harmless on iOS where scrollbars overlay). */
   scrollbar-gutter: stable;
+  /* In-page anchor jumps + .scrollIntoView() feel cinematic instead of
+     teleporting. Neutralized by the prefers-reduced-motion block below. */
+  scroll-behavior: smooth;
 }
+
+/* Premium typography defaults — let the browser fix orphan words and
+   broken line-breaks automatically without per-component tweaks. */
+h1, h2, h3, h4, h5, h6 { text-wrap: balance; }
+p, li { text-wrap: pretty; }
 
 /* ─── Reduced Motion (WCAG 2.1 AAA) ──────────
    Users with `prefers-reduced-motion: reduce` get near-instant transitions
@@ -404,4 +412,29 @@ body, .bg-transition {
 }
 .animate-tool-in {
   animation: toolSlideIn 160ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Row cascade (staggered entry for lists/grids) ───
+   Apply `.animate-row-in` on each row and set `--row-index` (0-based)
+   inline. We deliberately cap the cascade at row 12 so a 200-issue
+   list doesn't take 16s to "settle in" — diminishing returns beyond
+   the first viewport.
+
+   Usage:
+     <div className="animate-row-in" style={{ '--row-index': i }} />
+*/
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-row-in {
+  opacity: 0;
+  animation: rowIn 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc(min(var(--row-index, 0), 12) * 35ms);
 }

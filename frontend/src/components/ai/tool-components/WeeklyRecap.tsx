@@ -239,9 +239,20 @@ function AuthorChip({ name }: { name: string }) {
 
 // ─── Created issue row ────────────────────────────────────────────────────
 
-function CreatedRow({ i, t }: { i: CreatedIssue; t: ReturnType<typeof useTranslation>['t'] }) {
+function CreatedRow({
+  i,
+  t,
+  index = 0,
+}: {
+  i: CreatedIssue;
+  t: ReturnType<typeof useTranslation>['t'];
+  index?: number;
+}) {
   return (
-    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0">
+    <div
+      style={{ '--row-index': index } as React.CSSProperties}
+      className="animate-row-in grid grid-cols-[auto_1fr_auto] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
+    >
       <span
         className={cn('h-1.5 w-1.5 rounded-full shrink-0', priorityDot(i.priority))}
         title={i.priority ?? ''}
@@ -271,14 +282,19 @@ function CreatedRow({ i, t }: { i: CreatedIssue; t: ReturnType<typeof useTransla
 function StatusChangeRow({
   c,
   t,
+  index = 0,
 }: {
   c: StatusChange;
   t: ReturnType<typeof useTranslation>['t'];
+  index?: number;
 }) {
   const fromTone = statusTone(c.from);
   const toTone = statusTone(c.to);
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0">
+    <div
+      style={{ '--row-index': index } as React.CSSProperties}
+      className="animate-row-in grid grid-cols-[1fr_auto] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
+    >
       <div className="flex items-center gap-2 min-w-0">
         <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0">
           {c.project_prefix ?? '·'}
@@ -406,8 +422,8 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
             icon={Plus}
             count={newCreatedCount}
           >
-            {topCreated.map((i) => (
-              <CreatedRow key={i.display_id} i={i} t={t} />
+            {topCreated.map((i, idx) => (
+              <CreatedRow key={i.display_id} i={i} t={t} index={idx} />
             ))}
             {created.length > 8 && (
               <div className="px-2 py-1 text-[10px] text-[--color-muted] tabular-nums">
@@ -433,7 +449,7 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
             count={recap.status_changes_count ?? topChanges.length}
           >
             {topChanges.map((c, idx) => (
-              <StatusChangeRow key={`${c.display_id}-${c.at}-${idx}`} c={c} t={t} />
+              <StatusChangeRow key={`${c.display_id}-${c.at}-${idx}`} c={c} t={t} index={idx} />
             ))}
             {changes.length > 8 && (
               <div className="px-2 py-1 text-[10px] text-[--color-muted] tabular-nums">
@@ -458,10 +474,11 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
             expandable
             defaultExpanded={false}
           >
-            {closed.slice(0, 12).map((c) => (
+            {closed.slice(0, 12).map((c, idx) => (
               <div
                 key={c.display_id}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
+                style={{ '--row-index': idx } as React.CSSProperties}
+                className="animate-row-in flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
               >
                 <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />
                 <span className="text-[11px] tabular-nums text-[--color-muted] shrink-0">

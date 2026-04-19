@@ -327,7 +327,7 @@ function EmptyState({ skillCount, projectCount, canSend, onSend }: EmptyStatePro
               key={action.id}
               onClick={() => onSend(action.prompt)}
               disabled={!canSend}
-              className="group relative text-left rounded-xl border border-[--color-border] bg-[--color-surface] p-3 hover:border-amber-500/40 hover:bg-amber-500/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+              className="group relative text-left rounded-xl border border-[--color-border] bg-[--color-surface] p-3 hover:border-amber-500/40 hover:bg-amber-500/5 active:scale-[0.98] active:bg-amber-500/10 transition-[transform,colors,background-color,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-500/30 will-change-transform"
             >
               <Icon size={14} className="text-amber-500 mb-1.5" />
               <div className="text-[11px] font-semibold text-[--color-primary] leading-tight">
