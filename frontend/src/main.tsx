@@ -32,6 +32,35 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   });
 }
 
+// ─── Stale-chunk auto-recovery ────────────────────────────────────────────────
+// When we deploy, Vite emits new chunk filenames (hash-based). A user with the
+// app already open has the *old* index.html cached in memory, which still
+// references the *old* chunk filenames. The first time their session triggers
+// a lazy import (route change, modal open, tool-component mount…) the browser
+// requests a chunk that no longer exists on the server → "Failed to fetch
+// dynamically imported module".
+//
+// Vite 5+ fires `vite:preloadError` on window for exactly this case. Reload
+// once to pick up the new index.html. Guard with sessionStorage so we never
+// loop if the error is genuine (network down, build broken).
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', (event) => {
+    const RELOAD_KEY = 'baaton:chunk-reload-attempted';
+    if (sessionStorage.getItem(RELOAD_KEY)) {
+      console.error('[chunk] preload failed even after reload — giving up', event);
+      return;
+    }
+    sessionStorage.setItem(RELOAD_KEY, '1');
+    console.warn('[chunk] stale chunk detected, reloading to pick up new build');
+    event.preventDefault();
+    window.location.reload();
+  });
+
+  // Clear the reload flag once the new build has booted successfully.
+  // Wait a tick so any synchronous chunk failure has time to fire first.
+  setTimeout(() => sessionStorage.removeItem('baaton:chunk-reload-attempted'), 5000);
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
@@ -53,9 +82,3 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-// Register service worker for PWA
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
-  });
-}

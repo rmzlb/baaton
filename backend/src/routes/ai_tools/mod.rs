@@ -634,6 +634,25 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 }
             }),
         ),
+        // ── 26. org_overview ─────────────────────────────────────────────
+        tool(
+            "org_overview",
+            "**Use this FIRST** when the user asks for a multi-project status, état des lieux, dashboard, recap, snapshot, or 'how is everything going'. Returns ONE consolidated dashboard covering all the user's orgs and projects: hero KPIs, action-required items, active sprints, upcoming milestones, per-project rollup, and top contributors. Always prefer this single call over chaining get_project_metrics + analyze_sprint + weekly_recap, which produces duplicated cards.\n\nGood cases: 'État des lieux', 'Donne-moi un récap', 'Comment vont les projets ?', 'Dashboard de la semaine', 'Vue d'ensemble', 'Snapshot multi-projets', 'Quoi de neuf cross-project'.\n\nNot for: deep dive into ONE specific project (use get_project_metrics), single sprint analysis (use analyze_sprint), per-person retrospective (use weekly_recap), comparing 2-5 specific projects head-to-head (use compare_projects).\n\nReturns: { hero: {open, in_progress, closed_period, sla_breached}, action_items: {blocked, triage_backlog, stale, overdue_milestones}, active_sprints[], upcoming_milestones[], projects[], top_contributors[], activity_sparkline[] }.\n\nExamples:\n- « État des lieux » → {}\n- « Récap des 30 derniers jours » → {\"period_days\":30}\n- « Status sur HLM et SQX » → {\"project_ids\":[\"HLM\",\"SQX\"]}",
+            json!({
+                "type": "OBJECT",
+                "properties": {
+                    "project_ids": {
+                        "type": "ARRAY",
+                        "items": {"type": "STRING"},
+                        "description": "Optional. Restrict the dashboard to specific project UUIDs or prefixes (e.g. ['HLM', 'SQX']). Omit to include ALL projects across ALL the user's orgs (most common case)."
+                    },
+                    "period_days": {
+                        "type": "NUMBER",
+                        "description": "Optional time window for 'recent' metrics in days (closed-this-period, top-contributors). Default 7. Use 14 for biweekly, 30 for monthly recaps."
+                    }
+                }
+            }),
+        ),
     ]
 }
 
@@ -1692,6 +1711,433 @@ async fn exec_compare_projects(pool: &PgPool, org_ids: &[String], args: &Value) 
     })
 }
 
+// ─── org_overview: single consolidated multi-org/multi-project dashboard ──
+//
+// Replaces the agent's tendency to chain get_project_metrics + analyze_sprint
+// + weekly_recap + ... when the user asks for an "état des lieux". One call,
+// one card. All read-only; fail-soft (defaults to 0 / empty list on errors).
+
+#[derive(sqlx::FromRow)]
+struct ProjectRollupRow {
+    id: Uuid,
+    name: String,
+    prefix: String,
+    total: i64,
+    open: i64,
+    in_progress: i64,
+    done: i64,
+    velocity_14d: i64,
+    bugs: i64,
+    stale_open: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct ActiveSprintRow {
+    id: Uuid,
+    name: String,
+    project_prefix: String,
+    project_name: String,
+    start_date: Option<chrono::NaiveDate>,
+    end_date: Option<chrono::NaiveDate>,
+    planned: i64,
+    completed: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct UpcomingMilestoneRow {
+    id: Uuid,
+    name: String,
+    project_prefix: String,
+    project_name: String,
+    target_date: Option<chrono::NaiveDate>,
+}
+
+#[derive(sqlx::FromRow)]
+struct ContributorRow {
+    assignee_id: String,
+    done_count: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct ActivityPointRow {
+    day: chrono::NaiveDate,
+    closed: i64,
+}
+
+async fn exec_org_overview(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    // Resolve project filter (UUIDs already normalized by resolve_args_ids)
+    let pf: Vec<Uuid> = args
+        .get("project_ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .filter_map(|s| s.parse().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    let has_pf = !pf.is_empty();
+
+    let period_days: i32 = args
+        .get("period_days")
+        .and_then(|v| v.as_i64())
+        .map(|n| n.clamp(1, 365) as i32)
+        .unwrap_or(7);
+
+    // ── Hero KPIs (4 parallel scalar queries) ──
+    let hero_open_q = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
+         AND i.status NOT IN ('done', 'cancelled')",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_one(pool);
+
+    let hero_inprog_q = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
+         AND i.status = 'in_progress'",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_one(pool);
+
+    let hero_closed_q = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
+         AND i.status = 'done' AND i.updated_at >= NOW() - ($4 || ' days')::interval",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .bind(period_days.to_string())
+    .fetch_one(pool);
+
+    let hero_sla_q = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
+         AND i.sla_breached = true AND i.status NOT IN ('done', 'cancelled')",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_one(pool);
+
+    let (open, in_progress, closed_period, sla_breached) =
+        tokio::join!(hero_open_q, hero_inprog_q, hero_closed_q, hero_sla_q);
+    let open = open.unwrap_or(0);
+    let in_progress = in_progress.unwrap_or(0);
+    let closed_period = closed_period.unwrap_or(0);
+    let sla_breached = sla_breached.unwrap_or(0);
+
+    // ── Action items (4 parallel scalar queries) ──
+    let blocked_q = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
+         AND i.priority = 'urgent'
+         AND i.status NOT IN ('done', 'cancelled')
+         AND i.updated_at < NOW() - INTERVAL '2 days'",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_one(pool);
+
+    let triage_q = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
+         AND i.status = 'backlog'",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_one(pool);
+
+    let stale_q = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
+         AND i.status NOT IN ('done', 'cancelled')
+         AND i.updated_at < NOW() - INTERVAL '7 days'",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_one(pool);
+
+    let overdue_q = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM milestones m JOIN projects p ON p.id = m.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR m.project_id = ANY($3::uuid[]))
+         AND m.target_date < CURRENT_DATE
+         AND m.status = 'active'",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_one(pool);
+
+    let (blocked, triage_backlog, stale, overdue_milestones) =
+        tokio::join!(blocked_q, triage_q, stale_q, overdue_q);
+    let blocked = blocked.unwrap_or(0);
+    let triage_backlog = triage_backlog.unwrap_or(0);
+    let stale = stale.unwrap_or(0);
+    let overdue_milestones = overdue_milestones.unwrap_or(0);
+
+    // ── Per-project rollup (single GROUP BY query) ──
+    let projects: Vec<ProjectRollupRow> = sqlx::query_as(
+        "SELECT
+           p.id, p.name, p.prefix,
+           COALESCE(COUNT(i.id), 0)::bigint AS total,
+           COALESCE(COUNT(*) FILTER (WHERE i.status NOT IN ('done', 'cancelled')), 0)::bigint AS open,
+           COALESCE(COUNT(*) FILTER (WHERE i.status = 'in_progress'), 0)::bigint AS in_progress,
+           COALESCE(COUNT(*) FILTER (WHERE i.status = 'done'), 0)::bigint AS done,
+           COALESCE(COUNT(*) FILTER (WHERE i.status = 'done' AND i.updated_at >= NOW() - INTERVAL '14 days'), 0)::bigint AS velocity_14d,
+           COALESCE(COUNT(*) FILTER (WHERE i.type = 'bug'), 0)::bigint AS bugs,
+           COALESCE(COUNT(*) FILTER (WHERE i.status NOT IN ('done', 'cancelled') AND i.updated_at < NOW() - INTERVAL '7 days'), 0)::bigint AS stale_open
+         FROM projects p
+         LEFT JOIN issues i ON i.project_id = p.id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR p.id = ANY($3::uuid[]))
+         GROUP BY p.id, p.name, p.prefix
+         ORDER BY open DESC, p.name ASC
+         LIMIT 20",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    // ── Active sprints (cross-project) ──
+    let active_sprints: Vec<ActiveSprintRow> = sqlx::query_as(
+        "SELECT
+           s.id, s.name, p.prefix AS project_prefix, p.name AS project_name,
+           s.start_date, s.end_date,
+           COALESCE(COUNT(i.id), 0)::bigint AS planned,
+           COALESCE(COUNT(*) FILTER (WHERE i.status = 'done'), 0)::bigint AS completed
+         FROM sprints s
+         JOIN projects p ON p.id = s.project_id
+         LEFT JOIN issues i ON i.sprint_id = s.id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR s.project_id = ANY($3::uuid[]))
+         AND s.status = 'active'
+         GROUP BY s.id, s.name, p.prefix, p.name, s.start_date, s.end_date
+         ORDER BY s.end_date ASC NULLS LAST
+         LIMIT 10",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    // ── Upcoming milestones (next 14 days) ──
+    let upcoming_milestones: Vec<UpcomingMilestoneRow> = sqlx::query_as(
+        "SELECT m.id, m.name, p.prefix AS project_prefix, p.name AS project_name, m.target_date
+         FROM milestones m
+         JOIN projects p ON p.id = m.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR m.project_id = ANY($3::uuid[]))
+         AND m.status = 'active'
+         AND m.target_date IS NOT NULL
+         AND m.target_date >= CURRENT_DATE
+         AND m.target_date < CURRENT_DATE + INTERVAL '14 days'
+         ORDER BY m.target_date ASC
+         LIMIT 10",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    // ── Top contributors (by completed issues in period) ──
+    let top_contributors: Vec<ContributorRow> = sqlx::query_as(
+        "SELECT i.assignee_id, COUNT(*)::bigint AS done_count
+         FROM issues i JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
+         AND i.status = 'done'
+         AND i.updated_at >= NOW() - ($4 || ' days')::interval
+         AND i.assignee_id IS NOT NULL
+         GROUP BY i.assignee_id
+         ORDER BY done_count DESC
+         LIMIT 5",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .bind(period_days.to_string())
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    // ── Activity sparkline (daily closed issues, 14 days) ──
+    let activity: Vec<ActivityPointRow> = sqlx::query_as(
+        "SELECT DATE_TRUNC('day', i.updated_at)::date AS day, COUNT(*)::bigint AS closed
+         FROM issues i JOIN projects p ON p.id = i.project_id
+         WHERE p.org_id = ANY($1::text[])
+         AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
+         AND i.status = 'done'
+         AND i.updated_at >= NOW() - INTERVAL '14 days'
+         GROUP BY day
+         ORDER BY day ASC",
+    )
+    .bind(org_ids)
+    .bind(has_pf)
+    .bind(&pf)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    // ── Build response ──
+    let projects_json: Vec<Value> = projects
+        .iter()
+        .map(|r| {
+            let bug_ratio = if r.total > 0 {
+                (r.bugs as f64 / r.total as f64 * 100.0).round() / 100.0
+            } else {
+                0.0
+            };
+            let completion = if r.total > 0 {
+                (r.done as f64 / r.total as f64 * 100.0).round() / 100.0
+            } else {
+                0.0
+            };
+            json!({
+                "project_id": r.id.to_string(),
+                "name": r.name,
+                "prefix": r.prefix,
+                "total": r.total,
+                "open": r.open,
+                "in_progress": r.in_progress,
+                "done": r.done,
+                "velocity_14d": r.velocity_14d,
+                "bug_ratio": bug_ratio,
+                "completion": completion,
+                "stale_open": r.stale_open,
+            })
+        })
+        .collect();
+
+    let active_sprints_json: Vec<Value> = active_sprints
+        .iter()
+        .map(|s| {
+            let pct = if s.planned > 0 {
+                (s.completed as f64 / s.planned as f64 * 100.0).round() as i64
+            } else {
+                0
+            };
+            json!({
+                "sprint_id": s.id.to_string(),
+                "name": s.name,
+                "project_prefix": s.project_prefix,
+                "project_name": s.project_name,
+                "start_date": s.start_date,
+                "end_date": s.end_date,
+                "planned": s.planned,
+                "completed": s.completed,
+                "pct": pct,
+            })
+        })
+        .collect();
+
+    let upcoming_milestones_json: Vec<Value> = upcoming_milestones
+        .iter()
+        .map(|m| {
+            let days_until = m
+                .target_date
+                .map(|d| (d - chrono::Utc::now().date_naive()).num_days())
+                .unwrap_or(0);
+            json!({
+                "milestone_id": m.id.to_string(),
+                "name": m.name,
+                "project_prefix": m.project_prefix,
+                "project_name": m.project_name,
+                "target_date": m.target_date,
+                "days_until": days_until,
+            })
+        })
+        .collect();
+
+    let top_contributors_json: Vec<Value> = top_contributors
+        .iter()
+        .map(|c| json!({ "assignee_id": c.assignee_id, "done_count": c.done_count }))
+        .collect();
+
+    let activity_json: Vec<Value> = activity
+        .iter()
+        .map(|p| json!({ "day": p.day, "closed": p.closed }))
+        .collect();
+
+    let n_projects = projects_json.len();
+    let n_sprints = active_sprints_json.len();
+    let n_milestones = upcoming_milestones_json.len();
+
+    let for_model = format!(
+        "Org overview ({} projects). Open: {}. In progress: {}. Closed last {}d: {}. SLA breached: {}. Action: blocked={}, triage={}, stale={}, overdue_milestones={}. Active sprints: {}. Upcoming milestones (14d): {}. Top contributors: {}.",
+        n_projects,
+        open,
+        in_progress,
+        period_days,
+        closed_period,
+        sla_breached,
+        blocked,
+        triage_backlog,
+        stale,
+        overdue_milestones,
+        n_sprints,
+        n_milestones,
+        top_contributors_json.len(),
+    );
+
+    Ok(ToolResult {
+        data: json!({
+            "hero": {
+                "open": open,
+                "in_progress": in_progress,
+                "closed_period": closed_period,
+                "sla_breached": sla_breached,
+                "period_days": period_days,
+            },
+            "action_items": {
+                "blocked": blocked,
+                "triage_backlog": triage_backlog,
+                "stale": stale,
+                "overdue_milestones": overdue_milestones,
+            },
+            "active_sprints": active_sprints_json,
+            "upcoming_milestones": upcoming_milestones_json,
+            "projects": projects_json,
+            "top_contributors": top_contributors_json,
+            "activity_sparkline": activity_json,
+        }),
+        for_model,
+        component_hint: Some("OrgOverviewCard".to_string()),
+        summary: format!(
+            "Org overview: {} projects, {} open, {} in progress",
+            n_projects, open, in_progress
+        ),
+    })
+}
+
 pub async fn execute_tool(
     pool: &PgPool,
     org_ids: &[String],
@@ -1772,6 +2218,7 @@ pub async fn execute_tool(
         "find_similar_issues" => exec_find_similar_issues(pool, org_ids, &args).await,
         "workload_by_assignee" => exec_workload_by_assignee(pool, org_ids, &args).await,
         "compare_projects" => exec_compare_projects(pool, org_ids, &args).await,
+        "org_overview" => exec_org_overview(pool, org_ids, &args).await,
         unknown => Err(format!("Unknown tool: {}", unknown)),
     }
 }

@@ -26,6 +26,7 @@ const PRDDocument = lazy(() => import('./tool-components/PRDDocument'));
 const SimilarIssuesList = lazy(() => import('./tool-components/SimilarIssuesList'));
 const WorkloadDistribution = lazy(() => import('./tool-components/WorkloadDistribution'));
 const ProjectComparison = lazy(() => import('./tool-components/ProjectComparison'));
+const OrgOverviewCard = lazy(() => import('./tool-components/OrgOverviewCard'));
 
 type AnyToolPart = ToolUIPart | DynamicToolUIPart;
 
@@ -110,6 +111,8 @@ function renderContent(
         return <Suspense fallback={<Skeleton />}><WorkloadDistribution data={data} /></Suspense>;
       case 'compare_projects':
         return <Suspense fallback={<Skeleton />}><ProjectComparison data={data} /></Suspense>;
+      case 'org_overview':
+        return <Suspense fallback={<Skeleton />}><OrgOverviewCard data={data} /></Suspense>;
     }
 
     const summary = typeof output?.summary === 'string' ? output.summary : undefined;
