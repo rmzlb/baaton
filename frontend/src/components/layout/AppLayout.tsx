@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 
 export function AppLayout() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
+  const aiPanelOpen = useUIStore((s) => s.aiPanelOpen);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
 
   useEffect(() => {
@@ -53,15 +54,17 @@ export function AppLayout() {
       <Sidebar />
 
       {/*
-        Main content — left margin matches sidebar width so it doesn't slide under it.
-        The AI panel is always a floating overlay (fixed right) so it never
-        affects the main width. The user can keep interacting with the
-        visible left portion of the page while chatting (parallel actions).
+        Main content — left margin matches the docked left sidebar width
+        so it doesn't slide under it. When the AI panel is open at lg+,
+        we add a matching right margin so the panel PUSHES the page (mirror
+        of the left sidebar pattern) instead of covering it. Below lg the
+        panel is a full-screen overlay so no right margin is needed.
       */}
       <div
         className={cn(
           'flex flex-1 flex-col overflow-hidden transition-all duration-200 min-w-0',
           collapsed ? 'md:ml-14' : 'md:ml-56',
+          aiPanelOpen && 'lg:mr-[420px]',
           'ml-0',
         )}
       >

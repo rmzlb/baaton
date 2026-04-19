@@ -575,27 +575,27 @@ export function AIAssistant() {
 
   return (
     <>
-      {/* Backdrop only on small viewports (< md = 768px) where the panel is
-          a full-width overlay. From md+ the panel is a 420px floating column
-          and the user MUST be able to click through to the visible portion
-          of the page (parallel actions). The backdrop also intercepts clicks
-          to close — keeping it on md+ would defeat the whole purpose. */}
+      {/* Backdrop only on < lg viewports (where the panel is a full overlay).
+          From lg+ the panel docks on the right and pushes the page via a
+          right margin on AppLayout — so the page stays fully accessible to
+          the left and the panel behaves like the left sidebar (mirror). */}
       <button
         type="button"
         aria-label={t('ai.closeAssistant') || 'Close AI panel'}
         onClick={() => setAiPanelOpen(false)}
-        className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm md:hidden"
+        className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
       />
 
       <aside
         role="complementary"
         aria-label={t('ai.title') || 'AI assistant'}
-        // Floating right sidebar at every breakpoint — never displaces page
-        // content so the user can keep clicking the visible portion of the
-        // app while chatting (Linear/Cursor/Slack thread panel pattern).
-        // Mobile (< sm): full-screen overlay with backdrop above.
-        // sm+: 420px floating column with shadow + slide-in animation.
-        className="animate-slide-in-right flex shrink-0 w-full sm:w-[420px] sm:min-w-[420px] sm:max-w-[90vw] flex-col border-l border-border bg-bg h-dvh [@supports_not(height:100dvh)]:h-screen fixed right-0 top-0 bottom-0 z-40 shadow-2xl will-change-transform"
+        // Right sidebar — mirrors the left sidebar pattern.
+        // Mobile (< lg):  full-screen overlay with backdrop above (slides in over content).
+        // lg+:            420px column docked on the right; AppLayout adds
+        //                 `lg:mr-[420px]` to the main wrapper so the page is
+        //                 PUSHED (not covered). The user can keep working on
+        //                 the visible left portion while chatting.
+        className="animate-slide-in-right flex shrink-0 w-full sm:w-[420px] sm:min-w-[420px] sm:max-w-[90vw] flex-col border-l border-border bg-bg h-dvh [@supports_not(height:100dvh)]:h-screen fixed right-0 top-0 bottom-0 z-40 shadow-2xl lg:shadow-none will-change-transform"
       >
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-3 sm:px-4 py-2 border-b border-border shrink-0 min-h-[48px]">
