@@ -12,7 +12,6 @@ import { cn } from '@/lib/utils';
 
 export function AppLayout() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
-  const aiPanelOpen = useUIStore((s) => s.aiPanelOpen);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
 
   useEffect(() => {
@@ -55,14 +54,14 @@ export function AppLayout() {
 
       {/*
         Main content — left margin matches sidebar width so it doesn't slide under it.
-        On lg+ the AI panel docks (static), so no width compensation is needed here.
-        On < lg the AI panel is an overlay (with backdrop) — main stays full width.
+        The AI panel is always a floating overlay (fixed right) so it never
+        affects the main width. The user can keep interacting with the
+        visible left portion of the page while chatting (parallel actions).
       */}
       <div
         className={cn(
           'flex flex-1 flex-col overflow-hidden transition-all duration-200 min-w-0',
           collapsed ? 'md:ml-14' : 'md:ml-56',
-          aiPanelOpen && 'lg:ml-14',
           'ml-0',
         )}
       >

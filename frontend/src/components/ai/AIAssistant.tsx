@@ -586,9 +586,12 @@ export function AIAssistant() {
       <aside
         role="complementary"
         aria-label={t('ai.title') || 'AI assistant'}
-        // Mobile: full screen overlay (no min-width fight). sm+: 420px sidebar.
-        // lg+: docks into layout flow (static).
-        className="flex shrink-0 w-full sm:w-[420px] sm:min-w-[420px] sm:max-w-[90vw] flex-col border-l border-border bg-bg h-dvh [@supports_not(height:100dvh)]:h-screen fixed right-0 top-0 bottom-0 z-40 lg:static lg:z-auto shadow-2xl lg:shadow-none"
+        // Floating right sidebar at every breakpoint — never displaces page
+        // content so the user can keep clicking the visible portion of the
+        // app while chatting (Linear/Cursor/Slack thread panel pattern).
+        // Mobile (< sm): full-screen overlay with backdrop above.
+        // sm+: 420px floating column with shadow + slide-in animation.
+        className="animate-slide-in-right flex shrink-0 w-full sm:w-[420px] sm:min-w-[420px] sm:max-w-[90vw] flex-col border-l border-border bg-bg h-dvh [@supports_not(height:100dvh)]:h-screen fixed right-0 top-0 bottom-0 z-40 shadow-2xl will-change-transform"
       >
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-3 sm:px-4 py-2 border-b border-border shrink-0 min-h-[48px]">
