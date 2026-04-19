@@ -802,6 +802,23 @@ async fn exec_get_project_metrics(pool: &PgPool, org_ids: &[String], args: &Valu
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
 
+    // Project context (header) — name + prefix when scoped, else "all projects" label.
+    let (project_name, project_prefix): (Option<String>, Option<String>) = if let Some(pid) = project_id {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT name, prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
+        )
+        .bind(pid)
+        .bind(org_ids)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|(n, p)| (Some(n), Some(p)))
+        .unwrap_or((None, None))
+    } else {
+        (None, None)
+    };
+
     let total: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2)"
     ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
@@ -833,8 +850,16 @@ async fn exec_get_project_metrics(pool: &PgPool, org_ids: &[String], args: &Valu
     let bug_ratio = if total > 0 { bug_count as f64 / total as f64 } else { 0.0 };
     let avg_ct_str = avg_cycle_time.map(|h| format!("{:.1}", h)).unwrap_or_else(|| "N/A".to_string());
 
+    let scope_label = match (&project_name, &project_prefix) {
+        (Some(n), Some(p)) => format!("[{}] {}", p, n),
+        _ => "Tous projets".to_string(),
+    };
+
     Ok(ToolResult {
         data: json!({
+            "project_name": project_name,
+            "project_prefix": project_prefix,
+            "scope_label": scope_label,
             "total": total,
             "open": open,
             "in_progress": in_progress,
@@ -844,11 +869,11 @@ async fn exec_get_project_metrics(pool: &PgPool, org_ids: &[String], args: &Valu
             "avg_cycle_time_hours": avg_cycle_time.map(|h| (h * 10.0).round() / 10.0),
         }),
         for_model: format!(
-            "\u{1f4ca} Project metrics: {} total ({} open, {} in_progress, {} done). Velocity: {} done/14d. Bug ratio: {:.0}%. Avg cycle time: {}h.",
-            total, open, in_progress, done, velocity, bug_ratio * 100.0, avg_ct_str,
+            "\u{1f4ca} {} \u{2014} {} total ({} open, {} in_progress, {} done). Velocity: {} done/14d. Bug ratio: {:.0}%. Avg cycle time: {}h.",
+            scope_label, total, open, in_progress, done, velocity, bug_ratio * 100.0, avg_ct_str,
         ),
         component_hint: Some("MetricsCard".to_string()),
-        summary: "Fetched project metrics".to_string(),
+        summary: format!("Fetched metrics: {}", scope_label),
     })
 }
 
@@ -856,6 +881,27 @@ async fn exec_analyze_sprint(pool: &PgPool, org_ids: &[String], args: &Value) ->
     let project_id: Option<Uuid> = args.get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
+
+    // Project header (same shape as get_project_metrics for visual consistency)
+    let (project_name, project_prefix): (Option<String>, Option<String>) = if let Some(pid) = project_id {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT name, prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
+        )
+        .bind(pid)
+        .bind(org_ids)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|(n, p)| (Some(n), Some(p)))
+        .unwrap_or((None, None))
+    } else {
+        (None, None)
+    };
+    let scope_label = match (&project_name, &project_prefix) {
+        (Some(n), Some(p)) => format!("[{}] {}", p, n),
+        _ => "Tous projets".to_string(),
+    };
 
     let sprint = sqlx::query_as::<_, SprintSummaryRow>(
         "SELECT s.id, s.name FROM sprints s JOIN projects p ON p.id = s.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR s.project_id = $2) AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1"
@@ -869,12 +915,16 @@ async fn exec_analyze_sprint(pool: &PgPool, org_ids: &[String], args: &Value) ->
     let Some(sprint) = sprint else {
         return Ok(ToolResult {
             data: json!({
+                "project_name": project_name,
+                "project_prefix": project_prefix,
+                "scope_label": scope_label,
+                "no_active_sprint": true,
                 "sprint_name": null, "planned": 0, "completed": 0,
                 "pct": 0, "carried_over": 0, "blocked": 0, "velocity_trend": "N/A"
             }),
-            for_model: "No active sprint found.".to_string(),
+            for_model: format!("{} \u{2014} no active sprint.", scope_label),
             component_hint: Some("SprintAnalysis".to_string()),
-            summary: "No active sprint".to_string(),
+            summary: format!("No active sprint ({})", scope_label),
         });
     };
 
@@ -899,6 +949,10 @@ async fn exec_analyze_sprint(pool: &PgPool, org_ids: &[String], args: &Value) ->
 
     Ok(ToolResult {
         data: json!({
+            "project_name": project_name,
+            "project_prefix": project_prefix,
+            "scope_label": scope_label,
+            "no_active_sprint": false,
             "sprint_name": sprint.name,
             "planned": planned,
             "completed": completed,
@@ -908,11 +962,11 @@ async fn exec_analyze_sprint(pool: &PgPool, org_ids: &[String], args: &Value) ->
             "velocity_trend": velocity_trend,
         }),
         for_model: format!(
-            "Sprint '{}': {}/{} done ({}%). {} carried over, {} blocked. Trend: {}.",
-            sprint.name, completed, planned, pct, carried_over, blocked, velocity_trend
+            "{} \u{2014} Sprint '{}': {}/{} done ({}%). {} carried over, {} blocked. Trend: {}.",
+            scope_label, sprint.name, completed, planned, pct, carried_over, blocked, velocity_trend
         ),
         component_hint: Some("SprintAnalysis".to_string()),
-        summary: format!("Analyzed sprint '{}'", sprint.name),
+        summary: format!("Analyzed sprint '{}' ({})", sprint.name, scope_label),
     })
 }
 

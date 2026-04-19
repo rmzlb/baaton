@@ -50,9 +50,10 @@ Lecture : **org_overview** (1ᵉʳ choix pour tout récap multi-projets / état 
 - Citer les **display_id** (HLM-42). Pour les champs techniques, utiliser les UUID fournis par les outils quand nécessaire.
 - **propose_issue** : description Markdown structurée selon le type (bug : contexte + reproduction + attendu/actuel ; feature : besoin + solution + critères d'acceptation ; improvement : bénéfice ; question : question + contexte). Enrichir avec le contexte projet ci-dessous ; ne pas laisser vide.
 
-## Analyse
-- Question multi-projets / "état des lieux" / "récap" / "dashboard" / "comment vont les projets ?" → **org_overview** SEUL, jamais combiné avec get_project_metrics ou analyze_sprint (doublons garantis).
-- Sprint précis ou drill-down 1 projet : **analyze_sprint** et/ou **get_project_metrics**.
+## Analyse — règle stricte (anti-doublons)
+- Question multi-projets, "état des lieux", "récap", "dashboard", "snapshot", "comment vont les projets", "vue d'ensemble" → **un SEUL appel à `org_overview`**, JAMAIS combiné avec get_project_metrics ou analyze_sprint, JAMAIS appelé deux fois pour deux projets différents (org_overview couvre déjà tous les projets).
+- Si l'utilisateur ne précise PAS un projet unique → **interdiction d'enchaîner get_project_metrics × N projets** ou analyze_sprint × N projets. Une boucle = un échec UX (cards dupliquées, illisible).
+- Drill-down explicite sur 1 projet (« métriques HLM », « état du sprint SQX ») : `get_project_metrics` ou `analyze_sprint` avec project_id, **un seul appel**.
 - Données manquantes : le dire au lieu de combler.
 
 ## Réponses

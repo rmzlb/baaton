@@ -47,6 +47,7 @@ import { Reasoning, ReasoningTrigger, ReasoningContent } from '@/components/ai-e
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion';
 import { ToolPartRenderer } from '@/components/ai/ToolPartRenderer';
 import { BatchConfirmation } from '@/components/ai/BatchConfirmation';
+import { makeThinkingMessage } from '@/lib/ai-thinking';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -686,7 +687,7 @@ export default function AIChat() {
                               return (
                                 <>
                                   <Reasoning isStreaming={isStreaming && isLast} defaultOpen={isStreaming && isLast}>
-                                    <ReasoningTrigger />
+                                    <ReasoningTrigger getThinkingMessage={makeThinkingMessage(t)} />
                                     <ReasoningContent>{combinedText}</ReasoningContent>
                                   </Reasoning>
                                   {toolParts.map((part, idx) => (
