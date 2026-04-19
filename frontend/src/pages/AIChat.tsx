@@ -281,7 +281,7 @@ function ChatEmptyState({
     { id: 'triage', icon: Inbox, title: "Trier l'inbox", subtitle: 'Labels, priorité, assignés automatiquement', prompt: t('ai.suggestionTriagePrompt') },
     { id: 'create', icon: PlusCircle, title: 'Créer une issue', subtitle: 'Avec description structurée par template', prompt: t('ai.suggestionCreatePrompt') },
     { id: 'sprint', icon: TrendingUp, title: 'Statut sprint', subtitle: 'Vélocité, blockers, progression', prompt: t('ai.suggestionSprintPrompt') },
-    { id: 'recap', icon: CalendarDays, title: 'Récap semaine', subtitle: 'Ce qui est fait, en cours, bloqué', prompt: t('ai.suggestionRecapPrompt') },
+    { id: 'recap', icon: CalendarDays, title: 'Activité semaine', subtitle: 'Tickets créés (par qui) · changements de statut', prompt: t('ai.suggestionRecapPrompt') },
     { id: 'prd', icon: FileText, title: 'Générer un PRD', subtitle: 'User stories + critères d’acceptation', prompt: "Aide-moi à rédiger un PRD complet pour une nouvelle fonctionnalité. Demande-moi les détails." },
   ];
 

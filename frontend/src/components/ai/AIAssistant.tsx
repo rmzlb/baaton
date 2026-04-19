@@ -293,8 +293,8 @@ function EmptyState({ skillCount, projectCount, canSend, onSend }: EmptyStatePro
     {
       id: 'recap',
       icon: CalendarDays,
-      title: t('ai.suggestionRecap').replace(/^[\p{Emoji}\s]+/u, '') || 'Récap semaine',
-      subtitle: 'Fait, en cours, bloqué',
+      title: t('ai.suggestionRecap').replace(/^[\p{Emoji}\s]+/u, '') || 'Activité semaine',
+      subtitle: 'Tickets créés · changements de statut',
       prompt: t('ai.suggestionRecapPrompt'),
     },
     {

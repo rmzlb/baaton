@@ -349,7 +349,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 13. weekly_recap ─────────────────────────────────────────────
         tool(
             "weekly_recap",
-            "Generate an activity recap for the last N days: count of completed issues, newly created issues, stale/blocked high-priority issues, and the top contributor by activity volume. Ideal for standups, end-of-week reviews, or manager summaries.\n\nUse when the user asks 'weekly recap', 'what happened this week?', 'standup summary', 'give me an update'.\n\nNot for: Detailed sprint analysis with velocity (use analyze_sprint). Aggregate project health metrics (use get_project_metrics). Listing specific issues (use search_issues).\n\nReturns: { completed, new_created, blockers, top_contributor, period }.",
+            "**Use this** when the user wants the *activity log* for the last N days: WHO created which tickets, WHO moved which tickets to which status, and what landed. Returns the actual lists (display_id, title, author, project, timestamp), NOT just counters.\n\nUse when the user asks: 'récap semaine', 'qui a fait quoi', 'tickets créés cette semaine', 'changements de statut', 'activité de la semaine', 'standup recap', 'who created/closed what', 'show me this week's activity'.\n\nNOT for: aggregated multi-project KPIs (use org_overview), single sprint velocity (use analyze_sprint), per-project health metrics (use get_project_metrics).\n\nReturns: { period_days, completed_count, new_created_count, status_changes_count, blocker_count, top_contributor, created_issues:[{display_id,title,author,project_prefix,project_name,priority,created_at}], status_changes:[{display_id,title,project_prefix,from,to,by,at}], by_author:[{author,created,closed,status_changes}], completed_issues:[...] }.",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -637,7 +637,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         // ── 26. org_overview ─────────────────────────────────────────────
         tool(
             "org_overview",
-            "**Use this FIRST** when the user asks for a multi-project status, état des lieux, dashboard, recap, snapshot, or 'how is everything going'. Returns ONE consolidated dashboard covering all the user's orgs and projects: hero KPIs, action-required items, active sprints, upcoming milestones, per-project rollup, and top contributors. Always prefer this single call over chaining get_project_metrics + analyze_sprint + weekly_recap, which produces duplicated cards.\n\nGood cases: 'État des lieux', 'Donne-moi un récap', 'Comment vont les projets ?', 'Dashboard de la semaine', 'Vue d'ensemble', 'Snapshot multi-projets', 'Quoi de neuf cross-project'.\n\nNot for: deep dive into ONE specific project (use get_project_metrics), single sprint analysis (use analyze_sprint), per-person retrospective (use weekly_recap), comparing 2-5 specific projects head-to-head (use compare_projects).\n\nReturns: { hero: {open, in_progress, closed_period, sla_breached}, action_items: {blocked, triage_backlog, stale, overdue_milestones}, active_sprints[], upcoming_milestones[], projects[], top_contributors[], activity_sparkline[] }.\n\nExamples:\n- « État des lieux » → {}\n- « Récap des 30 derniers jours » → {\"period_days\":30}\n- « Status sur HLM et SQX » → {\"project_ids\":[\"HLM\",\"SQX\"]}",
+            "**Use this FIRST** when the user asks for a multi-project HEALTH STATUS / dashboard / snapshot — i.e. they want aggregated KPIs (open, in-progress, SLA, action-required) across many projects, NOT a list of who did what. Returns ONE consolidated card with hero KPIs, action-required items, active sprints, upcoming milestones, per-project rollup, and top contributors. Always prefer this single call over chaining get_project_metrics + analyze_sprint, which produces duplicated cards.\n\nGood cases: 'État des lieux', 'Comment vont les projets ?', 'Dashboard santé', 'Vue d'ensemble', 'Snapshot multi-projets'.\n\nNOT for: 'qui a créé/changé quoi cette semaine', 'liste les tickets créés', 'changements de statut', 'activité de la semaine' → use **weekly_recap** (returns the actual ticket list with authors). NOT for deep dive into ONE specific project (use get_project_metrics), single sprint analysis (use analyze_sprint), comparing 2-5 specific projects head-to-head (use compare_projects).\n\nReturns: { hero: {open, in_progress, closed_period, sla_breached}, action_items: {blocked, triage_backlog, stale, overdue_milestones}, active_sprints[], upcoming_milestones[], projects[], top_contributors[], activity_sparkline[] }.\n\nExamples:\n- « État des lieux » → {}\n- « Status sur HLM et SQX » → {\"project_ids\":[\"HLM\",\"SQX\"]}",
             json!({
                 "type": "OBJECT",
                 "properties": {
@@ -975,25 +975,216 @@ async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> R
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
     let days = args.get("days").and_then(|v| v.as_i64()).unwrap_or(7).clamp(1, 30);
-    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(20).min(50);
+    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(30).min(100);
     let since = chrono::Utc::now() - chrono::Duration::days(days);
 
-    let completed: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status = 'done' AND i.updated_at >= $3"
-    ).bind(org_ids).bind(project_id).bind(since).fetch_one(pool).await.unwrap_or(0);
+    // ── Hero counters (run in parallel) ────────────────────────────────────
+    let completed_fut = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id \
+         WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) \
+         AND i.status = 'done' AND i.updated_at >= $3",
+    ).bind(org_ids).bind(project_id).bind(since).fetch_one(pool);
 
-    let new_created: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.created_at >= $3"
-    ).bind(org_ids).bind(project_id).bind(since).fetch_one(pool).await.unwrap_or(0);
+    let new_created_fut = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id \
+         WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) \
+         AND i.created_at >= $3",
+    ).bind(org_ids).bind(project_id).bind(since).fetch_one(pool);
 
-    let blockers: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.priority IN ('urgent', 'high') AND i.status NOT IN ('done', 'cancelled') AND i.updated_at < NOW() - INTERVAL '2 days'"
-    ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
+    let status_changes_count_fut = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM activity_log \
+         WHERE org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR project_id = $2) \
+         AND action = 'status_changed' AND created_at >= $3",
+    ).bind(org_ids).bind(project_id).bind(since).fetch_one(pool);
 
-    let top_contributor: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT user_name FROM activity_log WHERE org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR project_id = $2) AND created_at >= $3 AND user_name IS NOT NULL GROUP BY user_name ORDER BY COUNT(*) DESC LIMIT 1"
-    ).bind(org_ids).bind(project_id).bind(since).fetch_optional(pool).await.unwrap_or(None);
+    let blockers_fut = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id \
+         WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) \
+         AND i.priority IN ('urgent', 'high') AND i.status NOT IN ('done', 'cancelled') \
+         AND i.updated_at < NOW() - INTERVAL '2 days'",
+    ).bind(org_ids).bind(project_id).fetch_one(pool);
 
+    let (completed_r, new_r, status_r, blockers_r) = tokio::join!(
+        completed_fut, new_created_fut, status_changes_count_fut, blockers_fut
+    );
+    let completed = completed_r.unwrap_or(0);
+    let new_created = new_r.unwrap_or(0);
+    let status_changes_count = status_r.unwrap_or(0);
+    let blockers = blockers_r.unwrap_or(0);
+
+    // ── 1. Tickets CREATED (with author + project + created_at) ────────────
+    #[derive(sqlx::FromRow)]
+    struct CreatedRow {
+        display_id: String,
+        title: String,
+        priority: Option<String>,
+        category: Option<Vec<String>>,
+        author: Option<String>,
+        project_prefix: String,
+        project_name: String,
+        created_at: DateTime<Utc>,
+    }
+    let created_rows = sqlx::query_as::<_, CreatedRow>(
+        r#"SELECT i.display_id,
+                  i.title,
+                  i.priority,
+                  i.category,
+                  COALESCE(NULLIF(i.created_by_name, ''),
+                           NULLIF(i.reporter_name,   ''),
+                           i.created_by_id,
+                           '—') AS author,
+                  p.prefix AS project_prefix,
+                  p.name   AS project_name,
+                  i.created_at
+           FROM issues i
+           JOIN projects p ON p.id = i.project_id
+           WHERE p.org_id = ANY($1::text[])
+             AND ($2::uuid IS NULL OR i.project_id = $2)
+             AND i.created_at >= $3
+           ORDER BY i.created_at DESC
+           LIMIT $4"#,
+    )
+    .bind(org_ids).bind(project_id).bind(since).bind(limit)
+    .fetch_all(pool).await.unwrap_or_default();
+
+    let created_issues: Vec<Value> = created_rows
+        .iter()
+        .map(|r| {
+            json!({
+                "display_id":   r.display_id,
+                "title":        r.title,
+                "priority":     r.priority,
+                "category":     r.category,
+                "author":       r.author,
+                "project_prefix": r.project_prefix,
+                "project_name": r.project_name,
+                "created_at":   r.created_at.to_rfc3339(),
+            })
+        })
+        .collect();
+
+    // ── 2. STATUS CHANGES (who moved what to where) ────────────────────────
+    #[derive(sqlx::FromRow)]
+    struct StatusChangeRow {
+        issue_display_id: Option<String>,
+        issue_title: Option<String>,
+        project_prefix: Option<String>,
+        old_value: Option<String>,
+        new_value: Option<String>,
+        user_name: Option<String>,
+        user_id: String,
+        created_at: DateTime<Utc>,
+    }
+    let status_rows = sqlx::query_as::<_, StatusChangeRow>(
+        r#"SELECT i.display_id   AS issue_display_id,
+                  i.title        AS issue_title,
+                  p.prefix       AS project_prefix,
+                  a.old_value,
+                  a.new_value,
+                  a.user_name,
+                  a.user_id,
+                  a.created_at
+           FROM activity_log a
+           LEFT JOIN issues   i ON i.id = a.issue_id
+           LEFT JOIN projects p ON p.id = a.project_id
+           WHERE a.org_id = ANY($1::text[])
+             AND ($2::uuid IS NULL OR a.project_id = $2)
+             AND a.action = 'status_changed'
+             AND a.created_at >= $3
+           ORDER BY a.created_at DESC
+           LIMIT $4"#,
+    )
+    .bind(org_ids).bind(project_id).bind(since).bind(limit)
+    .fetch_all(pool).await.unwrap_or_default();
+
+    let status_changes: Vec<Value> = status_rows
+        .iter()
+        .map(|r| {
+            json!({
+                "display_id":     r.issue_display_id,
+                "title":          r.issue_title,
+                "project_prefix": r.project_prefix,
+                "from":           r.old_value,
+                "to":             r.new_value,
+                "by":             r.user_name.clone().unwrap_or_else(|| r.user_id.clone()),
+                "at":             r.created_at.to_rfc3339(),
+            })
+        })
+        .collect();
+
+    // ── 3. By-author rollup (created + closed + status changes per person) ─
+    #[derive(sqlx::FromRow)]
+    struct AuthorRow {
+        author: String,
+        created_count: i64,
+        closed_count: i64,
+        status_changes: i64,
+    }
+    let author_rows = sqlx::query_as::<_, AuthorRow>(
+        r#"WITH created AS (
+               SELECT COALESCE(NULLIF(i.created_by_name,''),
+                               NULLIF(i.reporter_name,''),
+                               i.created_by_id,
+                               '—') AS author,
+                      COUNT(*)::bigint AS n
+                 FROM issues i
+                 JOIN projects p ON p.id = i.project_id
+                 WHERE p.org_id = ANY($1::text[])
+                   AND ($2::uuid IS NULL OR i.project_id = $2)
+                   AND i.created_at >= $3
+                 GROUP BY 1
+           ),
+           closed AS (
+               SELECT COALESCE(a.user_name, a.user_id) AS author,
+                      COUNT(*)::bigint AS n
+                 FROM activity_log a
+                 WHERE a.org_id = ANY($1::text[])
+                   AND ($2::uuid IS NULL OR a.project_id = $2)
+                   AND a.action = 'status_changed'
+                   AND a.new_value = 'done'
+                   AND a.created_at >= $3
+                 GROUP BY 1
+           ),
+           changes AS (
+               SELECT COALESCE(a.user_name, a.user_id) AS author,
+                      COUNT(*)::bigint AS n
+                 FROM activity_log a
+                 WHERE a.org_id = ANY($1::text[])
+                   AND ($2::uuid IS NULL OR a.project_id = $2)
+                   AND a.action = 'status_changed'
+                   AND a.created_at >= $3
+                 GROUP BY 1
+           )
+           SELECT COALESCE(c.author, cl.author, ch.author) AS author,
+                  COALESCE(c.n,  0) AS created_count,
+                  COALESCE(cl.n, 0) AS closed_count,
+                  COALESCE(ch.n, 0) AS status_changes
+             FROM created c
+             FULL OUTER JOIN closed  cl USING (author)
+             FULL OUTER JOIN changes ch USING (author)
+            WHERE COALESCE(c.author, cl.author, ch.author) IS NOT NULL
+              AND COALESCE(c.author, cl.author, ch.author) <> '—'
+            ORDER BY (COALESCE(c.n,0)*2 + COALESCE(cl.n,0)*3 + COALESCE(ch.n,0)) DESC
+            LIMIT 8"#,
+    )
+    .bind(org_ids).bind(project_id).bind(since)
+    .fetch_all(pool).await.unwrap_or_default();
+
+    let by_author: Vec<Value> = author_rows
+        .iter()
+        .map(|r| {
+            json!({
+                "author":        r.author,
+                "created":       r.created_count,
+                "closed":        r.closed_count,
+                "status_changes": r.status_changes,
+            })
+        })
+        .collect();
+
+    let top_contributor: Option<String> = author_rows.first().map(|r| r.author.clone());
+
+    // ── 4. Closed issues (kept for "what landed" section) ──────────────────
     let completed_issues = sqlx::query_as::<_, SearchIssueRow>(
         r#"SELECT i.id, i.display_id, i.title, i.status, i.priority, i.category,
                   p.name AS project_name, i.updated_at
@@ -1004,41 +1195,40 @@ async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> R
     ).bind(org_ids).bind(project_id).bind(since).bind(limit)
     .fetch_all(pool).await.unwrap_or_default();
 
-    let blocked_issues = sqlx::query_as::<_, SearchIssueRow>(
-        r#"SELECT i.id, i.display_id, i.title, i.status, i.priority, i.category,
-                  p.name AS project_name, i.updated_at
-           FROM issues i JOIN projects p ON p.id = i.project_id
-           WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2)
-             AND i.priority IN ('urgent', 'high') AND i.status NOT IN ('done', 'cancelled')
-             AND i.updated_at < NOW() - INTERVAL '2 days'
-           ORDER BY i.updated_at ASC LIMIT $3"#,
-    ).bind(org_ids).bind(project_id).bind(limit)
-    .fetch_all(pool).await.unwrap_or_default();
-
-    let completed_json: Vec<Value> = completed_issues.into_iter().map(|r| json!({
-        "display_id": r.display_id, "title": r.title, "status": r.status,
-    })).collect();
-    let blocked_json: Vec<Value> = blocked_issues.into_iter().map(|r| json!({
-        "display_id": r.display_id, "title": r.title, "priority": r.priority,
+    let completed_json: Vec<Value> = completed_issues.iter().map(|r| json!({
+        "display_id":   r.display_id,
+        "title":        r.title,
+        "status":       r.status,
+        "priority":     r.priority,
+        "project_name": r.project_name,
     })).collect();
 
     Ok(ToolResult {
         data: json!({
-            "completed_count": completed,
-            "new_created_count": new_created,
-            "blocker_count": blockers,
-            "top_contributor": top_contributor,
-            "period": format!("Last {} days", days),
-            "completed_issues": completed_json,
-            "blocked_issues": blocked_json,
+            "period_days":          days,
+            "since":                since.to_rfc3339(),
+            "scope_label":          if project_id.is_some() { "single_project" } else { "all_projects" },
+            "completed_count":      completed,
+            "new_created_count":    new_created,
+            "status_changes_count": status_changes_count,
+            "blocker_count":        blockers,
+            "top_contributor":      top_contributor,
+            "created_issues":       created_issues,
+            "status_changes":       status_changes,
+            "by_author":            by_author,
+            "completed_issues":     completed_json,
         }),
         for_model: format!(
-            "\u{1f4c5} Weekly recap ({} days): {} completed, {} new, {} blockers. Top contributor: {}.",
-            days, completed, new_created, blockers,
+            "📅 Recap {}d: {} created, {} status changes, {} closed, {} stale blockers. Top: {}.",
+            days,
+            new_created,
+            status_changes_count,
+            completed,
+            blockers,
             top_contributor.as_deref().unwrap_or("N/A"),
         ),
         component_hint: Some("WeeklyRecap".to_string()),
-        summary: format!("Weekly recap: {} done, {} new", completed, new_created),
+        summary: format!("Recap {}d: {} created · {} status changes · {} closed", days, new_created, status_changes_count, completed),
     })
 }
 
