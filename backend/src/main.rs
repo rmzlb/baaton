@@ -133,6 +133,7 @@ async fn main() -> anyhow::Result<()> {
         ),
         (51, include_str!("../migrations/051_api_key_org_scopes.sql")),
         (52, include_str!("../migrations/052_api_key_org_scope_mode.sql")),
+        (53, include_str!("../migrations/053_source_ai.sql")),
     ];
 
     for &(version, sql) in migrations {
