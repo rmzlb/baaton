@@ -181,6 +181,7 @@ pub fn build_stream(
     pool: PgPool,
     org_ids: Vec<String>,
     user_id: String,
+    user_display_name: Option<String>,
     project_ids: Vec<String>,
     mut contents: Vec<Value>,
     api_key: String,
@@ -213,7 +214,15 @@ pub fn build_stream(
         let mut total_tokens_out: i32 = 0;
         let mut total_tokens_cached: i32 = 0;
 
-        'agent_loop: for _step in 0..5usize {
+        'agent_loop: for step in 0..5usize {
+            tracing::info!(
+                target: "baaton.ai.agent",
+                user_id = %user_id,
+                org_id = ?org_ids.first(),
+                step = step,
+                contents_len = contents.len(),
+                "agent loop iteration"
+            );
             let request_body = json!({
                 "contents": contents,
                 "tools": [{ "functionDeclarations": function_declarations }],
@@ -419,12 +428,24 @@ pub fn build_stream(
 
                     if crate::routes::ai_tools::is_client_interactive(&tool_name)
                     {
+                        tracing::info!(
+                            target: "baaton.ai.agent",
+                            user_id = %user_id,
+                            tool = %tool_name,
+                            "client-interactive tool — breaking loop for user approval"
+                        );
                         hit_client_interactive = true;
                         break;
                     }
 
+                    tracing::info!(
+                        target: "baaton.ai.agent",
+                        user_id = %user_id,
+                        tool = %tool_name,
+                        "executing tool server-side"
+                    );
                     match crate::routes::ai_tools::execute_tool(
-                        &pool, &org_ids, &user_id, &tool_name, input,
+                        &pool, &org_ids, &user_id, user_display_name.as_deref(), &tool_name, input,
                     )
                     .await
                     {

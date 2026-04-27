@@ -643,6 +643,7 @@ pub async fn agent_chat(
                         &pool,
                         &org_ids_compat,
                         &user_id,
+                        None, // no display_name in deprecated endpoint
                         &tool_name,
                         tool_args,
                     ).await;

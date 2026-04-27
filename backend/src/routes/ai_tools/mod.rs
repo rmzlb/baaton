@@ -2387,6 +2387,7 @@ pub async fn execute_tool(
     pool: &PgPool,
     org_ids: &[String],
     user_id: &str,
+    user_display_name: Option<&str>,
     tool_name: &str,
     args: Value,
 ) -> Result<ToolResult, String> {
@@ -2402,7 +2403,7 @@ pub async fn execute_tool(
         "propose_update_issue" => exec_propose_update_issue(pool, org_ids, &args).await,
         "propose_bulk_update" => exec_propose_bulk_update(pool, org_ids, &args).await,
         "propose_comment" => exec_propose_comment(pool, org_ids, &args).await,
-        "create_issue" => create_issue_real(pool, org_ids, user_id, &args).await,
+        "create_issue" => create_issue_real(pool, org_ids, user_id, user_display_name, &args).await,
         "update_issue" => update_issue_real(pool, org_ids, user_id, &args).await,
         "bulk_update_issues" => bulk_update_issues_real(pool, org_ids, user_id, &args).await,
         "add_comment" => add_comment_real(pool, org_ids, user_id, &args).await,
@@ -2936,6 +2937,7 @@ async fn create_issue_real(
     pool: &PgPool,
     org_ids: &[String],
     user_id: &str,
+    user_display_name: Option<&str>,
     args: &Value,
 ) -> Result<ToolResult, String> {
     let project_id_str = args.get("project_id").and_then(|v| v.as_str())
@@ -3002,8 +3004,8 @@ async fn create_issue_real(
         sqlx::query_as(
             r#"INSERT INTO issues (
                 project_id, display_id, title, description, type, status,
-                priority, category, tags, position, source, created_by_id
-               ) VALUES ($1, $2, $3, $4, $5, 'backlog', $6, $7, $8, $9, 'ai', $10)
+                priority, category, tags, position, source, created_by_id, created_by_name
+               ) VALUES ($1, $2, $3, $4, $5, 'backlog', $6, $7, $8, $9, 'ai', $10, $11)
                RETURNING id, display_id, title, status, priority, type"#,
         )
         .bind(project_id)
@@ -3016,6 +3018,7 @@ async fn create_issue_real(
         .bind(&tags)
         .bind(position)
         .bind(user_id)
+        .bind(user_display_name)
         .fetch_one(pool)
         .await
         .map_err(|e| format!("Failed to create issue: {}", e))?;

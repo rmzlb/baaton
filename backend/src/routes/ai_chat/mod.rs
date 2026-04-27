@@ -107,6 +107,7 @@ pub async fn chat_handler(
         pool,
         org_ids,
         auth.user_id,
+        auth.display_name,
         body.project_ids,
         contents,
         api_key,
