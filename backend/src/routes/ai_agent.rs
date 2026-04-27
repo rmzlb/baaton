@@ -621,6 +621,22 @@ pub async fn agent_chat(
                         "args": tool_args
                     })));
 
+                    // Client-interactive tools (propose_*) are NOT executed
+                    // server-side. The frontend renders an approval form; the
+                    // user edits and confirms, then a follow-up turn runs the
+                    // actual mutation. Without this guard the backend would
+                    // feed a fake "result" back to Gemini, which interprets it
+                    // as approval and calls create_issue → duplicate loop.
+                    if crate::routes::ai_tools::is_client_interactive(&tool_name) {
+                        yield Ok(sse_event("tool_result", json!({
+                            "name": tool_name,
+                            "component": tool_name,
+                            "data": tool_args,
+                            "summary": "Awaiting user approval"
+                        })));
+                        break 'agent_loop;
+                    }
+
                     // Execute tool
                     let org_ids_compat = vec![org_id.clone()];
                     let exec_result = crate::routes::ai_tools::execute_tool(
