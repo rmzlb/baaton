@@ -243,19 +243,6 @@ function getLeftBorderClass(issue: Issue): string {
   if (sla.status === 'breached') return 'border-l-[3px] border-l-red-500';
   if (sla.status === 'at_risk') return 'border-l-[3px] border-l-amber-500';
 
-  // Blocked tag
-  if (issue.tags.some((t) => t.toLowerCase().includes('blocked'))) return 'border-l-[3px] border-l-orange-400';
-
-  // Stale: in_progress > 7d, in_review > 3d
-  if (issue.status_changed_at) {
-    const days = (Date.now() - new Date(issue.status_changed_at).getTime()) / (1000 * 60 * 60 * 24);
-    if (issue.status === 'in_progress' && days > 7) return 'border-l-[3px] border-l-gray-400';
-    if (issue.status === 'in_review' && days > 3) return 'border-l-[3px] border-l-gray-400';
-  }
-
-  // NEW (< 24h)
-  if (isNew(issue.created_at, issue.updated_at)) return 'border-l-[3px] border-l-emerald-400';
-
   return '';
 }
 
@@ -271,7 +258,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
       onClick={(e) => { e.stopPropagation(); onSelect(issue.id, e.shiftKey); }}
       className={cn(
         'absolute top-1.5 left-1.5 z-10 flex items-center justify-center w-4 h-4 rounded border cursor-pointer transition-all',
-        selected ? 'bg-accent border-accent text-black opacity-100' : 'border-gray-300 dark:border-border bg-white dark:bg-surface opacity-0 group-hover/card:opacity-100',
+        selected ? 'bg-accent border-accent text-black opacity-100' : 'border-[--color-foreground]/10 bg-[--color-card] opacity-0 group-hover/card:opacity-100',
       )}
     >
       {selected && <span className="text-[9px] font-bold">✓</span>}
@@ -298,7 +285,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
         style={provided.draggableProps.style}
         className={cn(
-          'group group/card relative cursor-pointer rounded-md border border-gray-200 dark:border-border bg-white dark:bg-surface px-2.5 py-1.5 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
+          'group group/card relative cursor-pointer rounded-md bg-[--color-card] ring-1 ring-[--color-foreground]/8 px-2.5 py-1.5 will-change-transform transition-all duration-150 hover:ring-[--color-foreground]/15 hover:-translate-y-px',
           isDone && 'opacity-60 hover:opacity-90',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
           selected && 'ring-2 ring-accent/40 border-accent/30',
@@ -349,7 +336,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
         style={provided.draggableProps.style}
         className={cn(
-          'group cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-4 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
+          'group cursor-pointer rounded-lg bg-[--color-card] ring-1 ring-[--color-foreground]/8 p-4 will-change-transform transition-all duration-150 hover:ring-[--color-foreground]/15 hover:shadow-sm hover:-translate-y-px',
           isDone && 'opacity-70 hover:opacity-100',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
           selected && 'ring-2 ring-accent/40 border-accent/30',
@@ -361,7 +348,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         <div className="flex justify-between items-center mb-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted whitespace-nowrap" />
-            {isNew(issue.created_at, issue.updated_at) && <span className="text-[9px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
+            {isNew(issue.created_at, issue.updated_at) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
             <StatusAge issue={issue} />
           </div>
           <div className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -425,10 +412,10 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
       role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
       style={provided.draggableProps.style}
       className={cn(
-        'group cursor-pointer rounded-lg border border-gray-200 dark:border-border bg-white dark:bg-surface p-3.5 will-change-transform transition-all duration-200 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-border',
+        'group cursor-pointer rounded-lg bg-[--color-card] p-3 will-change-transform transition-all duration-150 ring-1 ring-[--color-foreground]/8 hover:ring-[--color-foreground]/15 hover:shadow-sm hover:-translate-y-px',
         isDone && 'opacity-85 hover:opacity-100',
-        isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
-        selected && 'ring-2 ring-accent/40 border-accent/30',
+        isDragging && 'shadow-xl ring-2 ring-[--color-accent]/40 rotate-1 scale-[1.02]',
+        selected && 'ring-2 ring-[--color-accent]/40',
         leftBorder,
       )}
     >
@@ -443,7 +430,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
           ) : null}
           <CopyableId id={issue.display_id} className="text-[11px] text-gray-400 dark:text-muted whitespace-nowrap" />
           <TypeIcon type={issue.type} />
-          {isNew(issue.created_at, issue.updated_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase shrink-0">NEW</span>}
+          {isNew(issue.created_at, issue.updated_at) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
           <SlaBadge issue={issue} />
         </div>
         <div className="flex items-center gap-1.5 shrink-0">

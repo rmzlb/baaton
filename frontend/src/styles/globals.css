@@ -1,30 +1,41 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 @source "../node_modules/streamdown/dist/*.js";
 @plugin "@tailwindcss/typography";
 
-/* ─── shadcn/ui compat for AI Elements components ── */
-/* Maps shadcn CSS vars to Baaton's existing theme tokens */
+/* ─── Design System Tokens ─────────────────────────── */
+/* oklch-based semantic tokens — perceptually uniform, alpha-composable */
 @theme inline {
-  --color-background: var(--color-bg);
-  --color-foreground: var(--color-primary);
-  --color-card: var(--color-surface);
-  --color-card-foreground: var(--color-primary);
-  --color-popover: var(--color-surface);
-  --color-popover-foreground: var(--color-primary);
-  --color-primary-foreground: var(--color-bg);
-  /* Removed --color-secondary and --color-muted as they conflict with Baaton's text colors */
-  --color-secondary-foreground: var(--color-primary);
-  --color-muted-foreground: #666666;
-  /* Removed --color-accent as it conflicts with Baaton's amber brand color */
-  --color-accent-foreground: var(--color-primary);
-  --color-destructive: #ef4444;
-  --color-destructive-foreground: #fafafa;
-  --color-input: var(--color-border);
-  --color-ring: var(--color-accent);
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.625rem;
-  --radius-xl: 0.875rem;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  /* Sidebar tokens */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  /* Radius scale — all derived from one base */
+  --radius: 0.625rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
 }
 
 /* ─── Fonts & Brand ────────────────────────── */
@@ -39,34 +50,87 @@
   --color-beige-200: #E8E2D2;
   --color-beige-300: #DED8CC;
   --color-beige-900: #1A1917;
-
-  /* ── Semantic tokens (dark default) ── */
-  --color-bg: #0a0a0a;
-  --color-surface: #141414;
-  --color-surface-hover: #1f1f1f;
-  --color-border: #262626;
-  --color-primary: #fafafa;
-  --color-secondary: #a1a1aa;
-  --color-muted: #666666;
-  --color-accent: #f59e0b;
-  --color-accent-hover: #d97706;
 }
 
-/* ─── Light Theme Overrides ────────────────── */
+/* ─── Dark Theme (default) ─────────────────── */
+:root {
+  /* Core oklch palette */
+  --background: oklch(0.13 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.17 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.17 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.13 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.78 0.14 75);
+  /* Sidebar */
+  --sidebar: oklch(0.15 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.985 0 0);
+  --sidebar-primary-foreground: oklch(0.13 0 0);
+  --sidebar-accent: oklch(0.235 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+
+  /* Legacy compat tokens (used throughout existing components) */
+  --color-bg: oklch(0.13 0 0);
+  --color-surface: oklch(0.17 0 0);
+  --color-surface-hover: oklch(0.22 0 0);
+  --color-border: oklch(1 0 0 / 10%);
+  --color-primary: oklch(0.985 0 0);
+  --color-secondary: oklch(0.708 0 0);
+  --color-muted: oklch(0.556 0 0);
+  --color-accent: oklch(0.78 0.14 75);
+  --color-accent-hover: oklch(0.7 0.14 75);
+}
+
+/* ─── Light Theme ──────────────────────────── */
 html:not(.dark) {
-  --color-bg: #fafafa;
-  --color-surface: #ffffff;
-  --color-surface-hover: #f4f4f5;
-  --color-border: #e4e4e7;
-  --color-primary: #09090b;
-  --color-secondary: #52525b;
-  --color-muted: #a1a1aa;
-  --color-accent: #d97706;
-  --color-accent-hover: #b45309;
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary-foreground: oklch(0.145 0 0);
+  --muted-foreground: oklch(0.48 0 0);
+  --accent-foreground: oklch(0.145 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --input: oklch(0 0 0 / 8%);
+  --ring: oklch(0.7 0.14 75);
+  /* Sidebar light */
+  --sidebar: oklch(0.975 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.145 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.94 0 0);
+  --sidebar-accent-foreground: oklch(0.145 0 0);
+  --sidebar-border: oklch(0 0 0 / 8%);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* Legacy compat tokens */
+  --color-bg: oklch(0.985 0 0);
+  --color-surface: oklch(1 0 0);
+  --color-surface-hover: oklch(0.965 0 0);
+  --color-border: oklch(0 0 0 / 8%);
+  --color-primary: oklch(0.145 0 0);
+  --color-secondary: oklch(0.4 0 0);
+  --color-muted: oklch(0.708 0 0);
+  --color-accent: oklch(0.7 0.14 75);
+  --color-accent-hover: oklch(0.62 0.14 75);
 }
 
-html:not(.dark) ::-webkit-scrollbar-thumb { background: #c4c4c4; }
-html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+html:not(.dark) ::-webkit-scrollbar-thumb { background: oklch(0.78 0 0); }
+html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: oklch(0.65 0 0); }
 
 /* ─── Modern Browser Defaults (2026 baseline) ──
    Applied globally — improves text rendering and prevents iOS Safari from
@@ -124,6 +188,18 @@ html.app-shell-locked body {
   height: 100vh;
   height: 100dvh;
   position: relative;
+}
+
+/* ─── Board scroll fade edges ──────────────── */
+.kanban-scroll-container {
+  mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+}
+@media (max-width: 767px) {
+  .kanban-scroll-container {
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
 }
 
 /* ─── Custom Scrollbar ─────────────────────── */

@@ -541,7 +541,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         />
       ) : (
         <DragDropContext onDragEnd={handleDragEnd}>
-          <div className="flex flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth">
+          <div className="kanban-scroll-container flex flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth">
             {visibleStatuses.map((status) => (
               <Droppable key={status.key} droppableId={status.key}>
                 {(provided, snapshot) => (
