@@ -106,14 +106,14 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
         <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
           <Check size={14} className="text-emerald-500 shrink-0" />
           <span className="text-[12px] font-medium text-emerald-500">Approuvé</span>
-          <span className="text-[12px] text-[--color-muted] truncate">{output.finalValues?.title ?? title}</span>
+          <span className="text-[12px] text-muted truncate">{output.finalValues?.title ?? title}</span>
         </div>
       );
     }
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-[--color-border] bg-[--color-surface] px-3 py-2">
-        <X size={14} className="text-[--color-muted] shrink-0" />
-        <span className="text-[12px] text-[--color-muted]">Proposition annulée</span>
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2">
+        <X size={14} className="text-muted shrink-0" />
+        <span className="text-[12px] text-muted">Proposition annulée</span>
       </div>
     );
   }
@@ -167,13 +167,13 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
   const canApprove = !titleMissing && !projectMissing;
 
   return (
-    <div className="rounded-2xl border border-[--color-border] bg-[--color-surface] overflow-hidden relative">
+    <div className="rounded-2xl border border-border bg-surface overflow-hidden relative">
       {/* Left accent bar — Baaton kanban card style */}
       <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-500" />
 
       <div className="px-4 pt-3 pb-2 flex items-center gap-2">
         <Sparkles size={14} className="text-amber-500 shrink-0" />
-        <span className="text-[10px] font-semibold text-[--color-muted] uppercase tracking-wider">
+        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
           Nouvelle issue
         </span>
         <Badge variant="secondary" className="ml-auto h-5 font-mono text-[10px]">
@@ -183,7 +183,7 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
 
       <div className="px-4 pb-4 space-y-3">
         <div>
-          <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
+          <label className="block text-[10px] font-medium text-muted uppercase tracking-wide mb-1">
             Projet {projectMissing && <span className="text-red-500 normal-case">— requis</span>}
           </label>
           <Select value={projectId} onValueChange={setProjectId}>
@@ -201,13 +201,13 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
               {isMultiOrg ? (
                 projectsByOrg.map(([orgId, orgProjects]) => (
                   <SelectGroup key={orgId}>
-                    <SelectLabel className="text-[10px] font-medium text-[--color-muted] uppercase tracking-wide">
+                    <SelectLabel className="text-[10px] font-medium text-muted uppercase tracking-wide">
                       Org {shortOrg(orgId)}
                     </SelectLabel>
                     {orgProjects.map(p => (
                       <SelectItem key={p.id} value={p.id} className="text-[13px]">
                         <span className="font-medium">{p.name}</span>
-                        <span className="ml-2 font-mono text-[11px] text-[--color-muted]">{p.prefix}</span>
+                        <span className="ml-2 font-mono text-[11px] text-muted">{p.prefix}</span>
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -216,7 +216,7 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
                 projects.map(p => (
                   <SelectItem key={p.id} value={p.id} className="text-[13px]">
                     <span className="font-medium">{p.name}</span>
-                    <span className="ml-2 font-mono text-[11px] text-[--color-muted]">{p.prefix}</span>
+                    <span className="ml-2 font-mono text-[11px] text-muted">{p.prefix}</span>
                   </SelectItem>
                 ))
               )}
@@ -225,7 +225,7 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
         </div>
 
         <div>
-          <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
+          <label className="block text-[10px] font-medium text-muted uppercase tracking-wide mb-1">
             Titre {titleMissing && <span className="text-red-500 normal-case">— requis</span>}
           </label>
           <Input
@@ -241,7 +241,7 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
         </div>
 
         <div>
-          <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1">
+          <label className="block text-[10px] font-medium text-muted uppercase tracking-wide mb-1">
             Description
           </label>
           <Textarea
@@ -256,7 +256,7 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1.5">
+            <label className="block text-[10px] font-medium text-muted uppercase tracking-wide mb-1.5">
               Type
             </label>
             <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Type">
@@ -272,7 +272,7 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
                     'rounded-full px-3 py-1.5 sm:px-2.5 sm:py-1 text-[12px] sm:text-[11px] font-medium border capitalize transition-all min-h-[32px] inline-flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40',
                     type === t
                       ? TYPE_STYLE[t]
-                      : 'border-[--color-border] text-[--color-muted] hover:text-[--color-primary]',
+                      : 'border-border text-muted hover:text-primary',
                   )}
                 >
                   {t}
@@ -282,7 +282,7 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
           </div>
 
           <div>
-            <label className="block text-[10px] font-medium text-[--color-muted] uppercase tracking-wide mb-1.5">
+            <label className="block text-[10px] font-medium text-muted uppercase tracking-wide mb-1.5">
               Priorité
             </label>
             <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Priorité">
@@ -297,7 +297,7 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
                     'rounded-full px-3 py-1.5 sm:px-2.5 sm:py-1 text-[12px] sm:text-[11px] font-medium border capitalize transition-all min-h-[32px] inline-flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40',
                     priority === p
                       ? PRIORITY_STYLE[p]
-                      : 'border-[--color-border] text-[--color-muted] hover:text-[--color-primary]',
+                      : 'border-border text-muted hover:text-primary',
                   )}
                 >
                   {p}
@@ -324,8 +324,8 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
       </div>
 
       {!inBatch && (
-        <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-t border-[--color-border] bg-[--color-surface-hover]/30">
-          <span className="text-[11px] text-[--color-muted]">
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-t border-border bg-surface-hover/30">
+          <span className="text-[11px] text-muted">
             {!canApprove ? (
               <span className="text-red-500">Remplis les champs requis avant d'approuver</span>
             ) : (

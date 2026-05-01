@@ -17,7 +17,7 @@ interface IssueTableProps {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  backlog: 'text-[--color-muted]',
+  backlog: 'text-muted',
   todo: 'text-blue-400',
   in_progress: 'text-amber-400',
   in_review: 'text-purple-400',
@@ -48,20 +48,20 @@ export default function IssueTable({ data }: IssueTableProps) {
 
   if (issues.length === 0) {
     return (
-      <p className="text-xs text-[--color-muted] py-2">No issues found.</p>
+      <p className="text-xs text-muted py-2">No issues found.</p>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-md border border-[--color-border]">
+    <div className="overflow-x-auto rounded-md border border-border">
       <table className="w-full text-xs">
         <thead>
-          <tr className="border-b border-[--color-border] bg-[--color-surface-hover]">
-            <th className="px-3 py-2 text-left font-medium text-[--color-muted]">ID</th>
-            <th className="px-3 py-2 text-left font-medium text-[--color-muted]">Title</th>
-            <th className="px-3 py-2 text-left font-medium text-[--color-muted]">Status</th>
-            <th className="px-3 py-2 text-left font-medium text-[--color-muted]">Priority</th>
-            <th className="px-3 py-2 text-left font-medium text-[--color-muted]">Category</th>
+          <tr className="border-b border-border bg-surface-hover">
+            <th className="px-3 py-2 text-left font-medium text-muted">ID</th>
+            <th className="px-3 py-2 text-left font-medium text-muted">Title</th>
+            <th className="px-3 py-2 text-left font-medium text-muted">Status</th>
+            <th className="px-3 py-2 text-left font-medium text-muted">Priority</th>
+            <th className="px-3 py-2 text-left font-medium text-muted">Category</th>
           </tr>
         </thead>
         <tbody>
@@ -71,16 +71,16 @@ export default function IssueTable({ data }: IssueTableProps) {
             return (
               <tr
                 key={issue.display_id ?? i}
-                className="border-b border-[--color-border]/50 last:border-0 hover:bg-[--color-surface-hover]/50 transition-colors"
+                className="border-b border-border/50 last:border-0 hover:bg-surface-hover/50 transition-colors"
               >
-                <td className="px-3 py-2 font-mono text-[--color-muted] whitespace-nowrap">
+                <td className="px-3 py-2 font-mono text-muted whitespace-nowrap">
                   {issue.display_id ?? '—'}
                 </td>
-                <td className="px-3 py-2 text-[--color-primary] max-w-[200px] truncate">
+                <td className="px-3 py-2 text-primary max-w-[200px] truncate">
                   {issue.title}
                 </td>
                 <td className="px-3 py-2">
-                  <span className={cn('flex items-center gap-1', STATUS_COLOR[issue.status ?? ''] ?? 'text-[--color-muted]')}>
+                  <span className={cn('flex items-center gap-1', STATUS_COLOR[issue.status ?? ''] ?? 'text-muted')}>
                     <StatusIcon size={11} />
                     {issue.status?.replace('_', ' ') ?? '—'}
                   </span>
@@ -93,7 +93,7 @@ export default function IssueTable({ data }: IssueTableProps) {
                     </span>
                   ) : '—'}
                 </td>
-                <td className="px-3 py-2 text-[--color-secondary] capitalize">
+                <td className="px-3 py-2 text-secondary capitalize">
                   {issue.category ?? '—'}
                 </td>
               </tr>

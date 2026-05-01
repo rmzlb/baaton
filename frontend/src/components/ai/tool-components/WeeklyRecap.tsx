@@ -111,9 +111,9 @@ function priorityDot(p?: string | null): string {
     case 'medium':
       return 'bg-blue-400';
     case 'low':
-      return 'bg-[--color-muted]';
+      return 'bg-muted';
     default:
-      return 'bg-[--color-border]';
+      return 'bg-border';
   }
 }
 
@@ -132,9 +132,9 @@ function statusTone(s?: string | null): { dot: string; text: string } {
       return { dot: 'bg-red-400', text: 'text-red-300' };
     case 'cancelled':
     case 'canceled':
-      return { dot: 'bg-[--color-muted]', text: 'text-[--color-muted] line-through' };
+      return { dot: 'bg-muted', text: 'text-muted line-through' };
     default:
-      return { dot: 'bg-[--color-border]', text: 'text-[--color-secondary]' };
+      return { dot: 'bg-border', text: 'text-secondary' };
   }
 }
 
@@ -150,7 +150,7 @@ function HeroStat({
   tone?: 'neutral' | 'blue' | 'amber' | 'red' | 'emerald';
 }) {
   const valueColor = {
-    neutral: 'text-[--color-primary]',
+    neutral: 'text-primary',
     blue: 'text-blue-300',
     amber: 'text-amber-300',
     red: 'text-red-300',
@@ -158,7 +158,7 @@ function HeroStat({
   }[tone];
   return (
     <div className="flex flex-col gap-1 min-w-0">
-      <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted] truncate">
+      <span className="text-[10px] font-medium uppercase tracking-wider text-muted truncate">
         {label}
       </span>
       <span className={cn('text-2xl font-semibold leading-none tabular-nums', valueColor)}>
@@ -189,16 +189,16 @@ function Section({
   const Header = (
     <div className="flex items-center justify-between px-3.5 py-2 group">
       <div className="flex items-center gap-1.5">
-        <Icon size={11} className="text-[--color-muted]" />
-        <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
+        <Icon size={11} className="text-muted" />
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted">
           {title}
         </span>
         {count !== undefined && (
-          <span className="text-[10px] tabular-nums text-[--color-muted]">· {count}</span>
+          <span className="text-[10px] tabular-nums text-muted">· {count}</span>
         )}
       </div>
       {expandable && (
-        <span className="text-[--color-muted] group-hover:text-[--color-primary] transition-colors">
+        <span className="text-muted group-hover:text-primary transition-colors">
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
       )}
@@ -209,7 +209,7 @@ function Section({
       {expandable ? (
         <button
           type="button"
-          className="w-full text-left hover:bg-[--color-surface-hover] transition-colors"
+          className="w-full text-left hover:bg-surface-hover transition-colors"
           onClick={() => setOpen((v) => !v)}
         >
           {Header}
@@ -230,7 +230,7 @@ function AuthorChip({ name }: { name: string }) {
       <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/15 text-amber-300 text-[9px] font-semibold shrink-0">
         {initialsOf(name)}
       </span>
-      <span className="text-[--color-secondary] truncate text-[11px]">
+      <span className="text-secondary truncate text-[11px]">
         {name.replace(/^@/, '')}
       </span>
     </span>
@@ -251,7 +251,7 @@ function CreatedRow({
   return (
     <div
       style={{ '--row-index': index } as React.CSSProperties}
-      className="animate-row-in grid grid-cols-[auto_1fr_auto] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
+      className="animate-row-in grid grid-cols-[auto_1fr_auto] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-hover transition-colors min-w-0"
     >
       <span
         className={cn('h-1.5 w-1.5 rounded-full shrink-0', priorityDot(i.priority))}
@@ -262,14 +262,14 @@ function CreatedRow({
         <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0">
           {i.project_prefix ?? '·'}
         </span>
-        <span className="text-[11px] tabular-nums text-[--color-muted] shrink-0">
+        <span className="text-[11px] tabular-nums text-muted shrink-0">
           {i.display_id}
         </span>
-        <span className="text-[12px] text-[--color-primary] truncate min-w-0">{i.title}</span>
+        <span className="text-[12px] text-primary truncate min-w-0">{i.title}</span>
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {i.author && <AuthorChip name={i.author} />}
-        <span className="text-[10px] tabular-nums text-[--color-muted] hidden sm:inline">
+        <span className="text-[10px] tabular-nums text-muted hidden sm:inline">
           {relativeTime(i.created_at, t)}
         </span>
       </div>
@@ -293,16 +293,16 @@ function StatusChangeRow({
   return (
     <div
       style={{ '--row-index': index } as React.CSSProperties}
-      className="animate-row-in grid grid-cols-[1fr_auto] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
+      className="animate-row-in grid grid-cols-[1fr_auto] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-hover transition-colors min-w-0"
     >
       <div className="flex items-center gap-2 min-w-0">
         <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0">
           {c.project_prefix ?? '·'}
         </span>
-        <span className="text-[11px] tabular-nums text-[--color-muted] shrink-0">
+        <span className="text-[11px] tabular-nums text-muted shrink-0">
           {c.display_id ?? '—'}
         </span>
-        <span className="text-[12px] text-[--color-primary] truncate min-w-0">
+        <span className="text-[12px] text-primary truncate min-w-0">
           {c.title ?? t('aiChat.recap.deletedIssue', { defaultValue: '(deleted issue)' })}
         </span>
       </div>
@@ -316,7 +316,7 @@ function StatusChangeRow({
           <span className={cn('h-1.5 w-1.5 rounded-full', fromTone.dot)} aria-hidden="true" />
           {c.from ?? '—'}
         </span>
-        <ArrowRight size={10} className="text-[--color-muted]" />
+        <ArrowRight size={10} className="text-muted" />
         <span
           className={cn(
             'inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-medium',
@@ -327,11 +327,11 @@ function StatusChangeRow({
           {c.to ?? '—'}
         </span>
         {c.by && (
-          <span className="hidden sm:inline-flex pl-1 ml-1 border-l border-[--color-border]">
+          <span className="hidden sm:inline-flex pl-1 ml-1 border-l border-border">
             <AuthorChip name={c.by} />
           </span>
         )}
-        <span className="text-[10px] tabular-nums text-[--color-muted] hidden sm:inline">
+        <span className="text-[10px] tabular-nums text-muted hidden sm:inline">
           {relativeTime(c.at, t)}
         </span>
       </div>
@@ -363,16 +363,16 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
     (recap.completed_count ?? 0) > 0;
 
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-surface] overflow-hidden">
+    <div className="rounded-xl border border-border bg-surface overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
         <div className="flex items-center gap-1.5 min-w-0">
           <Sparkles size={12} className="text-amber-400 shrink-0" />
-          <span className="text-[12px] font-semibold text-[--color-primary] truncate">
+          <span className="text-[12px] font-semibold text-primary truncate">
             {t('aiChat.recap.title', { defaultValue: 'Weekly recap' })}
           </span>
         </div>
-        <span className="text-[10px] uppercase tracking-wider text-[--color-muted] tabular-nums shrink-0">
+        <span className="text-[10px] uppercase tracking-wider text-muted tabular-nums shrink-0">
           {t('aiChat.recap.period', {
             days: periodDays,
             defaultValue: `Last ${periodDays}d`,
@@ -380,7 +380,7 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
         </span>
       </div>
 
-      <div className="border-t border-[--color-border]" />
+      <div className="border-t border-border" />
 
       {/* Hero stats */}
       <div className="grid grid-cols-3 gap-3 px-3.5 py-3">
@@ -403,8 +403,8 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
 
       {!hasAnyContent && (
         <>
-          <div className="border-t border-[--color-border]" />
-          <div className="px-3.5 py-4 text-center text-[12px] text-[--color-muted] italic">
+          <div className="border-t border-border" />
+          <div className="px-3.5 py-4 text-center text-[12px] text-muted italic">
             {t('aiChat.recap.empty', {
               days: periodDays,
               defaultValue: `Nothing recorded over the last ${periodDays}d`,
@@ -416,7 +416,7 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
       {/* Section: Created tickets */}
       {topCreated.length > 0 && (
         <>
-          <div className="border-t border-[--color-border]" />
+          <div className="border-t border-border" />
           <Section
             title={t('aiChat.recap.sections.created', { defaultValue: 'Created' })}
             icon={Plus}
@@ -426,7 +426,7 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
               <CreatedRow key={i.display_id} i={i} t={t} index={idx} />
             ))}
             {created.length > 8 && (
-              <div className="px-2 py-1 text-[10px] text-[--color-muted] tabular-nums">
+              <div className="px-2 py-1 text-[10px] text-muted tabular-nums">
                 {t('aiChat.recap.andMore', {
                   count: created.length - 8,
                   defaultValue: `+${created.length - 8} more`,
@@ -440,7 +440,7 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
       {/* Section: Status changes */}
       {topChanges.length > 0 && (
         <>
-          <div className="border-t border-[--color-border]" />
+          <div className="border-t border-border" />
           <Section
             title={t('aiChat.recap.sections.statusChanges', {
               defaultValue: 'Status changes',
@@ -452,7 +452,7 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
               <StatusChangeRow key={`${c.display_id}-${c.at}-${idx}`} c={c} t={t} index={idx} />
             ))}
             {changes.length > 8 && (
-              <div className="px-2 py-1 text-[10px] text-[--color-muted] tabular-nums">
+              <div className="px-2 py-1 text-[10px] text-muted tabular-nums">
                 {t('aiChat.recap.andMore', {
                   count: changes.length - 8,
                   defaultValue: `+${changes.length - 8} more`,
@@ -466,7 +466,7 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
       {/* Section: Closed (collapsed by default to keep the card scannable) */}
       {closed.length > 0 && (
         <>
-          <div className="border-t border-[--color-border]" />
+          <div className="border-t border-border" />
           <Section
             title={t('aiChat.recap.sections.closed', { defaultValue: 'Closed' })}
             icon={CheckCircle2}
@@ -478,24 +478,24 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
               <div
                 key={c.display_id}
                 style={{ '--row-index': idx } as React.CSSProperties}
-                className="animate-row-in flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
+                className="animate-row-in flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-hover transition-colors min-w-0"
               >
                 <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />
-                <span className="text-[11px] tabular-nums text-[--color-muted] shrink-0">
+                <span className="text-[11px] tabular-nums text-muted shrink-0">
                   {c.display_id}
                 </span>
-                <span className="text-[12px] text-[--color-primary] truncate flex-1 min-w-0">
+                <span className="text-[12px] text-primary truncate flex-1 min-w-0">
                   {c.title}
                 </span>
                 {c.project_name && (
-                  <span className="text-[10px] text-[--color-muted] truncate hidden sm:inline">
+                  <span className="text-[10px] text-muted truncate hidden sm:inline">
                     {c.project_name}
                   </span>
                 )}
               </div>
             ))}
             {closed.length > 12 && (
-              <div className="px-2 py-1 text-[10px] text-[--color-muted] tabular-nums">
+              <div className="px-2 py-1 text-[10px] text-muted tabular-nums">
                 {t('aiChat.recap.andMore', {
                   count: closed.length - 12,
                   defaultValue: `+${closed.length - 12} more`,
@@ -509,11 +509,11 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
       {/* Section: By contributor */}
       {authors.length > 0 && (
         <>
-          <div className="border-t border-[--color-border]" />
+          <div className="border-t border-border" />
           <div className="px-3.5 py-2.5 space-y-1.5">
             <div className="flex items-center gap-1.5">
-              <Users size={11} className="text-[--color-muted]" />
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
+              <Users size={11} className="text-muted" />
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted">
                 {t('aiChat.recap.sections.byAuthor', { defaultValue: 'By contributor' })}
               </span>
             </div>
@@ -521,7 +521,7 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
               {authors.map((a) => (
                 <span
                   key={a.author}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[--color-surface-hover] px-2 py-1 text-[11px]"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-surface-hover px-2 py-1 text-[11px]"
                   title={t('aiChat.recap.byAuthorTooltip', {
                     created: a.created,
                     closed: a.closed,
@@ -532,7 +532,7 @@ export default function WeeklyRecap({ data }: WeeklyRecapProps) {
                   <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/15 text-amber-300 text-[9px] font-semibold">
                     {initialsOf(a.author)}
                   </span>
-                  <span className="text-[--color-secondary] truncate max-w-[110px]">
+                  <span className="text-secondary truncate max-w-[110px]">
                     {a.author.replace(/^@/, '')}
                   </span>
                   {a.created > 0 && (

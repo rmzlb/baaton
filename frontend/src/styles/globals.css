@@ -50,6 +50,17 @@
   --color-beige-200: #E8E2D2;
   --color-beige-300: #DED8CC;
   --color-beige-900: #1A1917;
+
+  /* Semantic tokens (dark defaults) — overridden by html:not(.dark) */
+  --color-bg: oklch(0.13 0 0);
+  --color-surface: oklch(0.17 0 0);
+  --color-surface-hover: oklch(0.22 0 0);
+  --color-border: oklch(1 0 0 / 10%);
+  --color-primary: oklch(0.985 0 0);
+  --color-secondary: oklch(0.708 0 0);
+  --color-muted: oklch(0.556 0 0);
+  --color-accent: oklch(0.78 0.14 75);
+  --color-accent-hover: oklch(0.7 0.14 75);
 }
 
 /* ─── Dark Theme (default) ─────────────────── */
@@ -79,17 +90,7 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 
-  /* Legacy compat tokens (used throughout existing components) */
-  --color-bg: oklch(0.13 0 0);
-  --color-surface: oklch(0.17 0 0);
-  --color-surface-hover: oklch(0.22 0 0);
-  --color-border: oklch(1 0 0 / 10%);
-  --color-primary: oklch(0.985 0 0);
-  --color-secondary: oklch(0.708 0 0);
-  --color-muted: oklch(0.556 0 0);
-  --color-accent: oklch(0.78 0.14 75);
-  --color-accent-hover: oklch(0.7 0.14 75);
-  /* Vars used as arbitrary values in components */
+  /* Legacy compat tokens — only vars NOT in @theme */
   --color-foreground: oklch(0.985 0 0);
   --color-card: oklch(0.17 0 0);
   --color-card-foreground: oklch(0.985 0 0);
@@ -121,7 +122,7 @@ html:not(.dark) {
   --sidebar-border: oklch(0 0 0 / 12%);
   --sidebar-ring: oklch(0.708 0 0);
 
-  /* Legacy compat tokens */
+  /* Light theme overrides for @theme tokens */
   --color-bg: oklch(0.985 0 0);
   --color-surface: oklch(1 0 0);
   --color-surface-hover: oklch(0.965 0 0);
@@ -131,7 +132,7 @@ html:not(.dark) {
   --color-muted: oklch(0.708 0 0);
   --color-accent: oklch(0.7 0.14 75);
   --color-accent-hover: oklch(0.62 0.14 75);
-  /* Vars used as arbitrary values in components */
+  /* Non-@theme vars */
   --color-foreground: oklch(0.145 0 0);
   --color-card: oklch(1 0 0);
   --color-card-foreground: oklch(0.145 0 0);

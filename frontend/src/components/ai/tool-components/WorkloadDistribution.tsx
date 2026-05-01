@@ -36,8 +36,8 @@ export default function WorkloadDistribution({ data }: WorkloadDistributionProps
 
   if (assignees.length === 0) {
     return (
-      <div className="rounded-xl border border-[--color-border] bg-[--color-surface] p-4">
-        <p className="text-xs text-[--color-muted]">Aucune donnée de charge.</p>
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <p className="text-xs text-muted">Aucune donnée de charge.</p>
       </div>
     );
   }
@@ -45,15 +45,15 @@ export default function WorkloadDistribution({ data }: WorkloadDistributionProps
   const maxTotal = Math.max(...assignees.map(a => a.total ?? 0), 1);
 
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-surface] p-4 space-y-3">
+    <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs text-[--color-secondary] font-medium">
+        <div className="flex items-center gap-2 text-xs text-secondary font-medium">
           <Users size={13} />
           Charge par développeur
         </div>
         <div className="flex items-center gap-3">
           {STATUS_SEGMENTS.map(seg => (
-            <div key={seg.key} className="flex items-center gap-1 text-[10px] text-[--color-muted]">
+            <div key={seg.key} className="flex items-center gap-1 text-[10px] text-muted">
               <div className={cn('h-2 w-2 rounded-sm', seg.color)} />
               {seg.label}
             </div>
@@ -74,14 +74,14 @@ export default function WorkloadDistribution({ data }: WorkloadDistributionProps
               <span
                 className={cn(
                   'text-[11px] shrink-0 w-28 truncate text-right',
-                  a.is_unassigned ? 'text-[--color-muted] italic' : 'text-[--color-primary] font-mono',
+                  a.is_unassigned ? 'text-muted italic' : 'text-primary font-mono',
                 )}
                 title={label}
               >
                 {shortLabel}
               </span>
 
-              <div className="flex-1 h-5 rounded bg-[--color-surface-hover] overflow-hidden relative">
+              <div className="flex-1 h-5 rounded bg-surface-hover overflow-hidden relative">
                 <div
                   className="h-full flex"
                   style={{ width: `${Math.max(barWidth, 2)}%` }}
@@ -102,7 +102,7 @@ export default function WorkloadDistribution({ data }: WorkloadDistributionProps
                 </div>
               </div>
 
-              <span className="text-[11px] font-semibold text-[--color-primary] w-8 text-right shrink-0">
+              <span className="text-[11px] font-semibold text-primary w-8 text-right shrink-0">
                 {total}
               </span>
             </div>

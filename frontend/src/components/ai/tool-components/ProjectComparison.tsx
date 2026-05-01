@@ -38,13 +38,13 @@ function MetricRow({
 }: { icon: React.ElementType; label: string; value: string | number; highlight?: boolean }) {
   return (
     <div className="flex items-center justify-between py-1">
-      <div className="flex items-center gap-1.5 text-[11px] text-[--color-muted]">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted">
         <Icon size={11} />
         {label}
       </div>
       <span className={cn(
         'text-[13px] font-semibold',
-        highlight ? 'text-amber-400' : 'text-[--color-primary]',
+        highlight ? 'text-amber-400' : 'text-primary',
       )}>
         {value}
       </span>
@@ -57,8 +57,8 @@ export default function ProjectComparison({ data }: ProjectComparisonProps) {
 
   if (projects.length === 0) {
     return (
-      <div className="rounded-xl border border-[--color-border] bg-[--color-surface] p-4">
-        <p className="text-xs text-[--color-muted]">Aucun projet à comparer.</p>
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <p className="text-xs text-muted">Aucun projet à comparer.</p>
       </div>
     );
   }
@@ -69,7 +69,7 @@ export default function ProjectComparison({ data }: ProjectComparisonProps) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 text-xs text-[--color-secondary] font-medium">
+      <div className="flex items-center gap-2 text-xs text-secondary font-medium">
         <BarChart3 size={13} />
         Comparaison de {projects.length} projets
       </div>
@@ -83,18 +83,18 @@ export default function ProjectComparison({ data }: ProjectComparisonProps) {
           return (
             <div
               key={id}
-              className="rounded-xl border border-[--color-border] bg-[--color-surface] p-3 space-y-2"
+              className="rounded-xl border border-border bg-surface p-3 space-y-2"
             >
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[11px] text-amber-400/80 bg-amber-400/10 rounded px-1.5 py-0.5">
                   {p.prefix ?? '?'}
                 </span>
-                <span className="text-[13px] font-medium text-[--color-primary] truncate">
+                <span className="text-[13px] font-medium text-primary truncate">
                   {p.name ?? id}
                 </span>
               </div>
 
-              <div className="space-y-0.5 border-t border-[--color-border] pt-2">
+              <div className="space-y-0.5 border-t border-border pt-2">
                 <MetricRow icon={Layers} label="Total" value={p.total ?? 0} />
                 <MetricRow icon={Layers} label="Open" value={p.open ?? 0} />
                 <MetricRow icon={CheckCircle2} label="Done" value={p.done ?? 0} />

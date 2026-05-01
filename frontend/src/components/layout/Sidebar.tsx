@@ -130,7 +130,7 @@ export function Sidebar() {
       className={({ isActive }) =>
         cn(
           'flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition-colors min-h-[36px]',
-          isActive ? 'bg-[--sidebar-accent] text-[--sidebar-accent-foreground] font-medium' : 'text-[--sidebar-foreground]/70 hover:bg-[--sidebar-accent]/50 hover:text-[--sidebar-foreground]',
+          isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
           isCompact && 'justify-center px-0',
         )
       }
@@ -194,14 +194,14 @@ export function Sidebar() {
         role="complementary"
         aria-label={t('sidebar.navigation') || 'Sidebar'}
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[--sidebar-border] bg-[--sidebar] transition-[width] duration-200',
+          'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200',
           (collapsed || aiPanelOpen) ? 'w-14' : 'w-56',
           'max-md:-translate-x-full max-md:w-56',
           mobileOpen && 'max-md:translate-x-0',
         )}
       >
         {/* ─── Header: Logo + Collapse ─── */}
-        <div className="flex h-12 items-center border-b border-[--sidebar-border] px-2 justify-between">
+        <div className="flex h-12 items-center border-b border-sidebar-border px-2 justify-between">
           <Link to="/dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity min-w-0">
             <div className="flex-shrink-0">
               <PixelTanuki size={isCompact ? 28 : 24} />
@@ -227,7 +227,7 @@ export function Sidebar() {
         </div>
 
         {/* ─── Org Switcher ─── */}
-        <div className="border-b border-[--sidebar-border] px-2 py-1.5">
+        <div className="border-b border-sidebar-border px-2 py-1.5">
           {isCompact ? (
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-accent font-bold text-xs mx-auto" title="Organization">
               O
@@ -291,7 +291,7 @@ export function Sidebar() {
         {!isCompact && <SystemStatus />}
 
         {/* ─── Footer ─── */}
-        <div className="border-t border-[--sidebar-border] p-2">
+        <div className="border-t border-sidebar-border p-2">
           <div className={cn('flex items-center', isCompact ? 'flex-col gap-2' : 'gap-1 px-1')}>
             <UserButton appearance={{ elements: { avatarBox: 'h-7 w-7' } }} />
             {!isCompact && (

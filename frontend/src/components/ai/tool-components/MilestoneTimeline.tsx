@@ -37,13 +37,13 @@ export default function MilestoneTimeline({ data }: MilestoneTimelineProps) {
       );
 
   if (milestones.length === 0) {
-    return <p className="text-xs text-[--color-muted] py-2">No milestones.</p>;
+    return <p className="text-xs text-muted py-2">No milestones.</p>;
   }
 
   return (
     <div className="relative space-y-0">
       {/* vertical line */}
-      <div className="absolute left-[13px] top-4 bottom-4 w-px bg-[--color-border]" />
+      <div className="absolute left-[13px] top-4 bottom-4 w-px bg-border" />
 
       {milestones.map((m, i) => {
         const isDone = m.status === 'done';
@@ -57,28 +57,28 @@ export default function MilestoneTimeline({ data }: MilestoneTimelineProps) {
               <Icon
                 size={14}
                 className={cn(
-                  isDone ? 'text-emerald-400' : 'text-[--color-accent]',
-                  'bg-[--color-bg]',
+                  isDone ? 'text-emerald-400' : 'text-accent',
+                  'bg-bg',
                 )}
               />
             </div>
 
-            <div className="flex-1 rounded-md border border-[--color-border] bg-[--color-surface] px-3 py-2.5 space-y-1.5">
+            <div className="flex-1 rounded-md border border-border bg-surface px-3 py-2.5 space-y-1.5">
               <div className="flex items-start justify-between gap-2 flex-wrap">
-                <span className="text-sm font-semibold text-[--color-primary]">{m.name}</span>
-                <div className="flex items-center gap-1 text-[10px] text-[--color-muted] whitespace-nowrap">
+                <span className="text-sm font-semibold text-primary">{m.name}</span>
+                <div className="flex items-center gap-1 text-[10px] text-muted whitespace-nowrap">
                   <CalendarDays size={10} />
                   {formatDate(m.target_date)}
                 </div>
               </div>
               {m.description && (
-                <p className="text-xs text-[--color-secondary]">{m.description}</p>
+                <p className="text-xs text-secondary">{m.description}</p>
               )}
               {issueCount > 0 && (
-                <p className="text-[10px] text-[--color-muted]">
+                <p className="text-[10px] text-muted">
                   {issueCount} issue{issueCount !== 1 ? 's' : ''}
                   {m.issues && m.issues.length > 0 && (
-                    <span className="ml-1 text-[--color-muted]">
+                    <span className="ml-1 text-muted">
                       ({m.issues.slice(0, 3).map((iss) => iss.display_id ?? iss.title ?? '?').join(', ')}
                       {m.issues.length > 3 ? '…' : ''})
                     </span>

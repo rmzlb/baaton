@@ -9,7 +9,7 @@ interface ToolResultFallbackProps {
 export default function ToolResultFallback({ summary }: ToolResultFallbackProps) {
   if (!summary) return null;
   return (
-    <div className="rounded-md bg-[--color-surface-hover] px-3 py-2">
+    <div className="rounded-md bg-surface-hover px-3 py-2">
       <MarkdownView content={summary} />
     </div>
   );

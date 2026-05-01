@@ -25,7 +25,7 @@ export type ToolProps = ComponentProps<typeof Collapsible>;
 
 export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
-    className={cn("group not-prose my-1 w-full rounded-xl border border-[--color-border] bg-[--color-bg]", className)}
+    className={cn("group not-prose my-1 w-full rounded-xl border border-border bg-bg", className)}
     {...props}
   />
 );
@@ -85,17 +85,17 @@ export const ToolHeader = ({
   return (
     <CollapsibleTrigger
       className={cn(
-        "flex w-full items-center justify-between gap-3 p-2.5 hover:bg-[--color-surface-hover] transition-colors rounded-xl group-data-[state=open]:rounded-b-none",
+        "flex w-full items-center justify-between gap-3 p-2.5 hover:bg-surface-hover transition-colors rounded-xl group-data-[state=open]:rounded-b-none",
         className
       )}
       {...props}
     >
       <div className="flex items-center gap-2">
-        <WrenchIcon className="size-4 text-[--color-muted]" />
-        <span className="font-medium text-sm text-[--color-primary]">{title ?? derivedName}</span>
+        <WrenchIcon className="size-4 text-muted" />
+        <span className="font-medium text-sm text-primary">{title ?? derivedName}</span>
         {getStatusBadge(state)}
       </div>
-      <ChevronDownIcon className="size-4 text-[--color-muted] transition-transform group-data-[state=open]:rotate-180" />
+      <ChevronDownIcon className="size-4 text-muted transition-transform group-data-[state=open]:rotate-180" />
     </CollapsibleTrigger>
   );
 };
@@ -105,7 +105,7 @@ export type ToolContentProps = ComponentProps<typeof CollapsibleContent>;
 export const ToolContent = ({ className, ...props }: ToolContentProps) => (
   <CollapsibleContent
     className={cn(
-      "space-y-3 p-3 pt-0 text-[--color-primary] outline-none border-t border-[--color-border]",
+      "space-y-3 p-3 pt-0 text-primary outline-none border-t border-border",
       className
     )}
     {...props}
@@ -118,10 +118,10 @@ export type ToolInputProps = ComponentProps<"div"> & {
 
 export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
   <div className={cn("space-y-2 overflow-hidden mt-3", className)} {...props}>
-    <h4 className="font-medium text-[--color-muted] text-[10px] uppercase tracking-wide">
+    <h4 className="font-medium text-muted text-[10px] uppercase tracking-wide">
       Parameters
     </h4>
-    <div className="rounded-md bg-[--color-surface-hover]/50">
+    <div className="rounded-md bg-surface-hover/50">
       <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
     </div>
   </div>
@@ -154,7 +154,7 @@ export const ToolOutput = ({
 
   return (
     <div className={cn("space-y-2 mt-3", className)} {...props}>
-      <h4 className="font-medium text-[--color-muted] text-[10px] uppercase tracking-wide">
+      <h4 className="font-medium text-muted text-[10px] uppercase tracking-wide">
         {errorText ? "Error" : "Result"}
       </h4>
       <div
@@ -162,7 +162,7 @@ export const ToolOutput = ({
           "overflow-x-auto rounded-md text-xs [&_table]:w-full",
           errorText
             ? "bg-red-500/10 text-red-400 p-3"
-            : "bg-[--color-surface-hover]/50 text-[--color-primary]"
+            : "bg-surface-hover/50 text-primary"
         )}
       >
         {errorText && <div>{errorText}</div>}

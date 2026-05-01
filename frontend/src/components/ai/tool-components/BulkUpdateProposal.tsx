@@ -44,9 +44,9 @@ export default function BulkUpdateProposal({ part, addToolOutput, inBatch }: Pro
       );
     }
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-[--color-border] bg-[--color-surface] px-3 py-2">
-        <X size={14} className="text-[--color-muted] shrink-0" />
-        <span className="text-[12px] text-[--color-muted]">Bulk update annulé</span>
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2">
+        <X size={14} className="text-muted shrink-0" />
+        <span className="text-[12px] text-muted">Bulk update annulé</span>
       </div>
     );
   }
@@ -70,12 +70,12 @@ export default function BulkUpdateProposal({ part, addToolOutput, inBatch }: Pro
   };
 
   return (
-    <div className="rounded-2xl border border-[--color-border] bg-[--color-surface] overflow-hidden relative">
+    <div className="rounded-2xl border border-border bg-surface overflow-hidden relative">
       <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-500" />
 
       <div className="px-4 pt-3 pb-2 flex items-center gap-2">
         <Layers size={14} className="text-amber-500 shrink-0" />
-        <span className="text-[10px] font-semibold text-[--color-muted] uppercase tracking-wider">
+        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
           Bulk update
         </span>
         <Badge variant="secondary" className="ml-auto h-5 font-mono text-[10px]">
@@ -85,12 +85,12 @@ export default function BulkUpdateProposal({ part, addToolOutput, inBatch }: Pro
 
       <div className="px-4 pb-4 space-y-3">
         {updates.length === 0 ? (
-          <p className="text-[11px] text-[--color-muted] italic py-2">
+          <p className="text-[11px] text-muted italic py-2">
             Aucune modification proposée.
           </p>
         ) : (
           <div className="max-h-64 overflow-y-auto -mx-4 px-4">
-            <ul className="divide-y divide-[--color-border]/40">
+            <ul className="divide-y divide-border/40">
               {updates.map((u, i) => {
                 const changes = u.changes as Record<string, unknown> | undefined;
                 const newStatus = changes?.status as string | undefined;
@@ -99,25 +99,25 @@ export default function BulkUpdateProposal({ part, addToolOutput, inBatch }: Pro
                 return (
                   <li key={i} className="py-2 text-[11px]">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] text-[--color-muted] shrink-0">
+                      <span className="font-mono text-[10px] text-muted shrink-0">
                         {u.display_id || '?'}
                       </span>
-                      <span className="truncate text-[--color-primary]" title={u.title}>
+                      <span className="truncate text-primary" title={u.title}>
                         {u.title || '(sans titre)'}
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
                       {newStatus && newStatus !== u.current?.status && (
                         <span className="text-[10px]">
-                          <span className="text-[--color-muted] line-through">{u.current?.status || '—'}</span>
-                          <span className="mx-1 text-[--color-muted]">→</span>
+                          <span className="text-muted line-through">{u.current?.status || '—'}</span>
+                          <span className="mx-1 text-muted">→</span>
                           <span className="text-amber-500 font-medium">{newStatus}</span>
                         </span>
                       )}
                       {newPriority && newPriority !== u.current?.priority && (
                         <span className="text-[10px]">
-                          <span className="text-[--color-muted] line-through">{u.current?.priority || '—'}</span>
-                          <span className="mx-1 text-[--color-muted]">→</span>
+                          <span className="text-muted line-through">{u.current?.priority || '—'}</span>
+                          <span className="mx-1 text-muted">→</span>
                           <span className={cn('font-medium', PRIORITY_COLOR[newPriority] || 'text-amber-500')}>
                             {newPriority}
                           </span>
@@ -133,7 +133,7 @@ export default function BulkUpdateProposal({ part, addToolOutput, inBatch }: Pro
       </div>
 
       {!inBatch && (
-        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-[--color-border] bg-[--color-surface-hover]/30">
+        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border bg-surface-hover/30">
           <Button onClick={handleCancel} variant="secondary" size="sm">
             <X size={12} />
             Annuler

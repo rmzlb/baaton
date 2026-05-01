@@ -148,7 +148,7 @@ function renderContent(
 
 function ExecutingIndicator({ name }: { name: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-[--color-surface-hover]/50 px-3 py-1.5 text-[11px] text-[--color-muted]">
+    <div className="flex items-center gap-2 rounded-lg bg-surface-hover/50 px-3 py-1.5 text-[11px] text-muted">
       <Loader2 size={12} className="animate-spin text-amber-500" />
       <span className="capitalize">{name.replace(/_/g, ' ')}...</span>
     </div>
@@ -158,8 +158,8 @@ function ExecutingIndicator({ name }: { name: string }) {
 function Skeleton() {
   return (
     <div className="space-y-2 animate-pulse rounded-lg p-3">
-      <div className="h-3 w-3/4 rounded bg-[--color-surface-hover]" />
-      <div className="h-3 w-1/2 rounded bg-[--color-surface-hover]" />
+      <div className="h-3 w-3/4 rounded bg-surface-hover" />
+      <div className="h-3 w-1/2 rounded bg-surface-hover" />
     </div>
   );
 }

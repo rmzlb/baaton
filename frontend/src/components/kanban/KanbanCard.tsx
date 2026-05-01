@@ -258,7 +258,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
       onClick={(e) => { e.stopPropagation(); onSelect(issue.id, e.shiftKey); }}
       className={cn(
         'absolute top-1.5 left-1.5 z-10 flex items-center justify-center w-4 h-4 rounded border cursor-pointer transition-all',
-        selected ? 'bg-accent border-accent text-black opacity-100' : 'border-[--color-foreground]/10 bg-[--color-card] opacity-0 group-hover/card:opacity-100',
+        selected ? 'bg-accent border-accent text-black opacity-100' : 'border-foreground/10 bg-card opacity-0 group-hover/card:opacity-100',
       )}
     >
       {selected && <span className="text-[9px] font-bold">✓</span>}
@@ -285,7 +285,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
         style={provided.draggableProps.style}
         className={cn(
-          'group group/card relative cursor-pointer rounded-md bg-[--color-card] ring-1 ring-[--color-foreground]/12 shadow-sm px-2.5 py-1.5 will-change-transform transition-all duration-150 hover:ring-[--color-foreground]/20 hover:shadow-md hover:-translate-y-px',
+          'group group/card relative cursor-pointer rounded-md bg-card ring-1 ring-foreground/12 shadow-sm px-2.5 py-1.5 will-change-transform transition-all duration-150 hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px',
           isDone && 'opacity-60 hover:opacity-90',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
           selected && 'ring-2 ring-accent/40 border-accent/30',
@@ -336,7 +336,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
         style={provided.draggableProps.style}
         className={cn(
-          'group cursor-pointer rounded-lg bg-[--color-card] ring-1 ring-[--color-foreground]/12 shadow-sm p-4 will-change-transform transition-all duration-150 hover:ring-[--color-foreground]/20 hover:shadow-md hover:-translate-y-px',
+          'group cursor-pointer rounded-lg bg-card ring-1 ring-foreground/12 shadow-sm p-4 will-change-transform transition-all duration-150 hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px',
           isDone && 'opacity-70 hover:opacity-100',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
           selected && 'ring-2 ring-accent/40 border-accent/30',
@@ -412,10 +412,10 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
       role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
       style={provided.draggableProps.style}
       className={cn(
-        'group cursor-pointer rounded-lg bg-[--color-card] p-3 will-change-transform transition-all duration-150 ring-1 ring-[--color-foreground]/12 shadow-sm hover:ring-[--color-foreground]/20 hover:shadow-md hover:-translate-y-px',
+        'group cursor-pointer rounded-lg bg-card p-3 will-change-transform transition-all duration-150 ring-1 ring-foreground/12 shadow-sm hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px',
         isDone && 'opacity-85 hover:opacity-100',
-        isDragging && 'shadow-xl ring-2 ring-[--color-accent]/40 rotate-1 scale-[1.02]',
-        selected && 'ring-2 ring-[--color-accent]/40',
+        isDragging && 'shadow-xl ring-2 ring-accent/40 rotate-1 scale-[1.02]',
+        selected && 'ring-2 ring-accent/40',
         leftBorder,
       )}
     >

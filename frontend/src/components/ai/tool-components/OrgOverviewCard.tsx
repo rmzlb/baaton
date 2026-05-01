@@ -101,7 +101,7 @@ function HeroStat({
   tone?: 'neutral' | 'amber' | 'red' | 'emerald' | 'blue';
 }) {
   const valueColor = {
-    neutral: 'text-[--color-primary]',
+    neutral: 'text-primary',
     blue: 'text-blue-300',
     amber: 'text-amber-300',
     red: 'text-red-300',
@@ -110,7 +110,7 @@ function HeroStat({
 
   return (
     <div className="flex flex-col gap-1 min-w-0">
-      <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted] truncate">
+      <span className="text-[10px] font-medium uppercase tracking-wider text-muted truncate">
         {label}
       </span>
       <span className={cn('text-2xl font-semibold leading-none tabular-nums', valueColor)}>
@@ -155,7 +155,7 @@ function ActionChip({
       )}
     >
       <Icon size={11} className={iconColor} />
-      <span className="text-[--color-primary] tabular-nums">{count}</span>
+      <span className="text-primary tabular-nums">{count}</span>
       <span className="opacity-80">{label}</span>
     </span>
   );
@@ -177,21 +177,21 @@ function SprintRow({
 
   return (
     <div
-      className="animate-row-in flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
+      className="animate-row-in flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-hover transition-colors min-w-0"
       style={{ '--row-index': index } as React.CSSProperties}
     >
       <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0">
         {s.project_prefix}
       </span>
-      <span className="text-[12px] text-[--color-primary] truncate flex-1 min-w-0">{s.name}</span>
+      <span className="text-[12px] text-primary truncate flex-1 min-w-0">{s.name}</span>
       <div className="flex items-center gap-1.5 shrink-0">
-        <div className="h-1 w-12 rounded-full bg-[--color-border] overflow-hidden">
+        <div className="h-1 w-12 rounded-full bg-border overflow-hidden">
           <div
             className={cn('h-full transition-all', trendColor)}
             style={{ width: `${Math.min(100, s.pct)}%` }}
           />
         </div>
-        <span className="text-[10px] tabular-nums text-[--color-muted] w-12 text-right">
+        <span className="text-[10px] tabular-nums text-muted w-12 text-right">
           {s.completed}/{s.planned}
         </span>
       </div>
@@ -216,18 +216,18 @@ function MilestoneRow({
 
   return (
     <div
-      className="animate-row-in flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] transition-colors min-w-0"
+      className="animate-row-in flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-hover transition-colors min-w-0"
       style={{ '--row-index': index } as React.CSSProperties}
     >
       <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', dotColor)} aria-hidden="true" />
       <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0">
         {m.project_prefix}
       </span>
-      <span className="text-[12px] text-[--color-primary] truncate flex-1 min-w-0">{m.name}</span>
+      <span className="text-[12px] text-primary truncate flex-1 min-w-0">{m.name}</span>
       <span
         className={cn(
           'text-[10px] tabular-nums shrink-0',
-          urgent ? 'text-red-300' : soon ? 'text-amber-300' : 'text-[--color-muted]',
+          urgent ? 'text-red-300' : soon ? 'text-amber-300' : 'text-muted',
         )}
       >
         {daysLabel}
@@ -252,14 +252,14 @@ function ProjectRow({
     <Link
       to={`/all-issues?project=${encodeURIComponent(p.prefix)}`}
       style={{ '--row-index': index } as React.CSSProperties}
-      className="animate-row-in grid grid-cols-[60px_1fr_auto_auto] sm:grid-cols-[60px_1fr_44px_44px_92px_44px_44px] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[--color-surface-hover] active:scale-[0.99] active:bg-[--color-surface-hover] transition-[transform,colors,background-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] text-[12px] will-change-transform"
+      className="animate-row-in grid grid-cols-[60px_1fr_auto_auto] sm:grid-cols-[60px_1fr_44px_44px_92px_44px_44px] items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-hover active:scale-[0.99] active:bg-surface-hover transition-[transform,colors,background-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] text-[12px] will-change-transform"
     >
       <span className="font-mono text-[10px] font-bold text-amber-400 truncate">{p.prefix}</span>
-      <span className="text-[--color-primary] truncate min-w-0">{p.name}</span>
+      <span className="text-primary truncate min-w-0">{p.name}</span>
       <span className="hidden sm:inline tabular-nums text-blue-300 text-right">{p.open}</span>
       <span className="tabular-nums text-amber-300 text-right">{p.in_progress}</span>
       <div className="flex items-center gap-1.5 justify-end">
-        <div className="h-1 w-10 sm:w-12 rounded-full bg-[--color-border] overflow-hidden">
+        <div className="h-1 w-10 sm:w-12 rounded-full bg-border overflow-hidden">
           <div
             className="h-full bg-emerald-400 transition-all"
             style={{ width: `${completionPct}%` }}
@@ -269,13 +269,13 @@ function ProjectRow({
           {completionPct}%
         </span>
       </div>
-      <span className="hidden sm:inline tabular-nums text-[--color-muted] text-right">
+      <span className="hidden sm:inline tabular-nums text-muted text-right">
         {p.velocity_14d}
       </span>
       <span
         className={cn(
           'hidden sm:inline tabular-nums text-right text-[11px]',
-          bugPct > 30 ? 'text-red-300' : bugPct > 15 ? 'text-amber-300' : 'text-[--color-muted]',
+          bugPct > 30 ? 'text-red-300' : bugPct > 15 ? 'text-amber-300' : 'text-muted',
         )}
       >
         {bugPct}%
@@ -302,7 +302,7 @@ function Sparkline({
   const activeDays = points.filter((p) => p.closed > 0).length;
   if (activeDays < 3) {
     return (
-      <span className="text-[11px] text-[--color-muted] italic">{emptyLabel}</span>
+      <span className="text-[11px] text-muted italic">{emptyLabel}</span>
     );
   }
 
@@ -318,7 +318,7 @@ function Sparkline({
               key={i}
               className={cn(
                 'flex-1 rounded-sm transition-colors',
-                p.closed > 0 ? 'bg-amber-500/70 hover:bg-amber-400' : 'bg-[--color-border]',
+                p.closed > 0 ? 'bg-amber-500/70 hover:bg-amber-400' : 'bg-border',
               )}
               style={{ height: `${h}px` }}
               title={`${p.day}: ${p.closed}`}
@@ -326,7 +326,7 @@ function Sparkline({
           );
         })}
       </div>
-      <span className="text-[10px] tabular-nums text-[--color-muted]">
+      <span className="text-[10px] tabular-nums text-muted">
         {totalLabel.replace('{count}', String(total))}
       </span>
     </div>
@@ -378,16 +378,16 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
 
   return (
     // ── Single-surface card. NO nested borders — only horizontal dividers ──
-    <div className="rounded-xl border border-[--color-border] bg-[--color-surface] overflow-hidden">
+    <div className="rounded-xl border border-border bg-surface overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
         <div className="flex items-center gap-1.5 min-w-0">
           <Sparkles size={12} className="text-amber-400 shrink-0" />
-          <span className="text-[12px] font-semibold text-[--color-primary] truncate">
+          <span className="text-[12px] font-semibold text-primary truncate">
             {t('aiChat.overview.title', { defaultValue: 'Overview' })}
           </span>
         </div>
-        <span className="text-[10px] uppercase tracking-wider text-[--color-muted] tabular-nums shrink-0">
+        <span className="text-[10px] uppercase tracking-wider text-muted tabular-nums shrink-0">
           {t('aiChat.overview.projects', {
             count: projects.length,
             defaultValue: `${projects.length} projects`,
@@ -397,7 +397,7 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
         </span>
       </div>
 
-      <div className="border-t border-[--color-border]" />
+      <div className="border-t border-border" />
 
       {/* Hero KPIs — flat, no individual borders, short labels that don't wrap */}
       <div className="grid grid-cols-4 gap-3 px-3.5 py-3">
@@ -429,9 +429,9 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
       {/* Action items — only renders when something needs attention */}
       {hasActions && (
         <>
-          <div className="border-t border-[--color-border]" />
+          <div className="border-t border-border" />
           <div className="flex flex-wrap items-center gap-1.5 px-3.5 py-2.5">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted] mr-0.5">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted mr-0.5">
               {t('aiChat.overview.action.title', { defaultValue: 'Needs attention' })}
             </span>
             <ActionChip
@@ -470,7 +470,7 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
       {/* Sprints + Milestones (2-col on desktop, stack on mobile) */}
       {(sprints.length > 0 || milestones.length > 0) && (
         <>
-          <div className="border-t border-[--color-border]" />
+          <div className="border-t border-border" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 px-2 py-2">
             {sprints.length > 0 && (
               <Section
@@ -508,28 +508,28 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
       {/* Per-project rollup */}
       {projects.length > 0 && (
         <>
-          <div className="border-t border-[--color-border]" />
+          <div className="border-t border-border" />
           <div className="px-2 pt-2 pb-1">
             <div className="grid grid-cols-[60px_1fr_auto_auto] sm:grid-cols-[60px_1fr_44px_44px_92px_44px_44px] items-center gap-2 px-2 py-1.5">
               <div className="flex items-center gap-1 col-span-2">
-                <TrendingUp size={11} className="text-[--color-muted]" />
-                <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
+                <TrendingUp size={11} className="text-muted" />
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted">
                   {t('aiChat.overview.byProject', { defaultValue: 'By project' })}
                 </span>
               </div>
-              <span className="hidden sm:block text-[9px] uppercase tracking-wider text-[--color-muted] text-right">
+              <span className="hidden sm:block text-[9px] uppercase tracking-wider text-muted text-right">
                 {t('aiChat.overview.col.open', { defaultValue: 'Open' })}
               </span>
-              <span className="text-[9px] uppercase tracking-wider text-[--color-muted] text-right">
+              <span className="text-[9px] uppercase tracking-wider text-muted text-right">
                 {t('aiChat.overview.col.wip', { defaultValue: 'WIP' })}
               </span>
-              <span className="text-[9px] uppercase tracking-wider text-[--color-muted] text-right">
+              <span className="text-[9px] uppercase tracking-wider text-muted text-right">
                 {t('aiChat.overview.col.done', { defaultValue: 'Done' })}
               </span>
-              <span className="hidden sm:block text-[9px] uppercase tracking-wider text-[--color-muted] text-right">
+              <span className="hidden sm:block text-[9px] uppercase tracking-wider text-muted text-right">
                 {t('aiChat.overview.col.velocity', { defaultValue: 'Vel' })}
               </span>
-              <span className="hidden sm:block text-[9px] uppercase tracking-wider text-[--color-muted] text-right">
+              <span className="hidden sm:block text-[9px] uppercase tracking-wider text-muted text-right">
                 {t('aiChat.overview.col.bug', { defaultValue: 'Bug' })}
               </span>
             </div>
@@ -542,7 +542,7 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
               <button
                 type="button"
                 onClick={() => setProjectsExpanded((v) => !v)}
-                className="w-full flex items-center justify-center gap-1 px-3 py-1.5 mt-1 text-[11px] text-[--color-muted] hover:text-[--color-primary] hover:bg-[--color-surface-hover] rounded-md transition-colors"
+                className="w-full flex items-center justify-center gap-1 px-3 py-1.5 mt-1 text-[11px] text-muted hover:text-primary hover:bg-surface-hover rounded-md transition-colors"
               >
                 {projectsExpanded ? (
                   <>
@@ -567,13 +567,13 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
       {/* Contributors + Sparkline */}
       {(contributors.length > 0 || activity.length > 0) && (
         <>
-          <div className="border-t border-[--color-border]" />
+          <div className="border-t border-border" />
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 px-3.5 py-2.5 items-end">
             {contributors.length > 0 && (
               <div className="space-y-1.5 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <Users size={11} className="text-[--color-muted]" />
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
+                  <Users size={11} className="text-muted" />
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-muted">
                     {t('aiChat.overview.contributors', {
                       days: periodDays,
                       defaultValue: `Top contributors (${periodDays}d)`,
@@ -584,12 +584,12 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
                   {contributors.map((c) => (
                     <span
                       key={c.assignee_id}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-[--color-surface-hover] px-2 py-1 text-[11px]"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-surface-hover px-2 py-1 text-[11px]"
                     >
                       <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-500/15 text-amber-300 text-[9px] font-semibold">
                         {initialsOf(c.assignee_id) || '?'}
                       </span>
-                      <span className="text-[--color-secondary] truncate max-w-[120px]">
+                      <span className="text-secondary truncate max-w-[120px]">
                         {c.assignee_id.replace(/^@/, '')}
                       </span>
                       <span className="tabular-nums font-semibold text-emerald-300">
@@ -602,7 +602,7 @@ export default function OrgOverviewCard({ data }: OrgOverviewCardProps) {
             )}
             {activity.length > 0 && (
               <div className="md:w-44 min-w-0 space-y-1">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted">
                   {t('aiChat.overview.activity', { defaultValue: 'Activity 14d' })}
                 </span>
                 <Sparkline
@@ -641,12 +641,12 @@ function Section({
     <div className="px-1.5 py-1">
       <div className="flex items-center justify-between px-2 py-1">
         <div className="flex items-center gap-1.5">
-          <Icon size={11} className="text-[--color-muted]" />
-          <span className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
+          <Icon size={11} className="text-muted" />
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted">
             {title}
           </span>
         </div>
-        <span className="text-[10px] tabular-nums text-[--color-muted]">{count}</span>
+        <span className="text-[10px] tabular-nums text-muted">{count}</span>
       </div>
       <div>{children}</div>
     </div>

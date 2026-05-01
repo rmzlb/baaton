@@ -30,7 +30,7 @@ function DiffValue({ value, muted }: { value: string | string[] | unknown; muted
   return (
     <span className={cn(
       'font-mono text-[11px] rounded px-1.5 py-0.5 truncate max-w-[140px] inline-block',
-      muted ? 'text-[--color-muted] bg-[--color-surface-hover] line-through' : 'text-amber-500 bg-amber-500/10',
+      muted ? 'text-muted bg-surface-hover line-through' : 'text-amber-500 bg-amber-500/10',
     )} title={raw}>
       {raw}
     </span>
@@ -47,14 +47,14 @@ export default function UpdateIssueProposal({ part, addToolOutput, inBatch }: Pr
         <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
           <Check size={14} className="text-emerald-500 shrink-0" />
           <span className="text-[12px] font-medium text-emerald-500">Mis à jour</span>
-          {input.display_id && <span className="text-[12px] text-[--color-muted] truncate">{input.display_id}</span>}
+          {input.display_id && <span className="text-[12px] text-muted truncate">{input.display_id}</span>}
         </div>
       );
     }
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-[--color-border] bg-[--color-surface] px-3 py-2">
-        <X size={14} className="text-[--color-muted] shrink-0" />
-        <span className="text-[12px] text-[--color-muted]">Modification annulée</span>
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2">
+        <X size={14} className="text-muted shrink-0" />
+        <span className="text-[12px] text-muted">Modification annulée</span>
       </div>
     );
   }
@@ -92,12 +92,12 @@ export default function UpdateIssueProposal({ part, addToolOutput, inBatch }: Pr
   };
 
   return (
-    <div className="rounded-2xl border border-[--color-border] bg-[--color-surface] overflow-hidden relative">
+    <div className="rounded-2xl border border-border bg-surface overflow-hidden relative">
       <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-500" />
 
       <div className="px-4 pt-3 pb-2 flex items-center gap-2">
         <Pencil size={14} className="text-amber-500 shrink-0" />
-        <span className="text-[10px] font-semibold text-[--color-muted] uppercase tracking-wider">
+        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
           Modifier une issue
         </span>
         {input.display_id && (
@@ -109,24 +109,24 @@ export default function UpdateIssueProposal({ part, addToolOutput, inBatch }: Pr
 
       <div className="px-4 pb-4 space-y-3">
         {input.title && (
-          <p className="text-[13px] text-[--color-primary] font-medium line-clamp-2">
+          <p className="text-[13px] text-primary font-medium line-clamp-2">
             {input.title}
           </p>
         )}
 
         {diffEntries.length === 0 ? (
-          <p className="text-[11px] text-[--color-muted] italic py-2">
+          <p className="text-[11px] text-muted italic py-2">
             Aucun changement proposé.
           </p>
         ) : (
           <div className="space-y-1.5">
             {diffEntries.map((d, i) => (
               <div key={i} className="flex items-center gap-2 text-[11px]">
-                <span className="text-[--color-muted] uppercase tracking-wide text-[9px] w-16 shrink-0 font-medium">
+                <span className="text-muted uppercase tracking-wide text-[9px] w-16 shrink-0 font-medium">
                   {d.field}
                 </span>
                 <DiffValue value={d.from} muted />
-                <ArrowRight size={10} className="text-[--color-muted] shrink-0" />
+                <ArrowRight size={10} className="text-muted shrink-0" />
                 <DiffValue value={d.to} />
               </div>
             ))}
@@ -135,7 +135,7 @@ export default function UpdateIssueProposal({ part, addToolOutput, inBatch }: Pr
       </div>
 
       {!inBatch && (
-        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-[--color-border] bg-[--color-surface-hover]/30">
+        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border bg-surface-hover/30">
           <Button onClick={handleCancel} variant="secondary" size="sm">
             <X size={12} />
             Annuler

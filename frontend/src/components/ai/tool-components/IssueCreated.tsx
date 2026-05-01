@@ -25,22 +25,22 @@ export default function IssueCreated({ data }: IssueCreatedProps) {
         <p className="text-xs font-semibold text-emerald-400">Issue created</p>
         <div className="flex items-center gap-2 flex-wrap">
           {issue.display_id && (
-            <span className="font-mono text-[11px] text-[--color-muted]">{issue.display_id}</span>
+            <span className="font-mono text-[11px] text-muted">{issue.display_id}</span>
           )}
-          <span className="text-sm font-medium text-[--color-primary]">{issue.title ?? '(issue created)'}</span>
+          <span className="text-sm font-medium text-primary">{issue.title ?? '(issue created)'}</span>
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-[--color-muted]">
-          {issue.status && <span>Status: <span className="text-[--color-secondary]">{issue.status}</span></span>}
-          {issue.priority && <span>Priority: <span className="text-[--color-secondary]">{issue.priority}</span></span>}
-          {issue.category && <span>Category: <span className="text-[--color-secondary]">{issue.category}</span></span>}
-          {issue.project_name && <span>Project: <span className="text-[--color-secondary]">{issue.project_name}</span></span>}
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-muted">
+          {issue.status && <span>Status: <span className="text-secondary">{issue.status}</span></span>}
+          {issue.priority && <span>Priority: <span className="text-secondary">{issue.priority}</span></span>}
+          {issue.category && <span>Category: <span className="text-secondary">{issue.category}</span></span>}
+          {issue.project_name && <span>Project: <span className="text-secondary">{issue.project_name}</span></span>}
         </div>
         {issue.url && (
           <a
             href={issue.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[11px] text-[--color-accent] hover:underline"
+            className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
           >
             Open <ExternalLink size={10} />
           </a>

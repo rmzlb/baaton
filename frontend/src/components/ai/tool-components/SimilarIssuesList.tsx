@@ -23,7 +23,7 @@ const STATUS_ICON: Record<string, React.ElementType> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  backlog: 'text-[--color-muted]',
+  backlog: 'text-muted',
   todo: 'text-blue-400',
   in_progress: 'text-amber-400',
   in_review: 'text-purple-400',
@@ -37,24 +37,24 @@ export default function SimilarIssuesList({ data }: SimilarIssuesListProps) {
 
   if (candidates.length === 0) {
     return (
-      <div className="rounded-xl border border-[--color-border] bg-[--color-surface] p-4">
+      <div className="rounded-xl border border-border bg-surface p-4">
         {refTitle && (
-          <div className="flex items-center gap-2 text-xs text-[--color-muted] mb-2">
+          <div className="flex items-center gap-2 text-xs text-muted mb-2">
             <Copy size={12} />
-            <span>Similaires à : <span className="text-[--color-primary] font-medium">{refTitle}</span></span>
+            <span>Similaires à : <span className="text-primary font-medium">{refTitle}</span></span>
           </div>
         )}
-        <p className="text-xs text-[--color-muted]">Aucune issue similaire trouvée.</p>
+        <p className="text-xs text-muted">Aucune issue similaire trouvée.</p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-surface] p-4 space-y-3">
+    <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
       {refTitle && (
-        <div className="flex items-center gap-2 text-xs text-[--color-muted]">
+        <div className="flex items-center gap-2 text-xs text-muted">
           <Copy size={12} />
-          <span>Similaires à : <span className="text-[--color-primary] font-medium">{refTitle}</span></span>
+          <span>Similaires à : <span className="text-primary font-medium">{refTitle}</span></span>
         </div>
       )}
 
@@ -63,17 +63,17 @@ export default function SimilarIssuesList({ data }: SimilarIssuesListProps) {
           const score = c.similarity_score ?? 0;
           const pct = Math.round(score * 100);
           const StatusIcon = STATUS_ICON[c.status ?? ''] ?? Circle;
-          const statusColor = STATUS_COLOR[c.status ?? ''] ?? 'text-[--color-muted]';
+          const statusColor = STATUS_COLOR[c.status ?? ''] ?? 'text-muted';
 
           return (
             <li
               key={c.display_id ?? i}
-              className="flex items-center gap-3 rounded-lg border border-[--color-border] bg-[--color-surface] px-3 py-2 hover:border-amber-500/30 transition-colors"
+              className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2 hover:border-amber-500/30 transition-colors"
             >
-              <span className="font-mono text-[11px] text-[--color-muted] shrink-0 w-16">
+              <span className="font-mono text-[11px] text-muted shrink-0 w-16">
                 {c.display_id ?? '—'}
               </span>
-              <span className="text-[13px] text-[--color-primary] truncate flex-1 min-w-0">
+              <span className="text-[13px] text-primary truncate flex-1 min-w-0">
                 {c.title}
               </span>
               <span className={cn('flex items-center gap-1 text-[11px] shrink-0', statusColor)}>
@@ -81,7 +81,7 @@ export default function SimilarIssuesList({ data }: SimilarIssuesListProps) {
                 {c.status?.replace('_', ' ') ?? '—'}
               </span>
               <div className="flex items-center gap-1.5 shrink-0 w-20">
-                <div className="h-1.5 flex-1 rounded-full bg-[--color-border] overflow-hidden">
+                <div className="h-1.5 flex-1 rounded-full bg-border overflow-hidden">
                   <div
                     className={cn(
                       'h-full rounded-full transition-all',
@@ -90,7 +90,7 @@ export default function SimilarIssuesList({ data }: SimilarIssuesListProps) {
                     style={{ width: `${Math.min(100, pct)}%` }}
                   />
                 </div>
-                <span className="text-[10px] text-[--color-muted] font-mono w-7 text-right">
+                <span className="text-[10px] text-muted font-mono w-7 text-right">
                   {pct}%
                 </span>
               </div>

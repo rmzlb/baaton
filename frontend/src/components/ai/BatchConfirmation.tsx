@@ -93,7 +93,7 @@ export function BatchConfirmation({ parts, addToolOutput }: BatchConfirmationPro
         </span>
       </div>
 
-      <div className="divide-y divide-[--color-border]">
+      <div className="divide-y divide-border">
         {parts.map(part => (
           <div key={part.toolCallId} className="flex gap-2 p-2">
             <input
@@ -112,8 +112,8 @@ export function BatchConfirmation({ parts, addToolOutput }: BatchConfirmationPro
         ))}
       </div>
 
-      <div className="sticky bottom-0 flex items-center justify-between gap-2 px-3 py-2 border-t border-[--color-border] bg-[--color-surface]/80 backdrop-blur-sm">
-        <span className="text-[11px] text-[--color-muted]">
+      <div className="sticky bottom-0 flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-surface/80 backdrop-blur-sm">
+        <span className="text-[11px] text-muted">
           {selectedCount} / {parts.length} selectionnes
         </span>
         <div className="flex items-center gap-2">

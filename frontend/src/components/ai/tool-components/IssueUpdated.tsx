@@ -44,27 +44,27 @@ export default function IssueUpdated({ data }: IssueUpdatedProps) {
         <p className="text-xs font-semibold text-blue-400">Issue updated</p>
         <div className="flex items-center gap-2 flex-wrap">
           {issue.display_id && (
-            <span className="font-mono text-[11px] text-[--color-muted]">{issue.display_id}</span>
+            <span className="font-mono text-[11px] text-muted">{issue.display_id}</span>
           )}
-          <span className="text-sm font-medium text-[--color-primary]">{issue.title}</span>
+          <span className="text-sm font-medium text-primary">{issue.title}</span>
         </div>
 
         {changes.length > 0 && (
           <ul className="space-y-1">
             {changes.map((c, i) => (
               <li key={i} className="flex items-center gap-1.5 text-[11px]">
-                <span className="capitalize text-[--color-muted] min-w-[80px]">{c.field}</span>
+                <span className="capitalize text-muted min-w-[80px]">{c.field}</span>
                 {c.from != null && (
                   <>
-                    <span className="text-[--color-muted] line-through">{renderValue(c.from)}</span>
-                    <ArrowRight size={10} className="text-[--color-muted] shrink-0" />
+                    <span className="text-muted line-through">{renderValue(c.from)}</span>
+                    <ArrowRight size={10} className="text-muted shrink-0" />
                   </>
                 )}
                 {c.to != null && (
-                  <span className="text-[--color-primary] font-medium">{renderValue(c.to)}</span>
+                  <span className="text-primary font-medium">{renderValue(c.to)}</span>
                 )}
                 {c.from == null && c.to == null && (
-                  <span className="text-[--color-secondary]">changed</span>
+                  <span className="text-secondary">changed</span>
                 )}
               </li>
             ))}

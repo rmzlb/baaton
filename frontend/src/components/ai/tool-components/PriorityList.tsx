@@ -32,7 +32,7 @@ export default function PriorityList({ data }: PriorityListProps) {
     : (data?.priorities ?? data?.items ?? []);
 
   if (items.length === 0) {
-    return <p className="text-xs text-[--color-muted] py-2">No priority items.</p>;
+    return <p className="text-xs text-muted py-2">No priority items.</p>;
   }
 
   return (
@@ -43,17 +43,17 @@ export default function PriorityList({ data }: PriorityListProps) {
         return (
           <li
             key={item.display_id ?? i}
-            className="flex items-start gap-3 rounded-md border border-[--color-border] bg-[--color-surface] px-3 py-2.5"
+            className="flex items-start gap-3 rounded-md border border-border bg-surface px-3 py-2.5"
           >
-            <span className="text-xs font-mono text-[--color-muted] min-w-[1.5rem] pt-0.5">
+            <span className="text-xs font-mono text-muted min-w-[1.5rem] pt-0.5">
               {i + 1}.
             </span>
             <div className="flex-1 min-w-0 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 {item.display_id && (
-                  <span className="font-mono text-[10px] text-[--color-muted]">{item.display_id}</span>
+                  <span className="font-mono text-[10px] text-muted">{item.display_id}</span>
                 )}
-                <span className="text-sm font-medium text-[--color-primary] truncate">{item.title}</span>
+                <span className="text-sm font-medium text-primary truncate">{item.title}</span>
                 <span className={cn('inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium', urgency.color, urgency.bg)}>
                   <Icon size={9} />
                   {urgency.label}
@@ -63,7 +63,7 @@ export default function PriorityList({ data }: PriorityListProps) {
               {item.reasons && item.reasons.length > 0 && (
                 <ul className="flex flex-wrap gap-1.5">
                   {item.reasons.map((r, j) => (
-                    <li key={j} className="text-[10px] text-[--color-muted] bg-[--color-surface-hover] rounded px-1.5 py-0.5">
+                    <li key={j} className="text-[10px] text-muted bg-surface-hover rounded px-1.5 py-0.5">
                       {r}
                     </li>
                   ))}

@@ -310,10 +310,10 @@ function EmptyState({ skillCount, projectCount, canSend, onSend }: EmptyStatePro
     <div className="flex flex-col gap-5 py-4 px-1">
       {/* Greeting — Baaton "Good morning." style */}
       <div>
-        <h2 className="text-2xl font-bold text-[--color-primary] tracking-tight">
+        <h2 className="text-2xl font-bold text-primary tracking-tight">
           {greeting}
         </h2>
-        <p className="text-[13px] text-[--color-muted] mt-1">
+        <p className="text-[13px] text-muted mt-1">
           {projectCount} projet{projectCount > 1 ? 's' : ''} · {skillCount} skills
         </p>
       </div>
@@ -327,13 +327,13 @@ function EmptyState({ skillCount, projectCount, canSend, onSend }: EmptyStatePro
               key={action.id}
               onClick={() => onSend(action.prompt)}
               disabled={!canSend}
-              className="group relative text-left rounded-xl border border-[--color-border] bg-[--color-surface] p-3 hover:border-amber-500/40 hover:bg-amber-500/5 active:scale-[0.98] active:bg-amber-500/10 transition-[transform,colors,background-color,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-500/30 will-change-transform"
+              className="group relative text-left rounded-xl border border-border bg-surface p-3 hover:border-amber-500/40 hover:bg-amber-500/5 active:scale-[0.98] active:bg-amber-500/10 transition-[transform,colors,background-color,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-500/30 will-change-transform"
             >
               <Icon size={14} className="text-amber-500 mb-1.5" />
-              <div className="text-[11px] font-semibold text-[--color-primary] leading-tight">
+              <div className="text-[11px] font-semibold text-primary leading-tight">
                 {action.title}
               </div>
-              <div className="text-[10px] text-[--color-muted] mt-0.5 line-clamp-2 leading-snug">
+              <div className="text-[10px] text-muted mt-0.5 line-clamp-2 leading-snug">
                 {action.subtitle}
               </div>
             </button>
@@ -342,7 +342,7 @@ function EmptyState({ skillCount, projectCount, canSend, onSend }: EmptyStatePro
       </div>
 
       {/* Footer hint */}
-      <p className="text-center text-[10px] text-[--color-muted]/70">
+      <p className="text-center text-[10px] text-muted/70">
         Ou tape une demande en langage naturel
       </p>
     </div>
@@ -566,7 +566,7 @@ export function AIAssistant() {
         // env(safe-area-inset-bottom) keeps the FAB above iOS home indicator in PWA mode.
         // Touch target 48×48 (above WCAG 2.5.5 minimum of 44).
         style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))' }}
-        className="fixed right-4 sm:right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500 text-black shadow-lg transition-all duration-300 hover:scale-105 hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[--color-bg]"
+        className="fixed right-4 sm:right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500 text-black shadow-lg transition-all duration-300 hover:scale-105 hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       >
         <Sparkles size={20} aria-hidden="true" />
       </button>
@@ -790,7 +790,7 @@ export function AIAssistant() {
 
           {/* Input — AI Elements PromptInput. Bottom padding includes iOS safe-area. */}
           <div
-            className="shrink-0 border-t border-[--color-border] bg-[--color-bg] px-3 pt-3"
+            className="shrink-0 border-t border-border bg-bg px-3 pt-3"
             style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
           >
             <PromptInput onSubmit={({ text }) => { if (text.trim()) void handleSend(text); }}>
@@ -805,7 +805,7 @@ export function AIAssistant() {
                 autoCorrect="on"
               />
               <PromptInputFooter>
-                <span className="text-[10px] text-[--color-muted] truncate">
+                <span className="text-[10px] text-muted truncate">
                   {t('aiChat.backendAgent')} · {skillCount} skills
                 </span>
                 <PromptInputSubmit

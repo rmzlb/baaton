@@ -29,12 +29,12 @@ function Stat({
 }) {
   return (
     <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-[9px] font-medium uppercase tracking-wider text-[--color-muted] truncate">
+      <span className="text-[9px] font-medium uppercase tracking-wider text-muted truncate">
         {label}
       </span>
       <span
         className={cn(
-          'text-xl font-semibold leading-none tabular-nums text-[--color-primary]',
+          'text-xl font-semibold leading-none tabular-nums text-primary',
           color,
         )}
       >
@@ -60,8 +60,8 @@ function Inline({
   return (
     <div className="inline-flex items-center gap-1 whitespace-nowrap text-[11px]">
       <Icon size={11} className={iconColor} />
-      <span className="text-[--color-muted]">{label}</span>
-      <span className={cn('font-semibold tabular-nums', valueColor ?? 'text-[--color-primary]')}>
+      <span className="text-muted">{label}</span>
+      <span className={cn('font-semibold tabular-nums', valueColor ?? 'text-primary')}>
         {value}
       </span>
     </div>
@@ -87,17 +87,17 @@ export default function MetricsCard({ data }: MetricsCardProps) {
     'Tous projets';
 
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-surface] overflow-hidden">
+    <div className="rounded-xl border border-border bg-surface overflow-hidden">
       {/* ── Header (always visible — disambiguates which project the card is about) ── */}
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[--color-border] bg-[--color-bg]/40">
+      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border bg-bg/40">
         {metrics.project_prefix ? (
           <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0">
             {metrics.project_prefix}
           </span>
         ) : (
-          <Folders size={11} className="text-[--color-muted] shrink-0" />
+          <Folders size={11} className="text-muted shrink-0" />
         )}
-        <span className="text-[12px] font-semibold text-[--color-primary] truncate min-w-0">
+        <span className="text-[12px] font-semibold text-primary truncate min-w-0">
           {metrics.project_prefix && metrics.project_name
             ? metrics.project_name
             : headerLabel}
@@ -117,7 +117,7 @@ export default function MetricsCard({ data }: MetricsCardProps) {
       </div>
 
       {/* ── Footer metrics (wrap freely; no overflow on narrow panels) ── */}
-      <div className="border-t border-[--color-border] px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+      <div className="border-t border-border px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
         {metrics.velocity != null && (
           <Inline
             icon={Zap}
@@ -155,7 +155,7 @@ export default function MetricsCard({ data }: MetricsCardProps) {
             icon={TrendingUp}
             label="Cycle"
             value={`${metrics.avg_cycle_time_hours}h`}
-            iconColor="text-[--color-muted]"
+            iconColor="text-muted"
           />
         )}
         {metrics.open != null &&

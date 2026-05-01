@@ -43,21 +43,21 @@ export default function SprintAnalysis({ data }: SprintAnalysisProps) {
   // Compact empty state when there's no active sprint — saves vertical space.
   if (sprint.no_active_sprint) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-[--color-border] bg-[--color-surface] px-3 py-2.5">
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2.5">
         {sprint.project_prefix ? (
           <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0">
             {sprint.project_prefix}
           </span>
         ) : (
-          <Folders size={11} className="text-[--color-muted] shrink-0" />
+          <Folders size={11} className="text-muted shrink-0" />
         )}
-        <span className="text-[12px] text-[--color-primary] truncate flex-1 min-w-0">
+        <span className="text-[12px] text-primary truncate flex-1 min-w-0">
           {sprint.project_prefix && sprint.project_name
             ? sprint.project_name
             : headerLabel}
         </span>
-        <CalendarOff size={11} className="text-[--color-muted] shrink-0" />
-        <span className="text-[11px] text-[--color-muted] shrink-0">
+        <CalendarOff size={11} className="text-muted shrink-0" />
+        <span className="text-[11px] text-muted shrink-0">
           aucun sprint actif
         </span>
       </div>
@@ -84,7 +84,7 @@ export default function SprintAnalysis({ data }: SprintAnalysisProps) {
       ? 'text-red-400'
       : trend === 'at_risk'
         ? 'text-amber-400'
-        : 'text-[--color-muted]';
+        : 'text-muted';
   const trendLabel =
     trend === 'on_track'
       ? 'on track'
@@ -99,25 +99,25 @@ export default function SprintAnalysis({ data }: SprintAnalysisProps) {
               : (trend ?? 'N/A');
 
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-surface] overflow-hidden">
+    <div className="rounded-xl border border-border bg-surface overflow-hidden">
       {/* ── Header (project + sprint name) ── */}
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[--color-border] bg-[--color-bg]/40">
+      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border bg-bg/40">
         {sprint.project_prefix ? (
           <span className="font-mono text-[10px] font-bold text-amber-400 shrink-0">
             {sprint.project_prefix}
           </span>
         ) : (
-          <Folders size={11} className="text-[--color-muted] shrink-0" />
+          <Folders size={11} className="text-muted shrink-0" />
         )}
-        <span className="text-[12px] font-semibold text-[--color-primary] truncate min-w-0">
+        <span className="text-[12px] font-semibold text-primary truncate min-w-0">
           {sprint.project_prefix && sprint.project_name
             ? sprint.project_name
             : headerLabel}
         </span>
         {sprint.sprint_name && (
           <>
-            <Target size={10} className="text-[--color-muted] shrink-0" />
-            <span className="text-[11px] text-[--color-secondary] truncate min-w-0">
+            <Target size={10} className="text-muted shrink-0" />
+            <span className="text-[11px] text-secondary truncate min-w-0">
               {sprint.sprint_name}
             </span>
           </>
@@ -127,7 +127,7 @@ export default function SprintAnalysis({ data }: SprintAnalysisProps) {
       {/* ── Hero stats ── */}
       <div className="grid grid-cols-3 gap-2 px-3 py-3">
         {[
-          { label: 'Planned', value: sprint.planned, color: 'text-[--color-primary]' },
+          { label: 'Planned', value: sprint.planned, color: 'text-primary' },
           {
             label: 'Completed',
             value: sprint.completed,
@@ -143,9 +143,9 @@ export default function SprintAnalysis({ data }: SprintAnalysisProps) {
         ].map(({ label, value, color, icon: Icon }) => (
           <div
             key={label}
-            className="flex flex-col gap-1 rounded-lg bg-[--color-surface-hover] px-2.5 py-2"
+            className="flex flex-col gap-1 rounded-lg bg-surface-hover px-2.5 py-2"
           >
-            <span className="text-[9px] font-medium uppercase tracking-wider text-[--color-muted] truncate">
+            <span className="text-[9px] font-medium uppercase tracking-wider text-muted truncate">
               {label}
             </span>
             <div className="flex items-center gap-1">
@@ -159,10 +159,10 @@ export default function SprintAnalysis({ data }: SprintAnalysisProps) {
       </div>
 
       {/* ── Footer (progress + trend, wraps cleanly) ── */}
-      <div className="border-t border-[--color-border] px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px]">
+      <div className="border-t border-border px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px]">
         {completionRate != null && (
           <div className="flex items-center gap-1.5 whitespace-nowrap">
-            <div className="h-1 w-16 rounded-full bg-[--color-border] overflow-hidden">
+            <div className="h-1 w-16 rounded-full bg-border overflow-hidden">
               <div
                 className={cn(
                   'h-full transition-all',
@@ -175,7 +175,7 @@ export default function SprintAnalysis({ data }: SprintAnalysisProps) {
                 style={{ width: `${Math.min(100, completionRate)}%` }}
               />
             </div>
-            <span className="text-[--color-muted] tabular-nums">{completionRate}% done</span>
+            <span className="text-muted tabular-nums">{completionRate}% done</span>
           </div>
         )}
         {trend != null && (

@@ -7,7 +7,7 @@ function Card({ className, size = "default", ...props }: React.ComponentProps<"d
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col overflow-hidden rounded-xl bg-[--color-surface] text-[--color-primary] ring-1 ring-[--color-foreground]/12 shadow-sm has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0",
+        "group/card flex flex-col overflow-hidden rounded-xl bg-surface text-primary ring-1 ring-foreground/12 shadow-sm has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0",
         size === "default" ? "gap-4 py-4" : "gap-3 py-3",
         className
       )}
@@ -22,7 +22,7 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return <div data-slot="card-title" className={cn("text-base leading-snug font-medium group-data-[size=sm]/card:text-sm", className)} {...props} />
 }
 function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="card-description" className={cn("text-[--color-muted] text-sm", className)} {...props} />
+  return <div data-slot="card-description" className={cn("text-muted text-sm", className)} {...props} />
 }
 function CardAction({ className, ...props }: React.ComponentProps<"div">) {
   return <div data-slot="card-action" className={cn("col-start-2 row-span-2 row-start-1 self-start justify-self-end", className)} {...props} />
@@ -31,6 +31,6 @@ function CardContent({ className, ...props }: React.ComponentProps<"div">) {
   return <div data-slot="card-content" className={cn("px-4 group-data-[size=sm]/card:px-3", className)} {...props} />
 }
 function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="card-footer" className={cn("flex items-center rounded-b-xl border-t bg-[--color-surface-hover]/50 p-4 group-data-[size=sm]/card:p-3", className)} {...props} />
+  return <div data-slot="card-footer" className={cn("flex items-center rounded-b-xl border-t bg-surface-hover/50 p-4 group-data-[size=sm]/card:p-3", className)} {...props} />
 }
 export { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent, CardFooter }
