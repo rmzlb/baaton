@@ -635,7 +635,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         role="dialog"
         aria-modal="true"
         aria-labelledby="issue-drawer-title"
-        className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right overflow-hidden"
+        className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border md:shadow-2xl flex flex-col animate-slide-in-right overflow-hidden"
       >
         {/* ── Header ── */}
         <div className="flex items-center justify-between border-b border-border px-4 py-2.5 shrink-0">
