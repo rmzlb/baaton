@@ -89,6 +89,10 @@
   --color-muted: oklch(0.556 0 0);
   --color-accent: oklch(0.78 0.14 75);
   --color-accent-hover: oklch(0.7 0.14 75);
+  /* Vars used as arbitrary values in components */
+  --color-foreground: oklch(0.985 0 0);
+  --color-card: oklch(0.17 0 0);
+  --color-card-foreground: oklch(0.985 0 0);
 }
 
 /* ─── Light Theme ──────────────────────────── */
@@ -127,6 +131,10 @@ html:not(.dark) {
   --color-muted: oklch(0.708 0 0);
   --color-accent: oklch(0.7 0.14 75);
   --color-accent-hover: oklch(0.62 0.14 75);
+  /* Vars used as arbitrary values in components */
+  --color-foreground: oklch(0.145 0 0);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.145 0 0);
 }
 
 html:not(.dark) ::-webkit-scrollbar-thumb { background: oklch(0.78 0 0); }
