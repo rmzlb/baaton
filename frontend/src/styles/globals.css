@@ -211,6 +211,14 @@ html.app-shell-locked body {
   }
 }
 
+/* ─── Kanban card stagger entry ─────────────── */
+@keyframes slide-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-in-up { animation: slide-in-up 0.2s ease-out both; }
+.fill-mode-both { animation-fill-mode: both; }
+
 /* ─── Custom Scrollbar ─────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -53,6 +53,7 @@ interface KanbanCardProps {
   onSelect?: (id: string, shiftKey: boolean) => void;
   projectTags?: ProjectTag[];
   githubPrs?: GitHubPrLink[];
+  index?: number;
 }
 
 const typeConfig: Record<IssueType, { icon: typeof Bug; color: string; bg: string; label: string }> = {
@@ -248,7 +249,7 @@ function getLeftBorderClass(issue: Issue): string {
 
 /* ─── Main Component ────────────────────────────────── */
 
-export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, selected = false, onSelect, projectTags = [], githubPrs = [] }: KanbanCardProps) {
+export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, selected = false, onSelect, projectTags = [], githubPrs = [], index = 0 }: KanbanCardProps) {
   const handleContextMenu = (e: React.MouseEvent) => {
     if (onContextMenu) { e.preventDefault(); e.stopPropagation(); onContextMenu(e, issue); }
   };
@@ -285,7 +286,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
         style={provided.draggableProps.style}
         className={cn(
-          'group group/card relative cursor-pointer rounded-md bg-card ring-1 ring-foreground/12 shadow-sm px-2.5 py-1.5 will-change-transform transition-all duration-150 hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px',
+          'group group/card relative cursor-pointer rounded-md bg-card ring-1 ring-foreground/12 px-2.5 py-1.5 will-change-transform transition-all duration-150 hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px',
           isDone && 'opacity-60 hover:opacity-90',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
           selected && 'ring-2 ring-accent/40 border-accent/30',
@@ -334,11 +335,11 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
         ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
         onClick={onClick} onContextMenu={handleContextMenu}
         role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
-        style={provided.draggableProps.style}
+        style={{ ...provided.draggableProps.style, ...(!isDragging ? { animationDelay: `${Math.min(index * 30, 300)}ms` } : {}) }}
         className={cn(
-          'group cursor-pointer rounded-lg bg-card ring-1 ring-foreground/12 shadow-sm p-4 will-change-transform transition-all duration-150 hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px',
+          'group cursor-pointer rounded-lg bg-card ring-1 ring-foreground/12 p-4 will-change-transform transition-all duration-150 hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px animate-slide-in-up fill-mode-both',
           isDone && 'opacity-70 hover:opacity-100',
-          isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02]',
+          isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02] !animate-none',
           selected && 'ring-2 ring-accent/40 border-accent/30',
           leftBorder,
         )}
@@ -412,7 +413,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
       role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
       style={provided.draggableProps.style}
       className={cn(
-        'group cursor-pointer rounded-lg bg-card p-3 will-change-transform transition-all duration-150 ring-1 ring-foreground/12 shadow-sm hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px',
+        'group cursor-pointer rounded-lg bg-card p-3 will-change-transform transition-all duration-150 ring-1 ring-foreground/12 hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px',
         isDone && 'opacity-85 hover:opacity-100',
         isDragging && 'shadow-xl ring-2 ring-accent/40 rotate-1 scale-[1.02]',
         selected && 'ring-2 ring-accent/40',
@@ -429,7 +430,6 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
             <PriorityConfig.icon size={13} className={cn(PriorityConfig.color, 'shrink-0')} />
           ) : null}
           <CopyableId id={issue.display_id} className="text-[11px] text-gray-400 dark:text-muted whitespace-nowrap" />
-          <TypeIcon type={issue.type} />
           {isNew(issue.created_at, issue.updated_at) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
           <SlaBadge issue={issue} />
         </div>
@@ -446,13 +446,20 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
 
       {/* Title */}
       <h3 className={cn(
-        'text-sm font-medium mb-2.5 leading-snug tracking-tight line-clamp-2',
+        'text-sm font-medium leading-snug tracking-tight line-clamp-2',
         isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
       )}>{issue.title}</h3>
 
-      {/* Footer: tags + due | PR + assignee */}
-      <div className="flex items-center justify-between">
+      {/* Description preview */}
+      {issue.description && !isDone && (() => {
+        const preview = stripHtml(issue.description).slice(0, 80);
+        return preview ? <p className="text-xs text-muted leading-relaxed line-clamp-1 mt-1">{preview}</p> : null;
+      })()}
+
+      {/* Footer: type + tags + due | PR + assignee */}
+      <div className="flex items-center justify-between mt-2.5">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+          <TypeIcon type={issue.type} />
           {tags.slice(0, 2).map((tag) => (
             <TagPill key={tag} tag={tag} color={getTagColor(tag)} maxW="max-w-[80px]" />
           ))}

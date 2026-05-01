@@ -117,8 +117,8 @@ export function KanbanColumn({
     <div role="group" aria-label={`${status.label} — ${issues.length} issues`} className={cn('flex h-full flex-col shrink-0 snap-center', COLUMN_WIDTHS[density])}>
       {/* Column Header */}
       <div className={cn(
-        'flex items-center justify-between px-1',
-        density === 'compact' ? 'mb-2' : 'mb-3',
+        'flex items-center justify-between px-1 border-b border-border/50',
+        density === 'compact' ? 'mb-2 pb-1.5' : 'mb-3 pb-2',
       )}>
         <div className="flex items-center gap-2">
           <div
@@ -136,7 +136,7 @@ export function KanbanColumn({
             {status.label}
           </span>
           <span className={cn(
-            'px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-surface-hover text-gray-500 dark:text-secondary font-medium',
+            'px-1.5 py-0.5 rounded-full bg-foreground/8 text-secondary font-medium',
             density === 'compact' ? 'text-[10px]' : 'text-xs',
           )} aria-label={`${issues.length} issues`}>
             {issues.length}
@@ -204,6 +204,7 @@ export function KanbanColumn({
                 selected={selectedIds?.has(issue.id)}
                 onSelect={onSelect}
                 projectTags={projectTags}
+                index={index}
               />
             )}
           </Draggable>
