@@ -1146,6 +1146,10 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.features.humanDesc': 'Les agents proposent. Les humains valident. Changements de statut, priorités, closures peuvent requérir une validation humaine. Tu gardes le contrôle.',
 // ─── Landing: Workflow section
 'landing.workflow.title1': 'Ultra simple.',
+// ─── Landing: Demo section
+'landing.demo.badge': 'En action',
+'landing.demo.title': '47 secondes. Zéro UI.',
+'landing.demo.sub': 'Votre agent lit une issue, fait le travail, poste un résumé, et passe la main. Tout via API. Tout tracé.',
 'landing.workflow.title2': 'Volontairement.',
 'landing.workflow.step1': 'Tu crées l\'issue',
 'landing.workflow.step1Desc': 'Crée un ticket. "Fix le bug de timeout login, priorité haute." C\'est tout. Ton agent le voit instantanément.',

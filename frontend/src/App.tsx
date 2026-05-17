@@ -9,6 +9,8 @@ import { PageLoader } from '@/components/shared/PageLoader';
 
 // Lazy-loaded page components (code splitting)
 const Landing = lazy(() => import('./pages/Landing'));
+const Privacy = lazy(() => import('./pages/Privacy'));
+const Terms = lazy(() => import('./pages/Terms'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const ProjectBoard = lazy(() => import('./pages/ProjectBoard'));
 const ProjectList = lazy(() => import('./pages/ProjectList'));
@@ -145,6 +147,8 @@ export function App() {
         <Route path="/submit/:slug" element={<PublicSubmit />} />
         <Route path="/s/:token" element={<PublicSubmit />} />
         <Route path="/docs" element={<Docs />} />
+        <Route path="/privacy" element={<Suspense fallback={<PageLoader />}><Privacy /></Suspense>} />
+        <Route path="/terms" element={<Suspense fallback={<PageLoader />}><Terms /></Suspense>} />
 
         {/* Auth routes */}
         <Route

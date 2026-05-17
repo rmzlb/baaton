@@ -37,14 +37,16 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id: string) {
-          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) return 'vendor';
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/') || id.includes('node_modules/react-router')) return 'vendor';
           if (id.includes('node_modules/@clerk/')) return 'clerk';
-          if (id.includes('node_modules/lexical') || id.includes('node_modules/@lexical') || id.includes('node_modules/novel')) return 'editor';
+          if (id.includes('node_modules/lexical') || id.includes('node_modules/@lexical') || id.includes('node_modules/novel') || id.includes('node_modules/@tiptap') || id.includes('node_modules/prosemirror')) return 'editor';
           if (id.includes('node_modules/@tanstack/')) return 'query';
           if (id.includes('node_modules/@hello-pangea/')) return 'dnd';
           if (id.includes('node_modules/framer-motion')) return 'motion';
           if (id.includes('node_modules/ai/') || id.includes('node_modules/@ai-sdk/')) return 'ai-sdk';
           if (id.includes('node_modules/zod')) return 'ai-sdk';
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) return 'charts';
+          if (id.includes('node_modules/cytoscape')) return 'graph';
         },
       },
     },

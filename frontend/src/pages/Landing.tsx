@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, Sun, Moon, LayoutDashboard, Bot, User, Check,
@@ -343,6 +343,18 @@ export function Landing() {
         <CodeTabs />
       </main>
 
+      {/* ── Live API Demo (animated terminal) ──── */}
+      <section className="py-16 sm:py-24 bg-white dark:bg-[#060606] border-t border-black/5 dark:border-white/5 transition-colors relative z-20">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6">
+          <div className="text-center mb-12">
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.demo.badge')}</p>
+            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.demo.title')}</h2>
+            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium max-w-2xl mx-auto">{t('landing.demo.sub')}</p>
+          </div>
+          <ApiDemo />
+        </div>
+      </section>
+
       {/* ── Features ───────────────────────────── */}
       <section id="features" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#080808] transition-colors relative z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -650,10 +662,93 @@ function Step({ n, title, desc, active }: { n: string; title: string; desc: stri
 
 function LogLine({ time, level, color, text, dim }: { time: string; level: string; color: string; text: string; dim?: boolean }) {
   return (
-    <div className={`flex gap-3 ${dim ? 'opacity-50' : 'opacity-75'}`}>
-      <span className="text-neutral-500">{time}</span>
-      <span className={`${color} font-bold`}>{level}</span>
-      <span className="text-neutral-300">{text}</span>
+    <div className={`flex gap-3 ${dim ? 'opacity-50' : ''}`}>
+      <span className="text-neutral-500 shrink-0">{time}</span>
+      <span className={`${color} font-bold shrink-0`}>{level}</span>
+      <span className="text-neutral-200 dark:text-neutral-300">{text}</span>
+    </div>
+  );
+}
+
+/* ── Animated API Demo Terminal ─────────────── */
+const DEMO_LINES: { type: 'cmd' | 'response' | 'hint' | 'pause'; text: string; color?: string; delay: number }[] = [
+  { type: 'cmd', text: '$ curl -X POST api.baaton.dev/v1/issues \\', delay: 0 },
+  { type: 'cmd', text: '    -d \'{"title": "Fix auth timeout", "priority": "high"}\'', delay: 600 },
+  { type: 'pause', text: '', delay: 800 },
+  { type: 'response', text: '{"data": {"display_id": "BAT-42", "status": "backlog"}}', color: 'text-green-400', delay: 400 },
+  { type: 'hint', text: '→ _hint: "Pull project context before starting work"', color: 'text-amber-400', delay: 600 },
+  { type: 'pause', text: '', delay: 1200 },
+  { type: 'cmd', text: '$ # Agent picks it up, reads context, starts working...', delay: 0 },
+  { type: 'pause', text: '', delay: 1000 },
+  { type: 'cmd', text: '$ curl -X PATCH api.baaton.dev/v1/issues/BAT-42 \\', delay: 0 },
+  { type: 'cmd', text: '    -d \'{"status": "in_progress"}\'', delay: 500 },
+  { type: 'response', text: '{"data": {"status": "in_progress"}}', color: 'text-green-400', delay: 400 },
+  { type: 'pause', text: '', delay: 1200 },
+  { type: 'cmd', text: '$ curl -X POST api.baaton.dev/v1/issues/BAT-42/tldr \\', delay: 0 },
+  { type: 'cmd', text: '    -d \'{"summary": "Fixed. Refactored auth module.", "tests_status": "passed"}\'', delay: 600 },
+  { type: 'response', text: '{"data": {"agent_name": "claude-code", "summary": "Fixed..."}}', color: 'text-green-400', delay: 400 },
+  { type: 'hint', text: '→ _hint: "Update status to in_review for human approval"', color: 'text-amber-400', delay: 600 },
+  { type: 'pause', text: '', delay: 1000 },
+  { type: 'cmd', text: '$ curl -X PATCH api.baaton.dev/v1/issues/BAT-42 \\', delay: 0 },
+  { type: 'cmd', text: '    -d \'{"status": "in_review"}\'', delay: 500 },
+  { type: 'response', text: '✓ Done. Human notified. 47 seconds total.', color: 'text-emerald-400', delay: 500 },
+];
+
+function ApiDemo() {
+  const [visibleLines, setVisibleLines] = useState(0);
+  const [started, setStarted] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting && !started) setStarted(true); },
+      { threshold: 0.3 }
+    );
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [started]);
+
+  useEffect(() => {
+    if (!started) return;
+    let line = 0;
+    let totalDelay = 0;
+    const timers: NodeJS.Timeout[] = [];
+    DEMO_LINES.forEach((l, i) => {
+      totalDelay += l.delay + (l.type === 'cmd' ? 400 : 200);
+      timers.push(setTimeout(() => setVisibleLines(i + 1), totalDelay));
+    });
+    // Loop after completion
+    timers.push(setTimeout(() => { setVisibleLines(0); setStarted(false); setTimeout(() => setStarted(true), 2000); }, totalDelay + 3000));
+    return () => timers.forEach(clearTimeout);
+  }, [started]);
+
+  return (
+    <div ref={containerRef} className="rounded-xl border border-black/10 dark:border-white/10 bg-[#0a0a0a] overflow-hidden shadow-2xl shadow-black/20">
+      {/* Terminal header */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10 bg-black/40">
+        <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
+        <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
+        <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
+        <span className="ml-3 text-xs text-neutral-500 font-mono">agent-workflow.sh — 47s from issue to review</span>
+      </div>
+      {/* Terminal content */}
+      <div className="p-5 sm:p-6 font-mono text-xs sm:text-sm space-y-1.5 min-h-[320px] overflow-hidden">
+        {DEMO_LINES.slice(0, visibleLines).filter(l => l.type !== 'pause').map((line, i) => (
+          <div
+            key={i}
+            className={`transition-opacity duration-300 ${
+              line.type === 'cmd' ? 'text-neutral-300' :
+              line.type === 'hint' ? `${line.color} text-xs opacity-80 pl-2 border-l-2 border-amber-500/30` :
+              line.color || 'text-green-400'
+            }`}
+          >
+            {line.text}
+          </div>
+        ))}
+        {visibleLines < DEMO_LINES.length && visibleLines > 0 && (
+          <span className="inline-block w-2 h-4 bg-amber-500 animate-pulse" />
+        )}
+      </div>
     </div>
   );
 }

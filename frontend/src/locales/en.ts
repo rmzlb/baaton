@@ -1146,6 +1146,10 @@ As a [user], I want to [action] so that [benefit].
 'landing.features.humanDesc': 'Agents propose. Humans approve. Status transitions, priority changes, and closures can require human sign-off. You stay in control.',
 // ─── Landing: Workflow section
 'landing.workflow.title1': 'Dead simple.',
+// ─── Landing: Demo section
+'landing.demo.badge': 'See it in action',
+'landing.demo.title': '47 seconds. Zero UI.',
+'landing.demo.sub': 'Your agent reads an issue, does the work, posts a summary, and hands off to a human. All via API. All tracked.',
 'landing.workflow.title2': 'On purpose.',
 'landing.workflow.step1': 'You file it',
 'landing.workflow.step1Desc': 'Create an issue. "Fix the login timeout bug, high priority." That\'s it. Your agent sees it instantly.',
