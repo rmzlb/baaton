@@ -22,6 +22,10 @@
   <a href="https://discord.gg/baaton">Discord</a>
 </p>
 
+<p align="center">
+  <img src="assets/board-preview.png" alt="Baaton Board" width="100%" />
+</p>
+
 ---
 
 ## Why
@@ -52,6 +56,19 @@ curl -X POST https://api.baaton.dev/api/v1/issues/BAT-42/tldr \
 ```
 
 **Time from issue to review: 47 seconds. Zero UI.**
+
+<details>
+<summary>See the full flow (screenshots)</summary>
+
+**Step 1: Agent creates an issue**
+
+<img src="assets/demo-step1.png" width="100%" alt="Agent creates issue via API" />
+
+**Step 2: Agent works, reports back**
+
+<img src="assets/demo-step2.png" width="100%" alt="Agent posts TLDR and moves to review" />
+
+</details>
 
 ## What Makes It Different
 
