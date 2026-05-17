@@ -1,0 +1,31 @@
+{
+  "name": "@baaton/mcp",
+  "version": "0.1.0",
+  "description": "MCP server bridge for Baaton — project management for AI coding agents",
+  "main": "index.js",
+  "bin": {
+    "baaton-mcp": "./index.js"
+  },
+  "keywords": [
+    "mcp",
+    "ai-agents",
+    "project-management",
+    "baaton",
+    "coding-agents",
+    "model-context-protocol"
+  ],
+  "author": "rmzlb",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rmzlb/baaton.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://baaton.dev",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

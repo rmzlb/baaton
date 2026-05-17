@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: baaton
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: baaton_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Unit tests
+        run: cargo test --lib
+        env:
+          DATABASE_URL: postgresql://baaton:test_password@localhost:5432/baaton_test
+          CLERK_ISSUER: https://test.clerk.dev
+          CLERK_SECRET_KEY: sk_test_fake
+          PORT: 4000
+
+      - name: Integration tests
+        run: cargo test --test '*'
+        env:
+          DATABASE_URL: postgresql://baaton:test_password@localhost:5432/baaton_test
+          CLERK_ISSUER: https://test.clerk.dev
+          CLERK_SECRET_KEY: sk_test_fake
+          PORT: 4000
+
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
