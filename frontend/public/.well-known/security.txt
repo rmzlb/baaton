@@ -1,0 +1,4 @@
+Contact: mailto:security@baaton.dev
+Preferred-Languages: en, fr
+Canonical: https://baaton.dev/.well-known/security.txt
+Expires: 2027-05-17T00:00:00.000Z
