@@ -355,10 +355,14 @@ export function Landing() {
           <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mb-8">
             <img src="/demo.gif" alt="Baaton board: agent picks up issue, works, posts TLDR, hands off to human" className="w-full" loading="lazy" />
           </div>
-          {/* API terminal below for devs */}
-          <details className="group">
+          {/* Agent UI view - how it looks inside Claude Code / Codex */}
+          <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mt-8">
+            <img src="/agent-demo.png" alt="Claude Code using Baaton API: picks up issue, fixes code, posts TLDR, moves to review" className="w-full" loading="lazy" />
+          </div>
+          {/* Raw API calls for devs */}
+          <details className="group mt-4">
             <summary className="cursor-pointer text-sm text-neutral-500 hover:text-neutral-300 transition-colors flex items-center gap-2 justify-center py-4">
-              <span>🔧 See the API calls behind this</span>
+              <span>🔧 See the raw API calls</span>
               <svg className="w-4 h-4 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </summary>
             <ApiDemo />
