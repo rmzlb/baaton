@@ -366,6 +366,7 @@ export function Landing() {
             <FeatureCard icon={<Inbox className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.collect')} desc={t('landing.features.collectDesc')} />
             <FeatureCard icon={<Cpu className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.api')} desc={t('landing.features.apiDesc')} glow />
             <FeatureCard icon={<Gavel className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.human')} desc={t('landing.features.humanDesc')} />
+            <FeatureCard icon={<Rocket className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.hints')} desc={t('landing.features.hintsDesc')} glow />
           </div>
         </div>
       </section>

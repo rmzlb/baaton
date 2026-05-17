@@ -1116,10 +1116,10 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'milestones.planApplied': 'Jalons créés avec succès !',
 
 // ── Landing Page ──
-'landing.badge': 'Le board que les agents utilisent vraiment',
+'landing.badge': 'Project management API-first pour agents IA',
 'landing.heroLine1': 'Linear c\'est super.',
 'landing.heroLine2': 'Pour les humains.',
-'landing.heroSub': 'Ton IA peut lire des issues, mais elle ne peut pas créer, trier, prioriser ou closer sans un humain dans la boucle. Baaton est API-first, zero-friction, avec du context engineering intégré.',
+'landing.heroSub': 'Ton agent a besoin d\'un board qu\'il peut utiliser. 133 endpoints REST. 60ms. L\'API guide les agents avec des _hints — zéro SDK, zéro lecture de docs. Premier call utile en une requête.',
 'landing.cta': 'Commencer gratuitement',
 'landing.ctaMain': 'VOTRE DUO',
 'landing.ctaTitle1': 'Ship plus vite.',
@@ -1144,6 +1144,8 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.features.apiDesc': 'Chaque issue porte du contexte structuré — TLDRs, conventions projet, issues liées. Ton agent a le tableau complet en un fetch, pas 15 tool calls.',
 'landing.features.human': 'Human-in-the-loop',
 'landing.features.humanDesc': 'Les agents proposent. Les humains valident. Changements de statut, priorités, closures peuvent requérir une validation humaine. Tu gardes le contrôle.',
+'landing.features.hints': '_hints dans chaque réponse',
+'landing.features.hintsDesc': 'L\'API dit à l\'agent quoi faire ensuite. Pas de doc à lire, pas de devinette. Chaque réponse inclut des hints contextuels — pull context, post TLDR, update status. L\'API est son propre SDK.',
 // ─── Landing: Workflow section
 'landing.workflow.title1': 'Ultra simple.',
 // ─── Landing: Demo section
