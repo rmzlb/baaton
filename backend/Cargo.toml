@@ -49,6 +49,11 @@ regex = "1"
 lazy_static = "1"
 aes-gcm = "0.10"
 
+# AWS S3 (uploads bucket)
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = { version = "1", features = ["behavior-version-latest"] }
+aws-credential-types = "1"
+
 [profile.release]
 strip = true
 lto = true

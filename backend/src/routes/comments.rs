@@ -37,6 +37,7 @@ async fn verify_issue_org(pool: &PgPool, issue_id: Uuid, org_id: &str) -> Result
 
 pub async fn list_by_issue(
     Extension(auth): Extension<AuthUser>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Vec<Comment>>>, (StatusCode, Json<serde_json::Value>)> {
@@ -47,7 +48,7 @@ pub async fn list_by_issue(
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
     }
 
-    let comments = sqlx::query_as::<_, Comment>(
+    let mut comments = sqlx::query_as::<_, Comment>(
         "SELECT * FROM comments WHERE issue_id = $1 ORDER BY created_at ASC",
     )
     .bind(issue_id)
@@ -58,6 +59,11 @@ pub async fn list_by_issue(
         vec![]
     });
 
+    let s3_ref = s3.as_deref();
+    for c in comments.iter_mut() {
+        crate::s3::rewrite_str(&mut c.body, s3_ref).await;
+    }
+
     Ok(Json(ApiResponse::new(comments)))
 }
 
@@ -65,6 +71,7 @@ pub async fn create(
     Extension(auth): Extension<AuthUser>,
     Extension(novu): Extension<Option<crate::novu::NovuClient>>,
     Extension(sse_tx): Extension<EventSender>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
     Json(body): Json<CreateComment>,
@@ -83,6 +90,10 @@ pub async fn create(
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Comment body must be under 50000 characters"}))));
     }
 
+    // Collapse presigned baaton-uploads URLs back to stable s3:// markers so the
+    // DB never holds short-lived URLs.
+    let body_text = crate::s3::collapse_to_markers(&body.body);
+
     // Auto-fill author from auth context if not provided
     let author_id = body.author_id.unwrap_or_else(|| auth.user_id.clone());
     let author_name = body.author_name.unwrap_or_else(|| {
@@ -91,7 +102,7 @@ pub async fn create(
             .unwrap_or_else(|| auth.user_id.clone())
     });
 
-    let comment = sqlx::query_as::<_, Comment>(
+    let mut comment = sqlx::query_as::<_, Comment>(
         r#"
         INSERT INTO comments (issue_id, author_id, author_name, body)
         VALUES ($1, $2, $3, $4)
@@ -101,7 +112,7 @@ pub async fn create(
     .bind(issue_id)
     .bind(&author_id)
     .bind(&author_name)
-    .bind(&body.body)
+    .bind(&body_text)
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -286,6 +297,9 @@ pub async fn create(
             Some(&format!("POST /issues/{}/tldr", issue_id)),
         ),
     ];
+
+    // Rewrite S3 markers in body to presigned HTTPS URLs before returning.
+    crate::s3::rewrite_str(&mut comment.body, s3.as_deref()).await;
 
     Ok(Json(ApiResponse::with_hints(comment, hints)))
 }

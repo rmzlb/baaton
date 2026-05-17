@@ -78,7 +78,9 @@ fn sanitize_description(desc: &str) -> String {
         remaining = &remaining[start + 5..];
     }
     result.push_str(remaining);
-    result
+    // Collapse presigned baaton-uploads URLs back to stable s3:// markers so the
+    // DB never holds short-lived URLs.
+    crate::s3::collapse_to_markers(&result)
 }
 
 // ─── Sub-Issues ───────────────────────────────────────
@@ -86,6 +88,7 @@ fn sanitize_description(desc: &str) -> String {
 /// GET /issues/{id}/children — list sub-issues
 pub async fn list_children(
     Extension(auth): Extension<AuthUser>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Path(parent_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
@@ -112,13 +115,18 @@ pub async fn list_children(
         ));
     }
 
-    let children = sqlx::query_as::<_, Issue>(
+    let mut children = sqlx::query_as::<_, Issue>(
         "SELECT * FROM issues WHERE parent_id = $1 ORDER BY created_at ASC",
     )
     .bind(parent_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
+
+    let s3_ref = s3.as_deref();
+    for i in children.iter_mut() {
+        crate::s3::rewrite_opt(&mut i.description, s3_ref).await;
+    }
 
     Ok(Json(ApiResponse::new(children)))
 }
@@ -450,6 +458,7 @@ async fn resolve_auto_assign_assignees(
 
 pub async fn list_all(
     Extension(auth): Extension<AuthUser>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Query(params): Query<ListParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
@@ -573,6 +582,12 @@ pub async fn list_all(
         total_count: None,
     };
 
+    // Rewrite S3 markers in issue descriptions to presigned HTTPS URLs.
+    let s3_ref = s3.as_deref();
+    for i in issues.iter_mut() {
+        crate::s3::rewrite_opt(&mut i.description, s3_ref).await;
+    }
+
     Ok(Json(json!({
         "data": issues,
         "page_info": page_info,
@@ -581,6 +596,7 @@ pub async fn list_all(
 
 pub async fn list_by_project(
     Extension(auth): Extension<AuthUser>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
     Query(params): Query<ListParams>,
@@ -807,6 +823,12 @@ pub async fn list_by_project(
         total_count,
     };
 
+    // Rewrite S3 markers in issue descriptions to presigned HTTPS URLs.
+    let s3_ref = s3.as_deref();
+    for i in issues.iter_mut() {
+        crate::s3::rewrite_opt(&mut i.description, s3_ref).await;
+    }
+
     Ok(Json(json!({
         "data": issues,
         "page_info": page_info,
@@ -817,6 +839,7 @@ pub async fn create(
     Extension(auth): Extension<AuthUser>,
     Extension(novu): Extension<Option<crate::novu::NovuClient>>,
     Extension(sse_tx): Extension<EventSender>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Json(body): Json<CreateIssue>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
@@ -976,7 +999,7 @@ pub async fn create(
         .attachments
         .unwrap_or_else(|| serde_json::Value::Array(vec![]));
 
-    let issue = sqlx::query_as::<_, Issue>(
+    let mut issue = sqlx::query_as::<_, Issue>(
         r#"
         INSERT INTO issues (
             project_id, display_id, title, description, type, status, priority,
@@ -1275,11 +1298,15 @@ pub async fn create(
         ),
     ];
 
+    // Rewrite S3 markers in description to presigned HTTPS URLs before returning.
+    crate::s3::rewrite_opt(&mut issue.description, s3.as_deref()).await;
+
     Ok(Json(ApiResponse::with_hints(issue, hints)))
 }
 
 pub async fn get_one(
     Extension(auth): Extension<AuthUser>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<IssueDetail>>, (StatusCode, Json<serde_json::Value>)> {
@@ -1438,23 +1465,30 @@ pub async fn get_one(
         },
     );
 
-    Ok(Json(ApiResponse::with_hints(
-        IssueDetail {
-            issue,
-            tldrs,
-            comments,
-            file_attachments,
-            agent_session,
-            context_summary,
-        },
-        hints,
-    )))
+    let mut detail = IssueDetail {
+        issue,
+        tldrs,
+        comments,
+        file_attachments,
+        agent_session,
+        context_summary,
+    };
+
+    // Rewrite S3 markers in the issue description and comment bodies.
+    let s3_ref = s3.as_deref();
+    crate::s3::rewrite_opt(&mut detail.issue.description, s3_ref).await;
+    for c in detail.comments.iter_mut() {
+        crate::s3::rewrite_str(&mut c.body, s3_ref).await;
+    }
+
+    Ok(Json(ApiResponse::with_hints(detail, hints)))
 }
 
 pub async fn update(
     Extension(auth): Extension<AuthUser>,
     Extension(novu): Extension<Option<crate::novu::NovuClient>>,
     Extension(sse_tx): Extension<EventSender>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateIssue>,
@@ -1604,7 +1638,7 @@ pub async fn update(
         }
     }
 
-    let issue = sqlx::query_as::<_, Issue>(
+    let mut issue = sqlx::query_as::<_, Issue>(
         r#"
         UPDATE issues SET
             title = COALESCE($2, title),
@@ -2003,6 +2037,9 @@ pub async fn update(
         vec![]
     };
 
+    // Rewrite S3 markers in description to presigned HTTPS URLs before returning.
+    crate::s3::rewrite_opt(&mut issue.description, s3.as_deref()).await;
+
     Ok(Json(ApiResponse::with_hints_and_warnings(
         issue,
         hints,
@@ -2090,6 +2127,7 @@ pub struct MineParams {
 
 pub async fn list_mine(
     Extension(auth): Extension<AuthUser>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Query(params): Query<MineParams>,
 ) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
@@ -2103,7 +2141,7 @@ pub async fn list_mine(
     // Cross-org: show tasks assigned to user from ALL orgs
     let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
 
-    let issues = sqlx::query_as::<_, Issue>(
+    let mut issues = sqlx::query_as::<_, Issue>(
         r#"
         SELECT i.*, p.org_id
         FROM issues i
@@ -2128,6 +2166,11 @@ pub async fn list_mine(
         tracing::error!(error = %e, "issues.list_mine query failed");
         vec![]
     });
+
+    let s3_ref = s3.as_deref();
+    for i in issues.iter_mut() {
+        crate::s3::rewrite_opt(&mut i.description, s3_ref).await;
+    }
 
     Ok(Json(ApiResponse::new(issues)))
 }
@@ -2364,6 +2407,7 @@ pub struct SearchResult {
 
 pub async fn search(
     Extension(auth): Extension<AuthUser>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Query(params): Query<SearchParams>,
 ) -> Result<Json<ApiResponse<Vec<SearchResult>>>, (StatusCode, Json<serde_json::Value>)> {
@@ -2417,6 +2461,12 @@ pub async fn search(
     .await
     .map_err(|e| internal_err(e))?;
 
+    let mut results = results;
+    let s3_ref = s3.as_deref();
+    for r in results.iter_mut() {
+        crate::s3::rewrite_opt(&mut r.snippet, s3_ref).await;
+    }
+
     Ok(Json(ApiResponse::new(results)))
 }
 
@@ -2438,6 +2488,7 @@ pub struct GlobalSearchResult {
 
 pub async fn search_global(
     Extension(auth): Extension<AuthUser>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Query(params): Query<SearchParams>,
 ) -> Result<Json<ApiResponse<Vec<GlobalSearchResult>>>, (StatusCode, Json<serde_json::Value>)> {
@@ -2522,6 +2573,12 @@ pub async fn search_global(
     .fetch_all(&pool)
     .await
     .map_err(|e| internal_err(e))?;
+
+    let mut results = results;
+    let s3_ref = s3.as_deref();
+    for r in results.iter_mut() {
+        crate::s3::rewrite_opt(&mut r.snippet, s3_ref).await;
+    }
 
     Ok(Json(ApiResponse::new(results)))
 }

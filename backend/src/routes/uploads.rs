@@ -1,8 +1,9 @@
-//! File upload endpoint — stores images on local disk under `./data/uploads/`
-//! and returns a public URL served via the static `/uploads/` mount.
+//! File upload endpoint — stores images in S3 (`baaton-uploads` bucket) and
+//! returns a presigned HTTPS URL for immediate display + an opaque
+//! `s3://baaton-uploads/<key>` marker that the caller persists in markdown.
 //!
-//! Used by the NotionEditor (Tiptap) to persist inline images as URLs instead
-//! of base64 data URIs (which were being stripped by `sanitize_description`).
+//! The serializer rewrites markers back to fresh presigned URLs on every read
+//! (see `crate::s3::rewrite_markdown`), so users never see expired links.
 
 use axum::{
     extract::{Extension, Json},
@@ -11,10 +12,12 @@ use axum::{
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
+use crate::s3::S3State;
 
 /// Max decoded image size: 10MB.
 const MAX_DECODED_BYTES: usize = 10 * 1024 * 1024;
@@ -26,12 +29,6 @@ const ALLOWED_MIME: &[&str] = &[
     "image/png",
     "image/gif",
 ];
-
-/// Disk path where uploads are written. Served statically at `/uploads/`.
-/// Override with `UPLOAD_DIR` env var (e.g. when mounting a Dokploy volume).
-fn upload_dir() -> String {
-    std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "/app/data/uploads".to_string())
-}
 
 #[derive(Debug, Deserialize)]
 pub struct UploadRequest {
@@ -45,20 +42,28 @@ pub struct UploadRequest {
 
 #[derive(Debug, Serialize)]
 pub struct UploadResponse {
-    /// Public URL (relative path). Caller prepends API origin.
+    /// Presigned HTTPS URL for immediate use (expires after `S3_PRESIGN_TTL_SECS`).
     pub url: String,
+    /// Stable opaque marker (`s3://baaton-uploads/<key>`) — persist this in
+    /// markdown / DB. Re-rendered to a fresh presigned URL on each read.
+    pub marker: String,
     pub filename: String,
     pub size: usize,
 }
 
 /// `POST /api/v1/uploads`
 ///
-/// Accepts a base64-encoded image, writes it to disk, returns its public URL.
+/// Accepts a base64-encoded image, uploads to S3, returns a presigned URL.
 pub async fn upload(
-    Extension(_auth): Extension<AuthUser>,
+    Extension(auth): Extension<AuthUser>,
+    Extension(s3): Extension<Option<Arc<S3State>>>,
     Json(body): Json<UploadRequest>,
 ) -> Result<Json<ApiResponse<UploadResponse>>, (StatusCode, Json<serde_json::Value>)> {
-    // ── Validate content type ─────────────────────────
+    let s3 = s3.ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({"error": "Uploads disabled (S3 not configured)"})),
+    ))?;
+
     let content_type = body.content_type.trim().to_lowercase();
     if !ALLOWED_MIME.contains(&content_type.as_str()) {
         return Err((
@@ -70,14 +75,12 @@ pub async fn upload(
         ));
     }
 
-    // ── Strip data URI prefix if present ──────────────
     let raw_b64 = if let Some(idx) = body.data.find("base64,") {
         &body.data[idx + "base64,".len()..]
     } else {
         body.data.as_str()
     };
 
-    // ── Decode ────────────────────────────────────────
     let bytes = general_purpose::STANDARD
         .decode(raw_b64.trim())
         .map_err(|e| {
@@ -105,7 +108,6 @@ pub async fn upload(
         ));
     }
 
-    // ── Pick extension from MIME ──────────────────────
     let ext = match content_type.as_str() {
         "image/webp" => "webp",
         "image/jpeg" => "jpg",
@@ -115,40 +117,49 @@ pub async fn upload(
     };
 
     let id = Uuid::new_v4();
-    let stored_filename = format!("{}.{}", id, ext);
+    // Key layout: `{org_id}/{uuid}.{ext}` — useful for per-tenant audit & purge.
+    // Falls back to `u-{user_id}` if the user has no org context (rare).
+    let scope = auth
+        .org_id
+        .as_deref()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("u-{}", auth.user_id));
+    let key = format!("{}/{}.{}", scope, id, ext);
+    let size = bytes.len();
 
-    // ── Write to disk ─────────────────────────────────
-    let dir = upload_dir();
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| {
-        tracing::error!("Failed to create upload dir: {}", e);
+    s3.put_object(&key, bytes, &content_type).await.map_err(|e| {
+        tracing::error!(key = %key, error = %e, "uploads.s3_put.failed");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "Storage unavailable"})),
+            Json(json!({"error": "Storage failed"})),
         )
     })?;
 
-    let disk_path = format!("{}/{}", dir, stored_filename);
-    tokio::fs::write(&disk_path, &bytes).await.map_err(|e| {
-        tracing::error!(path = %disk_path, error = %e, "Failed to write upload");
+    let presigned = s3.presign_get(&key).await.map_err(|e| {
+        tracing::error!(key = %key, error = %e, "uploads.presign.failed");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "Failed to write file"})),
+            Json(json!({"error": "Could not sign URL"})),
         )
     })?;
 
-    let display_name = body.filename.unwrap_or_else(|| stored_filename.clone());
-    let url = format!("/uploads/{}", stored_filename);
+    let marker = crate::s3::build_marker(&key);
+    let display_name = body
+        .filename
+        .unwrap_or_else(|| format!("{}.{}", id, ext));
 
     tracing::info!(
-        url = %url,
-        size = bytes.len(),
+        key = %key,
+        size = size,
         content_type = %content_type,
+        org = ?auth.org_id,
         "uploads.create.success"
     );
 
     Ok(Json(ApiResponse::new(UploadResponse {
-        url,
+        url: presigned,
+        marker,
         filename: display_name,
-        size: bytes.len(),
+        size,
     })))
 }

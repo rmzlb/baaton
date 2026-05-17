@@ -193,8 +193,12 @@ struct ActivityRow {
 
 pub async fn summary(
     Extension(auth): Extension<AuthUser>,
+    Extension(_s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // TODO(s3): rewrite description here — current response surfaces only issue titles,
+    // project descriptions, and activity metadata, none of which carry markdown bodies
+    // with `s3://baaton-uploads/` markers today. Add a rewrite pass if that changes.
     let active_org_id = auth.org_id.clone().unwrap_or_default();
 
     let all_org_ids: Vec<String> = if auth.user_id.starts_with("apikey:") {

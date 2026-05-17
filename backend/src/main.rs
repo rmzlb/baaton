@@ -14,6 +14,7 @@ mod middleware;
 mod models;
 mod novu;
 mod routes;
+mod s3;
 
 use middleware::{fetch_jwks_keys, jwks_refresh_task, JwksKeys};
 
@@ -238,15 +239,24 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("Could not pre-create upload dir {}: {}", upload_dir, e);
     }
 
+    // S3 (uploads bucket). None if S3_UPLOADS_BUCKET unset → /uploads endpoint
+    // will return 503 instead of writing to disk.
+    let s3_state = s3::S3State::from_env().await;
+    if s3_state.is_none() {
+        tracing::warn!("S3_UPLOADS_BUCKET not set — image uploads will return 503");
+    }
+
     // Router
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
-        // Static file serving for uploaded images (NotionEditor inline images)
+        // Static file serving for legacy uploaded images (pre-S3 migration).
+        // Kept so existing markdown URLs (`/uploads/<file>`) still resolve.
         .nest_service("/uploads", ServeDir::new(&upload_dir))
         .nest(
             "/api/v1",
             routes::api_router(pool.clone(), jwks_state.clone()),
         )
+        .layer(axum::Extension(s3_state))
         .layer(axum::Extension(novu_client))
         .layer(axum::Extension(sse_tx))
         .layer(axum::Extension(pool.clone()))
