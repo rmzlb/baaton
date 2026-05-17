@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="frontend/public/tanuki.svg" width="80" alt="Baaton" />
+  <img src="frontend/public/favicon.svg" width="80" alt="Baaton" />
 </p>
 
 <h1 align="center">Baaton</h1>
