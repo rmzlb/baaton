@@ -1150,8 +1150,8 @@ As a [user], I want to [action] so that [benefit].
 'landing.workflow.title1': 'Dead simple.',
 // ─── Landing: Demo section
 'landing.demo.badge': 'See it in action',
-'landing.demo.title': '47 seconds. Zero UI.',
-'landing.demo.sub': 'Your agent reads an issue, does the work, posts a summary, and hands off to a human. All via API. All tracked.',
+'landing.demo.title': 'Humans plan. Agents execute. Everyone sees.',
+'landing.demo.sub': 'Product creates a ticket. The agent picks it up, does the work, posts a summary. The human reviews. Same board, same context, zero handoff friction.',
 'landing.workflow.title2': 'On purpose.',
 'landing.workflow.step1': 'You file it',
 'landing.workflow.step1Desc': 'Create an issue. "Fix the login timeout bug, high priority." That\'s it. Your agent sees it instantly.',

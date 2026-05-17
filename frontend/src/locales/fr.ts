@@ -1150,8 +1150,8 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.workflow.title1': 'Ultra simple.',
 // ─── Landing: Demo section
 'landing.demo.badge': 'En action',
-'landing.demo.title': '47 secondes. Zéro UI.',
-'landing.demo.sub': 'Votre agent lit une issue, fait le travail, poste un résumé, et passe la main. Tout via API. Tout tracé.',
+'landing.demo.title': 'Les humains planifient. Les agents exécutent. Tout le monde voit.',
+'landing.demo.sub': 'Le product crée un ticket. L\'agent le prend, fait le travail, poste un résumé. L\'humain review. Même board, même contexte, zéro friction.',
 'landing.workflow.title2': 'Volontairement.',
 'landing.workflow.step1': 'Tu crées l\'issue',
 'landing.workflow.step1Desc': 'Crée un ticket. "Fix le bug de timeout login, priorité haute." C\'est tout. Ton agent le voit instantanément.',

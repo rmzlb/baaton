@@ -343,15 +343,26 @@ export function Landing() {
         <CodeTabs />
       </main>
 
-      {/* ── Live API Demo (animated terminal) ──── */}
+      {/* ── See it in action (board GIF + terminal) ──── */}
       <section className="py-16 sm:py-24 bg-white dark:bg-[#060606] border-t border-black/5 dark:border-white/5 transition-colors relative z-20">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-12">
             <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.demo.badge')}</p>
             <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.demo.title')}</h2>
             <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium max-w-2xl mx-auto">{t('landing.demo.sub')}</p>
           </div>
-          <ApiDemo />
+          {/* Board demo GIF */}
+          <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mb-8">
+            <img src="/demo.gif" alt="Baaton board: agent picks up issue, works, posts TLDR, hands off to human" className="w-full" loading="lazy" />
+          </div>
+          {/* API terminal below for devs */}
+          <details className="group">
+            <summary className="cursor-pointer text-sm text-neutral-500 hover:text-neutral-300 transition-colors flex items-center gap-2 justify-center py-4">
+              <span>🔧 See the API calls behind this</span>
+              <svg className="w-4 h-4 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </summary>
+            <ApiDemo />
+          </details>
         </div>
       </section>
 
