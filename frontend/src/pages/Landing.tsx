@@ -209,12 +209,36 @@ export function Landing() {
             </Link>
           </div>
 
-          {/* Social proof */}
-          <div className="mt-8 flex items-center justify-center gap-3 text-neutral-500 dark:text-neutral-500 text-sm opacity-0 animate-reveal-up-delay-3">
-            <svg className="w-5 h-5 text-amber-500/70" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
-            </svg>
-            <span>{t('landing.socialProof')}</span>
+          {/* Social proof — compatible agent logos */}
+          <div className="mt-10 flex flex-col items-center gap-4 opacity-0 animate-reveal-up-delay-3">
+            <span className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">{t('landing.socialProof')}</span>
+            <div className="flex items-center gap-6 md:gap-10 opacity-60 hover:opacity-90 transition-opacity">
+              {/* Claude */}
+              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M4.709 15.955l4.486-2.591a.6.6 0 0 0 .3-.52V7.156a.6.6 0 0 0-.3-.52L4.709 4.045a.6.6 0 0 0-.6 0L.3 6.636a.6.6 0 0 0-.3.52v5.688a.6.6 0 0 0 .3.52l3.809 2.591a.6.6 0 0 0 .6 0z" transform="scale(1.7) translate(3, 3)"/></svg>
+                <span className="text-xs font-semibold hidden sm:inline">Claude Code</span>
+              </div>
+              {/* Codex */}
+              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>
+                <span className="text-xs font-semibold hidden sm:inline">Codex</span>
+              </div>
+              {/* Cursor */}
+              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
+                <span className="text-xs font-semibold hidden sm:inline">Cursor</span>
+              </div>
+              {/* OpenClaw */}
+              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
+                <span className="text-base">🦞</span>
+                <span className="text-xs font-semibold hidden sm:inline">OpenClaw</span>
+              </div>
+              {/* Any agent */}
+              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
+                <Bot className="w-4 h-4" />
+                <span className="text-xs font-semibold hidden sm:inline">Any agent</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -566,7 +590,7 @@ export function Landing() {
             <Link to="/docs" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.docs')}</Link>
             <Link to="/docs#api-reference" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.api')}</Link>
             <a href="https://github.com/rmzlb/baaton" target="_blank" rel="noopener noreferrer" className="hover:text-black dark:hover:text-white transition-colors">GitHub</a>
-            <a href="https://x.com/baaboron" target="_blank" rel="noopener noreferrer" className="hover:text-black dark:hover:text-white transition-colors">Twitter</a>
+            <a href="https://x.com/rmzlb" target="_blank" rel="noopener noreferrer" className="hover:text-black dark:hover:text-white transition-colors">Twitter</a>
           </div>
           <div className="text-neutral-500 font-medium">© 2026 Baaton Inc.</div>
         </div>

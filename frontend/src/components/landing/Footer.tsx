@@ -21,17 +21,17 @@ const footerLinks = {
   Product: [
     { label: 'Features', href: '#features' },
     { label: 'Pricing', href: '#pricing' },
-    { label: 'Changelog', href: '#' },
-    { label: 'Docs', href: '#' },
+    { label: 'Docs', href: '/docs' },
+    { label: 'API Reference', href: '/docs#api-reference' },
   ],
-  Company: [
-    { label: 'About', href: '#' },
-    { label: 'Blog', href: '#' },
-    { label: 'Careers', href: '#' },
+  Community: [
+    { label: 'GitHub', href: 'https://github.com/rmzlb/baaton' },
+    { label: 'Twitter', href: 'https://x.com/rmzlb' },
+    { label: 'Discord', href: 'https://discord.gg/baaton' },
   ],
   Legal: [
-    { label: 'Privacy', href: '#' },
-    { label: 'Terms', href: '#' },
+    { label: 'Privacy', href: '/privacy' },
+    { label: 'Terms', href: '/terms' },
   ],
 };
 
@@ -159,7 +159,7 @@ export function Footer() {
                 </svg>
               </a>
               <a
-                href="https://x.com/baaton_dev"
+                href="https://x.com/rmzlb"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted hover:text-primary transition-colors"

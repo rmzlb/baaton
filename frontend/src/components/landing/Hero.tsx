@@ -45,19 +45,26 @@ issue = client.post("/issues", json={
 
 print(f"Created: {issue['data']['display_id']}")`,
 
-  TypeScript: `import { BaatonClient } from "@baaton/sdk";
+  TypeScript: `const resp = await fetch(
+  "https://api.baaton.dev/api/v1/issues",
+  {
+    method: "POST",
+    headers: {
+      "Authorization": \`Bearer \${process.env.BAATON_KEY}\`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      project_id: "uuid-here",
+      title: "Fix login timeout bug",
+      issue_type: "bug",
+      priority: "high",
+      assignee_ids: ["agent:claude-code"],
+    }),
+  }
+);
 
-const baaton = new BaatonClient({ apiKey: process.env.BAATON_KEY });
-
-const issue = await baaton.issues.create({
-  projectId: "uuid-here",
-  title: "Fix login timeout bug",
-  issueType: "bug",
-  priority: "high",
-  assigneeIds: ["agent:claude-code"],
-});
-
-console.log(\`Created: \${issue.displayId}\`);`,
+const { data } = await resp.json();
+console.log(\`Created: \${data.display_id}\`);`,
 };
 
 type LangTab = 'cURL' | 'Python' | 'TypeScript';
@@ -199,7 +206,7 @@ export function Hero() {
             <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" strokeWidth={2.5} />
           </Link>
           <a
-            href="https://github.com/IIIStormIII/baaton"
+            href="https://github.com/rmzlb/baaton"
             target="_blank"
             rel="noopener noreferrer"
             className="h-12 px-8 rounded-lg border border-border text-secondary font-medium text-base hover:text-primary hover:border-white/20 transition-all flex items-center gap-2"
