@@ -339,7 +339,17 @@ export function CreateIssueModal({ project, projectTags, onClose }: CreateIssueM
         </div>
       )}
 
-      <div className="w-full sm:max-w-lg rounded-t-xl sm:rounded-xl border border-border bg-surface shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[90vh]">
+      <div
+        className={cn(
+          // Width scales with the step: compact for type/details, wide for the
+          // description editor where users actually take notes / paste images.
+          // `transition-[max-width]` makes the expansion feel intentional, not jarring.
+          'w-full rounded-t-xl sm:rounded-xl border border-border bg-surface shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[90vh] transition-[max-width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+          step === 'description'
+            ? 'sm:max-w-3xl lg:max-w-5xl'
+            : 'sm:max-w-lg',
+        )}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-border shrink-0">
           <div>
@@ -847,7 +857,7 @@ function StepDescription({
             {useTemplate ? t('createIssue.hideTemplate') : t('createIssue.useTemplate')}
           </button>
         </div>
-        <div className="min-h-[200px] rounded-lg border border-border overflow-hidden">
+        <div className="min-h-[320px] rounded-lg border border-border overflow-hidden">
           <NotionEditor
             initialContent={description}
             onChange={setDescription}
