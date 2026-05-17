@@ -386,7 +386,7 @@ export function Landing() {
           </div>
 
           <p className="mt-8 text-sm text-neutral-500 text-center">
-            Jira has an API. But have you tried getting an agent to navigate 47 custom fields and 12 workflow transitions?
+            Linear has an API. But your agent still can't auto-triage, summarize work, or inject project context without glue code.
           </p>
         </div>
       </section>

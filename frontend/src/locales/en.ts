@@ -1117,8 +1117,8 @@ As a [user], I want to [action] so that [benefit].
 
 // ── Landing Page ──
 'landing.badge': 'The board agents actually use',
-'landing.heroLine1': 'Jira wasn\'t built',
-'landing.heroLine2': 'for agents.',
+'landing.heroLine1': 'Linear is great.',
+'landing.heroLine2': 'For humans.',
 'landing.heroSub': 'Your AI can read issues, but it can\'t create, triage, prioritize, or close them without a human in the loop. Baaton is API-first, zero-friction, with built-in context engineering.',
 'landing.cta': 'Start for free',
 'landing.ctaMain': 'YOUR DUO',
