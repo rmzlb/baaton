@@ -3,6 +3,13 @@
  * Slash commands, bubble menu, dark/light mode.
  */
 import { useMemo, useCallback, useRef } from 'react';
+import { resolveApiOrigin } from '@/lib/api-origin';
+
+declare global {
+  interface Window {
+    Clerk?: { session?: { getToken: () => Promise<string | null> } };
+  }
+}
 import {
   EditorRoot,
   EditorContent,
@@ -26,7 +33,6 @@ import {
   UpdatedImage,
   TiptapUnderline,
   HighlightExtension,
-  HorizontalRule,
   Color,
   TextStyle,
   GlobalDragHandle,
@@ -144,15 +150,52 @@ const SUGGESTION_ITEMS = createSuggestionItems([
       input.accept = 'image/*';
       input.onchange = async (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
-        if (file) {
-          const src = await compressImageToBase64(file);
-          insertImageIntoEditor(editor, src);
+        if (!file) return;
+        const base64 = await compressImageToBase64(file);
+        try {
+          const url = await uploadImageToServer(base64, file.name);
+          editor.chain().focus().setImage({ src: url }).run();
+        } catch {
+          // Fallback: insert base64 directly (visible but won't persist)
+          editor.chain().focus().setImage({ src: base64 }).run();
         }
       };
       input.click();
     },
   },
 ]);
+
+// ─── Upload image to server ────────────────────
+async function uploadImageToServer(base64DataUrl: string, filename: string): Promise<string> {
+  const apiBase = resolveApiOrigin();
+  const token = await window.Clerk?.session?.getToken();
+
+  const contentType = base64DataUrl.startsWith('data:')
+    ? base64DataUrl.split(';')[0].split(':')[1]
+    : 'image/webp';
+
+  const res = await fetch(`${apiBase}/api/v1/uploads`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      data: base64DataUrl,
+      filename: filename || `image-${Date.now()}.webp`,
+      content_type: contentType,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Upload failed: ${res.status}`);
+  }
+
+  const json = await res.json();
+  const url = json.data?.url;
+  // Return absolute URL — prepend apiBase if relative
+  return url?.startsWith('/') ? `${apiBase}${url}` : url;
+}
 
 // ─── Image compression (file → base64 data URL) ─
 function compressImageToBase64(file: File | Blob): Promise<string> {
@@ -261,14 +304,18 @@ function BubbleToolbar() {
 }
 
 // ─── Markdown → Tiptap JSON converter ───────────
+const IMAGE_PLACEHOLDER_PREFIX = 'BAATON_IMAGE_PLACEHOLDER_';
+
 /**
  * Convert HTML to Tiptap JSONContent, handling large data: URIs in <img> tags.
  *
  * Problem: generateJSON() and editor.commands.setContent() both use the browser's
  * DOMParser which can fail on very large base64 data URIs (>50KB) in img src attrs.
  *
- * Solution: Extract <img> tags before parsing, replace with placeholders,
- * run generateJSON on the cleaned HTML, then re-inject image nodes.
+ * Solution: Extract <img> tags before parsing, replace with text placeholders,
+ * run generateJSON on the cleaned HTML, then re-inject image nodes at the exact
+ * paragraph positions. Using data-* attrs loses position because generateJSON()
+ * strips unknown paragraph attributes.
  */
 function htmlToTiptapJSON(html: string, exts: any[]): JSONContent {
   // Extract all <img> tags with their src (may be huge base64)
@@ -286,9 +333,9 @@ function htmlToTiptapJSON(html: string, exts: any[]): JSONContent {
     });
   }
 
-  // Replace each img tag with a unique placeholder <p>
+  // Replace each img tag with a unique text placeholder paragraph.
   images.forEach((img, i) => {
-    cleanHtml = cleanHtml.replace(img.full, `<p data-img-placeholder="${i}"></p>`);
+    cleanHtml = cleanHtml.replace(img.full, `<p>${IMAGE_PLACEHOLDER_PREFIX}${i}</p>`);
   });
 
   // Parse the cleaned HTML (no huge data: URIs to choke on)
@@ -302,31 +349,20 @@ function htmlToTiptapJSON(html: string, exts: any[]): JSONContent {
 
   if (!images.length) return json;
 
-  // Walk the JSON tree and replace placeholder paragraphs with image nodes
+  // Walk the JSON tree and replace placeholder paragraphs with image nodes.
   function walk(node: JSONContent): JSONContent {
-    if (node.type === 'paragraph' && node.attrs?.['data-img-placeholder'] != null) {
-      const idx = Number(node.attrs['data-img-placeholder']);
-      const img = images[idx];
-      if (img) {
-        return { type: 'image', attrs: { src: img.src, alt: img.alt, title: null } };
+    if (node.type === 'paragraph' && node.content?.length === 1) {
+      const text = node.content[0]?.text;
+      if (typeof text === 'string' && text.startsWith(IMAGE_PLACEHOLDER_PREFIX)) {
+        const idx = Number(text.slice(IMAGE_PLACEHOLDER_PREFIX.length));
+        const img = images[idx];
+        if (img) {
+          return { type: 'image', attrs: { src: img.src, alt: img.alt, title: null } };
+        }
       }
     }
-    // Check for text content that might contain placeholder marker
     if (node.content) {
       node.content = node.content.map(walk);
-    }
-    return node;
-  }
-
-  // Also check for placeholders that ended up as text in empty paragraphs
-  // (generateJSON may not preserve data- attrs on <p>)
-  function walkText(node: JSONContent): JSONContent {
-    if (node.content) {
-      const newContent: JSONContent[] = [];
-      for (const child of node.content) {
-        newContent.push(walkText(child));
-      }
-      node.content = newContent;
     }
     return node;
   }
@@ -344,7 +380,8 @@ function htmlToTiptapJSON(html: string, exts: any[]): JSONContent {
     }
     countImages(json);
 
-    // If not all images were injected, append them at the end
+    // Fallback only: if not all images were injected, append the missing ones.
+    // This should be rare, but avoids data loss on malformed HTML.
     if (injected < images.length) {
       for (let i = injected; i < images.length; i++) {
         json.content.push({
@@ -505,7 +542,14 @@ export function NotionEditor({
                   const file = item.getAsFile();
                   if (file && file.size <= 20 * 1024 * 1024) {
                     event.preventDefault();
-                    compressImageToBase64(file).then((src) => insertImageIntoView(view, src));
+                    compressImageToBase64(file).then(async (base64) => {
+                      try {
+                        const url = await uploadImageToServer(base64, file.name || `paste-${Date.now()}.webp`);
+                        insertImageIntoView(view, url);
+                      } catch {
+                        insertImageIntoView(view, base64);
+                      }
+                    });
                     return true;
                   }
                 }
@@ -519,7 +563,14 @@ export function NotionEditor({
               const file = files[0];
               if (file.type.startsWith('image/') && file.size <= 20 * 1024 * 1024) {
                 event.preventDefault();
-                compressImageToBase64(file).then((src) => insertImageIntoView(view, src));
+                compressImageToBase64(file).then(async (base64) => {
+                  try {
+                    const url = await uploadImageToServer(base64, file.name || `drop-${Date.now()}.webp`);
+                    insertImageIntoView(view, url);
+                  } catch {
+                    insertImageIntoView(view, base64);
+                  }
+                });
                 return true;
               }
               return false;

@@ -37,7 +37,13 @@ RUN apt-get update \
 
 # Non-root user for security
 RUN useradd -r -s /bin/false baaton
+
+# Pre-create upload dir with correct ownership before dropping privileges.
+RUN mkdir -p /app/data/uploads && chown -R baaton:baaton /app/data
+
 USER baaton
+
+WORKDIR /app
 
 COPY --from=builder /app/target/release/baaton-api /usr/local/bin/baaton-api
 COPY --from=builder /app/migrations /app/migrations
@@ -46,5 +52,9 @@ ENV PORT=4000
 EXPOSE 4000
 
 # No HEALTHCHECK in Dockerfile — let Dokploy/Swarm handle it
+
+# Persistent storage for uploaded images (NotionEditor inline images).
+# In production: mount a Dokploy volume here so uploads survive redeploys.
+VOLUME ["/app/data/uploads"]
 
 CMD ["baaton-api"]

@@ -386,6 +386,7 @@ pub struct IssueDetail {
     pub issue: Issue,
     pub tldrs: Vec<Tldr>,
     pub comments: Vec<Comment>,
+    pub file_attachments: Vec<crate::routes::attachments::Attachment>,
     pub agent_session: Option<AgentSession>,
     /// Compact one-line summary for LLM context efficiency
     #[serde(rename = "_context")]

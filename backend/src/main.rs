@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -230,9 +231,18 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Static file serving for uploaded images (NotionEditor inline images).
+    // Path overridable via UPLOAD_DIR env var; matches uploads.rs default.
+    let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "/app/data/uploads".to_string());
+    if let Err(e) = tokio::fs::create_dir_all(&upload_dir).await {
+        tracing::warn!("Could not pre-create upload dir {}: {}", upload_dir, e);
+    }
+
     // Router
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
+        // Static file serving for uploaded images (NotionEditor inline images)
+        .nest_service("/uploads", ServeDir::new(&upload_dir))
         .nest(
             "/api/v1",
             routes::api_router(pool.clone(), jwks_state.clone()),
@@ -242,8 +252,10 @@ async fn main() -> anyhow::Result<()> {
         .layer(axum::Extension(pool.clone()))
         .layer(axum_mw::from_fn(middleware::security::security_headers))
         .layer(cors)
-        // Default body limit: 2MB (attachment routes override to 20MB)
-        .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024))
+        // The Notion-style issue description can contain compressed inline images
+        // (base64 data:image/*) so create/update requests need the same ceiling as
+        // attachment payloads.
+        .layer(RequestBodyLimitLayer::new(20 * 1024 * 1024))
         .layer(TraceLayer::new_for_http());
 
     // Serve

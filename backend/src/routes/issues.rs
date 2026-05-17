@@ -44,8 +44,12 @@ fn internal_err(e: impl std::fmt::Display) -> (StatusCode, Json<serde_json::Valu
     )
 }
 
-/// Strip inline data: URIs from HTML descriptions to prevent oversized JSON responses.
-/// Replaces `data:image/...;base64,...` with a placeholder, preserving the rest of the HTML.
+/// Strip unsafe/non-renderable inline data: URIs from HTML descriptions.
+///
+/// Inline `data:image/*` is intentionally preserved: the Notion-style editor stores
+/// pasted/dropped images in the HTML description so they can keep their exact
+/// position in the text. Non-image data URIs are still stripped to avoid embedding
+/// arbitrary files/scripts in descriptions.
 fn sanitize_description(desc: &str) -> String {
     // Regex-free approach: find data: URIs and replace them
     let mut result = String::with_capacity(desc.len());
@@ -53,7 +57,7 @@ fn sanitize_description(desc: &str) -> String {
     while let Some(start) = remaining.find("data:") {
         // Check if this looks like a data URI (data:mime/type;base64,...)
         let after_data = &remaining[start..];
-        if after_data.starts_with("data:image/") || after_data.starts_with("data:application/") {
+        if after_data.starts_with("data:application/") || after_data.starts_with("data:text/") {
             // Find the end of the data URI (typically ends with " or ' or > or space)
             let end_chars = ['"', '\'', '>', ' ', '\n', ')'];
             let end_offset = after_data[5..] // skip "data:"
@@ -65,7 +69,7 @@ fn sanitize_description(desc: &str) -> String {
             // Only replace if it's a substantial data URI (> 1KB = likely an embedded image)
             if data_uri.len() > 1024 {
                 result.push_str(&remaining[..start]);
-                result.push_str("[embedded-image-removed]");
+                result.push_str("[embedded-data-removed]");
                 remaining = &remaining[start + end_offset..];
                 continue;
             }
@@ -1307,7 +1311,7 @@ pub async fn get_one(
     })?;
 
     // Fetch TLDRs, comments, and active agent session in parallel
-    let (tldrs, comments, agent_session) = tokio::join!(
+    let (tldrs, comments, agent_session, file_attachments) = tokio::join!(
         sqlx::query_as::<_, Tldr>(
             "SELECT * FROM tldrs WHERE issue_id = $1 ORDER BY created_at DESC",
         )
@@ -1323,11 +1327,17 @@ pub async fn get_one(
         )
         .bind(id)
         .fetch_optional(&pool),
+        sqlx::query_as::<_, super::attachments::Attachment>(
+            "SELECT * FROM attachments WHERE issue_id = $1 ORDER BY created_at ASC",
+        )
+        .bind(id)
+        .fetch_all(&pool),
     );
 
     let tldrs = tldrs.unwrap_or_default();
     let comments = comments.unwrap_or_default();
     let agent_session = agent_session.unwrap_or(None);
+    let file_attachments = file_attachments.unwrap_or_default();
 
     tracing::info!(
         issue_id = %id,
@@ -1413,13 +1423,14 @@ pub async fn get_one(
 
     // Build compact _context summary for LLM efficiency
     let context_summary = format!(
-        "{} [{}|{}] {} — {} comments, {} TLDRs{}",
+        "{} [{}|{}] {} — {} comments, {} TLDRs, {} attachments{}",
         issue.display_id,
         issue.status,
         issue.priority.as_deref().unwrap_or("no-priority"),
         issue.title,
         comments.len(),
         tldrs.len(),
+        file_attachments.len(),
         if let Some(ref s) = agent_session {
             format!(", agent:{} ({})", s.agent_name, s.status)
         } else {
@@ -1432,6 +1443,7 @@ pub async fn get_one(
             issue,
             tldrs,
             comments,
+            file_attachments,
             agent_session,
             context_summary,
         },

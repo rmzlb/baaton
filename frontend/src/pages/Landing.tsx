@@ -334,6 +334,63 @@ export function Landing() {
         </div>
       </section>
 
+      {/* ── Vs Competitors ──────────────────────── */}
+      <section id="how-it-works" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="mb-12 sm:mb-16 max-w-3xl">
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">Why switch</p>
+            <h2 className="font-display text-4xl sm:text-5xl md:text-6xl text-black dark:text-white mb-6 uppercase tracking-tight">Built for agents.<br />Not retrofitted.</h2>
+            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">Every PM tool added an API as an afterthought. Baaton was API-first from day one.</p>
+          </div>
+
+          <div className="overflow-x-auto -mx-4 px-4">
+            <div className="min-w-[700px] rounded-xl border border-black/10 dark:border-white/10 overflow-hidden bg-white dark:bg-[#0C0C0C]">
+              {/* Header */}
+              <div className="grid grid-cols-5 border-b border-black/5 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900/40">
+                <div className="p-4 text-xs font-bold text-neutral-500 uppercase tracking-wider">Capability</div>
+                <div className="p-4 text-xs font-bold text-amber-500 uppercase tracking-wider text-center">Baaton</div>
+                <div className="p-4 text-xs font-bold text-neutral-400 uppercase tracking-wider text-center">Jira</div>
+                <div className="p-4 text-xs font-bold text-neutral-400 uppercase tracking-wider text-center">Linear</div>
+                <div className="p-4 text-xs font-bold text-neutral-400 uppercase tracking-wider text-center">GitHub Issues</div>
+              </div>
+              {[
+                ['Create issue via API', true, true, true, true],
+                ['Auto-triage & prioritize', true, false, false, false],
+                ['Structured context per issue', true, false, false, false],
+                ['Agent TLDR summaries', true, false, false, false],
+                ['Webhook on every mutation', true, true, true, true],
+                ['Human approval gates', true, false, false, false],
+                ['Project context for agents', true, false, false, false],
+                ['Self-hostable', true, false, false, false],
+                ['Sub-200ms API latency', true, false, true, true],
+                ['Free tier', true, false, true, true],
+              ].map(([label, ...vals], i) => (
+                <div key={i} className={`grid grid-cols-5 border-b border-black/5 dark:border-white/5 last:border-0 ${i % 2 === 0 ? 'bg-white dark:bg-[#0C0C0C]' : 'bg-neutral-50/50 dark:bg-neutral-900/20'}`}>
+                  <div className="p-4 text-sm font-semibold text-black dark:text-white">{label as string}</div>
+                  {(vals as boolean[]).map((v, j) => (
+                    <div key={j} className="p-4 flex items-center justify-center">
+                      {v ? (
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${j === 0 ? 'bg-amber-500/15 text-amber-500' : 'bg-green-500/10 text-green-500'}`}>
+                          <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                        </div>
+                      ) : (
+                        <div className="w-6 h-6 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+                          <X className="w-3 h-3 text-neutral-400" strokeWidth={2} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="mt-8 text-sm text-neutral-500 text-center">
+            Jira has an API. But have you tried getting an agent to navigate 47 custom fields and 12 workflow transitions?
+          </p>
+        </div>
+      </section>
+
       {/* ── Workflow ────────────────────────────── */}
       <section className="py-16 sm:py-32 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6">

@@ -34,6 +34,7 @@ pub mod recurring;
 pub mod triage;
 pub mod email_intake;
 pub mod attachments;
+pub mod uploads;
 pub mod agent_config;
 pub mod agent_sessions;
 pub mod slack;
@@ -170,6 +171,9 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/public/{slug}/email-intake", post(email_intake::intake))
         .route("/issues/{id}/attachments", get(attachments::list).post(attachments::create))
         .route("/issues/{id}/attachments/{att_id}", delete(attachments::remove))
+        // Image uploads (used by NotionEditor for inline images)
+        .route("/uploads", post(uploads::upload)
+            .layer(DefaultBodyLimit::max(20 * 1024 * 1024))) // 20MB to fit base64-encoded 10MB images
         // Org members
         .route("/orgs/{org_id}/members", get(orgs::list_members))
         // Admin (BAA-1)
