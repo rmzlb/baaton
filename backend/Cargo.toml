@@ -56,7 +56,7 @@ aws-credential-types = "1"
 
 [profile.release]
 strip = true
-lto = true
-codegen-units = 1
+lto = "thin"
+codegen-units = 2
 
 # build: 20260315T064124
