@@ -182,20 +182,17 @@ export function Landing() {
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#F3EFE7] dark:to-[#080808] pointer-events-none" />
 
         <div className="max-w-7xl mx-auto px-6 text-center relative z-10 flex flex-col items-center">
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/40 dark:bg-white/5 border border-black/5 dark:border-white/10 mb-8 backdrop-blur-sm opacity-0 animate-reveal-up shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-            <span className="text-xs font-mono font-medium text-neutral-600 dark:text-neutral-400 tracking-wide uppercase">{t('landing.badge')}</span>
-          </div>
-
           {/* Headline */}
           <h1 className="font-display leading-[0.8] text-black dark:text-white mb-6 sm:mb-8 opacity-0 animate-reveal-up-delay uppercase tracking-tight">
             <span className="block text-[13vw] sm:text-[11vw] md:text-[9rem]">{t('landing.heroLine1')}</span>
             <span className="block text-[8vw] sm:text-[7vw] md:text-[5.5rem] text-neutral-400 dark:text-neutral-500">{t('landing.heroLine2')}</span>
           </h1>
 
-          <p className="text-xl md:text-2xl text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto leading-relaxed mb-12 opacity-0 animate-reveal-up-delay-2 font-medium">
+          <p className="text-xl md:text-2xl text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto leading-relaxed mb-4 opacity-0 animate-reveal-up-delay-2 font-medium">
             {t('landing.heroSub')}
+          </p>
+          <p className="text-base md:text-lg text-neutral-500 dark:text-neutral-500 max-w-xl mx-auto leading-relaxed mb-12 opacity-0 animate-reveal-up-delay-2 font-medium">
+            {t('landing.heroNote')}
           </p>
 
           {/* CTA Buttons */}
@@ -297,17 +294,30 @@ export function Landing() {
                   <div className="flex justify-between items-start mb-3">
                     <span className="text-[10px] text-amber-600 dark:text-amber-500/70 font-mono font-bold">BAT-124</span>
                     <span className="text-[10px] text-amber-600 dark:text-amber-500 font-mono font-bold animate-pulse flex items-center gap-1">
-                      <Loader className="w-3 h-3 animate-spin" /> GENERATING
+                      <Loader className="w-3 h-3 animate-spin" /> AGENT READING
                     </span>
                   </div>
-                  <p className="text-sm text-black dark:text-white mb-4 font-bold leading-snug">Refactor database schema for scalability</p>
-                  <div className="p-3 mb-4 bg-neutral-900 dark:bg-black/60 rounded border border-neutral-800 dark:border-white/5 font-mono text-[10px] text-neutral-300 dark:text-neutral-400 leading-relaxed">
-                    <div className="flex gap-2"><span className="text-green-500 font-bold">➜</span> reading issue context...</div>
-                    <div className="flex gap-2"><span className="text-green-500 font-bold">➜</span> updating status: in_progress</div>
-                    <div className="flex gap-2"><span className="text-neutral-500">...</span> posting TLDR summary</div>
+                  <p className="text-sm text-black dark:text-white mb-3 font-bold leading-snug">Client needs GitHub SSO on the portal</p>
+                  <div className="space-y-2 mb-4 text-left">
+                    <div className="p-2.5 rounded-md bg-neutral-50 dark:bg-black/30 border border-black/5 dark:border-white/5">
+                      <p className="text-[10px] uppercase tracking-wide font-bold text-neutral-400 mb-1">Client context</p>
+                      <p className="text-[11px] text-neutral-700 dark:text-neutral-300 leading-relaxed">Acme request. Keep email login. Reuse current Clerk session middleware.</p>
+                    </div>
+                    <div className="p-2.5 rounded-md bg-neutral-50 dark:bg-black/30 border border-black/5 dark:border-white/5">
+                      <p className="text-[10px] uppercase tracking-wide font-bold text-neutral-400 mb-1">Team checklist</p>
+                      <div className="space-y-1 text-[11px] text-neutral-700 dark:text-neutral-300">
+                        <div>☑ Confirm scope with PM</div>
+                        <div>☑ Attach auth flow screenshot</div>
+                        <div>☐ Agent posts TLDR before review</div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="h-10 rounded-md bg-amber-100 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center text-[10px] font-bold text-amber-700 dark:text-amber-400">client-screen.png</div>
+                      <div className="h-10 rounded-md bg-neutral-100 dark:bg-neutral-900 border border-black/5 dark:border-white/5 flex items-center justify-center text-[10px] font-bold text-neutral-500">API hints</div>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="px-2 py-1 rounded bg-amber-100 dark:bg-amber-950/30 text-[10px] font-bold text-amber-700 dark:text-amber-500 uppercase tracking-tight">Backend</span>
+                    <span className="px-2 py-1 rounded bg-amber-100 dark:bg-amber-950/30 text-[10px] font-bold text-amber-700 dark:text-amber-500 uppercase tracking-tight">Rich ticket</span>
                     <div className="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center text-white dark:text-black shadow-lg shadow-amber-500/30">
                       <Bot className="w-3.5 h-3.5" strokeWidth={2.5} />
                     </div>
@@ -750,7 +760,7 @@ function ApiDemo() {
         <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
         <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
         <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
-        <span className="ml-3 text-xs text-neutral-500 font-mono">agent-workflow.sh — 47s from issue to review</span>
+        <span className="ml-3 text-xs text-neutral-500 font-mono">agent-workflow.sh · 47s from issue to review</span>
       </div>
       {/* Terminal content */}
       <div className="p-5 sm:p-6 font-mono text-xs sm:text-sm space-y-1.5 min-h-[320px] overflow-hidden">
