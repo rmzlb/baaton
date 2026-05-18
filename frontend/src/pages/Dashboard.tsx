@@ -717,24 +717,32 @@ export function Dashboard() {
               <p className="text-sm text-secondary">{t('dashboard.noProjects')}</p>
             </div>
           ) : projectViewMode === 'table' ? (
-            <div className="rounded-xl border border-border bg-surface overflow-hidden">
-              <table className="w-full text-xs">
+            <div className="rounded-xl border border-border bg-surface overflow-x-auto">
+              <table className="w-full text-xs min-w-[700px]">
                 <thead>
                   <tr className="border-b border-border/50 bg-surface-hover/30">
-                    <th className="text-left px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider">Project</th>
-                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider" title="Created this week">
-                      <span className="hidden sm:inline">New/wk</span><span className="sm:hidden">+W</span>
+                    <th className="text-left px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider sticky left-0 bg-surface-hover/30">Project</th>
+                    <th className="text-center px-1.5 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider">Total</th>
+                    <th colSpan={5} className="text-center px-1 py-1 text-[9px] font-semibold text-muted uppercase tracking-wider border-l border-border/30">
+                      <span className="opacity-60">Status breakdown</span>
                     </th>
-                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider" title="Created this month">
-                      <span className="hidden sm:inline">New/mo</span><span className="sm:hidden">+M</span>
+                    <th colSpan={3} className="text-center px-1 py-1 text-[9px] font-semibold text-muted uppercase tracking-wider border-l border-border/30">
+                      <span className="opacity-60">Velocity</span>
                     </th>
-                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-amber-500 uppercase tracking-wider" title="Open = Backlog + Todo + In Progress">
-                      Open
-                    </th>
-                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-emerald-500 uppercase tracking-wider" title="Closed this week = In Review + Done + Cancelled">
-                      Closed/wk
-                    </th>
-                    <th className="text-right px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider">Progress</th>
+                    <th className="text-right px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider border-l border-border/30">Done %</th>
+                  </tr>
+                  <tr className="border-b border-border/30">
+                    <th className="sticky left-0 bg-surface"></th>
+                    <th className="text-center px-1.5 py-1"></th>
+                    <th className="text-center px-1.5 py-1 border-l border-border/30" title="Backlog"><Circle size={10} className="inline text-gray-400" /></th>
+                    <th className="text-center px-1.5 py-1" title="Todo"><Circle size={10} className="inline text-blue-500" /></th>
+                    <th className="text-center px-1.5 py-1" title="In Progress"><Clock size={10} className="inline text-amber-500" /></th>
+                    <th className="text-center px-1.5 py-1" title="In Review"><Eye size={10} className="inline text-purple-500" /></th>
+                    <th className="text-center px-1.5 py-1" title="Done"><CheckCircle2 size={10} className="inline text-emerald-500" /></th>
+                    <th className="text-center px-1.5 py-1 text-[9px] text-muted border-l border-border/30" title="Created this week">+wk</th>
+                    <th className="text-center px-1.5 py-1 text-[9px] text-muted" title="Created this month">+mo</th>
+                    <th className="text-center px-1.5 py-1 text-[9px] text-emerald-500" title="Closed this week">✓wk</th>
+                    <th className="text-right px-3 py-1 border-l border-border/30"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -742,8 +750,7 @@ export function Dashboard() {
                     org.projects.map(project => {
                       const counts = project.status_counts || {};
                       const total = project.total_issues || 0;
-                      const open = (counts.backlog || 0) + (counts.todo || 0) + (counts.in_progress || 0);
-                      const done = (counts.done || 0) + (counts.cancelled || 0) + (counts.in_review || 0);
+                      const done = counts.done || 0;
                       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                       const createdWeek = project.created_this_week || 0;
                       const createdMonth = project.created_this_month || 0;
@@ -752,46 +759,51 @@ export function Dashboard() {
                         <tr
                           key={project.id}
                           onClick={() => handleProjectNavigate(project, org.id)}
-                          className="border-b border-border/30 last:border-b-0 hover:bg-surface-hover/50 cursor-pointer transition-colors group"
+                          className="border-b border-border/20 last:border-b-0 hover:bg-surface-hover/50 cursor-pointer transition-colors group"
                         >
-                          <td className="px-3 py-2.5">
+                          <td className="px-3 py-2 sticky left-0 bg-surface group-hover:bg-surface-hover/50 transition-colors">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono text-[10px] text-muted bg-surface-hover rounded px-1.5 py-0.5">{project.prefix}</span>
-                              <span className="font-medium text-primary group-hover:text-accent transition-colors truncate max-w-[160px]">{project.name}</span>
-                              <span className="text-[10px] text-muted hidden sm:inline">{org.name}</span>
+                              <span className="font-mono text-[10px] text-muted bg-surface-hover rounded px-1.5 py-0.5 shrink-0">{project.prefix}</span>
+                              <span className="font-medium text-primary group-hover:text-accent transition-colors truncate max-w-[140px]">{project.name}</span>
+                              <span className="text-[9px] text-muted/60 truncate max-w-[80px] hidden md:inline">{org.name}</span>
                             </div>
                           </td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">
-                            {createdWeek > 0 ? (
-                              <span className="text-blue-400 font-medium">+{createdWeek}</span>
-                            ) : (
-                              <span className="text-muted/40">0</span>
-                            )}
+                          <td className="px-1.5 py-2 text-center font-semibold text-primary tabular-nums">{total}</td>
+                          <td className="px-1.5 py-2 text-center tabular-nums text-secondary border-l border-border/20">{counts.backlog || <span className="text-muted/30">0</span>}</td>
+                          <td className="px-1.5 py-2 text-center tabular-nums text-secondary">{counts.todo || <span className="text-muted/30">0</span>}</td>
+                          <td className="px-1.5 py-2 text-center tabular-nums">
+                            {(counts.in_progress || 0) > 0
+                              ? <span className="text-amber-500 font-medium">{counts.in_progress}</span>
+                              : <span className="text-muted/30">0</span>}
                           </td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">
-                            {createdMonth > 0 ? (
-                              <span className="text-secondary font-medium">+{createdMonth}</span>
-                            ) : (
-                              <span className="text-muted/40">0</span>
-                            )}
+                          <td className="px-1.5 py-2 text-center tabular-nums">
+                            {(counts.in_review || 0) > 0
+                              ? <span className="text-purple-400">{counts.in_review}</span>
+                              : <span className="text-muted/30">0</span>}
                           </td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">
-                            {open > 0 ? (
-                              <span className="text-amber-500 font-semibold">{open}</span>
-                            ) : (
-                              <span className="text-muted/40">0</span>
-                            )}
+                          <td className="px-1.5 py-2 text-center tabular-nums">
+                            {done > 0
+                              ? <span className="text-emerald-500 font-medium">{done}</span>
+                              : <span className="text-muted/30">0</span>}
                           </td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">
-                            {closedWeek > 0 ? (
-                              <span className="text-emerald-500 font-semibold">{closedWeek}</span>
-                            ) : (
-                              <span className="text-muted/40">0</span>
-                            )}
+                          <td className="px-1.5 py-2 text-center tabular-nums border-l border-border/20">
+                            {createdWeek > 0
+                              ? <span className="text-blue-400 font-medium">+{createdWeek}</span>
+                              : <span className="text-muted/30">–</span>}
                           </td>
-                          <td className="px-3 py-2.5 text-right">
+                          <td className="px-1.5 py-2 text-center tabular-nums">
+                            {createdMonth > 0
+                              ? <span className="text-secondary">+{createdMonth}</span>
+                              : <span className="text-muted/30">–</span>}
+                          </td>
+                          <td className="px-1.5 py-2 text-center tabular-nums">
+                            {closedWeek > 0
+                              ? <span className="text-emerald-500 font-semibold">{closedWeek}</span>
+                              : <span className="text-muted/30">–</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right border-l border-border/20">
                             <div className="flex items-center gap-2 justify-end">
-                              <div className="w-16 h-1.5 rounded-full bg-surface-hover overflow-hidden">
+                              <div className="w-14 h-1.5 rounded-full bg-surface-hover overflow-hidden">
                                 <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
                               </div>
                               <span className="text-[10px] tabular-nums text-muted w-7 text-right">{pct}%</span>
