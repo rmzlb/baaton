@@ -260,7 +260,9 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (lightboxIndex !== null) {
+        if (annotatingIndex !== null) {
+          setAnnotatingIndex(null);
+        } else if (lightboxIndex !== null) {
           setLightboxIndex(null);
         } else {
           descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose();
@@ -293,6 +295,8 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
+      // Don't close drawer when lightbox or annotator is open
+      if (lightboxIndex !== null || annotatingIndex !== null) return;
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose();
       }
@@ -304,7 +308,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       clearTimeout(timer);
       document.removeEventListener('mousedown', handler);
     };
-  }, [onClose]);
+  }, [onClose, lightboxIndex, annotatingIndex]);
 
   // ── Handlers ──
   const handleTitleSave = useCallback(() => {
