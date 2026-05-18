@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useOrganization } from '@clerk/clerk-react';
 import { Globe, Lock, Link as LinkIcon, Check, Loader2, ExternalLink } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { AgentSession } from '@/lib/types';
+import type { AgentSession, Organization } from '@/lib/types';
 
 const PUBLIC_RUN_ORIGIN: string =
   (import.meta.env.VITE_PUBLIC_RUN_ORIGIN as string | undefined) || 'https://r.baaton.dev';
@@ -13,8 +14,9 @@ const PUBLIC_RUN_ORIGIN: string =
 interface AgentRunCardProps {
   issueId: string;
   /**
-   * If undefined, the component fetches sessions itself; if the backend
-   * does not yet expose the list endpoint the entire block hides silently.
+   * Optional override for the org gate. If undefined, the component fetches
+   * the value itself (S3) so the Publish button reflects the real backend
+   * state and not just optimistic UI.
    */
   orgPublicRunsEnabled?: boolean;
   className?: string;
@@ -39,6 +41,7 @@ export function AgentRunCard({ issueId, orgPublicRunsEnabled, className }: Agent
   const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
+  const { organization } = useOrganization();
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +51,31 @@ export function AgentRunCard({ issueId, orgPublicRunsEnabled, className }: Agent
     retry: false,
     staleTime: 30_000,
   });
+
+  // S3: fetch the real org gate so the Publish button reflects backend
+  // state, not just an unset prop. Tolerates older deployments without the
+  // GET /orgs/:id endpoint by treating 404/405 as "unknown" (we don't
+  // disable the button in that case — the publish call itself will 403
+  // with a clear error if the gate is off).
+  const { data: orgRow } = useQuery<Organization | null>({
+    queryKey: ['org', organization?.id],
+    enabled: !!organization?.id && orgPublicRunsEnabled === undefined,
+    retry: false,
+    staleTime: 60_000,
+    queryFn: async () => {
+      try {
+        return await apiClient.orgs.get(organization!.id);
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 404 || err.status === 405)) {
+          return null;
+        }
+        throw err;
+      }
+    },
+  });
+
+  const effectiveOrgEnabled =
+    orgPublicRunsEnabled ?? (orgRow ? Boolean(orgRow.agent_runs_public_enabled) : undefined);
 
   const latestFinished = (sessions ?? [])
     .filter((s) => s.status === 'completed' || s.status === 'error')
@@ -93,7 +121,7 @@ export function AgentRunCard({ issueId, orgPublicRunsEnabled, className }: Agent
   const publicUrl = latestFinished.public_token
     ? `${PUBLIC_RUN_ORIGIN}/${latestFinished.public_token}`
     : null;
-  const orgGateOff = orgPublicRunsEnabled === false;
+  const orgGateOff = effectiveOrgEnabled === false;
   const publishing = publishMutation.isPending;
   const unpublishing = unpublishMutation.isPending;
 

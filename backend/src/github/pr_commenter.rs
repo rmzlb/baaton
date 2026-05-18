@@ -178,14 +178,16 @@ fn render_comment_body(
     let summary = s
         .summary
         .as_deref()
-        .map(|t| {
-            if t.len() > 240 {
-                format!("{}…", &t[..240])
-            } else {
-                t.to_string()
-            }
-        })
+        .map(|t| truncate_chars(t, 240))
         .unwrap_or_else(|| "_(no summary)_".to_string());
+
+    // S6: when the run failed, prefix the heading so the failure is visually
+    // obvious in the PR thread. Successful and other states use the neutral title.
+    let heading = if s.status == "error" {
+        format!("### ❌ Agent Run failed · `{display_id}`")
+    } else {
+        format!("### Agent Run · `{display_id}`")
+    };
 
     let tests = match s.tests_status.as_str() {
         "passed" => "passed ✓",
@@ -195,7 +197,7 @@ fn render_comment_body(
     };
 
     format!(
-        "### Agent Run · `{display_id}`\n\
+        "{heading}\n\
          \n\
          **Agent:** `{agent}` · **Status:** `{status}` · **Duration:** {duration}\n\
          \n\
@@ -208,7 +210,7 @@ fn render_comment_body(
          [View full run →]({origin}/{token})\n\
          \n\
          <sub>Posted by [Baaton](https://baaton.dev) — receipts for AI agent work.</sub>",
-        display_id = display_id,
+        heading = heading,
         agent = s.agent_name,
         status = s.status,
         duration = duration,
@@ -240,6 +242,25 @@ fn format_duration_secs(s: i64) -> String {
         format!("{h}h {rem_m}m")
     } else {
         format!("{h}h")
+    }
+}
+
+/// C2: Truncate `s` to at most `max_chars` Unicode scalars, appending `…` if truncated.
+/// Char-boundary safe (won't panic on multibyte input).
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    let mut count = 0usize;
+    let mut end = s.len();
+    for (i, _) in s.char_indices() {
+        if count == max_chars {
+            end = i;
+            break;
+        }
+        count += 1;
+    }
+    if end == s.len() {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..end])
     }
 }
 
@@ -306,5 +327,27 @@ mod tests {
         s.summary = None;
         let body = render_comment_body("BAA-1", "P", &s, "tok");
         assert!(body.contains("_(no summary)_"));
+    }
+
+    #[test]
+    fn render_with_multibyte_summary_does_not_panic() {
+        // C2 regression: 300 × "é" = 600 bytes / 300 chars (> 240 char threshold).
+        // With the old `&t[..240]` byte-slice this panicked because byte 240 fell
+        // mid-codepoint. truncate_chars uses char_indices so it's safe.
+        let mut s = sample_row();
+        s.summary = Some("é".repeat(300));
+        let body = render_comment_body("BAA-1", "P", &s, "tok");
+        assert!(body.contains("…"));
+    }
+
+    #[test]
+    fn error_status_uses_failure_heading() {
+        // S6: the comment for a failed run must visually flag the failure
+        // so reviewers don't mistake it for a successful receipt.
+        let mut s = sample_row();
+        s.status = "error".into();
+        let body = render_comment_body("BAA-9", "P", &s, "tok");
+        assert!(body.contains("❌ Agent Run failed"));
+        assert!(body.contains("BAA-9"));
     }
 }

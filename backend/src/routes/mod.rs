@@ -179,6 +179,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Org members
         .route("/orgs/{org_id}/members", get(orgs::list_members))
         .route("/orgs/{org_id}/settings", patch(orgs::update_settings))
+        .route("/orgs/{org_id}", get(orgs::get_one))
         // Admin (BAA-1)
         .route("/admin/orgs/{id}/plan", patch(admin::set_plan))
         .route("/admin/superadmin/check", get(admin::check_superadmin))

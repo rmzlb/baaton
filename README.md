@@ -28,6 +28,12 @@
 
 ---
 
+### Receipts for AI agent work
+
+Every agent run can be published as a public Run Card at `r.baaton.dev/<token>` — a shareable receipt with the agent name, summary, files changed, tests status, and a link to the PR. Auto-posts as a markdown comment on the GitHub PR when the run completes. Vendor-neutral: works with Cursor agents, Claude Code, Devin, Copilot, OpenClaw, or any agent that hits the Baaton API.
+
+---
+
 ## Why
 
 AI agents can write code. They can't plan, triage, or report.

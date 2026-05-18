@@ -194,6 +194,14 @@ export function Landing() {
           <p className="text-base md:text-lg text-neutral-500 dark:text-neutral-500 max-w-xl mx-auto leading-relaxed mb-12 opacity-0 animate-reveal-up-delay-2 font-medium">
             {t('landing.heroNote')}
           </p>
+          {/* S7: surface the new wedge ("receipts for AI agent work") without
+              rewriting the whole pitch. Full landing copy refresh deferred. */}
+          <p className="text-sm md:text-base text-neutral-500 dark:text-neutral-500 max-w-xl mx-auto leading-relaxed -mt-8 mb-12 opacity-0 animate-reveal-up-delay-2">
+            {t('landing.heroReceipts', {
+              defaultValue:
+                'Plus shareable receipts for every agent run — auto-posted to the PR.',
+            })}
+          </p>
 
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 opacity-0 animate-reveal-up-delay-3">

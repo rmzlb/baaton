@@ -102,13 +102,7 @@ fn render_html(token: &str, r: &RunRow) -> String {
     let summary = r
         .summary
         .as_deref()
-        .map(|s| {
-            if s.len() > 240 {
-                format!("{}…", &s[..240])
-            } else {
-                s.to_string()
-            }
-        })
+        .map(|s| truncate_chars(s, 240))
         .unwrap_or_else(|| "No summary recorded yet.".into());
 
     let title = format!("{} · Agent Run · Baaton", r.display_id);
@@ -269,6 +263,26 @@ fn esc(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+/// C2: Truncate `s` to at most `max_chars` Unicode scalars, appending `…` if truncated.
+/// Uses char boundaries so this never panics on multibyte input (e.g. French summaries
+/// with accents whose byte length exceeds `max_chars`).
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    let mut count = 0usize;
+    let mut end = s.len();
+    for (i, _) in s.char_indices() {
+        if count == max_chars {
+            end = i;
+            break;
+        }
+        count += 1;
+    }
+    if end == s.len() {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..end])
+    }
+}
+
 fn format_duration_secs(s: i64) -> String {
     if s < 60 {
         return format!("{s}s");
@@ -290,3 +304,51 @@ fn format_duration_secs(s: i64) -> String {
         format!("{h}h")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_row(summary: Option<String>) -> RunRow {
+        RunRow {
+            display_id: "BAA-7".into(),
+            project_name: "Baaton".into(),
+            agent_name: "openclaw:haroz".into(),
+            status: "completed".into(),
+            started_at: None,
+            completed_at: None,
+            summary,
+            files_changed: vec!["src/foo.rs".into()],
+            tests_status: "passed".into(),
+            pr_url: None,
+        }
+    }
+
+    #[test]
+    fn render_html_with_multibyte_summary_does_not_panic() {
+        // C2 regression: 300 × "é" = 600 bytes / 300 chars (> 240 threshold).
+        // Old code did `&s[..240]` which panicked because byte 240 fell
+        // mid-codepoint. truncate_chars uses char_indices so it's safe.
+        let multibyte = "é".repeat(300);
+        let row = sample_row(Some(multibyte));
+        let html = render_html("01HX0Z9ABC", &row);
+        assert!(html.contains("…"));
+        assert!(html.contains("BAA-7"));
+    }
+
+    #[test]
+    fn truncate_chars_handles_multibyte() {
+        let s = "é".repeat(300);
+        let out = truncate_chars(&s, 240);
+        // 240 × "é" + "…" — counted in chars, not bytes
+        assert_eq!(out.chars().count(), 241);
+        assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn truncate_chars_passthrough_when_short() {
+        let out = truncate_chars("hello", 240);
+        assert_eq!(out, "hello");
+    }
+}
+

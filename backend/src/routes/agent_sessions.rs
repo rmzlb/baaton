@@ -114,9 +114,21 @@ pub async fn create(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    // Verify issue belongs to org and get project_id
-    let issue = sqlx::query_as::<_, (Uuid, Uuid, String, bool)>(
-        "SELECT i.id, i.project_id, i.status, p.agent_runs_public_default FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2"
+    // Verify issue belongs to org and resolve effective public-default.
+    // C3: the project's `agent_runs_public_default` must be AND'd with the org-level
+    // master switch (`organizations.agent_runs_public_enabled`). Otherwise, flipping
+    // the project flag bypasses the org kill switch. LEFT JOIN on organizations is
+    // defensive: org rows should always exist for a project, but if Clerk webhook
+    // sync ever lags we want the safer default (treat missing org as "disabled").
+    let issue: (Uuid, Uuid, String, bool) = sqlx::query_as::<_, (Uuid, Uuid, String, bool)>(
+        r#"
+        SELECT i.id, i.project_id, i.status,
+               (p.agent_runs_public_default AND COALESCE(o.agent_runs_public_enabled, FALSE))
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        LEFT JOIN organizations o ON o.id = p.org_id
+        WHERE i.id = $1 AND p.org_id = $2
+        "#,
     )
     .bind(body.issue_id)
     .bind(org_id)
@@ -376,6 +388,13 @@ pub async fn update(
             pr_url = COALESCE($7, pr_url),
             error_message = COALESCE($8, error_message),
             metadata = COALESCE($9, metadata),
+            -- S4: when pr_url changes, drop pr_comment_id so the next enqueue
+            -- creates a fresh comment on the new PR instead of trying to PATCH
+            -- a comment that lives on the old PR (which would 404 from GitHub).
+            pr_comment_id = CASE
+                WHEN $7 IS NOT NULL AND $7 IS DISTINCT FROM pr_url THEN NULL
+                ELSE pr_comment_id
+            END,
             completed_at = CASE WHEN $3 IN ('completed', 'error') THEN NOW() ELSE completed_at END,
             updated_at = NOW()
         WHERE id = $1 AND org_id = $2
@@ -458,6 +477,10 @@ pub async fn update(
     broadcast_event(&sse_tx, org_id, sse_event, &serde_json::to_string(&session).unwrap_or_default());
 
     // ── Enqueue PR comment job if session just completed/errored and is publishable ──
+    // S6 decision: we deliberately enqueue for `error` status too. A failed run with
+    // public visibility is still a "receipt" — the whole pitch is honesty about agent
+    // work, including failures. The comment template branches on status to make the
+    // failure visually clear (see pr_commenter::render_comment_body).
     // The job re-validates is_public + pr_url + reads through pr_comment_id for idempotency.
     if is_completing && session.is_public && session.pr_url.is_some() {
         let payload = json!({"session_id": session.id.to_string()});
@@ -598,10 +621,15 @@ pub async fn unpublish(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
+    // C1: must also NULL public_token to satisfy the
+    // CHECK (is_public=FALSE → public_token IS NULL) constraint added in migration 055.
+    // A future republish call generates a fresh token rather than reusing the old one,
+    // which is the correct privacy behavior anyway (revoking the link should kill the URL).
     let session = sqlx::query_as::<_, AgentSession>(
         r#"
         UPDATE agent_sessions SET
             is_public = FALSE,
+            public_token = NULL,
             published_at = NULL,
             updated_at = NOW()
         WHERE id = $1 AND org_id = $2
