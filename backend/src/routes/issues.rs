@@ -1318,16 +1318,19 @@ pub async fn get_one(
         )
     })?;
 
+    // Use all user org IDs (cross-org) so the drawer works from /all-issues
+    let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
+
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         SELECT i.*, p.org_id
         FROM issues i
         JOIN projects p ON p.id = i.project_id
-        WHERE i.id = $1 AND p.org_id = $2
+        WHERE i.id = $1 AND p.org_id = ANY($2)
         "#,
     )
     .bind(id)
-    .bind(org_id)
+    .bind(&all_org_ids)
     .fetch_one(&pool)
     .await
     .map_err(|_| {
