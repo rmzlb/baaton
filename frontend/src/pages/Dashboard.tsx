@@ -6,6 +6,7 @@ import {
   Kanban, ArrowRight, Clock, Circle, Eye,
   CheckCircle2, Building2, ChevronRight,
   TrendingUp, Zap, Timer, Flame, Bot, User, Target,
+  LayoutGrid, Table2,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
@@ -583,6 +584,15 @@ export function Dashboard() {
   // Pending navigation refs — used to complete navigation after org switch
   const pendingIssueNavRef = useRef<string | null>(null);
 
+  // Project view mode (cards vs table)
+  const [projectViewMode, setProjectViewMode] = useState<'cards' | 'table'>(() => {
+    const saved = localStorage.getItem('baaton-dashboard-view');
+    return saved === 'table' ? 'table' : 'cards';
+  });
+  useEffect(() => {
+    localStorage.setItem('baaton-dashboard-view', projectViewMode);
+  }, [projectViewMode]);
+
   useEffect(() => {
     if (pendingNavRef.current && activeOrg) {
       const target = pendingNavRef.current;
@@ -658,7 +668,31 @@ export function Dashboard() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t('dashboard.projects')}</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t('dashboard.projects')}</h2>
+              <div className="flex items-center rounded-md border border-border bg-surface p-0.5">
+                <button
+                  onClick={() => setProjectViewMode('cards')}
+                  className={cn(
+                    'rounded-[5px] p-1.5 transition-colors',
+                    projectViewMode === 'cards' ? 'bg-surface-hover text-primary' : 'text-muted hover:text-secondary',
+                  )}
+                  title="Cards"
+                >
+                  <LayoutGrid size={14} />
+                </button>
+                <button
+                  onClick={() => setProjectViewMode('table')}
+                  className={cn(
+                    'rounded-[5px] p-1.5 transition-colors',
+                    projectViewMode === 'table' ? 'bg-surface-hover text-primary' : 'text-muted hover:text-secondary',
+                  )}
+                  title="Table"
+                >
+                  <Table2 size={14} />
+                </button>
+              </div>
+            </div>
             <div className="flex items-center gap-3">
               <Link to="/all-issues" className="text-[10px] text-secondary hover:text-accent transition-colors">All issues →</Link>
               <Link to="/projects" className="text-[10px] text-accent hover:text-accent-hover transition-colors">{t('dashboard.viewAll')} →</Link>
@@ -679,6 +713,69 @@ export function Dashboard() {
               <Kanban size={32} className="text-secondary mb-2" />
               <p className="text-sm text-secondary">{t('dashboard.noProjects')}</p>
             </div>
+          ) : projectViewMode === 'table' ? (
+            <div className="rounded-xl border border-border bg-surface overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border/50 bg-surface-hover/30">
+                    <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">Project</th>
+                    <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider hidden sm:table-cell">Org</th>
+                    <th className="text-center px-2 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">Total</th>
+                    <th className="text-center px-2 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">
+                      <Circle size={10} className="inline text-blue-500" />
+                    </th>
+                    <th className="text-center px-2 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">
+                      <Clock size={10} className="inline text-amber-500" />
+                    </th>
+                    <th className="text-center px-2 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">
+                      <Eye size={10} className="inline text-purple-500" />
+                    </th>
+                    <th className="text-center px-2 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">
+                      <CheckCircle2 size={10} className="inline text-emerald-500" />
+                    </th>
+                    <th className="text-right px-3 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">Progress</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedOrgs.flatMap(org =>
+                    org.projects.map(project => {
+                      const counts = project.status_counts || {};
+                      const total = project.total_issues || 0;
+                      const done = counts.done || 0;
+                      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                      return (
+                        <tr
+                          key={project.id}
+                          onClick={() => handleProjectNavigate(project, org.id)}
+                          className="border-b border-border/30 last:border-b-0 hover:bg-surface-hover/50 cursor-pointer transition-colors group"
+                        >
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-[10px] text-muted bg-surface-hover rounded px-1.5 py-0.5">{project.prefix}</span>
+                              <span className="font-medium text-primary group-hover:text-accent transition-colors truncate max-w-[160px]">{project.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-muted hidden sm:table-cell truncate max-w-[100px]">{org.name}</td>
+                          <td className="px-2 py-2.5 text-center font-semibold text-primary tabular-nums">{total}</td>
+                          <td className="px-2 py-2.5 text-center tabular-nums text-secondary">{counts.todo || 0}</td>
+                          <td className="px-2 py-2.5 text-center tabular-nums text-secondary">{counts.in_progress || 0}</td>
+                          <td className="px-2 py-2.5 text-center tabular-nums text-secondary">{counts.in_review || 0}</td>
+                          <td className="px-2 py-2.5 text-center tabular-nums text-emerald-500 font-medium">{done}</td>
+                          <td className="px-3 py-2.5 text-right">
+                            <div className="flex items-center gap-2 justify-end">
+                              <div className="w-16 h-1.5 rounded-full bg-surface-hover overflow-hidden">
+                                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+                              </div>
+                              <span className="text-[10px] tabular-nums text-muted w-7 text-right">{pct}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           ) : (
             sortedOrgs.map(org => (
               <OrgSection
@@ -692,12 +789,12 @@ export function Dashboard() {
         </div>
 
         <div className="space-y-4">
-          {data && <GamificationPanel data={data} onIssueClick={handleIssueNavigate} />}
-
           <div className="rounded-xl border border-border bg-surface p-4">
             <h2 className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-3">{t('dashboard.recentActivity')}</h2>
             <ActivityFeed limit={15} entries={data ? data.recent_activity : null} onIssueClick={handleIssueNavigate} />
           </div>
+
+          {data && <GamificationPanel data={data} onIssueClick={handleIssueNavigate} />}
         </div>
       </div>
     </div>
