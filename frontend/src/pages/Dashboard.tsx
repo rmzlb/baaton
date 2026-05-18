@@ -26,6 +26,7 @@ interface DashboardProject {
   created_this_week: number;
   created_this_month: number;
   closed_this_week: number;
+  closed_this_month: number;
   assignees: string[];
 }
 
@@ -727,7 +728,7 @@ export function Dashboard() {
                       <span className="opacity-60">Status breakdown</span>
                     </th>
                     <th colSpan={3} className="text-center px-1 py-1 text-[9px] font-semibold text-muted uppercase tracking-wider border-l border-border/30">
-                      <span className="opacity-60">Velocity</span>
+                      <span className="opacity-60">Velocity (30d)</span>
                     </th>
                     <th className="text-right px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider border-l border-border/30">Done %</th>
                   </tr>
@@ -739,9 +740,9 @@ export function Dashboard() {
                     <th className="text-center px-1.5 py-1" title="In Progress"><Clock size={10} className="inline text-amber-500" /></th>
                     <th className="text-center px-1.5 py-1" title="In Review"><Eye size={10} className="inline text-purple-500" /></th>
                     <th className="text-center px-1.5 py-1" title="Done"><CheckCircle2 size={10} className="inline text-emerald-500" /></th>
-                    <th className="text-center px-1.5 py-1 text-[9px] text-muted border-l border-border/30" title="Created this week">+wk</th>
-                    <th className="text-center px-1.5 py-1 text-[9px] text-muted" title="Created this month">+mo</th>
-                    <th className="text-center px-1.5 py-1 text-[9px] text-emerald-500" title="Closed this week">✓wk</th>
+                    <th className="text-center px-1.5 py-1 text-[9px] text-blue-400 border-l border-border/30" title="Created last 30 days">In</th>
+                    <th className="text-center px-1.5 py-1 text-[9px] text-emerald-500" title="Resolved last 30 days (in_review + done + cancelled)">Out</th>
+                    <th className="text-center px-1.5 py-1 text-[9px] text-muted" title="Ratio Out/In — >1 = burning debt">Δ</th>
                     <th className="text-right px-3 py-1 border-l border-border/30"></th>
                   </tr>
                 </thead>
@@ -752,9 +753,9 @@ export function Dashboard() {
                       const total = project.total_issues || 0;
                       const done = counts.done || 0;
                       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                      const createdWeek = project.created_this_week || 0;
                       const createdMonth = project.created_this_month || 0;
-                      const closedWeek = project.closed_this_week || 0;
+                      const closedMonth = project.closed_this_month || 0;
+                      const ratio = createdMonth > 0 ? closedMonth / createdMonth : closedMonth > 0 ? 99 : 0;
                       return (
                         <tr
                           key={project.id}
@@ -787,19 +788,21 @@ export function Dashboard() {
                               : <span className="text-muted/30">0</span>}
                           </td>
                           <td className="px-1.5 py-2 text-center tabular-nums border-l border-border/20">
-                            {createdWeek > 0
-                              ? <span className="text-blue-400 font-medium">+{createdWeek}</span>
-                              : <span className="text-muted/30">–</span>}
-                          </td>
-                          <td className="px-1.5 py-2 text-center tabular-nums">
                             {createdMonth > 0
-                              ? <span className="text-secondary">+{createdMonth}</span>
+                              ? <span className="text-blue-400 font-medium">{createdMonth}</span>
                               : <span className="text-muted/30">–</span>}
                           </td>
                           <td className="px-1.5 py-2 text-center tabular-nums">
-                            {closedWeek > 0
-                              ? <span className="text-emerald-500 font-semibold">{closedWeek}</span>
+                            {closedMonth > 0
+                              ? <span className="text-emerald-500 font-medium">{closedMonth}</span>
                               : <span className="text-muted/30">–</span>}
+                          </td>
+                          <td className="px-1.5 py-2 text-center tabular-nums">
+                            {createdMonth === 0 && closedMonth === 0
+                              ? <span className="text-muted/30">–</span>
+                              : ratio >= 1
+                                ? <span className="text-emerald-500 font-semibold" title={`${ratio.toFixed(1)}x — resolving faster than creating`}>↑{ratio.toFixed(1)}</span>
+                                : <span className="text-amber-500 font-semibold" title={`${ratio.toFixed(1)}x — creating faster than resolving`}>↓{ratio.toFixed(1)}</span>}
                           </td>
                           <td className="px-3 py-2 text-right border-l border-border/20">
                             <div className="flex items-center gap-2 justify-end">

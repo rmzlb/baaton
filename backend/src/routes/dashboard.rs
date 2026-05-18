@@ -158,6 +158,7 @@ struct ProjectTemporalRow {
     created_week: i64,
     created_month: i64,
     closed_week: i64,
+    closed_month: i64,
 }
 
 #[derive(sqlx::FromRow)]
@@ -442,12 +443,13 @@ pub async fn summary(
              GROUP BY activity_date ORDER BY activity_date ASC"
         ).bind(&all_org_ids).bind(hm_since).fetch_all(&pool),
 
-        // w) Per-project temporal metrics (created this week/month, closed this week)
+        // w) Per-project temporal metrics (created this week/month, closed this week/month)
         sqlx::query_as::<_, ProjectTemporalRow>(
             r#"SELECT i.project_id,
                    COUNT(*) FILTER (WHERE i.created_at >= $2)::bigint AS created_week,
                    COUNT(*) FILTER (WHERE i.created_at >= $3)::bigint AS created_month,
-                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled', 'in_review') AND i.updated_at >= $2)::bigint AS closed_week
+                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled', 'in_review') AND i.updated_at >= $2)::bigint AS closed_week,
+                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled', 'in_review') AND i.updated_at >= $3)::bigint AS closed_month
                FROM issues i
                JOIN projects p ON p.id = i.project_id
                WHERE p.org_id = ANY($1)
@@ -542,6 +544,7 @@ pub async fn summary(
                         "created_this_week": project_temporal_map.get(&p.id).map(|t| t.created_week).unwrap_or(0),
                         "created_this_month": project_temporal_map.get(&p.id).map(|t| t.created_month).unwrap_or(0),
                         "closed_this_week": project_temporal_map.get(&p.id).map(|t| t.closed_week).unwrap_or(0),
+                        "closed_this_month": project_temporal_map.get(&p.id).map(|t| t.closed_month).unwrap_or(0),
                         "assignees": proj_assignees,
                     })
                 })
