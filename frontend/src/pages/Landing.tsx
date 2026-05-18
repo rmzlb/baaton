@@ -349,8 +349,6 @@ export function Landing() {
           </div>
         </div>
 
-        {/* ── Code Snippet (below board) ──────────── */}
-        <CodeTabs />
       </main>
 
       {/* ── See it in action (board GIF + terminal) ──── */}
@@ -400,32 +398,30 @@ export function Landing() {
       <section id="how-it-works" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <div className="mb-12 sm:mb-16 max-w-3xl">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">Why switch</p>
-            <h2 className="font-display text-4xl sm:text-5xl md:text-6xl text-black dark:text-white mb-6 uppercase tracking-tight">Built for agents.<br />Not retrofitted.</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">Every PM tool added an API as an afterthought. Baaton was API-first from day one.</p>
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.compare.badge')}</p>
+            <h2 className="font-display text-4xl sm:text-5xl md:text-6xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.compare.title1')}<br />{t('landing.compare.title2')}</h2>
+            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.compare.sub')}</p>
           </div>
 
           <div className="overflow-x-auto -mx-4 px-4">
             <div className="min-w-[700px] rounded-xl border border-black/10 dark:border-white/10 overflow-hidden bg-white dark:bg-[#0C0C0C]">
               {/* Header */}
               <div className="grid grid-cols-5 border-b border-black/5 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900/40">
-                <div className="p-4 text-xs font-bold text-neutral-500 uppercase tracking-wider">Capability</div>
+                <div className="p-4 text-xs font-bold text-neutral-500 uppercase tracking-wider">{t('landing.compare.capability')}</div>
                 <div className="p-4 text-xs font-bold text-amber-500 uppercase tracking-wider text-center">Baaton</div>
                 <div className="p-4 text-xs font-bold text-neutral-400 uppercase tracking-wider text-center">Jira</div>
                 <div className="p-4 text-xs font-bold text-neutral-400 uppercase tracking-wider text-center">Linear</div>
-                <div className="p-4 text-xs font-bold text-neutral-400 uppercase tracking-wider text-center">GitHub Issues</div>
+                <div className="p-4 text-xs font-bold text-neutral-400 uppercase tracking-wider text-center">{t('landing.compare.github')}</div>
               </div>
               {[
-                ['Create issue via API', true, true, true, true],
-                ['Auto-triage & prioritize', true, false, false, false],
-                ['Structured context per issue', true, false, false, false],
-                ['Agent TLDR summaries', true, false, false, false],
-                ['Webhook on every mutation', true, true, true, true],
-                ['Human approval gates', true, false, false, false],
-                ['Project context for agents', true, false, false, false],
-                ['Self-hostable', true, false, false, false],
-                ['Sub-200ms API latency', true, false, true, true],
-                ['Free tier', true, false, true, true],
+                [t('landing.compare.row.create'), true, true, true, true],
+                [t('landing.compare.row.rich'), true, false, false, false],
+                [t('landing.compare.row.tldr'), true, false, false, false],
+                [t('landing.compare.row.gates'), true, false, false, false],
+                [t('landing.compare.row.hints'), true, false, false, false],
+                [t('landing.compare.row.public'), true, false, false, true],
+                [t('landing.compare.row.selfhost'), true, false, false, false],
+                [t('landing.compare.row.latency'), true, false, true, true],
               ].map(([label, ...vals], i) => (
                 <div key={i} className={`grid grid-cols-5 border-b border-black/5 dark:border-white/5 last:border-0 ${i % 2 === 0 ? 'bg-white dark:bg-[#0C0C0C]' : 'bg-neutral-50/50 dark:bg-neutral-900/20'}`}>
                   <div className="p-4 text-sm font-semibold text-black dark:text-white">{label as string}</div>
@@ -448,7 +444,7 @@ export function Landing() {
           </div>
 
           <p className="mt-8 text-sm text-neutral-500 text-center">
-            Linear has an API. But your agent still can't auto-triage, summarize work, or inject project context without glue code.
+            {t('landing.compare.note')}
           </p>
         </div>
       </section>
@@ -557,7 +553,7 @@ export function Landing() {
             </div>
             {/* Pro — highlighted */}
             <div className="p-8 rounded-xl border-2 border-amber-500 bg-white dark:bg-[#111] shadow-xl shadow-amber-500/10 hover:shadow-2xl transition-all flex flex-col relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-amber-500 text-black text-xs font-bold uppercase tracking-wider">Popular</div>
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-amber-500 text-black text-xs font-bold uppercase tracking-wider">{t('landing.pricing.popular')}</div>
               <h3 className="text-lg font-display uppercase tracking-wide text-black dark:text-white mb-2">{t('landing.pricing.pro')}</h3>
               <div className="flex items-baseline gap-1 mb-2">
                 <span className="text-4xl font-display font-bold text-black dark:text-white">{t('landing.pricing.proPrice')}</span>
