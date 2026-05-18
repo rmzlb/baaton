@@ -177,7 +177,29 @@ export function Landing() {
 
       {/* ── Hero ────────────────────────────────── */}
       <main className="sm:pt-48 sm:pb-32 overflow-hidden pt-28 pb-16 relative">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-glow-light dark:bg-glow-dark opacity-100 pointer-events-none transition-opacity duration-700" />
+        {/* Cinematic ambience — decorative only, text/SEO stays in HTML */}
+        <video
+          className="pointer-events-none absolute top-0 left-0 right-0 hidden h-[820px] w-full object-cover opacity-55 brightness-[0.72] contrast-110 saturate-[0.45] blur-[0.2px] md:block motion-reduce:hidden dark:opacity-45 dark:brightness-[0.5]"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          poster="/hero-war-room-poster.webp"
+          aria-hidden="true"
+        >
+          <source src="/hero-war-room.mp4" type="video/mp4" />
+          <source src="/hero-war-room.webm" type="video/webm" />
+        </video>
+        <div
+          className="pointer-events-none absolute top-0 left-0 right-0 hidden h-[820px] bg-cover bg-center opacity-35 brightness-[0.72] contrast-110 saturate-[0.45] md:block motion-safe:hidden dark:brightness-[0.5]"
+          style={{ backgroundImage: "url('/hero-war-room-poster.webp')" }}
+          aria-hidden="true"
+        />
+        <div className="absolute top-0 left-0 right-0 h-[820px] bg-[#F3EFE7]/48 dark:bg-[#080808]/58 pointer-events-none" />
+        <div className="absolute top-0 left-0 right-0 h-[820px] bg-gradient-to-r from-[#F3EFE7]/80 via-transparent to-[#F3EFE7]/80 dark:from-[#080808]/85 dark:to-[#080808]/85 pointer-events-none" />
+        <div className="absolute top-0 left-0 right-0 h-[820px] bg-gradient-to-b from-[#F3EFE7]/55 via-transparent to-[#F3EFE7] dark:from-[#080808]/65 dark:to-[#080808] pointer-events-none" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-glow-light dark:bg-glow-dark opacity-80 pointer-events-none transition-opacity duration-700" />
         <div className="absolute inset-0 bg-grid-pattern-light dark:bg-grid-pattern bg-[size:4rem_4rem] opacity-[0.04] dark:opacity-[0.03] pointer-events-none" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#F3EFE7] dark:to-[#080808] pointer-events-none" />
 
