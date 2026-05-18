@@ -23,6 +23,9 @@ interface DashboardProject {
   description: string | null;
   status_counts: Record<string, number>;
   total_issues: number;
+  created_this_week: number;
+  created_this_month: number;
+  closed_this_week: number;
   assignees: string[];
 }
 
@@ -587,7 +590,7 @@ export function Dashboard() {
   // Project view mode (cards vs table)
   const [projectViewMode, setProjectViewMode] = useState<'cards' | 'table'>(() => {
     const saved = localStorage.getItem('baaton-dashboard-view');
-    return saved === 'table' ? 'table' : 'cards';
+    return saved === 'cards' ? 'cards' : 'table';
   });
   useEffect(() => {
     localStorage.setItem('baaton-dashboard-view', projectViewMode);
@@ -718,22 +721,20 @@ export function Dashboard() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-border/50 bg-surface-hover/30">
-                    <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">Project</th>
-                    <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider hidden sm:table-cell">Org</th>
-                    <th className="text-center px-2 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">Total</th>
-                    <th className="text-center px-2 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">
-                      <Circle size={10} className="inline text-blue-500" />
+                    <th className="text-left px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider">Project</th>
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider" title="Created this week">
+                      <span className="hidden sm:inline">New/wk</span><span className="sm:hidden">+W</span>
                     </th>
-                    <th className="text-center px-2 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">
-                      <Clock size={10} className="inline text-amber-500" />
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider" title="Created this month">
+                      <span className="hidden sm:inline">New/mo</span><span className="sm:hidden">+M</span>
                     </th>
-                    <th className="text-center px-2 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">
-                      <Eye size={10} className="inline text-purple-500" />
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-amber-500 uppercase tracking-wider" title="Open = Backlog + Todo + In Progress">
+                      Open
                     </th>
-                    <th className="text-center px-2 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">
-                      <CheckCircle2 size={10} className="inline text-emerald-500" />
+                    <th className="text-center px-2 py-2.5 text-[10px] font-semibold text-emerald-500 uppercase tracking-wider" title="Closed this week = In Review + Done + Cancelled">
+                      Closed/wk
                     </th>
-                    <th className="text-right px-3 py-2 text-[10px] font-semibold text-muted uppercase tracking-wider">Progress</th>
+                    <th className="text-right px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider">Progress</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -741,8 +742,12 @@ export function Dashboard() {
                     org.projects.map(project => {
                       const counts = project.status_counts || {};
                       const total = project.total_issues || 0;
-                      const done = counts.done || 0;
+                      const open = (counts.backlog || 0) + (counts.todo || 0) + (counts.in_progress || 0);
+                      const done = (counts.done || 0) + (counts.cancelled || 0) + (counts.in_review || 0);
                       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                      const createdWeek = project.created_this_week || 0;
+                      const createdMonth = project.created_this_month || 0;
+                      const closedWeek = project.closed_this_week || 0;
                       return (
                         <tr
                           key={project.id}
@@ -753,14 +758,37 @@ export function Dashboard() {
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-[10px] text-muted bg-surface-hover rounded px-1.5 py-0.5">{project.prefix}</span>
                               <span className="font-medium text-primary group-hover:text-accent transition-colors truncate max-w-[160px]">{project.name}</span>
+                              <span className="text-[10px] text-muted hidden sm:inline">{org.name}</span>
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-muted hidden sm:table-cell truncate max-w-[100px]">{org.name}</td>
-                          <td className="px-2 py-2.5 text-center font-semibold text-primary tabular-nums">{total}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums text-secondary">{counts.todo || 0}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums text-secondary">{counts.in_progress || 0}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums text-secondary">{counts.in_review || 0}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums text-emerald-500 font-medium">{done}</td>
+                          <td className="px-2 py-2.5 text-center tabular-nums">
+                            {createdWeek > 0 ? (
+                              <span className="text-blue-400 font-medium">+{createdWeek}</span>
+                            ) : (
+                              <span className="text-muted/40">0</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-2.5 text-center tabular-nums">
+                            {createdMonth > 0 ? (
+                              <span className="text-secondary font-medium">+{createdMonth}</span>
+                            ) : (
+                              <span className="text-muted/40">0</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-2.5 text-center tabular-nums">
+                            {open > 0 ? (
+                              <span className="text-amber-500 font-semibold">{open}</span>
+                            ) : (
+                              <span className="text-muted/40">0</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-2.5 text-center tabular-nums">
+                            {closedWeek > 0 ? (
+                              <span className="text-emerald-500 font-semibold">{closedWeek}</span>
+                            ) : (
+                              <span className="text-muted/40">0</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2.5 text-right">
                             <div className="flex items-center gap-2 justify-end">
                               <div className="w-16 h-1.5 rounded-full bg-surface-hover overflow-hidden">

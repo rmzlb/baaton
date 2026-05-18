@@ -153,6 +153,14 @@ struct ProjectActivityRow {
 }
 
 #[derive(sqlx::FromRow)]
+struct ProjectTemporalRow {
+    project_id: Uuid,
+    created_week: i64,
+    created_month: i64,
+    closed_week: i64,
+}
+
+#[derive(sqlx::FromRow)]
 struct ContribRow {
     user_id: String,
     user_name: Option<String>,
@@ -264,6 +272,7 @@ pub async fn summary(
         recent_activity_result,
         personal_heatmap_result,
         org_heatmap_result,
+        project_temporal_result,
     ) = tokio::join!(
         // a) Projects with status counts
         sqlx::query_as::<_, ProjectStatusRow>(
@@ -432,6 +441,18 @@ pub async fn summary(
              FROM user_daily_activity WHERE org_id = ANY($1) AND activity_date >= $2
              GROUP BY activity_date ORDER BY activity_date ASC"
         ).bind(&all_org_ids).bind(hm_since).fetch_all(&pool),
+
+        // w) Per-project temporal metrics (created this week/month, closed this week)
+        sqlx::query_as::<_, ProjectTemporalRow>(
+            r#"SELECT i.project_id,
+                   COUNT(*) FILTER (WHERE i.created_at >= $2)::bigint AS created_week,
+                   COUNT(*) FILTER (WHERE i.created_at >= $3)::bigint AS created_month,
+                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled', 'in_review') AND i.updated_at >= $2)::bigint AS closed_week
+               FROM issues i
+               JOIN projects p ON p.id = i.project_id
+               WHERE p.org_id = ANY($1)
+               GROUP BY i.project_id"#
+        ).bind(&all_org_ids).bind(week_start).bind(thirty_days_ago).fetch_all(&pool),
     );
 
     // 3. Unwrap results (with defaults on error)
@@ -457,6 +478,13 @@ pub async fn summary(
     let recent_activity = recent_activity_result.unwrap_or_default();
     let personal_heatmap = personal_heatmap_result.unwrap_or_default();
     let org_heatmap = org_heatmap_result.unwrap_or_default();
+    let project_temporal = project_temporal_result.unwrap_or_default();
+
+    // Build project temporal map: project_id -> (created_week, created_month, closed_week)
+    let project_temporal_map: HashMap<Uuid, &ProjectTemporalRow> = project_temporal
+        .iter()
+        .map(|r| (r.project_id, r))
+        .collect();
 
     // 4. Build assignees map: project_id -> Vec<String>
     let mut assignees_map: HashMap<Uuid, Vec<String>> = HashMap::new();
@@ -511,6 +539,9 @@ pub async fn summary(
                             "cancelled": p.cancelled,
                         },
                         "total_issues": p.total_issues,
+                        "created_this_week": project_temporal_map.get(&p.id).map(|t| t.created_week).unwrap_or(0),
+                        "created_this_month": project_temporal_map.get(&p.id).map(|t| t.created_month).unwrap_or(0),
+                        "closed_this_week": project_temporal_map.get(&p.id).map(|t| t.closed_week).unwrap_or(0),
                         "assignees": proj_assignees,
                     })
                 })
