@@ -121,31 +121,11 @@ export function Hero() {
       className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20 pb-24 md:pt-0 md:pb-0"
       aria-label="Hero"
     >
-      {/* Cinematic ambience — decorative only, text/SEO stays in HTML */}
-      <video
-        className="absolute inset-0 h-full w-full object-cover opacity-45 brightness-[0.58] contrast-110 saturate-[0.45] blur-[0.2px] motion-reduce:hidden"
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="metadata"
-        poster="/hero-war-room-poster.webp"
-        aria-hidden="true"
-      >
-        <source src="/hero-war-room.mp4" type="video/mp4" media="(min-width: 768px)" />
-        <source src="/hero-war-room.webm" type="video/webm" media="(min-width: 768px)" />
-      </video>
-
-      {/* Readability overlays */}
-      <div className="absolute inset-0 bg-bg/72 pointer-events-none" />
-      <div className="absolute inset-0 bg-gradient-to-b from-bg/55 via-bg/35 to-bg pointer-events-none" />
-      <div className="absolute inset-0 bg-gradient-to-r from-bg/65 via-transparent to-bg/65 pointer-events-none" />
-
       {/* Background grid */}
-      <div className="absolute inset-0 bg-grid-pattern bg-[size:4rem_4rem] opacity-[0.04] pointer-events-none" />
+      <div className="absolute inset-0 bg-grid-pattern bg-[size:4rem_4rem] opacity-[0.03] pointer-events-none" />
 
       {/* Radial glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-gradient-radial from-amber-500/12 to-transparent opacity-70 pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-gradient-radial from-amber-500/10 to-transparent opacity-60 pointer-events-none" />
 
       {/* Gradient fade */}
       <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-bg to-transparent pointer-events-none z-10" />
