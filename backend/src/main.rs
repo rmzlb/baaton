@@ -136,6 +136,9 @@ async fn main() -> anyhow::Result<()> {
         (51, include_str!("../migrations/051_api_key_org_scopes.sql")),
         (52, include_str!("../migrations/052_api_key_org_scope_mode.sql")),
         (53, include_str!("../migrations/053_source_ai.sql")),
+        (54, include_str!("../migrations/054_public_agent_runs.sql")),
+        (55, include_str!("../migrations/055_agent_run_guardrails.sql")),
+        (56, include_str!("../migrations/056_pr_comment_job_type.sql")),
     ];
 
     for &(version, sql) in migrations {
@@ -252,6 +255,16 @@ async fn main() -> anyhow::Result<()> {
         // Static file serving for legacy uploaded images (pre-S3 migration).
         // Kept so existing markdown URLs (`/uploads/<file>`) still resolve.
         .nest_service("/uploads", ServeDir::new(&upload_dir))
+        // Public Run Card SSR — short shareable URL for crawlers + humans.
+        // Mounted at top level (NOT under /api/v1) so r.baaton.dev/:token works.
+        .merge(
+            Router::new()
+                .route(
+                    "/r/{token}",
+                    get(routes::public_run_ssr::render),
+                )
+                .with_state(pool.clone()),
+        )
         .nest(
             "/api/v1",
             routes::api_router(pool.clone(), jwks_state.clone()),

@@ -4,23 +4,104 @@ use axum::{
     response::sse::{Event, Sse},
     Extension, Json,
 };
+use chrono::{DateTime, Utc};
 use futures::stream::Stream;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{FromRow, PgPool};
 use std::{convert::Infallible, time::Duration};
+use ulid::Ulid;
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{
     ActionHint, AgentSession, AgentSessionDetail, AgentStep, ApiResponse,
-    CreateAgentSession, CreateAgentStep, UpdateAgentSession,
+    CreateAgentSession, CreateAgentStep, Tldr, UpdateAgentSession,
 };
 use crate::routes::activity::log_activity;
 use crate::routes::sse::{EventSender, broadcast_event};
 
 const VALID_STATUSES: &[&str] = &["pending", "active", "awaiting_input", "completed", "error"];
 const VALID_STEP_TYPES: &[&str] = &["info", "action", "thought", "error", "tool_call", "tool_result"];
+
+fn new_public_token() -> String {
+    Ulid::new().to_string()
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicRunResponse {
+    pub session: PublicRunSession,
+    pub issue: PublicRunIssue,
+    pub project: PublicRunProject,
+    pub steps: Vec<PublicRunStep>,
+    pub latest_tldr: Option<PublicRunTldr>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicRunSession {
+    pub public_token: String,
+    pub agent_name: String,
+    pub agent_id: Option<String>,
+    pub status: String,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub summary: Option<String>,
+    pub files_changed: Vec<String>,
+    pub tests_status: String,
+    pub pr_url: Option<String>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicRunIssue {
+    pub display_id: String,
+    pub title: String,
+    pub status: String,
+    pub priority: Option<String>,
+    pub source: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicRunProject {
+    pub name: String,
+    pub slug: String,
+    pub prefix: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicRunStep {
+    pub step_type: String,
+    pub message: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicRunTldr {
+    pub agent_name: String,
+    pub summary: String,
+    pub files_changed: Vec<String>,
+    pub tests_status: String,
+    pub pr_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct PublicRunContext {
+    display_id: String,
+    title: String,
+    status: String,
+    priority: Option<String>,
+    source: String,
+    issue_created_at: DateTime<Utc>,
+    issue_updated_at: DateTime<Utc>,
+    project_name: String,
+    project_slug: String,
+    project_prefix: String,
+}
 
 // ── POST /agent-sessions — Start a new agent session on an issue ──
 
@@ -34,8 +115,8 @@ pub async fn create(
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     // Verify issue belongs to org and get project_id
-    let issue = sqlx::query_as::<_, (Uuid, Uuid, String)>(
-        "SELECT i.id, i.project_id, i.status FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2"
+    let issue = sqlx::query_as::<_, (Uuid, Uuid, String, bool)>(
+        "SELECT i.id, i.project_id, i.status, p.agent_runs_public_default FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2"
     )
     .bind(body.issue_id)
     .bind(org_id)
@@ -65,11 +146,12 @@ pub async fn create(
     }
 
     let meta = body.metadata.unwrap_or(json!({}));
+    let public_token = if issue.3 { Some(new_public_token()) } else { None };
     
     let session = sqlx::query_as::<_, AgentSession>(
         r#"
-        INSERT INTO agent_sessions (org_id, project_id, issue_id, agent_name, agent_id, status, started_at, metadata)
-        VALUES ($1, $2, $3, $4, $5, 'active', NOW(), $6)
+        INSERT INTO agent_sessions (org_id, project_id, issue_id, agent_name, agent_id, status, started_at, metadata, is_public, public_token, published_at)
+        VALUES ($1, $2, $3, $4, $5, 'active', NOW(), $6, $7, $8, CASE WHEN $7 THEN NOW() ELSE NULL END)
         RETURNING *
         "#,
     )
@@ -79,6 +161,8 @@ pub async fn create(
     .bind(&body.agent_name)
     .bind(&body.agent_id)
     .bind(&meta)
+    .bind(issue.3)
+    .bind(&public_token)
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -373,6 +457,23 @@ pub async fn update(
     };
     broadcast_event(&sse_tx, org_id, sse_event, &serde_json::to_string(&session).unwrap_or_default());
 
+    // ── Enqueue PR comment job if session just completed/errored and is publishable ──
+    // The job re-validates is_public + pr_url + reads through pr_comment_id for idempotency.
+    if is_completing && session.is_public && session.pr_url.is_some() {
+        let payload = json!({"session_id": session.id.to_string()});
+        if let Err(e) = sqlx::query(
+            "INSERT INTO github_sync_jobs (job_type, payload, priority) VALUES ($1, $2, $3)"
+        )
+        .bind("post_run_comment")
+        .bind(&payload)
+        .bind(5_i32)
+        .execute(&pool)
+        .await
+        {
+            tracing::warn!(error = %e, session_id = %session.id, "failed to enqueue post_run_comment");
+        }
+    }
+
     let mut hints = vec![];
     if new_status == "completed" {
         hints.push(ActionHint::recommended(
@@ -394,6 +495,129 @@ pub async fn update(
     }
 
     Ok(Json(ApiResponse::with_hints(session, hints)))
+}
+
+// ── POST /agent-sessions/:id/publish — Make a session publicly shareable ──
+
+pub async fn publish(
+    Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
+    State(pool): State<PgPool>,
+    Path(session_id): Path<Uuid>,
+) -> Result<Json<ApiResponse<AgentSession>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    // Org-level guardrail (BAA / SA-A): public agent runs must be explicitly enabled per org.
+    let org_enabled: bool = sqlx::query_scalar(
+        "SELECT agent_runs_public_enabled FROM organizations WHERE id = $1"
+    )
+    .bind(org_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
+    .unwrap_or(false);
+
+    if !org_enabled {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": "agent_runs_public_disabled",
+                "message": "Public agent runs are disabled for this organization. An admin must enable them in org settings."
+            })),
+        ));
+    }
+
+    let existing = sqlx::query_as::<_, AgentSession>(
+        "SELECT * FROM agent_sessions WHERE id = $1 AND org_id = $2"
+    )
+    .bind(session_id)
+    .bind(org_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Agent session not found"}))))?;
+
+    let token = existing.public_token.unwrap_or_else(new_public_token);
+
+    let session = sqlx::query_as::<_, AgentSession>(
+        r#"
+        UPDATE agent_sessions SET
+            is_public = TRUE,
+            public_token = $3,
+            published_at = COALESCE(published_at, NOW()),
+            updated_at = NOW()
+        WHERE id = $1 AND org_id = $2
+        RETURNING *
+        "#,
+    )
+    .bind(session_id)
+    .bind(org_id)
+    .bind(&token)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    broadcast_event(&sse_tx, org_id, "agent_session.updated", &serde_json::to_string(&session).unwrap_or_default());
+
+    // If the session is already in a terminal state when publish is called,
+    // enqueue the PR comment immediately. (The normal path is publish → run →
+    // complete, which fires from `update`. This handles the inverse ordering.)
+    if matches!(session.status.as_str(), "completed" | "error") && session.pr_url.is_some() {
+        let payload = json!({"session_id": session.id.to_string()});
+        if let Err(e) = sqlx::query(
+            "INSERT INTO github_sync_jobs (job_type, payload, priority) VALUES ($1, $2, $3)"
+        )
+        .bind("post_run_comment")
+        .bind(&payload)
+        .bind(5_i32)
+        .execute(&pool)
+        .await
+        {
+            tracing::warn!(error = %e, session_id = %session.id, "failed to enqueue post_run_comment from publish");
+        }
+    }
+
+    let hints = vec![ActionHint::recommended(
+        "share_public_run",
+        "Agent run is public. Share the Run Card URL with reviewers.",
+        Some(&format!("/r/{}", token)),
+    )];
+
+    Ok(Json(ApiResponse::with_hints(session, hints)))
+}
+
+// ── DELETE /agent-sessions/:id/publish — Hide a public session ──
+
+pub async fn unpublish(
+    Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
+    State(pool): State<PgPool>,
+    Path(session_id): Path<Uuid>,
+) -> Result<Json<ApiResponse<AgentSession>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    let session = sqlx::query_as::<_, AgentSession>(
+        r#"
+        UPDATE agent_sessions SET
+            is_public = FALSE,
+            published_at = NULL,
+            updated_at = NOW()
+        WHERE id = $1 AND org_id = $2
+        RETURNING *
+        "#,
+    )
+    .bind(session_id)
+    .bind(org_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Agent session not found"}))))?;
+
+    broadcast_event(&sse_tx, org_id, "agent_session.updated", &serde_json::to_string(&session).unwrap_or_default());
+
+    Ok(Json(ApiResponse::new(session)))
 }
 
 // ── POST /agent-sessions/:id/steps — Post a progress step ──
@@ -527,6 +751,114 @@ pub async fn list_steps(
     .unwrap_or_default();
 
     Ok(Json(ApiResponse::new(steps)))
+}
+
+// ── GET /public/runs/:token — Public Run Card payload ──
+
+pub async fn get_public_run(
+    State(pool): State<PgPool>,
+    Path(token): Path<String>,
+) -> Result<Json<ApiResponse<PublicRunResponse>>, (StatusCode, Json<serde_json::Value>)> {
+    let session = sqlx::query_as::<_, AgentSession>(
+        "SELECT * FROM agent_sessions WHERE public_token = $1 AND is_public = TRUE"
+    )
+    .bind(&token)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Public run not found"}))))?;
+
+    let ctx = sqlx::query_as::<_, PublicRunContext>(
+        r#"
+        SELECT
+            i.display_id,
+            i.title,
+            i.status,
+            i.priority,
+            i.source,
+            i.created_at AS issue_created_at,
+            i.updated_at AS issue_updated_at,
+            p.name AS project_name,
+            p.slug AS project_slug,
+            p.prefix AS project_prefix
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        WHERE i.id = $1 AND p.id = $2
+        "#,
+    )
+    .bind(session.issue_id)
+    .bind(session.project_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|_| (StatusCode::NOT_FOUND, Json(json!({"error": "Public run not found"}))))?;
+
+    let steps = sqlx::query_as::<_, AgentStep>(
+        "SELECT * FROM agent_steps WHERE session_id = $1 ORDER BY created_at ASC LIMIT 200"
+    )
+    .bind(session.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|step| PublicRunStep {
+        step_type: step.step_type,
+        message: step.message,
+        created_at: step.created_at,
+    })
+    .collect();
+
+    let latest_tldr = sqlx::query_as::<_, Tldr>(
+        "SELECT * FROM tldrs WHERE issue_id = $1 ORDER BY created_at DESC LIMIT 1"
+    )
+    .bind(session.issue_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None)
+    .map(|tldr| PublicRunTldr {
+        agent_name: tldr.agent_name,
+        summary: tldr.summary,
+        files_changed: tldr.files_changed,
+        tests_status: tldr.tests_status,
+        pr_url: tldr.pr_url,
+        created_at: tldr.created_at,
+    });
+
+    let public_token = session.public_token.clone().unwrap_or(token);
+    let response = PublicRunResponse {
+        session: PublicRunSession {
+            public_token,
+            agent_name: session.agent_name,
+            agent_id: session.agent_id,
+            status: session.status,
+            started_at: session.started_at,
+            completed_at: session.completed_at,
+            summary: session.summary,
+            files_changed: session.files_changed,
+            tests_status: session.tests_status,
+            pr_url: session.pr_url,
+            published_at: session.published_at,
+            created_at: session.created_at,
+            updated_at: session.updated_at,
+        },
+        issue: PublicRunIssue {
+            display_id: ctx.display_id,
+            title: ctx.title,
+            status: ctx.status,
+            priority: ctx.priority,
+            source: ctx.source,
+            created_at: ctx.issue_created_at,
+            updated_at: ctx.issue_updated_at,
+        },
+        project: PublicRunProject {
+            name: ctx.project_name,
+            slug: ctx.project_slug,
+            prefix: ctx.project_prefix,
+        },
+        steps,
+        latest_tldr,
+    };
+
+    Ok(Json(ApiResponse::new(response)))
 }
 
 // ── GET /agent-sessions/:id/stream — SSE live stream of steps ──

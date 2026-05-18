@@ -30,6 +30,7 @@ import { IssueActivitySummary } from '@/components/issues/IssueActivitySummary';
 import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
 import { IssueDrawerSkeleton } from '@/components/shared/Skeleton';
 import { CopyableId } from '@/components/shared/CopyableId';
+import { AgentRunCard } from '@/components/issues/AgentRunCard';
 import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment, Milestone, Sprint } from '@/lib/types';
 
 /* ── Constants ─────────────────────────────────── */
@@ -872,6 +873,9 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                   </div>
                 </div>
               )}
+
+              {/* Public Run Card (publish / unpublish completed agent sessions) */}
+              <AgentRunCard issueId={issueId} />
             </div>
           </div>
         </div>

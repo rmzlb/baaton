@@ -13,6 +13,9 @@ pub struct Organization {
     pub id: String,
     pub name: String,
     pub slug: String,
+    #[serde(default)]
+    #[sqlx(default)]
+    pub agent_runs_public_enabled: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -31,6 +34,7 @@ pub struct Project {
     pub default_assignee_id: Option<String>,
     pub public_submit_enabled: bool,
     pub public_submit_token: Option<String>,
+    pub agent_runs_public_default: bool,
     pub github_repo_url: Option<String>,
     pub github_metadata: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
@@ -187,6 +191,11 @@ pub struct AgentSession {
     pub tests_status: String,
     pub pr_url: Option<String>,
     pub metadata: serde_json::Value,
+    pub is_public: bool,
+    pub public_token: Option<String>,
+    pub published_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub pr_comment_id: Option<i64>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

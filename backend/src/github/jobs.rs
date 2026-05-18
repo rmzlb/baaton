@@ -81,7 +81,7 @@ async fn process_next_job(pool: &PgPool) -> Result<bool, anyhow::Error> {
     .fetch_optional(pool)
     .await?;
 
-    let (job_id, job_type, _payload) = match job {
+    let (job_id, job_type, payload) = match job {
         Some(j) => j,
         None => return Ok(false),
     };
@@ -104,6 +104,9 @@ async fn process_next_job(pool: &PgPool) -> Result<bool, anyhow::Error> {
                 job_type
             );
             Ok(())
+        }
+        "post_run_comment" => {
+            crate::github::pr_commenter::execute_post_run_comment(pool, payload).await
         }
         other => {
             tracing::warn!("Unknown job type: {}", other);

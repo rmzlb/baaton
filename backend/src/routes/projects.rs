@@ -426,6 +426,9 @@ pub async fn update(
     })?;
 
     let auto_assign_mode = body.get("auto_assign_mode").and_then(|v| v.as_str());
+    let agent_runs_public_default = body
+        .get("agent_runs_public_default")
+        .and_then(|v| v.as_bool());
     if let Some(mode) = auto_assign_mode {
         if !matches!(mode, "off" | "default_assignee" | "round_robin") {
             return Err((
@@ -454,7 +457,8 @@ pub async fn update(
                auto_assign_mode = COALESCE($5, auto_assign_mode),
                default_assignee_id = CASE WHEN $6::boolean THEN $7 ELSE default_assignee_id END,
                github_repo_url = CASE WHEN $8::boolean THEN $9 ELSE github_repo_url END,
-               github_metadata = CASE WHEN $10::jsonb IS NOT NULL THEN $10 ELSE github_metadata END
+               github_metadata = CASE WHEN $10::jsonb IS NOT NULL THEN $10 ELSE github_metadata END,
+               agent_runs_public_default = COALESCE($11, agent_runs_public_default)
            WHERE id = $1 AND org_id = $2
            RETURNING *"#,
     )
@@ -468,6 +472,7 @@ pub async fn update(
     .bind(new_github_url.is_some())
     .bind(new_github_url)
     .bind(&github_metadata)
+    .bind(agent_runs_public_default)
     .fetch_optional(&pool)
     .await
     .map_err(|e| {

@@ -11,6 +11,7 @@ import type {
   CreateIssueRequest,
   UpdateIssueRequest,
   CreateTLDRRequest,
+  AgentSession,
   CreateCommentRequest,
   Comment,
   ProjectTag,
@@ -28,6 +29,8 @@ import type {
   SavedView,
   Automation,
   ProjectGamificationStats,
+  Organization,
+  OrgSettings,
 } from '@/lib/types';
 
 /**
@@ -174,7 +177,7 @@ export function useApi() {
 
       update: async (
         id: string,
-        body: Partial<Pick<Project, 'name' | 'description' | 'github_repo_url'>>,
+        body: Partial<Pick<Project, 'name' | 'description' | 'github_repo_url' | 'agent_runs_public_default'>>,
       ): Promise<Project> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
@@ -317,6 +320,50 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.post(`/issues/${issueId}/tldr`, body, token);
+        }),
+    },
+
+    // ─── Agent Sessions ────────────────────────
+    agentSessions: {
+      /**
+       * Best-effort list of agent sessions attached to an issue. Backend may
+       * not yet expose this endpoint — callers should swallow 404s.
+       */
+      listByIssue: async (issueId: string): Promise<AgentSession[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<AgentSession[]>(`/issues/${issueId}/agent-sessions`, token);
+        }),
+
+      publish: async (id: string): Promise<AgentSession> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<AgentSession>(`/agent-sessions/${id}/publish`, {}, token);
+        }),
+
+      unpublish: async (id: string): Promise<AgentSession> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete<AgentSession>(`/agent-sessions/${id}/publish`, token);
+        }),
+    },
+
+    // ─── Org Settings ──────────────────────────
+    orgs: {
+      /**
+       * Best-effort GET of org metadata. Falls back to the PATCH echo when
+       * the backend doesn't expose a read endpoint yet.
+       */
+      get: async (orgId: string): Promise<Organization> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<Organization>(`/orgs/${orgId}`, token);
+        }),
+
+      updateSettings: async (orgId: string, body: Partial<OrgSettings>): Promise<Organization> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<Organization>(`/orgs/${orgId}/settings`, body, token);
         }),
     },
 

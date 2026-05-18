@@ -187,6 +187,12 @@ docker compose up -d
 # App: http://localhost:3000
 ```
 
+### Public agent run receipts
+
+Public Run Cards are server-rendered at `r.baaton.dev/:token`. To enable, add a CNAME for `r.baaton.dev` pointing to your Dokploy host (same target as `api.baaton.dev`). Until DNS is set, runs are also reachable at `api.baaton.dev/r/:token`.
+
+Set `PUBLIC_RUN_ORIGIN=https://r.baaton.dev` on the backend service env so canonical URLs and OG meta tags resolve correctly. If unset, falls back to `https://r.baaton.dev`.
+
 ## Connect Your Agent
 
 ### Any agent (universal)

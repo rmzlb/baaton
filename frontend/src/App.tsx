@@ -18,6 +18,7 @@ const MyTasks = lazy(() => import('./pages/MyTasks'));
 const AllIssues = lazy(() => import('./pages/AllIssues'));
 const Settings = lazy(() => import('./pages/Settings'));
 const PublicSubmit = lazy(() => import('./pages/PublicSubmit'));
+const PublicRun = lazy(() => import('./pages/PublicRun'));
 const Docs = lazy(() => import('./pages/Docs'));
 const Milestones = lazy(() => import('./pages/Milestones'));
 const AllMilestones = lazy(() => import('./pages/AllMilestones'));
@@ -118,7 +119,7 @@ export function App() {
   const host = window.location.hostname;
   const isAppHost = host === 'app.baaton.dev';
   const path = window.location.pathname;
-  const isPublicPath = path === '/' || path.startsWith('/docs') || path.startsWith('/submit/') || path.startsWith('/s/');
+  const isPublicPath = path === '/' || path.startsWith('/docs') || path.startsWith('/submit/') || path.startsWith('/s/') || path.startsWith('/r/');
 
   if (!isAppHost && !isPublicPath) {
     const target = `https://app.baaton.dev${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -146,6 +147,7 @@ export function App() {
         <Route path="/" element={<RootRoute />} />
         <Route path="/submit/:slug" element={<PublicSubmit />} />
         <Route path="/s/:token" element={<PublicSubmit />} />
+        <Route path="/r/:token" element={<PublicRun />} />
         <Route path="/docs" element={<Docs />} />
         <Route path="/privacy" element={<Suspense fallback={<PageLoader />}><Privacy /></Suspense>} />
         <Route path="/terms" element={<Suspense fallback={<PageLoader />}><Terms /></Suspense>} />

@@ -1948,6 +1948,53 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'integrations.agentmail.feature2Title': 'Issue → E-mail',
   'integrations.agentmail.feature2Desc': 'Les changements de statut et commentaires déclenchent des notifications par e-mail.',
 
+  // ─── Run Cards publiques ───────────────────────────
+  'publicRun.errorTitle': 'Run indisponible',
+  'publicRun.backHome': 'Retour à Baaton',
+  'publicRun.missingToken': 'Token public manquant.',
+  'publicRun.notFound': 'Ce run est privé, dépublié ou inexistant.',
+  'publicRun.genericError': 'Impossible de charger cette Run Card.',
+  'publicRun.agent': 'Agent',
+  'publicRun.duration': 'Durée',
+  'publicRun.files': 'Fichiers',
+  'publicRun.tests': 'Tests',
+  'publicRun.summary': 'Résumé',
+  'publicRun.noSummary': 'Aucun résumé posté pour ce run.',
+  'publicRun.changedFiles': 'Fichiers modifiés',
+  'publicRun.moreFiles': '+{{count}} fichiers',
+  'publicRun.timeline': 'Timeline',
+  'publicRun.noSteps': 'Aucune étape enregistrée.',
+  'publicRun.poweredBy': 'Propulsé par Baaton - receipts pour le travail des agents IA',
+  'publicRun.pullRequest': 'Pull request',
+
+  // ─── Contrôles publish Run Card ────────────────────
+  'agentRun.publish': 'Publier ce run',
+  'agentRun.unpublish': 'Dépublier',
+  'agentRun.publishedAt': 'Publié le {{date}}',
+  'agentRun.copyLink': 'Copier le lien',
+  'agentRun.linkCopied': 'Lien copié',
+  'agentRun.copyMarkdown': 'Copier le markdown pour la PR',
+  'agentRun.markdownCopied': 'Markdown copié',
+  'agentRun.viewPublicRun': 'Voir le run public',
+  'agentRun.publicRunPrivate': 'Ce run est privé',
+  'agentRun.orgDisabled': "Les runs publics sont désactivés pour cette organisation. Activez-les dans les paramètres de l'organisation.",
+  'agentRun.section': 'Run Card publique',
+  'agentRun.publishHint': 'Publiez un reçu partageable de ce run sur r.baaton.dev.',
+  'agentRun.publishing': 'Publication…',
+  'agentRun.unpublishing': 'Dépublication…',
+  'agentRun.publishError': 'Impossible de publier le run',
+
+  // ─── Paramètres org — runs publics ─────────────────
+  'settings.org.allowPublicRuns.title': "Autoriser les runs d'agent publics",
+  'settings.org.allowPublicRuns.desc': "Les membres peuvent publier des runs d'agent comme reçus partageables sur r.baaton.dev.",
+  'settings.org.allowPublicRuns.saveError': 'Impossible de sauvegarder le paramètre',
+
+  // ─── Paramètres projet — runs publics par défaut ───
+  'settings.project.publicByDefault.title': "Runs d'agent publics par défaut",
+  'settings.project.publicByDefault.desc': "Les nouveaux runs d'agent dans ce projet sont publiables. Les runs existants restent privés tant qu'ils ne sont pas explicitement publiés.",
+  'settings.project.publicByDefault.orgGate': "Activez d'abord « Autoriser les runs d'agent publics » dans les paramètres de l'organisation.",
+
+
   // ─── Raccourcis Clavier ────────────────────────────
   'shortcut.title': 'Raccourcis Clavier',
   'shortcut.bindings': 'raccourcis',

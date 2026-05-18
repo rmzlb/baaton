@@ -1,10 +1,49 @@
 use base64::{Engine as _, engine::general_purpose};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use octocrab::models::CommentId;
 use octocrab::Octocrab;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+/// Parse a GitHub PR URL into (owner, repo, pr_number).
+///
+/// Accepts forms like:
+/// - `https://github.com/owner/repo/pull/42`
+/// - `https://github.com/owner/repo/pull/42/`
+/// - `https://github.com/owner/repo/pull/42#issuecomment-123`
+///
+/// Returns `None` for issue URLs, malformed inputs, or non-github.com hosts.
+pub fn parse_pr_url(url: &str) -> Option<(String, String, u64)> {
+    // Strip any URL fragment (#...) and query (?...).
+    let without_fragment = url.split('#').next().unwrap_or(url);
+    let without_query = without_fragment.split('?').next().unwrap_or(without_fragment);
+
+    // Require an https://github.com/ (or http://) prefix to avoid matching
+    // arbitrary hosts that happen to include "/pull/N".
+    let rest = without_query
+        .strip_prefix("https://github.com/")
+        .or_else(|| without_query.strip_prefix("http://github.com/"))?;
+
+    // Expected shape: owner/repo/pull/N(/)?
+    let trimmed = rest.trim_end_matches('/');
+    let parts: Vec<&str> = trimmed.split('/').collect();
+    if parts.len() != 4 {
+        return None;
+    }
+    if parts[2] != "pull" {
+        return None;
+    }
+    let owner = parts[0];
+    let repo = parts[1];
+    let number_str = parts[3];
+    if owner.is_empty() || repo.is_empty() || number_str.is_empty() {
+        return None;
+    }
+    let number: u64 = number_str.parse().ok()?;
+    Some((owner.to_string(), repo.to_string(), number))
+}
 
 /// Cached installation token with expiry
 struct CachedToken {
@@ -154,5 +193,93 @@ impl GitHubClient {
     #[allow(dead_code)]
     pub fn app_id(&self) -> u64 {
         self.app_id
+    }
+
+    /// Create or update a PR comment for the given installation.
+    ///
+    /// PRs are issues in GitHub's data model for comment purposes, so this
+    /// uses the issues API.
+    ///
+    /// - If `existing_comment_id` is `Some(id)`, attempt to update that comment.
+    ///   On 404 (the user deleted it), fall back to creating a new comment.
+    /// - If `existing_comment_id` is `None`, create a new comment on the PR.
+    ///
+    /// Returns the comment id as `i64` (octocrab uses `CommentId(u64)`; we
+    /// cast saturating to `i64` for DB-friendly storage).
+    pub async fn upsert_pr_comment(
+        &self,
+        installation_id: u64,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+        existing_comment_id: Option<i64>,
+        body: &str,
+    ) -> anyhow::Result<i64> {
+        let crab = self.for_installation(installation_id).await?;
+        let issues = crab.issues(owner, repo);
+
+        if let Some(id) = existing_comment_id {
+            let comment_id = CommentId(id as u64);
+            match issues.update_comment(comment_id, body).await {
+                Ok(comment) => Ok(comment.id.0 as i64),
+                Err(octocrab::Error::GitHub { source, .. })
+                    if source.status_code.as_u16() == 404 =>
+                {
+                    // User deleted the comment manually — recreate it.
+                    let comment = issues.create_comment(pr_number, body).await?;
+                    Ok(comment.id.0 as i64)
+                }
+                Err(e) => Err(e.into()),
+            }
+        } else {
+            let comment = issues.create_comment(pr_number, body).await?;
+            Ok(comment.id.0 as i64)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_valid_pr_url() {
+        let (o, r, n) = parse_pr_url("https://github.com/rmzlb/baaton/pull/42").unwrap();
+        assert_eq!(o, "rmzlb");
+        assert_eq!(r, "baaton");
+        assert_eq!(n, 42);
+    }
+
+    #[test]
+    fn parse_pr_url_with_trailing_slash_and_anchor() {
+        let (o, r, n) =
+            parse_pr_url("https://github.com/foo/bar/pull/7/#issuecomment-12345").unwrap();
+        assert_eq!(o, "foo");
+        assert_eq!(r, "bar");
+        assert_eq!(n, 7);
+    }
+
+    #[test]
+    fn parse_pr_url_with_trailing_slash() {
+        let (o, r, n) = parse_pr_url("https://github.com/foo/bar/pull/7/").unwrap();
+        assert_eq!(o, "foo");
+        assert_eq!(r, "bar");
+        assert_eq!(n, 7);
+    }
+
+    #[test]
+    fn parse_pr_url_rejects_issue_url() {
+        assert!(parse_pr_url("https://github.com/foo/bar/issues/7").is_none());
+    }
+
+    #[test]
+    fn parse_pr_url_rejects_garbage() {
+        assert!(parse_pr_url("not a url").is_none());
+        assert!(parse_pr_url("https://example.com/pull/1").is_none());
+        assert!(parse_pr_url("https://github.com/foo/bar/pull/abc").is_none());
+        assert!(parse_pr_url("https://github.com/foo/bar/pull/").is_none());
+        assert!(parse_pr_url("https://github.com/foo/bar/pull").is_none());
+        assert!(parse_pr_url("https://github.com/foo/bar/pull/1/extra").is_none());
+        assert!(parse_pr_url("https://github.com//baaton/pull/1").is_none());
     }
 }

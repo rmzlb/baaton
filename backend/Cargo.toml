@@ -39,6 +39,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 sha2 = "0.10"
 rand = "0.9"
 dotenvy = "0.15"
+ulid = "1"
 
 # GitHub integration
 octocrab = "0.49"

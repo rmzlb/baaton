@@ -8,6 +8,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
 import { IntegrationsTab } from '@/components/settings/IntegrationsTab';
 import { createOnboardingTour } from '@/lib/onboarding';
+import { ApiError } from '@/lib/api';
 import type { ApiKey } from '@/lib/types';
 
 export function Settings() {
@@ -55,6 +56,9 @@ export function Settings() {
 
       {/* Integrations Section */}
       <IntegrationsTab />
+
+      {/* Public Agent Runs (Org gate) */}
+      <PublicAgentRunsSection />
 
       {/* API Keys Section */}
       <ApiKeysSection />
@@ -517,3 +521,104 @@ function ApiKeyRow({ apiKey, onDelete }: { apiKey: ApiKey; onDelete: () => void 
 }
 
 export default Settings;
+
+function PublicAgentRunsSection() {
+  const { t } = useTranslation();
+  const { organization } = useOrganization();
+  const apiClient = useApi();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Best-effort GET: backend may not expose /orgs/:id yet. Fall back to the
+  // optimistic UI (default false) — the PATCH echo will reconcile state.
+  const orgId = organization?.id ?? null;
+  useQuery({
+    queryKey: ['org-settings', orgId],
+    enabled: !!orgId,
+    retry: false,
+    staleTime: 60_000,
+    queryFn: async () => {
+      try {
+        const data = await apiClient.orgs.get(orgId!);
+        setEnabled(Boolean(data.agent_runs_public_enabled));
+        return data;
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 404 || err.status === 405)) {
+          // No GET endpoint yet — start from a safe default and let the user toggle.
+          setEnabled((curr) => (curr === null ? false : curr));
+          return null;
+        }
+        throw err;
+      }
+    },
+  });
+
+  if (!organization) return null;
+
+  const current = enabled ?? false;
+
+  const handleToggle = async () => {
+    if (saving || !orgId) return;
+    const next = !current;
+    setEnabled(next);
+    setError(null);
+    setSaving(true);
+    try {
+      const updated = await apiClient.orgs.updateSettings(orgId, {
+        agent_runs_public_enabled: next,
+      });
+      setEnabled(Boolean(updated.agent_runs_public_enabled ?? next));
+    } catch {
+      setEnabled(!next);
+      setError(t('settings.org.allowPublicRuns.saveError', {
+        defaultValue: 'Could not save org setting',
+      }));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4 md:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <Globe size={20} className="text-accent shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">
+              {t('settings.org.allowPublicRuns.title', {
+                defaultValue: 'Allow public agent runs',
+              })}
+            </h2>
+            <p className="text-xs text-secondary mt-1 leading-relaxed">
+              {t('settings.org.allowPublicRuns.desc', {
+                defaultValue:
+                  'Members can publish individual agent runs as shareable receipts at r.baaton.dev.',
+              })}
+            </p>
+            {error && (
+              <p className="mt-2 text-[11px] text-red-400">{error}</p>
+            )}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={current}
+          onClick={handleToggle}
+          disabled={saving}
+          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500/30 disabled:opacity-50 ${
+            current ? 'bg-accent' : 'bg-border'
+          }`}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-bg shadow transition-transform ${
+              current ? 'translate-x-5' : 'translate-x-0.5'
+            }`}
+          />
+        </button>
+      </div>
+    </div>
+  );
+}

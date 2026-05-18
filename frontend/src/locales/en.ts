@@ -1948,6 +1948,53 @@ As a [user], I want to [action] so that [benefit].
   'integrations.agentmail.feature2Title': 'Issue → Email',
   'integrations.agentmail.feature2Desc': 'Status changes and comments trigger email notifications to stakeholders.',
 
+  // ─── Public Run Cards ──────────────────────────────
+  'publicRun.errorTitle': 'Run unavailable',
+  'publicRun.backHome': 'Back to Baaton',
+  'publicRun.missingToken': 'Missing public run token.',
+  'publicRun.notFound': 'This run is private, unpublished, or does not exist.',
+  'publicRun.genericError': 'Could not load this run card.',
+  'publicRun.agent': 'Agent',
+  'publicRun.duration': 'Duration',
+  'publicRun.files': 'Files',
+  'publicRun.tests': 'Tests',
+  'publicRun.summary': 'Summary',
+  'publicRun.noSummary': 'No summary was posted for this run.',
+  'publicRun.changedFiles': 'Changed files',
+  'publicRun.moreFiles': '+{{count}} more files',
+  'publicRun.timeline': 'Timeline',
+  'publicRun.noSteps': 'No progress steps were recorded.',
+  'publicRun.poweredBy': 'Powered by Baaton - receipts for AI agent work',
+  'publicRun.pullRequest': 'Pull request',
+
+  // ─── Agent Run publish controls ────────────────────
+  'agentRun.publish': 'Publish run',
+  'agentRun.unpublish': 'Unpublish',
+  'agentRun.publishedAt': 'Published {{date}}',
+  'agentRun.copyLink': 'Copy link',
+  'agentRun.linkCopied': 'Link copied',
+  'agentRun.copyMarkdown': 'Copy markdown for PR',
+  'agentRun.markdownCopied': 'Markdown copied',
+  'agentRun.viewPublicRun': 'View public run',
+  'agentRun.publicRunPrivate': 'This run is private',
+  'agentRun.orgDisabled': 'Public runs are disabled for this organization. Enable in org settings.',
+  'agentRun.section': 'Public run card',
+  'agentRun.publishHint': 'Publish a shareable receipt of this run at r.baaton.dev.',
+  'agentRun.publishing': 'Publishing…',
+  'agentRun.unpublishing': 'Unpublishing…',
+  'agentRun.publishError': 'Could not publish run',
+
+  // ─── Org settings — public agent runs ──────────────
+  'settings.org.allowPublicRuns.title': 'Allow public agent runs',
+  'settings.org.allowPublicRuns.desc': 'Members can publish individual agent runs as shareable receipts at r.baaton.dev.',
+  'settings.org.allowPublicRuns.saveError': 'Could not save org setting',
+
+  // ─── Project settings — public agent runs by default
+  'settings.project.publicByDefault.title': 'Public agent runs by default',
+  'settings.project.publicByDefault.desc': 'New agent runs in this project are publishable. Existing runs stay private until explicitly published.',
+  'settings.project.publicByDefault.orgGate': 'Enable "Allow public agent runs" in org settings first.',
+
+
   // ─── Keyboard Shortcuts ────────────────────────────
   'shortcut.title': 'Keyboard Shortcuts',
   'shortcut.bindings': 'bindings',

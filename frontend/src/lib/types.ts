@@ -14,7 +14,13 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
+  agent_runs_public_enabled?: boolean;
   created_at: string;
+}
+
+/** Subset of org settings exposed by PATCH /orgs/:id/settings. */
+export interface OrgSettings {
+  agent_runs_public_enabled: boolean;
 }
 
 export interface ProjectStatus {
@@ -36,6 +42,7 @@ export interface Project {
   statuses: ProjectStatus[];
   auto_assign_mode: AutoAssignMode;
   default_assignee_id: string | null;
+  agent_runs_public_default?: boolean;
   github_repo_url?: string;
   github_metadata?: {
     full_name?: string;
@@ -154,6 +161,75 @@ export interface TLDR {
   edge_cases: string[];
   context_updates: string[];
   created_at: string;
+}
+
+export interface AgentSession {
+  id: string;
+  org_id: string;
+  project_id: string;
+  issue_id: string;
+  agent_name: string;
+  agent_id: string | null;
+  status: 'pending' | 'active' | 'awaiting_input' | 'completed' | 'error';
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  summary: string | null;
+  files_changed: string[];
+  tests_status: TestsStatus;
+  pr_url: string | null;
+  metadata: Record<string, unknown>;
+  is_public: boolean;
+  public_token: string | null;
+  published_at: string | null;
+  pr_comment_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublicRun {
+  session: {
+    public_token: string;
+    agent_name: string;
+    agent_id: string | null;
+    status: AgentSession['status'];
+    started_at: string | null;
+    completed_at: string | null;
+    summary: string | null;
+    files_changed: string[];
+    tests_status: TestsStatus;
+    pr_url: string | null;
+    published_at: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+  issue: {
+    display_id: string;
+    title: string;
+    status: string;
+    priority: string | null;
+    source: string;
+    created_at: string;
+    updated_at: string;
+  };
+  project: {
+    name: string;
+    slug: string;
+    prefix: string;
+  };
+  steps: Array<{
+    step_type: string;
+    message: string;
+    created_at: string;
+  }>;
+  latest_tldr: {
+    agent_name: string;
+    summary: string;
+    files_changed: string[];
+    tests_status: TestsStatus;
+    pr_url: string | null;
+    created_at: string;
+  } | null;
 }
 
 export type CommentType = 'comment' | 'approval_request';
@@ -396,6 +472,8 @@ export interface CreateCommentRequest {
 export interface IssueDetail extends Issue {
   tldrs: TLDR[];
   comments: Comment[];
+  /** Optional: backend may include agent sessions for this issue. */
+  agent_sessions?: AgentSession[];
 }
 
 export interface PublicSubmission {

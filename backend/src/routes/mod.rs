@@ -37,6 +37,8 @@ pub mod attachments;
 pub mod uploads;
 pub mod agent_config;
 pub mod agent_sessions;
+pub mod og;
+pub mod public_run_ssr;
 pub mod slack;
 pub(crate) mod admin;
 mod orgs;
@@ -176,6 +178,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
             .layer(DefaultBodyLimit::max(20 * 1024 * 1024))) // 20MB to fit base64-encoded 10MB images
         // Org members
         .route("/orgs/{org_id}/members", get(orgs::list_members))
+        .route("/orgs/{org_id}/settings", patch(orgs::update_settings))
         // Admin (BAA-1)
         .route("/admin/orgs/{id}/plan", patch(admin::set_plan))
         .route("/admin/superadmin/check", get(admin::check_superadmin))
@@ -205,9 +208,14 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Agent Sessions (live AI tracking)
         .route("/agent-sessions", post(agent_sessions::create))
         .route("/agent-sessions/{id}", get(agent_sessions::get_one).patch(agent_sessions::update))
+        .route("/agent-sessions/{id}/publish", post(agent_sessions::publish).delete(agent_sessions::unpublish))
         .route("/agent-sessions/{id}/steps", get(agent_sessions::list_steps).post(agent_sessions::create_step))
         .route("/agent-sessions/{id}/stream", get(agent_sessions::stream_steps))
         .route("/issues/{id}/agent-sessions", get(agent_sessions::list_by_issue))
+        .route("/public/runs/{token}", get(agent_sessions::get_public_run))
+        // OG image for public runs (SVG, 1200×630, cached 1h). Lives under /public/
+        // so the existing auth-middleware exemption (`path.contains("/public/")`) covers it.
+        .route("/public/og/run/{token}", get(og::render_run_svg))
         // Project Context
         .route("/projects/{id}/context", get(project_context::get_or_create).patch(project_context::update))
         .route("/projects/{id}/context/append", post(project_context::append))

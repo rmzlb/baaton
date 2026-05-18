@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOrganization } from '@clerk/clerk-react';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { ListView } from '@/components/list/ListView';
 import { IssueDrawer } from '@/components/issues/IssueDrawer';
@@ -14,6 +15,7 @@ import { EmailIntakeSection } from '@/components/settings/EmailIntakeSection';
 import { ShortcutHelp } from '@/components/shared/ShortcutHelp';
 import { KanbanBoardSkeleton, ListViewSkeleton } from '@/components/shared/Skeleton';
 import { useApi } from '@/hooks/useApi';
+import { ApiError } from '@/lib/api';
 import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -22,7 +24,7 @@ import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2, Settings, S
 const Github = GitFork;
 import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { cn } from '@/lib/utils';
-import type { Issue, IssueStatus, ProjectStatus } from '@/lib/types';
+import type { Issue, IssueStatus, Project, ProjectStatus } from '@/lib/types';
 
 // Default statuses (used when project statuses aren't loaded yet)
 const DEFAULT_STATUSES: ProjectStatus[] = [
@@ -473,21 +475,45 @@ function ProjectSettingsModal({
   onClose,
   onSaved,
 }: {
-  project: { id: string; name: string; slug: string; description: string | null; github_repo_url?: string; github_metadata?: { full_name?: string; description?: string; language?: string; stars?: number; forks?: number; open_issues?: number; default_branch?: string; is_private?: boolean; topics?: string[]; updated_at?: string; fetched_at?: string } };
+  project: Project;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { t } = useTranslation();
   const apiClient = useApi();
+  const { organization } = useOrganization();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description || '');
   const [githubUrl, setGithubUrl] = useState(project.github_repo_url || '');
+  const [publicByDefault, setPublicByDefault] = useState(
+    Boolean(project.agent_runs_public_default),
+  );
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
   const meta = project.github_metadata;
+
+  // Best-effort read of the org gate so we can disable the project toggle
+  // when the org has turned public runs off altogether.
+  const { data: orgData } = useQuery({
+    queryKey: ['org-settings', organization?.id],
+    enabled: !!organization?.id,
+    retry: false,
+    staleTime: 60_000,
+    queryFn: async () => {
+      try {
+        return await apiClient.orgs.get(organization!.id);
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 404 || err.status === 405)) {
+          return null;
+        }
+        throw err;
+      }
+    },
+  });
+  const orgGateOff = orgData ? orgData.agent_runs_public_enabled === false : false;
 
   const handleSave = async () => {
     setSaving(true);
@@ -497,6 +523,7 @@ function ProjectSettingsModal({
         name: name.trim(),
         description: description.trim() || undefined,
         github_repo_url: githubUrl.trim() || '',
+        agent_runs_public_default: publicByDefault,
       });
       onSaved();
       onClose();
@@ -636,6 +663,57 @@ function ProjectSettingsModal({
                   {meta.fetched_at && <p className="text-[9px] text-muted">Last fetched: {new Date(meta.fetched_at!).toLocaleString()}</p>}
                 </div>
               )}
+
+              {/* Public agent runs by default */}
+              <div className="rounded-lg border border-border bg-surface-hover p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-primary">
+                      {t('settings.project.publicByDefault.title', {
+                        defaultValue: 'Public agent runs by default',
+                      })}
+                    </p>
+                    <p className="mt-1 text-[11px] text-secondary leading-relaxed">
+                      {t('settings.project.publicByDefault.desc', {
+                        defaultValue:
+                          'New agent runs in this project are publishable. Existing runs stay private until explicitly published.',
+                      })}
+                    </p>
+                    {orgGateOff && (
+                      <p className="mt-1.5 text-[10px] text-amber-400">
+                        {t('settings.project.publicByDefault.orgGate', {
+                          defaultValue:
+                            'Enable "Allow public agent runs" in org settings first.',
+                        })}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={publicByDefault}
+                    onClick={() => setPublicByDefault((v) => !v)}
+                    disabled={orgGateOff}
+                    title={
+                      orgGateOff
+                        ? t('agentRun.orgDisabled', {
+                            defaultValue:
+                              'Public runs are disabled for this organization. Enable in org settings.',
+                          })
+                        : undefined
+                    }
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed ${
+                      publicByDefault && !orgGateOff ? 'bg-accent' : 'bg-border'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-bg shadow transition-transform ${
+                        publicByDefault && !orgGateOff ? 'translate-x-5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
 
               {error && <p className="text-xs text-red-400">{error}</p>}
 
