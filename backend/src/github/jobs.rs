@@ -124,19 +124,45 @@ async fn process_next_job(pool: &PgPool) -> Result<bool, anyhow::Error> {
             .await?;
         }
         Err(e) => {
-            // Increment retry, apply exponential backoff
-            sqlx::query(
+            let error_str = e.to_string();
+            // Increment retry, apply exponential backoff. RETURNING tells us whether
+            // the job moved to 'dead' so we can emit a high-severity log.
+            let row: (String, i32, i32) = sqlx::query_as(
                 r#"UPDATE github_sync_jobs SET
                     status = CASE WHEN retry_count + 1 >= max_retries THEN 'dead' ELSE 'pending' END,
                     last_error = $2,
                     retry_count = retry_count + 1,
                     scheduled_at = now() + (power(5, retry_count + 1) || ' seconds')::interval
-                   WHERE id = $1"#,
+                   WHERE id = $1
+                   RETURNING status, retry_count, max_retries"#,
             )
             .bind(job_id)
-            .bind(e.to_string())
-            .execute(pool)
+            .bind(&error_str)
+            .fetch_one(pool)
             .await?;
+
+            let (new_status, retry_count, max_retries) = row;
+            if new_status == "dead" {
+                // Surfaces in Dokploy logs and any external aggregator (Sentry, Datadog).
+                // Manual intervention required: the job will not be retried further.
+                tracing::error!(
+                    job_id = %job_id,
+                    job_type = %job_type,
+                    retry_count = retry_count,
+                    max_retries = max_retries,
+                    last_error = %error_str,
+                    "github_sync_job moved to dead — manual intervention required"
+                );
+            } else {
+                tracing::warn!(
+                    job_id = %job_id,
+                    job_type = %job_type,
+                    retry_count = retry_count,
+                    max_retries = max_retries,
+                    last_error = %error_str,
+                    "github_sync_job failed; will retry"
+                );
+            }
         }
     }
 

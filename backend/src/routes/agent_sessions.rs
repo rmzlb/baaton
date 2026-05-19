@@ -24,6 +24,20 @@ use crate::routes::sse::{EventSender, broadcast_event};
 const VALID_STATUSES: &[&str] = &["pending", "active", "awaiting_input", "completed", "error"];
 const VALID_STEP_TYPES: &[&str] = &["info", "action", "thought", "error", "tool_call", "tool_result"];
 
+/// Predicate: should we enqueue a `post_run_comment` job for this session?
+///
+/// Returns true iff the session has reached a terminal state, is public, and
+/// has a PR URL pinned. Pure function — extracted for unit testing the gate
+/// in isolation from sqlx I/O. Mirrors the logic at the two enqueue sites in
+/// `update` and `publish`.
+pub(crate) fn should_enqueue_pr_comment(
+    is_terminal_transition: bool,
+    is_public: bool,
+    pr_url: Option<&str>,
+) -> bool {
+    is_terminal_transition && is_public && pr_url.map(|u| !u.is_empty()).unwrap_or(false)
+}
+
 fn new_public_token() -> String {
     Ulid::new().to_string()
 }
@@ -482,7 +496,7 @@ pub async fn update(
     // work, including failures. The comment template branches on status to make the
     // failure visually clear (see pr_commenter::render_comment_body).
     // The job re-validates is_public + pr_url + reads through pr_comment_id for idempotency.
-    if is_completing && session.is_public && session.pr_url.is_some() {
+    if should_enqueue_pr_comment(is_completing, session.is_public, session.pr_url.as_deref()) {
         let payload = json!({"session_id": session.id.to_string()});
         if let Err(e) = sqlx::query(
             "INSERT INTO github_sync_jobs (job_type, payload, priority) VALUES ($1, $2, $3)"
@@ -586,7 +600,8 @@ pub async fn publish(
     // If the session is already in a terminal state when publish is called,
     // enqueue the PR comment immediately. (The normal path is publish → run →
     // complete, which fires from `update`. This handles the inverse ordering.)
-    if matches!(session.status.as_str(), "completed" | "error") && session.pr_url.is_some() {
+    let is_terminal = matches!(session.status.as_str(), "completed" | "error");
+    if should_enqueue_pr_comment(is_terminal, session.is_public, session.pr_url.as_deref()) {
         let payload = json!({"session_id": session.id.to_string()});
         if let Err(e) = sqlx::query(
             "INSERT INTO github_sync_jobs (job_type, payload, priority) VALUES ($1, $2, $3)"
@@ -972,4 +987,54 @@ pub async fn stream_steps(
             .interval(Duration::from_secs(15))
             .text("ping"),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enqueue_when_completing_public_with_pr_url() {
+        assert!(should_enqueue_pr_comment(
+            true,
+            true,
+            Some("https://github.com/foo/bar/pull/1"),
+        ));
+    }
+
+    #[test]
+    fn no_enqueue_when_not_terminal_transition() {
+        assert!(!should_enqueue_pr_comment(
+            false,
+            true,
+            Some("https://github.com/foo/bar/pull/1"),
+        ));
+    }
+
+    #[test]
+    fn no_enqueue_when_private() {
+        assert!(!should_enqueue_pr_comment(
+            true,
+            false,
+            Some("https://github.com/foo/bar/pull/1"),
+        ));
+    }
+
+    #[test]
+    fn no_enqueue_when_pr_url_missing() {
+        assert!(!should_enqueue_pr_comment(true, true, None));
+    }
+
+    #[test]
+    fn no_enqueue_when_pr_url_empty_string() {
+        // Defensive: empty string PR URL would generate a broken comment.
+        assert!(!should_enqueue_pr_comment(true, true, Some("")));
+    }
+
+    #[test]
+    fn enqueue_with_any_non_empty_url_shape() {
+        // We do NOT validate URL shape here — the job runner re-validates,
+        // and the gate's job is just "is there something to comment on".
+        assert!(should_enqueue_pr_comment(true, true, Some("not-a-url")));
+    }
 }
