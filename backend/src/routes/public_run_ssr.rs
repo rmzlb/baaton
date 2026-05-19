@@ -91,7 +91,7 @@ fn render_html(token: &str, r: &RunRow) -> String {
         std::env::var("PUBLIC_RUN_ORIGIN").unwrap_or_else(|_| "https://r.baaton.dev".into());
 
     let og_image = format!("{}/api/v1/public/og/run/{}", api_origin, esc(token));
-    let canonical = format!("{}/{}", public_origin, esc(token));
+    let canonical = format!("{}/r/{}", public_origin, esc(token));
 
     let duration = match (r.started_at, r.completed_at) {
         (Some(s), Some(e)) => format_duration_secs((e - s).num_seconds().max(0)),

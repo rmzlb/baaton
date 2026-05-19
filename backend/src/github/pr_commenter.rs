@@ -207,7 +207,7 @@ fn render_comment_body(
          \n\
          **Files changed:** {files} · **Tests:** {tests}\n\
          \n\
-         [View full run →]({origin}/{token})\n\
+         [View full run →]({origin}/r/{token})\n\
          \n\
          <sub>Posted by [Baaton](https://baaton.dev) — receipts for AI agent work.</sub>",
         heading = heading,
@@ -299,7 +299,7 @@ mod tests {
         let body = render_comment_body("BAA-128", "Baaton", &sample_row(), "01HX0Z9ABC");
         assert!(body.contains("BAA-128"));
         assert!(body.contains("openclaw:haroz"));
-        assert!(body.contains("https://r.baaton.dev/01HX0Z9ABC"));
+        assert!(body.contains("https://r.baaton.dev/r/01HX0Z9ABC"));
         assert!(body.contains("3 · **Tests:** passed ✓"));
     }
 

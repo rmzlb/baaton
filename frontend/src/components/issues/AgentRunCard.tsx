@@ -119,7 +119,7 @@ export function AgentRunCard({ issueId, orgPublicRunsEnabled, className }: Agent
 
   const isPublic = latestFinished.is_public && latestFinished.public_token;
   const publicUrl = latestFinished.public_token
-    ? `${PUBLIC_RUN_ORIGIN}/${latestFinished.public_token}`
+    ? `${PUBLIC_RUN_ORIGIN}/r/${latestFinished.public_token}`
     : null;
   const orgGateOff = effectiveOrgEnabled === false;
   const publishing = publishMutation.isPending;

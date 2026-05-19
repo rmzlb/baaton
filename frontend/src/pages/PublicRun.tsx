@@ -82,7 +82,7 @@ function buildMarkdownForPR(run: PublicRun, publicOrigin: string): string {
     ``,
     `**Files changed:** ${filesChanged.length} · **Tests:** ${tests}`,
     ``,
-    `[View full run →](${publicOrigin}/${run.session.public_token})`,
+    `[View full run →](${publicOrigin}/r/${run.session.public_token})`,
     ``,
     `<sub>Posted by [Baaton](https://baaton.dev) — receipts for AI agent work.</sub>`,
   ].join('\n');
@@ -244,7 +244,7 @@ export default function PublicRun() {
     ? run.session.files_changed
     : run.latest_tldr?.files_changed ?? [];
   const summary = run.session.summary || run.latest_tldr?.summary || '';
-  const publicUrl = `${PUBLIC_RUN_ORIGIN}/${run.session.public_token}`;
+  const publicUrl = `${PUBLIC_RUN_ORIGIN}/r/${run.session.public_token}`;
   const markdownForPR = buildMarkdownForPR(run, PUBLIC_RUN_ORIGIN);
 
   return (
