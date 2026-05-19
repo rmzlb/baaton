@@ -1232,6 +1232,38 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.pricing.enterpriseF5': 'SLA & support dédié',
 'landing.pricing.enterpriseCta': 'Nous contacter',
 
+// ─── Landing : reçus (couche de reçus indépendante pour agents IA) ─────
+'landing.eyebrow': 'Couche de reçus pour agents · Filière YC',
+'landing.hero.line1': 'Vos agents ont livré du code.',
+'landing.hero.line2': 'Où sont les reçus ?',
+'landing.hero.sub': 'Baaton est la couche de reçus indépendante pour chaque exécution d\'agent IA. Chaque run terminé devient une URL partageable qui se publie automatiquement en commentaire de la PR GitHub — nom de l\'agent, fichiers modifiés, tests, TLDR. Fonctionne avec Cursor, Devin, Copilot, Claude Code, Codex, OpenClaw, ou tout agent qui appelle l\'API.',
+'landing.cta.primary': 'Obtenir votre premier reçu',
+'landing.cta.demo': 'Voir un reçu en direct',
+'landing.vendors.label': 'Compatible avec',
+// Comment ça marche
+'landing.how.eyebrow': 'Comment ça marche',
+'landing.how.title': 'Trois étapes. Plus jamais de runs d\'agents en boîte noire.',
+'landing.how.s1.title': 'Un agent livre du travail',
+'landing.how.s1.body': 'Cursor, Devin, Copilot — n\'importe quel agent. Il appelle votre API Baaton et stream sa session : fichiers modifiés, tests, résumé, lien vers la PR.',
+'landing.how.s2.title': 'Vous publiez un reçu',
+'landing.how.s2.body': 'Un clic dans le tiroir de l\'issue. Génère une URL stable — r.baaton.dev/r/<token> — avec les bonnes métadonnées Open Graph. Collable dans Slack, X, GitHub.',
+'landing.how.s3.title': 'GitHub s\'occupe du reste',
+'landing.how.s3.body': 'Baaton publie un commentaire markdown sur la PR avec le résumé du run et un lien retour. Idempotent. Re-run ? Le commentaire se met à jour, jamais de doublons.',
+// Pourquoi indépendant
+'landing.why.eyebrow': 'Pourquoi indépendant',
+'landing.why.title': 'Agents Cursor. Runs Devin. Tâches Copilot. Une seule timeline.',
+'landing.why.body': 'Chaque IDE veut vous enfermer dans son tableau de bord. Baaton reste à l\'écart — on garde juste les reçus. Un run Devin, un agent Cursor, une session Claude Code : tout vit dans une timeline ancrée sur GitHub. Le seul endroit où les comparer côte à côte.',
+'landing.why.b1': 'Public par défaut avec trois niveaux de confidentialité (org → projet → session)',
+'landing.why.b2': 'Vérifiable cryptographiquement — reçus d\'agents signés Ed25519',
+'landing.why.b3': 'Commentaires PR automatiques, idempotents, avec liens retour',
+'landing.why.b4': 'Badges README par dépôt pour les projets open source',
+'landing.why.b5': 'Open core. Auto-hébergement possible.',
+// CTA final (reçus)
+'landing.final.title': 'Arrêtez de deviner ce que vos agents ont fait.',
+'landing.final.sub': 'Gratuit pour l\'open source. Open core. Mise en place en quelques minutes.',
+'landing.final.cta': 'Commencer à tracer les runs',
+'landing.final.github': 'Voir sur GitHub',
+
 // List View
 'list.createdBy': 'Créé par',
 'list.groupByProject': 'Grouper par projet',

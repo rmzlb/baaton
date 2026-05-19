@@ -904,6 +904,91 @@ pub async fn get_public_run(
     Ok(Json(ApiResponse::new(response)))
 }
 
+// ── GET /public/runs/:token/receipt.json — Ed25519 signed receipt ──
+//
+// Compatible with the agent-receipts protocol (https://agentreceipts.ai).
+// Public, no auth — the receipt's value is that anyone can pull the org's
+// JWKS and verify it offline.
+pub async fn get_public_run_receipt(
+    State(pool): State<PgPool>,
+    Path(token): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let row: Option<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+        Vec<String>,
+        String,
+        Option<String>,
+    )> = sqlx::query_as(
+        r#"
+        SELECT s.org_id, i.display_id, s.agent_name, s.agent_id, s.status,
+               s.started_at, s.completed_at, s.files_changed, s.tests_status, s.summary
+        FROM agent_sessions s
+        JOIN issues i ON i.id = s.issue_id
+        WHERE s.public_token = $1 AND s.is_public = TRUE
+        "#,
+    )
+    .bind(&token)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "get_public_run_receipt query");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "db"})))
+    })?;
+
+    let (
+        org_id,
+        display_id,
+        agent_name,
+        agent_id,
+        status,
+        started_at,
+        completed_at,
+        files_changed,
+        tests_status,
+        summary,
+    ) = row.ok_or((
+        StatusCode::NOT_FOUND,
+        Json(json!({"error": "not_found"})),
+    ))?;
+
+    let receipt = crate::receipts::build_receipt(
+        &pool,
+        &org_id,
+        &token,
+        &display_id,
+        &agent_name,
+        agent_id.as_deref(),
+        &status,
+        started_at,
+        completed_at,
+        &files_changed,
+        &tests_status,
+        summary.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "build_receipt failed");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "sign_failed"})),
+        )
+    })?;
+
+    Ok(Json(serde_json::to_value(receipt).map_err(|e| {
+        tracing::error!(error = %e, "serialize receipt");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "serialize_failed"})),
+        )
+    })?))
+}
+
 // ── GET /agent-sessions/:id/stream — SSE live stream of steps ──
 
 pub async fn stream_steps(

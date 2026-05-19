@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight, Sun, Moon, LayoutDashboard, Bot, User, Check,
   MoreHorizontal, Loader, Inbox, Cpu, Gavel, Copy,
-  Menu, X, Rocket, Users, Layers, MessageCircle,
+  Menu, X, Rocket, Users, Layers, MessageCircle, ExternalLink,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
@@ -175,77 +175,76 @@ export function Landing() {
         )}
       </nav>
 
-      {/* ── Hero ────────────────────────────────── */}
-      <main className="sm:pt-48 sm:pb-32 overflow-hidden pt-28 pb-16 relative">
+      {/* ── Hero (vendor-neutral receipts pitch) ──── */}
+      <main className="overflow-hidden relative">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-glow-light dark:bg-glow-dark opacity-100 pointer-events-none transition-opacity duration-700" />
         <div className="absolute inset-0 bg-grid-pattern-light dark:bg-grid-pattern bg-[size:4rem_4rem] opacity-[0.04] dark:opacity-[0.03] pointer-events-none" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#F3EFE7] dark:to-[#080808] pointer-events-none" />
 
-        <div className="max-w-7xl mx-auto px-6 text-center relative z-10 flex flex-col items-center">
-          {/* Headline */}
-          <h1 className="font-display leading-[0.8] text-black dark:text-white mb-6 sm:mb-8 opacity-0 animate-reveal-up-delay uppercase tracking-tight">
-            <span className="block text-[13vw] sm:text-[11vw] md:text-[9rem]">{t('landing.heroLine1')}</span>
-            <span className="block text-[8vw] sm:text-[7vw] md:text-[5.5rem] text-neutral-400 dark:text-neutral-500">{t('landing.heroLine2')}</span>
-          </h1>
+        <section className="relative z-10">
+          <div className="mx-auto max-w-5xl px-6 pt-24 pb-12 sm:pt-32 sm:pb-16">
+            <div className="flex flex-col items-start gap-6">
+              {/* Eyebrow */}
+              <div className="inline-flex items-center gap-2 rounded-full border border-[--color-border] bg-[--color-surface] px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-[--color-muted] opacity-0 animate-reveal-up">
+                <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+                {t('landing.eyebrow', { defaultValue: 'Agent accountability layer · YC-track' })}
+              </div>
 
-          <p className="text-xl md:text-2xl text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto leading-relaxed mb-4 opacity-0 animate-reveal-up-delay-2 font-medium">
-            {t('landing.heroSub')}
-          </p>
-          <p className="text-base md:text-lg text-neutral-500 dark:text-neutral-500 max-w-xl mx-auto leading-relaxed mb-12 opacity-0 animate-reveal-up-delay-2 font-medium">
-            {t('landing.heroNote')}
-          </p>
-          {/* S7: surface the new wedge ("receipts for AI agent work") without
-              rewriting the whole pitch. Full landing copy refresh deferred. */}
-          <p className="text-sm md:text-base text-neutral-500 dark:text-neutral-500 max-w-xl mx-auto leading-relaxed -mt-8 mb-12 opacity-0 animate-reveal-up-delay-2">
-            {t('landing.heroReceipts', {
-              defaultValue:
-                'Plus shareable receipts for every agent run — auto-posted to the PR.',
-            })}
-          </p>
+              {/* Headline */}
+              <h1 className="text-balance text-5xl font-semibold leading-[1.05] tracking-tight text-[--color-primary] sm:text-6xl lg:text-7xl opacity-0 animate-reveal-up-delay-1">
+                {t('landing.hero.line1', { defaultValue: 'Your agents shipped code.' })}
+                <br />
+                <span className="text-[--color-muted]">
+                  {t('landing.hero.line2', { defaultValue: 'Where are the receipts?' })}
+                </span>
+              </h1>
 
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 opacity-0 animate-reveal-up-delay-3">
-            <Link to="/sign-up" className="h-14 px-10 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-lg transition-all shadow-[0_4px_0_0_#d97706] hover:shadow-[0_2px_0_0_#d97706] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] flex items-center gap-2 w-full sm:w-auto justify-center group">
-              <span className="tracking-tight">{t('landing.cta')}</span>
-              <ArrowRight className="w-5 h-5" strokeWidth={2.5} />
-            </Link>
-            <Link to="/docs" className="h-14 px-10 rounded-lg bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-black dark:text-white font-semibold transition-all flex items-center gap-2 w-full sm:w-auto justify-center text-sm shadow-[0_4px_0_0_rgba(0,0,0,0.1)] hover:shadow-[0_2px_0_0_rgba(0,0,0,0.1)] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] dark:shadow-[0_4px_0_0_rgba(255,255,255,0.1)] dark:hover:shadow-[0_2px_0_0_rgba(255,255,255,0.1)]">
-              {t('landing.readDocs')}
-            </Link>
-          </div>
+              {/* Subhead */}
+              <p className="max-w-2xl text-pretty text-lg leading-relaxed text-[--color-muted] opacity-0 animate-reveal-up-delay-2">
+                {t('landing.hero.sub', {
+                  defaultValue:
+                    'Baaton is the vendor-neutral receipt layer for every AI agent run. Each completed run becomes a shareable URL that auto-posts on the GitHub PR — agent name, files changed, tests, TLDR. Works with Cursor, Devin, Copilot, Claude Code, Codex, OpenClaw, or any agent that hits the API.',
+                })}
+              </p>
 
-          {/* Social proof — compatible agent logos */}
-          <div className="mt-10 flex flex-col items-center gap-4 opacity-0 animate-reveal-up-delay-3">
-            <span className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">{t('landing.socialProof')}</span>
-            <div className="flex items-center gap-6 md:gap-10 opacity-60 hover:opacity-90 transition-opacity">
-              {/* Claude */}
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M4.709 15.955l4.486-2.591a.6.6 0 0 0 .3-.52V7.156a.6.6 0 0 0-.3-.52L4.709 4.045a.6.6 0 0 0-.6 0L.3 6.636a.6.6 0 0 0-.3.52v5.688a.6.6 0 0 0 .3.52l3.809 2.591a.6.6 0 0 0 .6 0z" transform="scale(1.7) translate(3, 3)"/></svg>
-                <span className="text-xs font-semibold hidden sm:inline">Claude Code</span>
+              {/* CTA row */}
+              <div className="flex flex-wrap items-center gap-3 opacity-0 animate-reveal-up-delay-3">
+                <Link
+                  to="/sign-up"
+                  className="inline-flex items-center gap-2 rounded-md bg-amber-500 px-5 py-2.5 text-sm font-semibold text-black transition-[transform,colors,background-color,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-amber-400 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 will-change-transform"
+                >
+                  {t('landing.cta.primary', { defaultValue: 'Get your first receipt' })}
+                  <ArrowRight size={16} />
+                </Link>
+                <a
+                  href="/r/db53f5005df640218bd444"
+                  className="inline-flex items-center gap-2 rounded-md border border-[--color-border] bg-[--color-surface] px-5 py-2.5 text-sm font-medium text-[--color-primary] transition-[transform,colors,background-color,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-[--color-surface-hover] active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 will-change-transform"
+                >
+                  {t('landing.cta.demo', { defaultValue: 'See a live receipt' })}
+                  <ExternalLink size={16} />
+                </a>
               </div>
-              {/* Codex */}
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>
-                <span className="text-xs font-semibold hidden sm:inline">Codex</span>
-              </div>
-              {/* Cursor */}
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
-                <span className="text-xs font-semibold hidden sm:inline">Cursor</span>
-              </div>
-              {/* OpenClaw */}
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <span className="text-base">🦞</span>
-                <span className="text-xs font-semibold hidden sm:inline">OpenClaw</span>
-              </div>
-              {/* Any agent */}
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <Bot className="w-4 h-4" />
-                <span className="text-xs font-semibold hidden sm:inline">Any agent</span>
+
+              {/* Vendor row */}
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-[--color-muted] opacity-0 animate-reveal-up-delay-4">
+                <span className="font-medium uppercase tracking-wider text-[10px]">
+                  {t('landing.vendors.label', { defaultValue: 'Works with' })}
+                </span>
+                <span>Cursor</span>
+                <span className="opacity-30">·</span>
+                <span>Devin</span>
+                <span className="opacity-30">·</span>
+                <span>GitHub Copilot</span>
+                <span className="opacity-30">·</span>
+                <span>Claude Code</span>
+                <span className="opacity-30">·</span>
+                <span>Codex</span>
+                <span className="opacity-30">·</span>
+                <span>OpenClaw</span>
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* ── Kanban Mockup ──────────────────────── */}
         <div className="mt-16 sm:mt-32 max-w-6xl mx-auto px-4 perspective-container relative z-10 opacity-0 animate-fade-in-delay">
@@ -358,6 +357,68 @@ export function Landing() {
         </div>
 
       </main>
+
+      {/* ── How it works (3 steps) ─────────────── */}
+      <section className="border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#080808] transition-colors relative z-20">
+        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+          <div className="mb-12 text-center">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
+              {t('landing.how.eyebrow', { defaultValue: 'How it works' })}
+            </p>
+            <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight text-[--color-primary] sm:text-4xl">
+              {t('landing.how.title', { defaultValue: 'Three steps. No more black-box agent runs.' })}
+            </h2>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-3">
+            <HowStep
+              i={0}
+              n="01"
+              title={t('landing.how.s1.title', { defaultValue: 'An agent ships work' })}
+              body={t('landing.how.s1.body', { defaultValue: 'Cursor, Devin, Copilot — any agent. They hit your Baaton API and stream their session: files changed, tests, summary, link to the PR.' })}
+            />
+            <HowStep
+              i={1}
+              n="02"
+              title={t('landing.how.s2.title', { defaultValue: 'You publish a receipt' })}
+              body={t('landing.how.s2.body', { defaultValue: 'One click in the issue drawer. Generates a stable URL — r.baaton.dev/r/<token> — with proper Open Graph meta. Pasteable in Slack, X, GitHub.' })}
+            />
+            <HowStep
+              i={2}
+              n="03"
+              title={t('landing.how.s3.title', { defaultValue: 'GitHub does the rest' })}
+              body={t('landing.how.s3.body', { defaultValue: 'Baaton auto-posts a markdown comment on the PR with the run summary and a link back. Idempotent. Re-run? The comment updates, never duplicates.' })}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ── Why vendor-neutral ─────────────────── */}
+      <section className="border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
+        <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
+          <div className="grid gap-8 lg:grid-cols-2 lg:gap-16">
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-[--color-muted]">
+                {t('landing.why.eyebrow', { defaultValue: 'Why vendor-neutral' })}
+              </p>
+              <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight text-[--color-primary] sm:text-4xl">
+                {t('landing.why.title', { defaultValue: 'Cursor agents. Devin runs. Copilot tasks. One timeline.' })}
+              </h2>
+              <p className="mt-5 text-pretty text-base leading-relaxed text-[--color-muted]">
+                {t('landing.why.body', { defaultValue: 'Every IDE wants you locked into their dashboard. Baaton stays out — we just keep the receipts. A Devin run, a Cursor agent, a Claude Code session, all live in one accountable, GitHub-anchored timeline. The only place you can compare them side-by-side.' })}
+              </p>
+            </div>
+
+            <ul className="space-y-3">
+              <Bullet text={t('landing.why.b1', { defaultValue: 'Public-by-default with three privacy gates (org → project → session)' })} />
+              <Bullet text={t('landing.why.b2', { defaultValue: 'Cryptographically verifiable — Ed25519-signed agent receipts' })} />
+              <Bullet text={t('landing.why.b3', { defaultValue: 'Auto PR comments, idempotent, with deep links back' })} />
+              <Bullet text={t('landing.why.b4', { defaultValue: 'README badges per repo for OSS projects' })} />
+              <Bullet text={t('landing.why.b5', { defaultValue: 'Open core. Self-host if you want.' })} />
+            </ul>
+          </div>
+        </div>
+      </section>
 
       {/* ── See it in action (board GIF + terminal) ──── */}
       <section className="py-16 sm:py-24 bg-white dark:bg-[#060606] border-t border-black/5 dark:border-white/5 transition-colors relative z-20">
@@ -603,23 +664,33 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ── CTA ─────────────────────────────────── */}
-      <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 relative overflow-hidden bg-white dark:bg-[#050505] transition-colors z-20">
+      {/* ── Final CTA (receipts) ────────────────── */}
+      <section className="border-t border-black/5 dark:border-white/5 relative overflow-hidden bg-white dark:bg-[#050505] transition-colors z-20">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/5 blur-[120px] rounded-full pointer-events-none" />
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center relative z-10">
-          <h2 className="font-display text-[10vw] sm:text-8xl font-black text-black dark:text-white tracking-tight mb-8 leading-[0.8] uppercase">
-            {t('landing.ctaTitle1')}<br />{t('landing.ctaTitle2')}
+        <div className="mx-auto max-w-3xl px-6 py-20 text-center relative z-10">
+          <h2 className="text-balance text-3xl font-semibold tracking-tight text-[--color-primary] sm:text-4xl">
+            {t('landing.final.title', { defaultValue: 'Stop guessing what your agents did.' })}
           </h2>
-          <p className="text-xl text-neutral-600 dark:text-neutral-400 mb-12 max-w-2xl mx-auto font-medium">
-            {t('landing.ctaSub')}
+          <p className="mt-4 text-pretty text-lg text-[--color-muted]">
+            {t('landing.final.sub', { defaultValue: 'Free for OSS. Open core. Set up in minutes.' })}
           </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-            <Link to="/sign-up" className="h-14 px-10 rounded-lg bg-black dark:bg-white text-white dark:text-black text-lg font-bold hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors flex items-center gap-2 w-full sm:w-auto justify-center shadow-xl transform hover:-translate-y-1">
-              {t('landing.cta')} <ArrowRight className="w-5 h-5" strokeWidth={2} />
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Link
+              to="/sign-up"
+              className="inline-flex items-center gap-2 rounded-md bg-amber-500 px-5 py-2.5 text-sm font-semibold text-black transition-[transform,colors,background-color,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-amber-400 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 will-change-transform"
+            >
+              {t('landing.final.cta', { defaultValue: 'Start tracking agent runs' })}
+              <ArrowRight size={16} />
             </Link>
-            <Link to="/docs" className="h-14 px-10 rounded-lg border border-black/10 dark:border-white/10 text-black dark:text-white text-lg font-bold hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors flex items-center gap-2 w-full sm:w-auto justify-center">
-              {t('landing.nav.docs')}
-            </Link>
+            <a
+              href="https://github.com/rmzlb/baaton"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md border border-[--color-border] bg-[--color-surface] px-5 py-2.5 text-sm font-medium text-[--color-primary] transition-[transform,colors,background-color,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-[--color-surface-hover] active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 will-change-transform"
+            >
+              {t('landing.final.github', { defaultValue: 'View on GitHub' })}
+              <ExternalLink size={16} />
+            </a>
           </div>
         </div>
       </section>
@@ -697,6 +768,29 @@ function LogLine({ time, level, color, text, dim }: { time: string; level: strin
       <span className={`${color} font-bold shrink-0`}>{level}</span>
       <span className="text-neutral-200 dark:text-neutral-300">{text}</span>
     </div>
+  );
+}
+
+/* ── Receipts narrative — How step + Bullet ─── */
+function HowStep({ i, n, title, body }: { i: number; n: string; title: string; body: string }) {
+  return (
+    <div
+      className="rounded-xl border border-[--color-border] bg-[--color-surface] p-6 animate-row-in"
+      style={{ ['--row-index' as string]: i }}
+    >
+      <div className="font-mono text-2xl font-semibold tabular-nums text-amber-400">{n}</div>
+      <h3 className="mt-3 text-base font-semibold text-[--color-primary]">{title}</h3>
+      <p className="mt-2 text-sm leading-relaxed text-[--color-muted]">{body}</p>
+    </div>
+  );
+}
+
+function Bullet({ text }: { text: string }) {
+  return (
+    <li className="flex items-start gap-3 text-sm text-[--color-primary]">
+      <Check size={16} className="mt-0.5 shrink-0 text-amber-400" />
+      <span>{text}</span>
+    </li>
   );
 }
 

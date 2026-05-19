@@ -13,6 +13,7 @@ mod github;
 mod middleware;
 mod models;
 mod novu;
+mod receipts;
 mod routes;
 mod s3;
 
@@ -139,6 +140,7 @@ async fn main() -> anyhow::Result<()> {
         (54, include_str!("../migrations/054_public_agent_runs.sql")),
         (55, include_str!("../migrations/055_agent_run_guardrails.sql")),
         (56, include_str!("../migrations/056_pr_comment_job_type.sql")),
+        (57, include_str!("../migrations/057_org_signing_keys.sql")),
     ];
 
     for &(version, sql) in migrations {

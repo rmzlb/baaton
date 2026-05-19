@@ -1232,6 +1232,38 @@ As a [user], I want to [action] so that [benefit].
 'landing.pricing.enterpriseF5': 'SLA & dedicated support',
 'landing.pricing.enterpriseCta': 'Contact us',
 
+// ─── Landing: Receipts hero (vendor-neutral receipt layer pitch) ─────
+'landing.eyebrow': 'Agent accountability layer · YC-track',
+'landing.hero.line1': 'Your agents shipped code.',
+'landing.hero.line2': 'Where are the receipts?',
+'landing.hero.sub': 'Baaton is the vendor-neutral receipt layer for every AI agent run. Each completed run becomes a shareable URL that auto-posts on the GitHub PR — agent name, files changed, tests, TLDR. Works with Cursor, Devin, Copilot, Claude Code, Codex, OpenClaw, or any agent that hits the API.',
+'landing.cta.primary': 'Get your first receipt',
+'landing.cta.demo': 'See a live receipt',
+'landing.vendors.label': 'Works with',
+// How it works
+'landing.how.eyebrow': 'How it works',
+'landing.how.title': 'Three steps. No more black-box agent runs.',
+'landing.how.s1.title': 'An agent ships work',
+'landing.how.s1.body': 'Cursor, Devin, Copilot — any agent. They hit your Baaton API and stream their session: files changed, tests, summary, link to the PR.',
+'landing.how.s2.title': 'You publish a receipt',
+'landing.how.s2.body': 'One click in the issue drawer. Generates a stable URL — r.baaton.dev/r/<token> — with proper Open Graph meta. Pasteable in Slack, X, GitHub.',
+'landing.how.s3.title': 'GitHub does the rest',
+'landing.how.s3.body': 'Baaton auto-posts a markdown comment on the PR with the run summary and a link back. Idempotent. Re-run? The comment updates, never duplicates.',
+// Why vendor-neutral
+'landing.why.eyebrow': 'Why vendor-neutral',
+'landing.why.title': 'Cursor agents. Devin runs. Copilot tasks. One timeline.',
+'landing.why.body': 'Every IDE wants you locked into their dashboard. Baaton stays out — we just keep the receipts. A Devin run, a Cursor agent, a Claude Code session, all live in one accountable, GitHub-anchored timeline. The only place you can compare them side-by-side.',
+'landing.why.b1': 'Public-by-default with three privacy gates (org → project → session)',
+'landing.why.b2': 'Cryptographically verifiable — Ed25519-signed agent receipts',
+'landing.why.b3': 'Auto PR comments, idempotent, with deep links back',
+'landing.why.b4': 'README badges per repo for OSS projects',
+'landing.why.b5': 'Open core. Self-host if you want.',
+// Final CTA (receipts)
+'landing.final.title': 'Stop guessing what your agents did.',
+'landing.final.sub': 'Free for OSS. Open core. Set up in minutes.',
+'landing.final.cta': 'Start tracking agent runs',
+'landing.final.github': 'View on GitHub',
+
 // List View
 'list.createdBy': 'Created by',
 'list.groupByProject': 'Group by project',

@@ -38,6 +38,7 @@ pub mod uploads;
 pub mod agent_config;
 pub mod agent_sessions;
 pub mod og;
+pub mod badge;
 pub mod public_run_ssr;
 pub mod slack;
 pub(crate) mod admin;
@@ -214,9 +215,16 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/agent-sessions/{id}/stream", get(agent_sessions::stream_steps))
         .route("/issues/{id}/agent-sessions", get(agent_sessions::list_by_issue))
         .route("/public/runs/{token}", get(agent_sessions::get_public_run))
+        // Ed25519 signed agent receipt (agent-receipts protocol) for the same run.
+        // Verify with the org JWKS below; both are public to enable offline auditing.
+        .route("/public/runs/{token}/receipt.json", get(agent_sessions::get_public_run_receipt))
+        .route("/public/orgs/{org_id}/jwks.json", get(orgs::public_jwks))
         // OG image for public runs (SVG, 1200×630, cached 1h). Lives under /public/
         // so the existing auth-middleware exemption (`path.contains("/public/")`) covers it.
         .route("/public/og/run/{token}", get(og::render_run_svg))
+        // README badge for a tracked GitHub repo (public, cached 5 min).
+        // The `{repo}` segment may include a `.svg` suffix (handler strips it).
+        .route("/public/badge/repo/{owner}/{repo}", get(badge::render))
         // Project Context
         .route("/projects/{id}/context", get(project_context::get_or_create).patch(project_context::update))
         .route("/projects/{id}/context/append", post(project_context::append))

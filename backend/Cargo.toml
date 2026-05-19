@@ -50,6 +50,13 @@ regex = "1"
 lazy_static = "1"
 aes-gcm = "0.10"
 
+# Ed25519 signed agent receipts (agent-receipts protocol).
+# We avoid the `rand_core` feature on purpose: ed25519-dalek 2.x pins rand_core 0.6
+# while the rest of the crate uses rand 0.9, so we generate the 32-byte secret with
+# rand::random::<[u8; 32]>() and feed it into SigningKey::from_bytes to dodge the
+# version mismatch. pkcs8 stays optional — we store raw 32-byte keys in the DB.
+ed25519-dalek = { version = "2", features = ["pkcs8"] }
+
 # AWS S3 (uploads bucket)
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-s3 = { version = "1", features = ["behavior-version-latest"] }

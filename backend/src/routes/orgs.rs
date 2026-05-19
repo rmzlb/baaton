@@ -128,3 +128,18 @@ pub async fn update_settings(
         None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "org_not_found"})))),
     }
 }
+
+// ── GET /public/orgs/:org_id/jwks.json — JWKS for an org (Ed25519 OKP) ──
+//
+// Public, no auth. Lets anyone verify a signed agent run receipt offline:
+// pull this JWKS, find the matching `kid`, and verify the signature.
+pub async fn public_jwks(
+    State(pool): State<PgPool>,
+    Path(org_id): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let jwks = crate::receipts::build_jwks(&pool, &org_id).await.map_err(|e| {
+        tracing::error!(error = %e, "build_jwks failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "db"})))
+    })?;
+    Ok(Json(jwks))
+}

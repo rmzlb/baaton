@@ -32,6 +32,28 @@
 
 Every agent run can be published as a public Run Card at `r.baaton.dev/<token>` — a shareable receipt with the agent name, summary, files changed, tests status, and a link to the PR. Auto-posts as a markdown comment on the GitHub PR when the run completes. Vendor-neutral: works with Cursor agents, Claude Code, Devin, Copilot, OpenClaw, or any agent that hits the Baaton API.
 
+### Cryptographically verifiable
+
+Every published Run Card is also available as a signed JSON receipt at
+`GET /api/v1/public/runs/<token>/receipt.json`. The receipt is Ed25519-signed
+by a per-org keypair and follows the [agent-receipts protocol](https://agentreceipts.ai/specification/overview/).
+
+Verify any receipt by fetching the org's JWKS:
+`GET /api/v1/public/orgs/<org_id>/jwks.json`
+
+This is the same protocol Microsoft teaches in their AI Agents curriculum.
+Compatible with any tool or auditor that consumes the standard JSON-Web-Key Ed25519 format.
+
+#### README badge
+
+Drop this in any repo's README to show its Baaton activity:
+
+```markdown
+![Baaton agent runs](https://api.baaton.dev/api/v1/public/badge/repo/<owner>/<repo>.svg)
+```
+
+The badge auto-refreshes every 5 minutes and shows total runs, runs reviewed, and runs in the past week. If the repo isn't tracked by Baaton, the badge shows "not tracked" (still 200 OK so the README rendering doesn't break).
+
 ---
 
 ## Why
