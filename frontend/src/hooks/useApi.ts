@@ -523,6 +523,26 @@ export function useApi() {
 
     // ─── GitHub ────────────────────────────────
     github: {
+      startInstall: async (): Promise<{ url: string }> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<{ url: string }>('/github/install/start', {}, token);
+        }),
+
+      finalizeInstall: async (body: {
+        state: string;
+        installation_id?: number;
+        setup_action?: string;
+      }): Promise<{ status: string; installation?: GitHubInstallation }> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<{ status: string; installation?: GitHubInstallation }>(
+            '/github/install/finalize',
+            body,
+            token,
+          );
+        }),
+
       getInstallation: async (): Promise<GitHubInstallation | null> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();

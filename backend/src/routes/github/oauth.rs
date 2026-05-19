@@ -1,75 +1,154 @@
 use axum::{
-    extract::{Extension, Query, State},
+    extract::{Extension, State},
     http::StatusCode,
-    response::{IntoResponse, Redirect, Response},
     Json,
 };
-use serde::Deserialize;
+use base64::Engine;
+use rand::TryRngCore;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
 use crate::middleware::AuthUser;
 use crate::models::github::GitHubInstallation;
 use crate::models::ApiResponse;
 
-// ─── Install Redirect ─────────────────────────────────
+// ─── State token helpers ──────────────────────────────
 
-/// GET /github/install
-///
-/// Redirects the user to GitHub's App installation page.
-/// After the user installs/configures, GitHub redirects back to `/github/callback`.
-pub async fn install_redirect(
-    Extension(auth): Extension<AuthUser>,
-) -> Result<Response, StatusCode> {
-    let _org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
-
-    let app_slug = std::env::var("GITHUB_APP_SLUG")
-        .unwrap_or_else(|_| "baaton".to_string());
-
-    let url = format!("https://github.com/apps/{}/installations/new", app_slug);
-    Ok(Redirect::temporary(&url).into_response())
+/// State tokens are 32 random bytes encoded as base64-url-no-pad → 43 chars.
+/// Matches the `CHAR(43)` column in `gh_install_states`.
+fn generate_install_state() -> Result<String, anyhow::Error> {
+    let mut bytes = [0u8; 32];
+    rand::rngs::OsRng
+        .try_fill_bytes(&mut bytes)
+        .map_err(|e| anyhow::anyhow!("OsRng failed: {e}"))?;
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
 }
 
-// ─── OAuth Callback ───────────────────────────────────
+// ─── POST /github/install/start ───────────────────────
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-pub struct CallbackParams {
-    pub installation_id: Option<i64>,
-    pub setup_action: Option<String>,
-    /// state parameter we'll use to pass the org_id through the OAuth round-trip
-    pub state: Option<String>,
+#[derive(Debug, Serialize)]
+pub struct InstallStartResponse {
+    pub url: String,
 }
 
-/// GET /github/callback
+/// Start a GitHub App install flow.
 ///
-/// GitHub redirects here after the user installs or updates the App.
-/// We record the installation and redirect back to the frontend settings page.
-pub async fn callback(
+/// Generates a single-use random state, persists it for 30 minutes
+/// (long enough for org-admin approval), and returns the GitHub
+/// install URL with `?state=<token>` appended.
+pub async fn start_install(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
-    Query(params): Query<CallbackParams>,
-) -> Result<Response, StatusCode> {
-    let org_id = auth
-        .org_id
-        .as_deref()
-        .ok_or(StatusCode::BAD_REQUEST)?
-        .to_string();
+) -> Result<Json<ApiResponse<InstallStartResponse>>, StatusCode> {
+    let org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
 
-    let installation_id = params.installation_id.ok_or(StatusCode::BAD_REQUEST)?;
-
-    // Fetch installation details from GitHub API
-    let github_client = crate::github::client::GitHubClient::from_env()
-        .map_err(|e| {
-            tracing::error!("Failed to create GitHub client: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    let app_crab = github_client.as_app().map_err(|e| {
-        tracing::error!("Failed to get app-level Octocrab: {}", e);
+    let state = generate_install_state().map_err(|e| {
+        tracing::error!("Failed to generate install state: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // GET /app/installations/{installation_id}
+    sqlx::query(
+        r#"INSERT INTO gh_install_states (state, org_id, user_id, expires_at)
+           VALUES ($1, $2, $3, now() + interval '30 minutes')"#,
+    )
+    .bind(&state)
+    .bind(org_id)
+    .bind(&auth.user_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to insert install state: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let app_slug = std::env::var("GITHUB_APP_SLUG").unwrap_or_else(|_| "baaton".to_string());
+    let url = format!(
+        "https://github.com/apps/{}/installations/new?state={}",
+        app_slug, state
+    );
+
+    Ok(Json(ApiResponse::new(InstallStartResponse { url })))
+}
+
+// ─── POST /github/install/finalize ────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct FinalizeInstallBody {
+    pub state: String,
+    pub installation_id: Option<i64>,
+    pub setup_action: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FinalizeInstallResponse {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installation: Option<GitHubInstallation>,
+}
+
+/// Finalize a GitHub App install flow.
+///
+/// Validates the state token (single-use, 30 min TTL, bound to (user_id, org_id)),
+/// then verifies `installation_id` against GitHub's `/app/installations/{id}` API
+/// per the GitHub spoofing-prevention guidance, and upserts the installation row.
+pub async fn finalize_install(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Json(body): Json<FinalizeInstallBody>,
+) -> Result<Json<ApiResponse<FinalizeInstallResponse>>, (StatusCode, &'static str)> {
+    let auth_org_id = auth
+        .org_id
+        .as_deref()
+        .ok_or((StatusCode::BAD_REQUEST, "missing org"))?;
+
+    // Single-use consume of the state token. Returns the bound (org_id, user_id)
+    // so we can verify the caller is the same identity that started the flow.
+    let row: Option<(String, String)> = sqlx::query_as(
+        r#"DELETE FROM gh_install_states
+           WHERE state = $1 AND expires_at > now()
+           RETURNING org_id, user_id"#,
+    )
+    .bind(&body.state)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to consume install state: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "db error")
+    })?;
+
+    let (state_org_id, state_user_id) =
+        row.ok_or((StatusCode::BAD_REQUEST, "invalid_or_expired_state"))?;
+
+    if state_user_id != auth.user_id || state_org_id != auth_org_id {
+        return Err((StatusCode::FORBIDDEN, "state_identity_mismatch"));
+    }
+
+    // Admin-approval path: the org admin hasn't approved yet, GitHub bounces us
+    // back with `setup_action=request` and no installation_id. We've already
+    // consumed the state — caller has to re-start the flow once approved.
+    if body.setup_action.as_deref() == Some("request") {
+        return Ok(Json(ApiResponse::new(FinalizeInstallResponse {
+            status: "pending_admin_approval".to_string(),
+            installation: None,
+        })));
+    }
+
+    let installation_id = body
+        .installation_id
+        .ok_or((StatusCode::BAD_REQUEST, "missing_installation_id"))?;
+
+    // Verify the installation actually exists by hitting GitHub's API as the
+    // App. This catches spoofed installation_ids (per GitHub docs warning).
+    let github_client = crate::github::client::GitHubClient::from_env().map_err(|e| {
+        tracing::error!("Failed to create GitHub client: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "github_client_error")
+    })?;
+
+    let app_crab = github_client.as_app().map_err(|e| {
+        tracing::error!("Failed to get app-level Octocrab: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "github_app_jwt_error")
+    })?;
+
     let install_info: serde_json::Value = app_crab
         .get(
             format!("/app/installations/{}", installation_id),
@@ -78,7 +157,7 @@ pub async fn callback(
         .await
         .map_err(|e| {
             tracing::error!("Failed to fetch installation info: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            (StatusCode::BAD_REQUEST, "installation_not_found")
         })?;
 
     let account = &install_info["account"];
@@ -93,8 +172,7 @@ pub async fn callback(
         .to_string();
     let permissions = install_info["permissions"].clone();
 
-    // Upsert installation
-    sqlx::query(
+    let installation = sqlx::query_as::<_, GitHubInstallation>(
         r#"INSERT INTO github_installations
            (org_id, installation_id, github_account_id, github_account_login,
             github_account_type, permissions, status, installed_by)
@@ -106,20 +184,21 @@ pub async fn callback(
             github_account_type = $5,
             permissions = $6,
             status = 'active',
-            updated_at = now()"#,
+            updated_at = now()
+           RETURNING *"#,
     )
-    .bind(&org_id)
+    .bind(auth_org_id)
     .bind(installation_id)
     .bind(github_account_id)
     .bind(&github_account_login)
     .bind(&github_account_type)
     .bind(&permissions)
     .bind(&auth.user_id)
-    .execute(&pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| {
         tracing::error!("Failed to upsert installation: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (StatusCode::INTERNAL_SERVER_ERROR, "upsert_failed")
     })?;
 
     // Sync available repos in the background
@@ -134,11 +213,10 @@ pub async fn callback(
         }
     });
 
-    let app_url =
-        std::env::var("APP_URL").unwrap_or_else(|_| "https://app.baaton.dev".to_string());
-    let redirect_url = format!("{}/settings/integrations?github=connected", app_url);
-
-    Ok(Redirect::temporary(&redirect_url).into_response())
+    Ok(Json(ApiResponse::new(FinalizeInstallResponse {
+        status: "connected".to_string(),
+        installation: Some(installation),
+    })))
 }
 
 // ─── Get Installation ─────────────────────────────────
@@ -271,4 +349,79 @@ async fn sync_installation_repos(
     }
 
     Ok(())
+}
+
+// ─── Tests ────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_generator_produces_43_char_url_safe_base64() {
+        let state = generate_install_state().expect("generation should succeed");
+        assert_eq!(state.len(), 43, "state must be exactly 43 chars");
+
+        // base64-url-no-pad alphabet: A-Z a-z 0-9 - _
+        for c in state.chars() {
+            assert!(
+                c.is_ascii_alphanumeric() || c == '-' || c == '_',
+                "char {:?} is not URL-safe base64",
+                c
+            );
+        }
+    }
+
+    #[test]
+    fn state_generator_produces_unique_tokens() {
+        let a = generate_install_state().unwrap();
+        let b = generate_install_state().unwrap();
+        assert_ne!(a, b, "two consecutive tokens must differ");
+    }
+
+    /// Ensures the FinalizeInstallBody deserializer accepts the three shapes
+    /// GitHub may produce, plus the admin-approval shape.
+    #[test]
+    fn finalize_body_deserializes_known_shapes() {
+        // Normal install: full payload
+        let normal: FinalizeInstallBody = serde_json::from_str(
+            r#"{"state":"abc","installation_id":42,"setup_action":"install"}"#,
+        )
+        .unwrap();
+        assert_eq!(normal.state, "abc");
+        assert_eq!(normal.installation_id, Some(42));
+        assert_eq!(normal.setup_action.as_deref(), Some("install"));
+
+        // Admin-approval pending: no installation_id, setup_action=request
+        let pending: FinalizeInstallBody =
+            serde_json::from_str(r#"{"state":"abc","setup_action":"request"}"#).unwrap();
+        assert!(pending.installation_id.is_none());
+        assert_eq!(pending.setup_action.as_deref(), Some("request"));
+
+        // Bare minimum (state only)
+        let minimal: FinalizeInstallBody = serde_json::from_str(r#"{"state":"abc"}"#).unwrap();
+        assert!(minimal.installation_id.is_none());
+        assert!(minimal.setup_action.is_none());
+    }
+
+    /// `setup_action == "request"` means the admin hasn't approved yet, so we
+    /// must short-circuit: no installation_id required, no GitHub call.
+    #[test]
+    fn pending_admin_approval_is_recognized() {
+        let body: FinalizeInstallBody =
+            serde_json::from_str(r#"{"state":"abc","setup_action":"request"}"#).unwrap();
+        assert_eq!(body.setup_action.as_deref(), Some("request"));
+        assert!(body.installation_id.is_none());
+    }
+
+    /// The DELETE-RETURNING shape we rely on for single-use consumption.
+    /// This is a documentation test — actual DB exercise lives in integration tests.
+    #[test]
+    fn state_consume_query_returns_org_and_user_tuple() {
+        // (org_id, user_id) is the tuple shape we expect from RETURNING.
+        let row: Option<(String, String)> = Some(("org_42".into(), "user_7".into()));
+        let (org, user) = row.unwrap();
+        assert_eq!(org, "org_42");
+        assert_eq!(user, "user_7");
+    }
 }

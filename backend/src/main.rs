@@ -141,6 +141,7 @@ async fn main() -> anyhow::Result<()> {
         (55, include_str!("../migrations/055_agent_run_guardrails.sql")),
         (56, include_str!("../migrations/056_pr_comment_job_type.sql")),
         (57, include_str!("../migrations/057_org_signing_keys.sql")),
+        (58, include_str!("../migrations/058_gh_install_states.sql")),
     ];
 
     for &(version, sql) in migrations {
@@ -201,6 +202,12 @@ async fn main() -> anyhow::Result<()> {
     let job_pool = pool.clone();
     tokio::spawn(async move {
         github::jobs::start_job_runner(job_pool).await;
+    });
+
+    // GC expired GitHub install state tokens every 5 minutes.
+    let gc_pool = pool.clone();
+    tokio::spawn(async move {
+        gh_install_states_gc(gc_pool).await;
     });
 
     // Start webhook retry worker
@@ -318,5 +325,31 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => { tracing::info!("Received Ctrl+C, shutting down..."); },
         _ = terminate => { tracing::info!("Received SIGTERM, shutting down..."); },
+    }
+}
+
+/// Background task: every 5 minutes, delete `gh_install_states` rows that have
+/// passed their TTL. Cheap insurance even though `finalize_install` already
+/// rejects expired rows via `expires_at > now()`.
+async fn gh_install_states_gc(pool: sqlx::PgPool) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5 * 60));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        interval.tick().await;
+        match sqlx::query("DELETE FROM gh_install_states WHERE expires_at < now()")
+            .execute(&pool)
+            .await
+        {
+            Ok(res) if res.rows_affected() > 0 => {
+                tracing::debug!(
+                    "gh_install_states_gc: deleted {} expired tokens",
+                    res.rows_affected()
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!("gh_install_states_gc: delete failed: {}", e);
+            }
+        }
     }
 }

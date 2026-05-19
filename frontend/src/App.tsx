@@ -39,6 +39,7 @@ const AIChat = lazy(() => import('./pages/AIChat'));
 const Integrations = lazy(() => import('./pages/Integrations'));
 const ProjectContext = lazy(() => import('./pages/ProjectContext'));
 const ProjectTemplates = lazy(() => import('./pages/ProjectTemplates'));
+const GithubInstallCallback = lazy(() => import('./pages/GithubInstallCallback'));
 
 
 const isAppDomain = window.location.hostname === 'app.baaton.dev';
@@ -119,7 +120,7 @@ export function App() {
   const host = window.location.hostname;
   const isAppHost = host === 'app.baaton.dev';
   const path = window.location.pathname;
-  const isPublicPath = path === '/' || path.startsWith('/docs') || path.startsWith('/submit/') || path.startsWith('/s/') || path.startsWith('/r/');
+  const isPublicPath = path === '/' || path.startsWith('/docs') || path.startsWith('/submit/') || path.startsWith('/s/') || path.startsWith('/r/') || path.startsWith('/integrations/github/callback');
 
   if (!isAppHost && !isPublicPath) {
     const target = `https://app.baaton.dev${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -149,6 +150,7 @@ export function App() {
         <Route path="/s/:token" element={<PublicSubmit />} />
         <Route path="/r/:token" element={<PublicRun />} />
         <Route path="/docs" element={<Docs />} />
+        <Route path="/integrations/github/callback" element={<GithubInstallCallback />} />
         <Route path="/privacy" element={<Suspense fallback={<PageLoader />}><Privacy /></Suspense>} />
         <Route path="/terms" element={<Suspense fallback={<PageLoader />}><Terms /></Suspense>} />
 

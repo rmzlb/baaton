@@ -96,8 +96,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/issues/{id}/activity", get(activity::list_by_issue))
         .route("/activity", get(activity::list_recent))
         // GitHub
-        .route("/github/install", get(github::oauth::install_redirect))
-        .route("/github/callback", get(github::oauth::callback))
+        .route("/github/install/start", post(github::oauth::start_install))
+        .route("/github/install/finalize", post(github::oauth::finalize_install))
         .route("/github/installation", get(github::oauth::get_installation))
         .route("/github/disconnect", post(github::oauth::disconnect))
         .route("/github/repos", get(github::repos::list_available))

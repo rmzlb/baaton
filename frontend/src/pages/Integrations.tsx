@@ -161,7 +161,14 @@ export default function Integrations() {
         name="GitHub"
         description={t('integrations.github.description')}
         status={githubConnected ? 'connected' : 'disconnected'}
-        onConnect={() => window.open('https://github.com/apps/baaton/installations/new', '_blank')}
+        onConnect={async () => {
+          try {
+            const res = await apiClient.github.startInstall();
+            window.location.href = res.url;
+          } catch (err) {
+            console.error('[github] startInstall failed', err);
+          }
+        }}
         onDisconnect={() => {
           if (confirm(t('github.disconnectConfirm'))) {
             disconnectGithubMutation.mutate();
