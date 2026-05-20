@@ -106,22 +106,43 @@ pub fn ui_messages_to_gemini_contents(messages: &[UIMessage]) -> Vec<Value> {
                 }
                 model_parts.push(fc_part);
 
-                if state == "output-available" {
+                // Gemini requires every functionCall to be paired with a
+                // functionResponse before the next user turn. If the tool
+                // never produced an output (e.g. the user closed the chat
+                // on a `propose_*` form without approving / cancelling, or
+                // a tool stayed in `input-available` after a stream stop),
+                // we MUST still emit a synthetic response. Otherwise the
+                // next request fails with:
+                //   400 "Please ensure that function call turn comes
+                //        immediately after a user turn or after a function
+                //        response turn."
+                let response_payload = if state == "output-available" {
                     let output = part.get("output").cloned().unwrap_or(json!({}));
-                    let response_payload = if should_elide_tool_output {
+                    if should_elide_tool_output {
                         elide_output(tool_name, &output)
                     } else {
                         let output_str =
                             serde_json::to_string(&output).unwrap_or_default();
                         json!({ "result": output_str })
-                    };
-                    function_responses.push(json!({
-                        "functionResponse": {
-                            "name": tool_name,
-                            "response": response_payload
-                        }
-                    }));
-                }
+                    }
+                } else {
+                    // Orphan tool call — synthesize a benign placeholder so
+                    // the conversation stays valid for Gemini. We use a
+                    // descriptive marker so the model knows the action was
+                    // never carried out and won't pretend it succeeded.
+                    json!({
+                        "result": format!(
+                            "[no result — {} was never completed (user did not approve, or the previous turn was interrupted). Treat as if it did not run.]",
+                            tool_name
+                        )
+                    })
+                };
+                function_responses.push(json!({
+                    "functionResponse": {
+                        "name": tool_name,
+                        "response": response_payload
+                    }
+                }));
             }
         }
 

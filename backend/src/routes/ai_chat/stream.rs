@@ -54,6 +54,7 @@ Lecture :
 - Titres : phrase claire, sans préfixe projet ni étiquette type [BUG] dans le titre.
 - Citer les **display_id** (HLM-42). Pour les champs techniques, utiliser les UUID fournis par les outils quand nécessaire.
 - **propose_issue** : description Markdown structurée selon le type (bug : contexte + reproduction + attendu/actuel ; feature : besoin + solution + critères d'acceptation ; improvement : bénéfice ; question : question + contexte). Enrichir avec le contexte projet ci-dessous ; ne pas laisser vide.
+- **Pièces jointes** : la carte de proposition propose un upload d'images (drag, paste, ou clic). Si l'utilisateur a clairement décrit un bug visuel ou parlé d'une capture, mentionne en une phrase qu'il peut joindre une image dans la carte. Sinon n'en parle pas. Tu ne fournis JAMAIS de URL d'attachment toi-même — seul le formulaire le fait.
 
 ## Analyse — règle stricte (anti-doublons)
 - "état des lieux", "dashboard santé", "comment vont les projets", "vue d'ensemble multi-projets" → **un SEUL appel à `org_overview`**, jamais combiné avec get_project_metrics/analyze_sprint, jamais appelé deux fois.
@@ -213,6 +214,12 @@ pub fn build_stream(
         let mut total_tokens_in: i32 = 0;
         let mut total_tokens_out: i32 = 0;
         let mut total_tokens_cached: i32 = 0;
+        // Track whether the loop terminated on a Gemini error so we can skip
+        // the ai_usage INSERT — billing the user for a 400/429/503 round-trip
+        // that produced nothing visible would feel punitive (and historically
+        // burned quota when the conversation history desynced with Gemini's
+        // strict functionCall/functionResponse pairing).
+        let mut errored_out = false;
 
         'agent_loop: for step in 0..5usize {
             tracing::info!(
@@ -271,6 +278,7 @@ pub fn build_stream(
                                 yield sse_chunk(&UIMessageChunk::Error {
                                     error_text: "Impossible de joindre l'IA. Verifie ta connexion et reessaie.".into(),
                                 });
+                                errored_out = true;
                                 break 'agent_loop;
                             }
                             let wait = backoff_ms[attempt.min(backoff_ms.len() - 1)];
@@ -318,6 +326,7 @@ pub fn build_stream(
                 };
 
                 yield sse_chunk(&UIMessageChunk::Error { error_text: user_msg });
+                errored_out = true;
                 break 'agent_loop;
             }
 
@@ -328,6 +337,7 @@ pub fn build_stream(
                     yield sse_chunk(&UIMessageChunk::Error {
                         error_text: "Invalid AI service response".into(),
                     });
+                    errored_out = true;
                     break 'agent_loop;
                 }
             };
@@ -371,6 +381,7 @@ pub fn build_stream(
                 yield sse_chunk(&UIMessageChunk::Error {
                     error_text: "Empty response from AI service".into(),
                 });
+                errored_out = true;
                 break 'agent_loop;
             }
 
@@ -533,19 +544,26 @@ pub fn build_stream(
             total_prompt_tokens = total_tokens_in,
             total_output_tokens = total_tokens_out,
             total_cached_prompt_tokens = total_tokens_cached,
+            errored_out = errored_out,
             "ai_chat turn usage (cachedContentTokenCount sum per request steps)"
         );
-        let _ = sqlx::query(
-            "INSERT INTO ai_usage (org_id, user_id, event_type, tokens_in, tokens_out, model, metadata) VALUES ($1, $2, 'ai_chat', $3, $4, $5, $6)",
-        )
-        .bind(org_ids.first().map(|s| s.as_str()).unwrap_or(""))
-        .bind(&user_id)
-        .bind(total_tokens_in)
-        .bind(total_tokens_out)
-        .bind(&model)
-        .bind(Json(meta))
-        .execute(&pool)
-        .await;
+        // Only meter successful turns. A Gemini 4xx (e.g. 400 on a desynced
+        // history, 429 quota, 503 overloaded) means the user got nothing
+        // useful back — billing it against their monthly AI quota would feel
+        // punitive and historically caused real complaints (Aïcha, Apr 2026).
+        if !errored_out {
+            let _ = sqlx::query(
+                "INSERT INTO ai_usage (org_id, user_id, event_type, tokens_in, tokens_out, model, metadata) VALUES ($1, $2, 'ai_chat', $3, $4, $5, $6)",
+            )
+            .bind(org_ids.first().map(|s| s.as_str()).unwrap_or(""))
+            .bind(&user_id)
+            .bind(total_tokens_in)
+            .bind(total_tokens_out)
+            .bind(&model)
+            .bind(Json(meta))
+            .execute(&pool)
+            .await;
+        }
 
         yield sse_chunk(&UIMessageChunk::FinishStep);
         yield sse_chunk(&UIMessageChunk::Finish);

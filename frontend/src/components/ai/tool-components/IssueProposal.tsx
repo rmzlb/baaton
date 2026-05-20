@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { DynamicToolUIPart } from 'ai';
+import { IssueProposalAttachments, type ProposalAttachment } from './IssueProposalAttachments';
 
 interface ProposalInput {
   project_id?: string;
@@ -95,6 +96,7 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
   const [priority, setPriority] = useState<typeof PRIORITY_OPTIONS[number]>(
     (input.priority as typeof PRIORITY_OPTIONS[number]) || 'medium',
   );
+  const [attachments, setAttachments] = useState<ProposalAttachment[]>([]);
 
   if (part.state === 'output-available') {
     const output = part.output as { approved: boolean; finalValues?: { title?: string } } | undefined;
@@ -148,6 +150,15 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
           tags: input.tags ?? [],
           category: input.category ?? [],
           status: 'backlog',
+          // Strip preview_url before sending — backend only persists the
+          // stable s3:// marker (`url`). preview_url is a presigned link
+          // local to this card, never leaves the browser.
+          attachments: attachments.map(a => ({
+            url: a.url,
+            name: a.name,
+            size: a.size,
+            mime_type: a.mime_type,
+          })),
         },
       },
     });
@@ -253,6 +264,11 @@ export default function IssueProposal({ part, addToolOutput, inBatch }: IssuePro
             className="text-base sm:text-[12px] resize-none"
           />
         </div>
+
+        <IssueProposalAttachments
+          attachments={attachments}
+          onChange={setAttachments}
+        />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>

@@ -150,6 +150,20 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                         "type": "ARRAY",
                         "items": {"type": "STRING"},
                         "description": "Technical domains from the approved proposal: FRONT, BACK, API, DB, INFRA, UX, DEVOPS."
+                    },
+                    "attachments": {
+                        "type": "ARRAY",
+                        "description": "Image attachments from the approved proposal. Copy verbatim from `finalValues.attachments`. Each entry is an already-uploaded file: { url, name, size, mime_type }. The frontend uploads images via /api/v1/uploads BEFORE the user approves; this tool only persists the metadata. Never invent attachments — only forward what the user attached.",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "url": {"type": "STRING", "description": "Stable S3 marker (s3://baaton-uploads/...) returned by /api/v1/uploads."},
+                                "name": {"type": "STRING", "description": "Display filename, e.g. 'screenshot.webp'."},
+                                "size": {"type": "INTEGER", "description": "Byte size after compression."},
+                                "mime_type": {"type": "STRING", "description": "Content type, e.g. 'image/webp'."}
+                            },
+                            "required": ["url", "name", "mime_type"]
+                        }
                     }
                 },
                 "required": ["project_id", "title"]
@@ -2964,6 +2978,18 @@ async fn create_issue_real(
         .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
         .unwrap_or_default();
 
+    // Attachments — already uploaded to S3 by the frontend before approval.
+    // We only persist their metadata in the issues.attachments JSONB column,
+    // mirroring the path used by REST `POST /issues` and public_submit.
+    //
+    // Validation is intentionally strict here because the AI flow is the
+    // weakest link: the model could in theory hallucinate attachment URLs
+    // that point at arbitrary hosts. We accept ONLY entries whose URL is a
+    // stable `s3://baaton-uploads/...` marker (or a presigned URL on our
+    // bucket — those are normalized to markers downstream by the response
+    // serializer). Anything else is dropped, never surfaced to users.
+    let attachments_json = build_safe_attachments(args.get("attachments"));
+
     // Verify project belongs to org + get prefix
     let row: Option<(String,)> = sqlx::query_as(
         "SELECT prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
@@ -3004,8 +3030,9 @@ async fn create_issue_real(
         sqlx::query_as(
             r#"INSERT INTO issues (
                 project_id, display_id, title, description, type, status,
-                priority, category, tags, position, source, created_by_id, created_by_name
-               ) VALUES ($1, $2, $3, $4, $5, 'backlog', $6, $7, $8, $9, 'ai', $10, $11)
+                priority, category, tags, position, source, created_by_id, created_by_name,
+                attachments
+               ) VALUES ($1, $2, $3, $4, $5, 'backlog', $6, $7, $8, $9, 'ai', $10, $11, $12)
                RETURNING id, display_id, title, status, priority, type"#,
         )
         .bind(project_id)
@@ -3019,12 +3046,14 @@ async fn create_issue_real(
         .bind(position)
         .bind(user_id)
         .bind(user_display_name)
+        .bind(&attachments_json)
         .fetch_one(pool)
         .await
         .map_err(|e| format!("Failed to create issue: {}", e))?;
 
     let priority_str = pri.as_deref().unwrap_or("none");
     let category_str = if category.is_empty() { "none".to_string() } else { category.join(", ") };
+    let attachment_count = attachments_json.as_array().map(|a| a.len()).unwrap_or(0);
 
     Ok(ToolResult {
         data: json!({
@@ -3036,14 +3065,88 @@ async fn create_issue_real(
             "type": typ,
             "category": category,
             "tags": tags,
+            "attachment_count": attachment_count,
         }),
         for_model: format!(
-            "✅ Created issue {}: \"{}\" (status: backlog, priority: {}, category: {})",
-            did, t, priority_str, category_str
+            "✅ Created issue {}: \"{}\" (status: backlog, priority: {}, category: {}, attachments: {})",
+            did, t, priority_str, category_str, attachment_count
         ),
         component_hint: Some("IssueCreated".to_string()),
         summary: format!("Created issue: {}", t),
     })
+}
+
+/// Sanitize the LLM-provided `attachments` array before persisting it.
+///
+/// Defense in depth — the frontend already uploads through `/api/v1/uploads`
+/// (which validates MIME, size, and stamps the org_id into the S3 key), but
+/// the model could still pass a hand-crafted URL pointing anywhere. We only
+/// keep entries whose `url` is one of:
+///   - `s3://baaton-uploads/<key>`        ← stable marker (preferred)
+///   - `https://baaton-uploads.s3...`     ← live presigned URL (will be
+///                                          collapsed to a marker downstream)
+///
+/// Anything else (http://, data:, javascript:, foreign hosts) is dropped
+/// silently. We also enforce hard caps on count, size, and MIME.
+fn build_safe_attachments(raw: Option<&Value>) -> Value {
+    const MAX_COUNT: usize = 5;
+    const MAX_SIZE_BYTES: i64 = 10 * 1024 * 1024;
+    const ALLOWED_MIME: &[&str] = &["image/webp", "image/jpeg", "image/png", "image/gif"];
+
+    let Some(arr) = raw.and_then(|v| v.as_array()) else {
+        return json!([]);
+    };
+
+    let mut out = Vec::with_capacity(arr.len().min(MAX_COUNT));
+    for entry in arr.iter().take(MAX_COUNT) {
+        let url = match entry.get("url").and_then(|u| u.as_str()) {
+            Some(u) => u.trim(),
+            None => continue,
+        };
+        let is_safe_url = url.starts_with("s3://baaton-uploads/")
+            || url.starts_with("https://baaton-uploads.s3.")
+            || url.starts_with("https://s3.amazonaws.com/baaton-uploads/")
+            || url.starts_with("https://s3.")
+                && url.contains(".amazonaws.com/baaton-uploads/");
+        if !is_safe_url {
+            tracing::warn!(url = %url, "create_issue: rejecting attachment with foreign URL");
+            continue;
+        }
+
+        let mime = entry
+            .get("mime_type")
+            .and_then(|m| m.as_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if !ALLOWED_MIME.contains(&mime.as_str()) {
+            tracing::warn!(mime = %mime, "create_issue: rejecting attachment with disallowed MIME");
+            continue;
+        }
+
+        let size = entry.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
+        if size < 0 || size > MAX_SIZE_BYTES {
+            tracing::warn!(size = size, "create_issue: rejecting attachment exceeding size cap");
+            continue;
+        }
+
+        let name = entry
+            .get("name")
+            .and_then(|n| n.as_str())
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or("attachment")
+            .chars()
+            .take(200)
+            .collect::<String>();
+
+        out.push(json!({
+            "url": url,
+            "name": name,
+            "size": size,
+            "mime_type": mime,
+        }));
+    }
+
+    Value::Array(out)
 }
 
 async fn update_issue_real(
