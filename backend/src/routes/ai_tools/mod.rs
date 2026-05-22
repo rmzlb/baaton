@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -581,7 +581,40 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["action", "project_id"]
             }),
         ),
-        // ── 24. export_project ───────────────────────────────────────────
+        // ── 24. search_memories ──────────────────────────────────────────
+        tool(
+            "search_memories",
+            "Search Baaton's project memory layer: decisions, learnings, constraints, risks, handoffs, integration notes. Use when the user asks what we remember, why a decision was made, gotchas, previous learnings, or context beyond tickets. Optional project_id scopes to one project; q searches content and tags.",
+            json!({
+                "type": "OBJECT",
+                "properties": {
+                    "q": {"type": "STRING", "description": "Free-text query against memory content and tags. Example: 'auth migration gotcha'. Optional."},
+                    "project_id": {"type": "STRING", "description": "Optional project UUID or prefix (e.g. 'HLM') to scope memory search."},
+                    "kind": {"type": "STRING", "enum": ["fact", "decision", "learning", "constraint", "risk", "handoff", "integration", "note"], "description": "Optional memory kind filter."},
+                    "source": {"type": "STRING", "enum": ["manual", "api", "ai_chat", "tldr", "github", "slack", "email", "memory_store"], "description": "Optional source filter."},
+                    "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Optional tags. Returns memories matching any tag."},
+                    "limit": {"type": "NUMBER", "description": "Max memories to return (default 10, max 50)."}
+                }
+            }),
+        ),
+        // ── 25. add_memory ────────────────────────────────────────────────
+        tool(
+            "add_memory",
+            "Persist a concise project memory for future agents. Use when the user says remember/note this, when a clear durable decision is made in chat, or when a reusable constraint/gotcha emerges. Keep content atomic and factual. Not for creating tickets (use propose_issue).",
+            json!({
+                "type": "OBJECT",
+                "properties": {
+                    "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required."},
+                    "kind": {"type": "STRING", "enum": ["fact", "decision", "learning", "constraint", "risk", "handoff", "integration", "note"], "description": "Memory kind. Prefer decision/learning/constraint when applicable; default fact."},
+                    "content": {"type": "STRING", "description": "Atomic memory content. Clear, durable, no speculation. Required."},
+                    "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Optional tags like ['auth','infra','decision']."},
+                    "confidence": {"type": "NUMBER", "description": "0..1 confidence. Default 0.85."},
+                    "external_url": {"type": "STRING", "description": "Optional source URL (PR, issue, doc, receipt)."}
+                },
+                "required": ["project_id", "content"]
+            }),
+        ),
+        // ── 26. export_project ───────────────────────────────────────────
         tool(
             "export_project",
             "Export all issues, milestones, and sprints in a project as structured JSON. Returns complete data with all fields including descriptions, tags, categories, assignees, and timestamps. Use for data dumps, backups, external analysis, or migration.\n\nUse when the user says 'export HLM', 'dump all issues to JSON', 'back up the project data', 'I need all issue data for analysis'.\n\nNot for: Searching or filtering specific issues (use search_issues). Getting aggregate metrics (use get_project_metrics). Generating PRDs (use generate_prd).\n\nReturns: { issues[], milestones[], sprints[], exported_at } with full detail per entity.",
@@ -723,17 +756,40 @@ struct ExportSprintRow {
 
 // ─── Real SQL Executor Functions (Phase 2A) ───────────────────────────────────
 
-async fn exec_search_issues(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
-    let query_text = args.get("query").and_then(|v| v.as_str())
+async fn exec_search_issues(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    let query_text = args
+        .get("query")
+        .and_then(|v| v.as_str())
         .map(|q| format!("%{}%", q));
-    let project_id: Option<Uuid> = args.get("project_id")
+    let project_id: Option<Uuid> = args
+        .get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
-    let status_filter = args.get("status").and_then(|v| v.as_str()).map(String::from);
-    let priority_filter = args.get("priority").and_then(|v| v.as_str()).map(String::from);
-    let category_filter = args.get("category").and_then(|v| v.as_str()).map(String::from);
-    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(20).min(100);
-    let response_format = args.get("response_format").and_then(|v| v.as_str()).unwrap_or("concise");
+    let status_filter = args
+        .get("status")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let priority_filter = args
+        .get("priority")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let category_filter = args
+        .get("category")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(20)
+        .min(100);
+    let response_format = args
+        .get("response_format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("concise");
 
     let rows = sqlx::query_as::<_, SearchIssueRow>(
         r#"SELECT i.id, i.display_id, i.title, i.status, i.priority, i.category,
@@ -761,32 +817,45 @@ async fn exec_search_issues(pool: &PgPool, org_ids: &[String], args: &Value) -> 
     .map_err(|e| format!("search_issues query failed: {}", e))?;
 
     let n = rows.len();
-    let lines: String = rows.iter()
-        .map(|r| format!(
-            "- {}: {} ({}, {})",
-            r.display_id, r.title, r.status,
-            r.priority.as_deref().unwrap_or("none"),
-        ))
+    let lines: String = rows
+        .iter()
+        .map(|r| {
+            format!(
+                "- {}: {} ({}, {})",
+                r.display_id,
+                r.title,
+                r.status,
+                r.priority.as_deref().unwrap_or("none"),
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
 
     let data: Vec<Value> = if response_format == "detailed" {
-        rows.into_iter().map(|r| json!({
-            "id": r.id,
-            "display_id": r.display_id,
-            "title": r.title,
-            "status": r.status,
-            "priority": r.priority,
-            "category": r.category.unwrap_or_default(),
-            "project_name": r.project_name,
-            "updated_at": r.updated_at,
-        })).collect()
+        rows.into_iter()
+            .map(|r| {
+                json!({
+                    "id": r.id,
+                    "display_id": r.display_id,
+                    "title": r.title,
+                    "status": r.status,
+                    "priority": r.priority,
+                    "category": r.category.unwrap_or_default(),
+                    "project_name": r.project_name,
+                    "updated_at": r.updated_at,
+                })
+            })
+            .collect()
     } else {
-        rows.into_iter().map(|r| json!({
-            "display_id": r.display_id,
-            "title": r.title,
-            "status": r.status,
-        })).collect()
+        rows.into_iter()
+            .map(|r| {
+                json!({
+                    "display_id": r.display_id,
+                    "title": r.title,
+                    "status": r.status,
+                })
+            })
+            .collect()
     };
 
     Ok(ToolResult {
@@ -797,27 +866,33 @@ async fn exec_search_issues(pool: &PgPool, org_ids: &[String], args: &Value) -> 
     })
 }
 
-async fn exec_get_project_metrics(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
-    let project_id: Option<Uuid> = args.get("project_id")
+async fn exec_get_project_metrics(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    let project_id: Option<Uuid> = args
+        .get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
 
     // Project context (header) — name + prefix when scoped, else "all projects" label.
-    let (project_name, project_prefix): (Option<String>, Option<String>) = if let Some(pid) = project_id {
-        sqlx::query_as::<_, (String, String)>(
-            "SELECT name, prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
-        )
-        .bind(pid)
-        .bind(org_ids)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .map(|(n, p)| (Some(n), Some(p)))
-        .unwrap_or((None, None))
-    } else {
-        (None, None)
-    };
+    let (project_name, project_prefix): (Option<String>, Option<String>) =
+        if let Some(pid) = project_id {
+            sqlx::query_as::<_, (String, String)>(
+                "SELECT name, prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
+            )
+            .bind(pid)
+            .bind(org_ids)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .map(|(n, p)| (Some(n), Some(p)))
+            .unwrap_or((None, None))
+        } else {
+            (None, None)
+        };
 
     let total: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2)"
@@ -847,8 +922,14 @@ async fn exec_get_project_metrics(pool: &PgPool, org_ids: &[String], args: &Valu
         "SELECT AVG(EXTRACT(EPOCH FROM (i.closed_at - i.created_at)) / 3600.0) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.closed_at IS NOT NULL"
     ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(None);
 
-    let bug_ratio = if total > 0 { bug_count as f64 / total as f64 } else { 0.0 };
-    let avg_ct_str = avg_cycle_time.map(|h| format!("{:.1}", h)).unwrap_or_else(|| "N/A".to_string());
+    let bug_ratio = if total > 0 {
+        bug_count as f64 / total as f64
+    } else {
+        0.0
+    };
+    let avg_ct_str = avg_cycle_time
+        .map(|h| format!("{:.1}", h))
+        .unwrap_or_else(|| "N/A".to_string());
 
     let scope_label = match (&project_name, &project_prefix) {
         (Some(n), Some(p)) => format!("[{}] {}", p, n),
@@ -877,27 +958,33 @@ async fn exec_get_project_metrics(pool: &PgPool, org_ids: &[String], args: &Valu
     })
 }
 
-async fn exec_analyze_sprint(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
-    let project_id: Option<Uuid> = args.get("project_id")
+async fn exec_analyze_sprint(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    let project_id: Option<Uuid> = args
+        .get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
 
     // Project header (same shape as get_project_metrics for visual consistency)
-    let (project_name, project_prefix): (Option<String>, Option<String>) = if let Some(pid) = project_id {
-        sqlx::query_as::<_, (String, String)>(
-            "SELECT name, prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
-        )
-        .bind(pid)
-        .bind(org_ids)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .map(|(n, p)| (Some(n), Some(p)))
-        .unwrap_or((None, None))
-    } else {
-        (None, None)
-    };
+    let (project_name, project_prefix): (Option<String>, Option<String>) =
+        if let Some(pid) = project_id {
+            sqlx::query_as::<_, (String, String)>(
+                "SELECT name, prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
+            )
+            .bind(pid)
+            .bind(org_ids)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .map(|(n, p)| (Some(n), Some(p)))
+            .unwrap_or((None, None))
+        } else {
+            (None, None)
+        };
     let scope_label = match (&project_name, &project_prefix) {
         (Some(n), Some(p)) => format!("[{}] {}", p, n),
         _ => "Tous projets".to_string(),
@@ -928,13 +1015,18 @@ async fn exec_analyze_sprint(pool: &PgPool, org_ids: &[String], args: &Value) ->
         });
     };
 
-    let planned: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues WHERE sprint_id = $1"
-    ).bind(sprint.id).fetch_one(pool).await.unwrap_or(0);
+    let planned: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE sprint_id = $1")
+        .bind(sprint.id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
 
-    let completed: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues WHERE sprint_id = $1 AND status = 'done'"
-    ).bind(sprint.id).fetch_one(pool).await.unwrap_or(0);
+    let completed: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE sprint_id = $1 AND status = 'done'")
+            .bind(sprint.id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
 
     let carried_over: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM issues WHERE sprint_id = $1 AND status NOT IN ('done', 'cancelled') AND updated_at < NOW() - INTERVAL '3 days'"
@@ -944,8 +1036,18 @@ async fn exec_analyze_sprint(pool: &PgPool, org_ids: &[String], args: &Value) ->
         "SELECT COUNT(*) FROM issues WHERE sprint_id = $1 AND priority = 'urgent' AND status NOT IN ('done', 'cancelled') AND updated_at < NOW() - INTERVAL '2 days'"
     ).bind(sprint.id).fetch_one(pool).await.unwrap_or(0);
 
-    let pct = if planned > 0 { (completed as f64 / planned as f64 * 100.0).round() as i64 } else { 0 };
-    let velocity_trend = if pct >= 60 { "on_track" } else if pct >= 30 { "at_risk" } else { "behind" };
+    let pct = if planned > 0 {
+        (completed as f64 / planned as f64 * 100.0).round() as i64
+    } else {
+        0
+    };
+    let velocity_trend = if pct >= 60 {
+        "on_track"
+    } else if pct >= 30 {
+        "at_risk"
+    } else {
+        "behind"
+    };
 
     Ok(ToolResult {
         data: json!({
@@ -963,19 +1065,39 @@ async fn exec_analyze_sprint(pool: &PgPool, org_ids: &[String], args: &Value) ->
         }),
         for_model: format!(
             "{} \u{2014} Sprint '{}': {}/{} done ({}%). {} carried over, {} blocked. Trend: {}.",
-            scope_label, sprint.name, completed, planned, pct, carried_over, blocked, velocity_trend
+            scope_label,
+            sprint.name,
+            completed,
+            planned,
+            pct,
+            carried_over,
+            blocked,
+            velocity_trend
         ),
         component_hint: Some("SprintAnalysis".to_string()),
         summary: format!("Analyzed sprint '{}' ({})", sprint.name, scope_label),
     })
 }
 
-async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
-    let project_id: Option<Uuid> = args.get("project_id")
+async fn exec_weekly_recap(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    let project_id: Option<Uuid> = args
+        .get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
-    let days = args.get("days").and_then(|v| v.as_i64()).unwrap_or(7).clamp(1, 30);
-    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(30).min(100);
+    let days = args
+        .get("days")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(7)
+        .clamp(1, 30);
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(30)
+        .min(100);
     let since = chrono::Utc::now() - chrono::Duration::days(days);
 
     // ── Hero counters (run in parallel) ────────────────────────────────────
@@ -983,29 +1105,47 @@ async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> R
         "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id \
          WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) \
          AND i.status = 'done' AND i.updated_at >= $3",
-    ).bind(org_ids).bind(project_id).bind(since).fetch_one(pool);
+    )
+    .bind(org_ids)
+    .bind(project_id)
+    .bind(since)
+    .fetch_one(pool);
 
     let new_created_fut = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id \
          WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) \
          AND i.created_at >= $3",
-    ).bind(org_ids).bind(project_id).bind(since).fetch_one(pool);
+    )
+    .bind(org_ids)
+    .bind(project_id)
+    .bind(since)
+    .fetch_one(pool);
 
     let status_changes_count_fut = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM activity_log \
          WHERE org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR project_id = $2) \
          AND action = 'status_changed' AND created_at >= $3",
-    ).bind(org_ids).bind(project_id).bind(since).fetch_one(pool);
+    )
+    .bind(org_ids)
+    .bind(project_id)
+    .bind(since)
+    .fetch_one(pool);
 
     let blockers_fut = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id \
          WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) \
          AND i.priority IN ('urgent', 'high') AND i.status NOT IN ('done', 'cancelled') \
          AND i.updated_at < NOW() - INTERVAL '2 days'",
-    ).bind(org_ids).bind(project_id).fetch_one(pool);
+    )
+    .bind(org_ids)
+    .bind(project_id)
+    .fetch_one(pool);
 
     let (completed_r, new_r, status_r, blockers_r) = tokio::join!(
-        completed_fut, new_created_fut, status_changes_count_fut, blockers_fut
+        completed_fut,
+        new_created_fut,
+        status_changes_count_fut,
+        blockers_fut
     );
     let completed = completed_r.unwrap_or(0);
     let new_created = new_r.unwrap_or(0);
@@ -1044,8 +1184,13 @@ async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> R
            ORDER BY i.created_at DESC
            LIMIT $4"#,
     )
-    .bind(org_ids).bind(project_id).bind(since).bind(limit)
-    .fetch_all(pool).await.unwrap_or_default();
+    .bind(org_ids)
+    .bind(project_id)
+    .bind(since)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
 
     let created_issues: Vec<Value> = created_rows
         .iter()
@@ -1094,8 +1239,13 @@ async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> R
            ORDER BY a.created_at DESC
            LIMIT $4"#,
     )
-    .bind(org_ids).bind(project_id).bind(since).bind(limit)
-    .fetch_all(pool).await.unwrap_or_default();
+    .bind(org_ids)
+    .bind(project_id)
+    .bind(since)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
 
     let status_changes: Vec<Value> = status_rows
         .iter()
@@ -1167,8 +1317,12 @@ async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> R
             ORDER BY (COALESCE(c.n,0)*2 + COALESCE(cl.n,0)*3 + COALESCE(ch.n,0)) DESC
             LIMIT 8"#,
     )
-    .bind(org_ids).bind(project_id).bind(since)
-    .fetch_all(pool).await.unwrap_or_default();
+    .bind(org_ids)
+    .bind(project_id)
+    .bind(since)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
 
     let by_author: Vec<Value> = author_rows
         .iter()
@@ -1192,16 +1346,27 @@ async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> R
            WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2)
              AND i.status = 'done' AND i.updated_at >= $3
            ORDER BY i.updated_at DESC LIMIT $4"#,
-    ).bind(org_ids).bind(project_id).bind(since).bind(limit)
-    .fetch_all(pool).await.unwrap_or_default();
+    )
+    .bind(org_ids)
+    .bind(project_id)
+    .bind(since)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
 
-    let completed_json: Vec<Value> = completed_issues.iter().map(|r| json!({
-        "display_id":   r.display_id,
-        "title":        r.title,
-        "status":       r.status,
-        "priority":     r.priority,
-        "project_name": r.project_name,
-    })).collect();
+    let completed_json: Vec<Value> = completed_issues
+        .iter()
+        .map(|r| {
+            json!({
+                "display_id":   r.display_id,
+                "title":        r.title,
+                "status":       r.status,
+                "priority":     r.priority,
+                "project_name": r.project_name,
+            })
+        })
+        .collect();
 
     Ok(ToolResult {
         data: json!({
@@ -1228,12 +1393,20 @@ async fn exec_weekly_recap(pool: &PgPool, org_ids: &[String], args: &Value) -> R
             top_contributor.as_deref().unwrap_or("N/A"),
         ),
         component_hint: Some("WeeklyRecap".to_string()),
-        summary: format!("Recap {}d: {} created · {} status changes · {} closed", days, new_created, status_changes_count, completed),
+        summary: format!(
+            "Recap {}d: {} created · {} status changes · {} closed",
+            days, new_created, status_changes_count, completed
+        ),
     })
 }
 
-async fn exec_suggest_priorities(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
-    let project_id: Option<Uuid> = args.get("project_id")
+async fn exec_suggest_priorities(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    let project_id: Option<Uuid> = args
+        .get("project_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok());
 
@@ -1263,40 +1436,52 @@ async fn exec_suggest_priorities(pool: &PgPool, org_ids: &[String], args: &Value
     .await
     .map_err(|e| format!("suggest_priorities query: {}", e))?;
 
-    let suggestions: Vec<Value> = rows.iter().map(|r| {
-        let priority_label = r.priority.as_deref().unwrap_or("low");
-        let urgency_factor = match priority_label {
-            "urgent" => 4.0_f64,
-            "high"   => 3.0,
-            "medium" => 2.0,
-            _        => 1.0,
-        };
-        let staleness_days = r.score / urgency_factor;
-        let reason = if staleness_days > 7.0 {
-            format!("Stale {:.0}d with {} priority", staleness_days, priority_label)
-        } else if priority_label == "urgent" {
-            "Urgent \u{2014} needs immediate attention".to_string()
-        } else {
-            format!("Score {:.1} (priority x staleness)", r.score)
-        };
-        json!({
-            "id": r.id,
-            "display_id": r.display_id,
-            "title": r.title,
-            "priority": r.priority,
-            "score": (r.score * 10.0).round() / 10.0,
-            "reason": reason,
+    let suggestions: Vec<Value> = rows
+        .iter()
+        .map(|r| {
+            let priority_label = r.priority.as_deref().unwrap_or("low");
+            let urgency_factor = match priority_label {
+                "urgent" => 4.0_f64,
+                "high" => 3.0,
+                "medium" => 2.0,
+                _ => 1.0,
+            };
+            let staleness_days = r.score / urgency_factor;
+            let reason = if staleness_days > 7.0 {
+                format!(
+                    "Stale {:.0}d with {} priority",
+                    staleness_days, priority_label
+                )
+            } else if priority_label == "urgent" {
+                "Urgent \u{2014} needs immediate attention".to_string()
+            } else {
+                format!("Score {:.1} (priority x staleness)", r.score)
+            };
+            json!({
+                "id": r.id,
+                "display_id": r.display_id,
+                "title": r.title,
+                "priority": r.priority,
+                "score": (r.score * 10.0).round() / 10.0,
+                "reason": reason,
+            })
         })
-    }).collect();
+        .collect();
 
     let n = suggestions.len();
-    let top = suggestions.iter().take(3)
-        .map(|s| format!("- {} '{}' ({})",
-            s["display_id"].as_str().unwrap_or("?"),
-            s["title"].as_str().unwrap_or("?"),
-            s["reason"].as_str().unwrap_or("?"),
-        ))
-        .collect::<Vec<_>>().join("\n");
+    let top = suggestions
+        .iter()
+        .take(3)
+        .map(|s| {
+            format!(
+                "- {} '{}' ({})",
+                s["display_id"].as_str().unwrap_or("?"),
+                s["title"].as_str().unwrap_or("?"),
+                s["reason"].as_str().unwrap_or("?"),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     Ok(ToolResult {
         data: json!(suggestions),
@@ -1306,8 +1491,15 @@ async fn exec_suggest_priorities(pool: &PgPool, org_ids: &[String], args: &Value
     })
 }
 
-async fn exec_export_project(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
-    let raw_project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("");
+async fn exec_export_project(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    let raw_project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let project_id: Uuid = raw_project_id.parse()
         .map_err(|_| format!(
             "export_project requires a valid 'project_id'. '{}' could not be resolved. Provide a project prefix (e.g. 'HLM') or full UUID.",
@@ -1315,9 +1507,13 @@ async fn exec_export_project(pool: &PgPool, org_ids: &[String], args: &Value) ->
         ))?;
 
     let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = ANY($2::text[]))"
-    ).bind(project_id).bind(org_ids).fetch_one(pool).await
-        .map_err(|e| format!("export project check: {}", e))?;
+        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = ANY($2::text[]))",
+    )
+    .bind(project_id)
+    .bind(org_ids)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("export project check: {}", e))?;
 
     if !exists {
         return Err(format!(
@@ -1330,8 +1526,11 @@ async fn exec_export_project(pool: &PgPool, org_ids: &[String], args: &Value) ->
         r#"SELECT id, display_id, title, description, type, status, priority,
                   tags, category, assignee_ids, created_at, updated_at
            FROM issues WHERE project_id = $1 ORDER BY display_id ASC"#,
-    ).bind(project_id).fetch_all(pool).await
-        .map_err(|e| format!("export issues: {}", e))?;
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("export issues: {}", e))?;
 
     let milestones = sqlx::query_as::<_, ExportMilestoneRow>(
         "SELECT id, name, target_date, status FROM milestones WHERE project_id = $1 ORDER BY created_at ASC"
@@ -1346,20 +1545,25 @@ async fn exec_export_project(pool: &PgPool, org_ids: &[String], args: &Value) ->
     let s_count = sprints.len();
     let exported_at = chrono::Utc::now().to_rfc3339();
 
-    let issues_json: Vec<Value> = issues.into_iter().map(|i| json!({
-        "id": i.id,
-        "display_id": i.display_id,
-        "title": i.title,
-        "description": i.description,
-        "type": i.issue_type,
-        "status": i.status,
-        "priority": i.priority,
-        "tags": i.tags.unwrap_or_default(),
-        "category": i.category.unwrap_or_default(),
-        "assignee_ids": i.assignee_ids.unwrap_or_default(),
-        "created_at": i.created_at,
-        "updated_at": i.updated_at,
-    })).collect();
+    let issues_json: Vec<Value> = issues
+        .into_iter()
+        .map(|i| {
+            json!({
+                "id": i.id,
+                "display_id": i.display_id,
+                "title": i.title,
+                "description": i.description,
+                "type": i.issue_type,
+                "status": i.status,
+                "priority": i.priority,
+                "tags": i.tags.unwrap_or_default(),
+                "category": i.category.unwrap_or_default(),
+                "assignee_ids": i.assignee_ids.unwrap_or_default(),
+                "created_at": i.created_at,
+                "updated_at": i.updated_at,
+            })
+        })
+        .collect();
 
     Ok(ToolResult {
         data: json!({
@@ -1449,7 +1653,11 @@ async fn list_project_prefixes(pool: &PgPool, org_ids: &[String]) -> Vec<String>
 /// from user-friendly values (prefix, display_id) to UUIDs.
 pub async fn resolve_args_ids(pool: &PgPool, org_ids: &[String], args: &mut Value) {
     // Resolve top-level project_id
-    if let Some(raw) = args.get("project_id").and_then(|v| v.as_str()).map(String::from) {
+    if let Some(raw) = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+    {
         if raw.parse::<Uuid>().is_err() {
             if let Some(uuid) = resolve_project_id(pool, org_ids, &raw).await {
                 args["project_id"] = Value::String(uuid.to_string());
@@ -1458,7 +1666,11 @@ pub async fn resolve_args_ids(pool: &PgPool, org_ids: &[String], args: &mut Valu
     }
 
     // Resolve top-level issue_id
-    if let Some(raw) = args.get("issue_id").and_then(|v| v.as_str()).map(String::from) {
+    if let Some(raw) = args
+        .get("issue_id")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+    {
         if raw.parse::<Uuid>().is_err() {
             if let Some(uuid) = resolve_issue_id(pool, org_ids, &raw).await {
                 args["issue_id"] = Value::String(uuid.to_string());
@@ -1469,7 +1681,11 @@ pub async fn resolve_args_ids(pool: &PgPool, org_ids: &[String], args: &mut Valu
     // Resolve issue_ids in updates[] array (for bulk tools)
     if let Some(updates) = args.get_mut("updates").and_then(|v| v.as_array_mut()) {
         for item in updates.iter_mut() {
-            if let Some(raw) = item.get("issue_id").and_then(|v| v.as_str()).map(String::from) {
+            if let Some(raw) = item
+                .get("issue_id")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+            {
                 if raw.parse::<Uuid>().is_err() {
                     if let Some(uuid) = resolve_issue_id(pool, org_ids, &raw).await {
                         item["issue_id"] = Value::String(uuid.to_string());
@@ -1499,8 +1715,15 @@ pub async fn resolve_args_ids(pool: &PgPool, org_ids: &[String], args: &mut Valu
 
 /// Returns a proposal for issue creation (does NOT create). Frontend renders
 /// an editable form + Approve/Cancel buttons.
-async fn exec_propose_issue(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
-    let project_id_str = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("");
+async fn exec_propose_issue(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    let project_id_str = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let project_id: Option<Uuid> = project_id_str.parse().ok();
 
     let project_info: Option<(String, String)> = match project_id {
@@ -1516,18 +1739,46 @@ async fn exec_propose_issue(pool: &PgPool, org_ids: &[String], args: &Value) -> 
         None => None,
     };
 
-    let (project_name, project_prefix) = project_info
-        .unwrap_or_else(|| ("Unknown".to_string(), "?".to_string()));
+    let (project_name, project_prefix) =
+        project_info.unwrap_or_else(|| ("Unknown".to_string(), "?".to_string()));
 
-    let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let description = args.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let issue_type = args.get("type").and_then(|v| v.as_str()).unwrap_or("feature").to_string();
-    let priority = args.get("priority").and_then(|v| v.as_str()).unwrap_or("medium").to_string();
-    let tags: Vec<String> = args.get("tags").and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|t| t.as_str().map(String::from)).collect())
+    let title = args
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let description = args
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let issue_type = args
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("feature")
+        .to_string();
+    let priority = args
+        .get("priority")
+        .and_then(|v| v.as_str())
+        .unwrap_or("medium")
+        .to_string();
+    let tags: Vec<String> = args
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|t| t.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
-    let category: Vec<String> = args.get("category").and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|c| c.as_str().map(String::from)).collect())
+    let category: Vec<String> = args
+        .get("category")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|c| c.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let proposal = json!({
@@ -1555,7 +1806,11 @@ async fn exec_propose_issue(pool: &PgPool, org_ids: &[String], args: &Value) -> 
 
 /// Propose an update to an existing issue. Fetches current state and returns
 /// a diff for user review.
-async fn exec_propose_update_issue(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn exec_propose_update_issue(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     let issue_id_str = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
     let issue_id: Uuid = issue_id_str.parse()
         .map_err(|_| format!(
@@ -1592,23 +1847,52 @@ async fn exec_propose_update_issue(pool: &PgPool, org_ids: &[String], args: &Val
     let mut diff: Vec<Value> = Vec::new();
     let field_str = |name: &str, cur: &str, args: &Value| {
         args.get(name).and_then(|v| v.as_str()).and_then(|new| {
-            if new != cur { Some(json!({ "field": name, "from": cur, "to": new })) } else { None }
+            if new != cur {
+                Some(json!({ "field": name, "from": cur, "to": new }))
+            } else {
+                None
+            }
         })
     };
     let field_array = |name: &str, cur: &[String], args: &Value| {
         args.get(name).and_then(|v| v.as_array()).and_then(|arr| {
-            let new: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
-            if new != cur { Some(json!({ "field": name, "from": cur, "to": new })) } else { None }
+            let new: Vec<String> = arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            if new != cur {
+                Some(json!({ "field": name, "from": cur, "to": new }))
+            } else {
+                None
+            }
         })
     };
 
-    if let Some(d) = field_str("title", &current.title, args) { diff.push(d); }
-    if let Some(d) = field_str("description", current.description.as_deref().unwrap_or(""), args) { diff.push(d); }
-    if let Some(d) = field_str("status", &current.status, args) { diff.push(d); }
-    if let Some(d) = field_str("priority", &current.priority, args) { diff.push(d); }
-    if let Some(d) = field_str("type", &current.r#type, args) { diff.push(d); }
-    if let Some(d) = field_array("tags", current.tags.as_deref().unwrap_or(&[]), args) { diff.push(d); }
-    if let Some(d) = field_array("category", current.category.as_deref().unwrap_or(&[]), args) { diff.push(d); }
+    if let Some(d) = field_str("title", &current.title, args) {
+        diff.push(d);
+    }
+    if let Some(d) = field_str(
+        "description",
+        current.description.as_deref().unwrap_or(""),
+        args,
+    ) {
+        diff.push(d);
+    }
+    if let Some(d) = field_str("status", &current.status, args) {
+        diff.push(d);
+    }
+    if let Some(d) = field_str("priority", &current.priority, args) {
+        diff.push(d);
+    }
+    if let Some(d) = field_str("type", &current.r#type, args) {
+        diff.push(d);
+    }
+    if let Some(d) = field_array("tags", current.tags.as_deref().unwrap_or(&[]), args) {
+        diff.push(d);
+    }
+    if let Some(d) = field_array("category", current.category.as_deref().unwrap_or(&[]), args) {
+        diff.push(d);
+    }
 
     let data = json!({
         "issue_id": issue_id_str,
@@ -1630,14 +1914,22 @@ async fn exec_propose_update_issue(pool: &PgPool, org_ids: &[String], args: &Val
 
 /// Propose a bulk update to N issues. Fetches current state for each and returns
 /// the list of changes for user review.
-async fn exec_propose_bulk_update(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
-    let updates = args.get("updates").and_then(|v| v.as_array())
+async fn exec_propose_bulk_update(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    let updates = args
+        .get("updates")
+        .and_then(|v| v.as_array())
         .ok_or_else(|| "updates must be an array".to_string())?;
 
     let mut rows: Vec<Value> = Vec::new();
     for u in updates {
         let issue_id_str = u.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
-        let Ok(issue_id) = issue_id_str.parse::<Uuid>() else { continue };
+        let Ok(issue_id) = issue_id_str.parse::<Uuid>() else {
+            continue;
+        };
 
         let cur: Option<(String, String, String, String)> = sqlx::query_as(
             "SELECT i.display_id, i.title, i.status, i.priority FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2::text[])",
@@ -1649,8 +1941,8 @@ async fn exec_propose_bulk_update(pool: &PgPool, org_ids: &[String], args: &Valu
         .ok()
         .flatten();
 
-        let (display_id, title, cur_status, cur_priority) = cur
-            .unwrap_or_else(|| ("?".into(), "?".into(), "?".into(), "?".into()));
+        let (display_id, title, cur_status, cur_priority) =
+            cur.unwrap_or_else(|| ("?".into(), "?".into(), "?".into(), "?".into()));
 
         rows.push(json!({
             "issue_id": issue_id_str,
@@ -1670,14 +1962,22 @@ async fn exec_propose_bulk_update(pool: &PgPool, org_ids: &[String], args: &Valu
 }
 
 /// Propose adding a comment. Fetches issue info and returns the proposed content.
-async fn exec_propose_comment(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn exec_propose_comment(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     let issue_id_str = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("");
     let issue_id: Uuid = issue_id_str.parse()
         .map_err(|_| format!(
             "Issue '{}' could not be resolved. Provide a valid display_id (e.g. 'HLM-42') or UUID. Use search_issues to find the right issue.",
             issue_id_str
         ))?;
-    let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let content = args
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
 
     let issue: Option<(String, String)> = sqlx::query_as(
         "SELECT i.display_id, i.title FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2::text[])",
@@ -1698,7 +1998,10 @@ async fn exec_propose_comment(pool: &PgPool, org_ids: &[String], args: &Value) -
             "title": title,
             "content": content,
         }),
-        for_model: format!("Comment proposal on {} ready. User must approve before you call add_comment.", display_id),
+        for_model: format!(
+            "Comment proposal on {} ready. User must approve before you call add_comment.",
+            display_id
+        ),
         component_hint: Some("CommentProposal".to_string()),
         summary: format!("Proposed comment on {}", display_id),
     })
@@ -1706,25 +2009,36 @@ async fn exec_propose_comment(pool: &PgPool, org_ids: &[String], args: &Value) -
 
 // ─── find_similar_issues executor ─────────────────────────────────────────────
 
-async fn exec_find_similar_issues(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn exec_find_similar_issues(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     let reference_id_raw = args.get("reference_issue_id").and_then(|v| v.as_str());
     let query_text = args.get("query").and_then(|v| v.as_str());
     let project_id_raw = args.get("project_id").and_then(|v| v.as_str());
-    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10).clamp(1, 50);
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(10)
+        .clamp(1, 50);
 
     let (reference_title, reference_uuid): (String, Option<Uuid>) = match reference_id_raw {
         Some(raw) => {
-            let uuid = resolve_issue_id(pool, org_ids, raw).await
-                .ok_or_else(|| format!("Reference issue '{}' not found. Use a valid display_id (e.g. HLM-42) or UUID.", raw))?;
-            let row: Option<(String,)> = sqlx::query_as(
-                "SELECT title FROM issues WHERE id = $1"
-            ).bind(uuid).fetch_optional(pool).await.map_err(|e| format!("DB error: {e}"))?;
+            let uuid = resolve_issue_id(pool, org_ids, raw).await.ok_or_else(|| {
+                format!(
+                    "Reference issue '{}' not found. Use a valid display_id (e.g. HLM-42) or UUID.",
+                    raw
+                )
+            })?;
+            let row: Option<(String,)> = sqlx::query_as("SELECT title FROM issues WHERE id = $1")
+                .bind(uuid)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| format!("DB error: {e}"))?;
             (row.map(|r| r.0).unwrap_or_default(), Some(uuid))
         }
-        None => (
-            query_text.unwrap_or("").to_string(),
-            None,
-        ),
+        None => (query_text.unwrap_or("").to_string(), None),
     };
 
     if reference_title.is_empty() {
@@ -1733,14 +2047,19 @@ async fn exec_find_similar_issues(pool: &PgPool, org_ids: &[String], args: &Valu
 
     let keywords: Vec<String> = reference_title
         .split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
         .filter(|w| w.len() >= 4)
         .collect();
 
     if keywords.is_empty() {
         return Ok(ToolResult {
             data: json!({"candidates": [], "reference_title": reference_title}),
-            for_model: "No significant keywords in the reference — cannot search for similar issues.".into(),
+            for_model:
+                "No significant keywords in the reference — cannot search for similar issues."
+                    .into(),
             component_hint: Some("SimilarIssuesList".to_string()),
             summary: "0 similar issues".into(),
         });
@@ -1762,7 +2081,7 @@ async fn exec_find_similar_issues(pool: &PgPool, org_ids: &[String], args: &Valu
            AND ($3::uuid IS NULL OR i.id != $3)
            AND i.title ILIKE ANY($4::text[])
          ORDER BY i.updated_at DESC
-         LIMIT 200"
+         LIMIT 200",
     )
     .bind(org_ids)
     .bind(project_uuid)
@@ -1772,10 +2091,14 @@ async fn exec_find_similar_issues(pool: &PgPool, org_ids: &[String], args: &Valu
     .await
     .map_err(|e| format!("DB error: {e}"))?;
 
-    let mut candidates: Vec<(f64, Uuid, String, String, String)> = rows.into_iter()
+    let mut candidates: Vec<(f64, Uuid, String, String, String)> = rows
+        .into_iter()
         .map(|(id, dispid, title, status)| {
             let title_lower = title.to_lowercase();
-            let matches = keywords.iter().filter(|k| title_lower.contains(k.as_str())).count();
+            let matches = keywords
+                .iter()
+                .filter(|k| title_lower.contains(k.as_str()))
+                .count();
             let score = matches as f64 / keywords.len() as f64;
             (score, id, dispid, title, status)
         })
@@ -1785,9 +2108,12 @@ async fn exec_find_similar_issues(pool: &PgPool, org_ids: &[String], args: &Valu
     candidates.truncate(limit as usize);
 
     let n = candidates.len();
-    let top3 = candidates.iter().take(3)
+    let top3 = candidates
+        .iter()
+        .take(3)
         .map(|(s, _, dispid, title, _)| format!("- {} ({:.0}%): {}", dispid, s * 100.0, title))
-        .collect::<Vec<_>>().join("\n");
+        .collect::<Vec<_>>()
+        .join("\n");
 
     Ok(ToolResult {
         data: json!({
@@ -1809,9 +2135,16 @@ async fn exec_find_similar_issues(pool: &PgPool, org_ids: &[String], args: &Valu
 
 // ─── workload_by_assignee executor ────────────────────────────────────────────
 
-async fn exec_workload_by_assignee(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn exec_workload_by_assignee(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     let project_id_raw = args.get("project_id").and_then(|v| v.as_str());
-    let status_filter = args.get("status_filter").and_then(|v| v.as_str()).unwrap_or("open");
+    let status_filter = args
+        .get("status_filter")
+        .and_then(|v| v.as_str())
+        .unwrap_or("open");
 
     let project_uuid: Option<Uuid> = match project_id_raw {
         Some(raw) => resolve_project_id(pool, org_ids, raw).await,
@@ -1833,7 +2166,7 @@ async fn exec_workload_by_assignee(pool: &PgPool, org_ids: &[String], args: &Val
            AND ($3 = 'all' OR i.status NOT IN ('done', 'cancelled'))
          GROUP BY unnested.assignee_id, i.status
          ORDER BY COUNT(*) DESC
-         LIMIT 200"
+         LIMIT 200",
     )
     .bind(org_ids)
     .bind(project_uuid)
@@ -1848,35 +2181,51 @@ async fn exec_workload_by_assignee(pool: &PgPool, org_ids: &[String], args: &Val
         by_assignee.entry(aid).or_default().insert(status, cnt);
     }
 
-    let mut entries: Vec<Value> = by_assignee.iter().map(|(aid, statuses)| {
-        let total: i64 = statuses.values().sum();
-        json!({
-            "assignee_id": aid,
-            "is_unassigned": aid.is_none(),
-            "total": total,
-            "by_status": {
-                "backlog": statuses.get("backlog").copied().unwrap_or(0),
-                "todo": statuses.get("todo").copied().unwrap_or(0),
-                "in_progress": statuses.get("in_progress").copied().unwrap_or(0),
-                "in_review": statuses.get("in_review").copied().unwrap_or(0),
-                "done": statuses.get("done").copied().unwrap_or(0),
-                "cancelled": statuses.get("cancelled").copied().unwrap_or(0),
-            }
+    let mut entries: Vec<Value> = by_assignee
+        .iter()
+        .map(|(aid, statuses)| {
+            let total: i64 = statuses.values().sum();
+            json!({
+                "assignee_id": aid,
+                "is_unassigned": aid.is_none(),
+                "total": total,
+                "by_status": {
+                    "backlog": statuses.get("backlog").copied().unwrap_or(0),
+                    "todo": statuses.get("todo").copied().unwrap_or(0),
+                    "in_progress": statuses.get("in_progress").copied().unwrap_or(0),
+                    "in_review": statuses.get("in_review").copied().unwrap_or(0),
+                    "done": statuses.get("done").copied().unwrap_or(0),
+                    "cancelled": statuses.get("cancelled").copied().unwrap_or(0),
+                }
+            })
         })
-    }).collect();
+        .collect();
 
     entries.sort_by(|a, b| {
-        b["total"].as_i64().unwrap_or(0).cmp(&a["total"].as_i64().unwrap_or(0))
+        b["total"]
+            .as_i64()
+            .unwrap_or(0)
+            .cmp(&a["total"].as_i64().unwrap_or(0))
     });
 
-    let top3 = entries.iter().take(3).map(|e| {
-        let aid = e["assignee_id"].as_str().unwrap_or("unassigned");
-        format!("- {}: {} issues", aid, e["total"].as_i64().unwrap_or(0))
-    }).collect::<Vec<_>>().join("\n");
+    let top3 = entries
+        .iter()
+        .take(3)
+        .map(|e| {
+            let aid = e["assignee_id"].as_str().unwrap_or("unassigned");
+            format!("- {}: {} issues", aid, e["total"].as_i64().unwrap_or(0))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     Ok(ToolResult {
         data: json!({ "assignees": entries, "scope": status_filter }),
-        for_model: format!("Workload breakdown ({} mode), {} assignees:\n{}", status_filter, entries.len(), top3),
+        for_model: format!(
+            "Workload breakdown ({} mode), {} assignees:\n{}",
+            status_filter,
+            entries.len(),
+            top3
+        ),
         component_hint: Some("WorkloadDistribution".to_string()),
         summary: format!("{} assignees, {} scope", entries.len(), status_filter),
     })
@@ -1884,10 +2233,19 @@ async fn exec_workload_by_assignee(pool: &PgPool, org_ids: &[String], args: &Val
 
 // ─── compare_projects executor ────────────────────────────────────────────────
 
-async fn exec_compare_projects(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
-    let project_ids_raw: Vec<String> = args.get("project_ids")
+async fn exec_compare_projects(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    let project_ids_raw: Vec<String> = args
+        .get("project_ids")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let mut project_uuids: Vec<Uuid> = Vec::new();
@@ -1898,9 +2256,12 @@ async fn exec_compare_projects(pool: &PgPool, org_ids: &[String], args: &Value) 
     }
 
     if project_uuids.is_empty() {
-        let all: Vec<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM projects WHERE org_id = ANY($1::text[]) LIMIT 10"
-        ).bind(org_ids).fetch_all(pool).await.map_err(|e| format!("DB error: {e}"))?;
+        let all: Vec<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM projects WHERE org_id = ANY($1::text[]) LIMIT 10")
+                .bind(org_ids)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| format!("DB error: {e}"))?;
         project_uuids = all.into_iter().map(|(id,)| id).collect();
     }
 
@@ -1910,25 +2271,50 @@ async fn exec_compare_projects(pool: &PgPool, org_ids: &[String], args: &Value) 
 
     let mut rows = Vec::new();
     for uuid in &project_uuids {
-        let info: Option<(String, String)> = sqlx::query_as(
-            "SELECT name, prefix FROM projects WHERE id = $1"
-        ).bind(uuid).fetch_optional(pool).await.ok().flatten();
+        let info: Option<(String, String)> =
+            sqlx::query_as("SELECT name, prefix FROM projects WHERE id = $1")
+                .bind(uuid)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten();
 
         let (name, prefix) = info.unwrap_or_else(|| (uuid.to_string(), "?".into()));
 
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1")
-            .bind(uuid).fetch_one(pool).await.unwrap_or(0);
+            .bind(uuid)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
         let open: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1 AND status NOT IN ('done', 'cancelled')")
             .bind(uuid).fetch_one(pool).await.unwrap_or(0);
-        let done: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1 AND status = 'done'")
-            .bind(uuid).fetch_one(pool).await.unwrap_or(0);
+        let done: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM issues WHERE project_id = $1 AND status = 'done'",
+        )
+        .bind(uuid)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
         let velocity: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1 AND status = 'done' AND updated_at >= NOW() - INTERVAL '14 days'")
             .bind(uuid).fetch_one(pool).await.unwrap_or(0);
-        let bugs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1 AND type = 'bug'")
-            .bind(uuid).fetch_one(pool).await.unwrap_or(0);
+        let bugs: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM issues WHERE project_id = $1 AND type = 'bug'",
+        )
+        .bind(uuid)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
 
-        let bug_ratio = if total > 0 { bugs as f64 / total as f64 } else { 0.0 };
-        let completion_ratio = if total > 0 { done as f64 / total as f64 } else { 0.0 };
+        let bug_ratio = if total > 0 {
+            bugs as f64 / total as f64
+        } else {
+            0.0
+        };
+        let completion_ratio = if total > 0 {
+            done as f64 / total as f64
+        } else {
+            0.0
+        };
 
         rows.push(json!({
             "project_id": uuid.to_string(),
@@ -1944,13 +2330,18 @@ async fn exec_compare_projects(pool: &PgPool, org_ids: &[String], args: &Value) 
     }
 
     let n = rows.len();
-    let fastest = rows.iter().max_by_key(|r| r["velocity_14d"].as_i64().unwrap_or(0))
+    let fastest = rows
+        .iter()
+        .max_by_key(|r| r["velocity_14d"].as_i64().unwrap_or(0))
         .and_then(|r| r["prefix"].as_str())
         .unwrap_or("?");
 
     Ok(ToolResult {
         data: json!({ "projects": rows }),
-        for_model: format!("Comparison of {} projects. Fastest last 14d: {}.", n, fastest),
+        for_model: format!(
+            "Comparison of {} projects. Fastest last 14d: {}.",
+            n, fastest
+        ),
         component_hint: Some("ProjectComparison".to_string()),
         summary: format!("Comparing {} projects", n),
     })
@@ -2383,6 +2774,224 @@ async fn exec_org_overview(
     })
 }
 
+async fn exec_search_memories(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
+    #[derive(sqlx::FromRow)]
+    struct MemoryHit {
+        id: Uuid,
+        project_id: Option<Uuid>,
+        project_name: Option<String>,
+        project_prefix: Option<String>,
+        source: String,
+        kind: String,
+        content: String,
+        tags: Vec<String>,
+        confidence: f64,
+        external_url: Option<String>,
+        created_at: DateTime<Utc>,
+    }
+
+    let project_id = match args.get("project_id").and_then(|v| v.as_str()) {
+        Some(raw) if !raw.trim().is_empty() => resolve_project_id(pool, org_ids, raw).await,
+        _ => None,
+    };
+    let q = args
+        .get("q")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string);
+    let kind = args
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let source = args
+        .get("source")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let tags: Option<Vec<String>> = args
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty());
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(10)
+        .clamp(1, 50);
+
+    let rows = sqlx::query_as::<_, MemoryHit>(
+        r#"
+        SELECT m.id, m.project_id, p.name AS project_name, p.prefix AS project_prefix,
+               m.source, m.kind, m.content, m.tags, m.confidence, m.external_url, m.created_at
+        FROM memories m
+        LEFT JOIN projects p ON p.id = m.project_id
+        WHERE m.org_id = ANY($1::text[])
+          AND ($2::uuid IS NULL OR m.project_id = $2)
+          AND ($3::text IS NULL OR m.kind = $3)
+          AND ($4::text IS NULL OR m.source = $4)
+          AND ($5::text[] IS NULL OR m.tags && $5)
+          AND (
+              $6::text IS NULL
+              OR m.content ILIKE '%' || $6 || '%'
+              OR EXISTS (SELECT 1 FROM unnest(m.tags) tag WHERE tag ILIKE '%' || $6 || '%')
+              OR to_tsvector('simple', m.content) @@ plainto_tsquery('simple', $6)
+          )
+        ORDER BY
+          CASE WHEN $6::text IS NULL THEN 0 ELSE ts_rank_cd(to_tsvector('simple', m.content), plainto_tsquery('simple', $6)) END DESC,
+          m.confidence DESC,
+          m.created_at DESC
+        LIMIT $7
+        "#,
+    )
+    .bind(org_ids)
+    .bind(project_id)
+    .bind(&kind)
+    .bind(&source)
+    .bind(&tags)
+    .bind(&q)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("search_memories failed: {}", e))?;
+
+    let data: Vec<Value> = rows
+        .iter()
+        .map(|m| {
+            json!({
+                "id": m.id,
+                "project_id": m.project_id,
+                "project_name": m.project_name,
+                "project_prefix": m.project_prefix,
+                "source": m.source,
+                "kind": m.kind,
+                "content": m.content,
+                "tags": m.tags,
+                "confidence": m.confidence,
+                "external_url": m.external_url,
+                "created_at": m.created_at,
+            })
+        })
+        .collect();
+
+    let for_model = if rows.is_empty() {
+        "No memories matched the query.".to_string()
+    } else {
+        rows.iter()
+            .map(|m| {
+                let project = m.project_prefix.as_deref().unwrap_or("org");
+                format!(
+                    "- [{} / {} / {} / {:.2}] {}",
+                    project, m.kind, m.source, m.confidence, m.content
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    Ok(ToolResult {
+        data: json!({ "memories": data, "count": rows.len() }),
+        for_model,
+        component_hint: None,
+        summary: format!("Found {} memories", rows.len()),
+    })
+}
+
+async fn exec_add_memory(
+    pool: &PgPool,
+    org_ids: &[String],
+    user_id: &str,
+    user_display_name: Option<&str>,
+    args: &Value,
+) -> Result<ToolResult, String> {
+    let raw_project = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "add_memory requires project_id".to_string())?;
+    let project_id = resolve_project_id(pool, org_ids, raw_project)
+        .await
+        .ok_or_else(|| format!("Project '{}' could not be resolved", raw_project))?;
+    let org_id: String = sqlx::query_scalar(
+        "SELECT org_id FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
+    )
+    .bind(project_id)
+    .bind(org_ids)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("project lookup failed: {}", e))?
+    .ok_or_else(|| "Project not found or not accessible".to_string())?;
+
+    let content = args
+        .get("content")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "add_memory requires non-empty content".to_string())?;
+    let kind = args.get("kind").and_then(|v| v.as_str()).unwrap_or("fact");
+    let tags: Vec<String> = args
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let confidence = args
+        .get("confidence")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.85)
+        .clamp(0.0, 1.0);
+    let external_url = args
+        .get("external_url")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+
+    let memory = crate::routes::memory::insert_memory(
+        pool,
+        crate::routes::memory::NewMemory {
+            org_id,
+            project_id: Some(project_id),
+            source: "ai_chat".to_string(),
+            kind: kind.to_string(),
+            content: content.to_string(),
+            tags,
+            confidence,
+            external_url,
+            metadata: json!({ "tool": "add_memory" }),
+            created_by: Some(user_id.to_string()),
+            created_by_name: user_display_name.map(str::to_string),
+        },
+    )
+    .await
+    .map_err(|e| format!("add_memory failed: {}", e))?;
+
+    Ok(ToolResult {
+        data: json!({
+            "id": memory.id,
+            "project_id": memory.project_id,
+            "kind": memory.kind,
+            "content": memory.content,
+            "tags": memory.tags,
+            "confidence": memory.confidence,
+            "source": memory.source,
+            "created_at": memory.created_at,
+        }),
+        for_model: format!(
+            "Memory saved for project {}: [{}] {}",
+            project_id, memory.kind, memory.content
+        ),
+        component_hint: None,
+        summary: "Memory saved".to_string(),
+    })
+}
+
 pub async fn execute_tool(
     pool: &PgPool,
     org_ids: &[String],
@@ -2397,7 +3006,10 @@ pub async fn execute_tool(
     match tool_name {
         "search_issues" => match exec_search_issues(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("search_issues real query failed: {e}; falling back to stub"); Ok(stub_search_issues(&args)) }
+            Err(e) => {
+                tracing::warn!("search_issues real query failed: {e}; falling back to stub");
+                Ok(stub_search_issues(&args))
+            }
         },
         "propose_issue" => exec_propose_issue(pool, org_ids, &args).await,
         "propose_update_issue" => exec_propose_update_issue(pool, org_ids, &args).await,
@@ -2409,57 +3021,102 @@ pub async fn execute_tool(
         "add_comment" => add_comment_real(pool, org_ids, user_id, &args).await,
         "generate_prd" => match ai_generate_prd(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("generate_prd real query failed: {e}; falling back to stub"); Ok(stub_generate_prd(&args)) }
+            Err(e) => {
+                tracing::warn!("generate_prd real query failed: {e}; falling back to stub");
+                Ok(stub_generate_prd(&args))
+            }
         },
         "analyze_sprint" => match exec_analyze_sprint(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("analyze_sprint real query failed: {e}; falling back to stub"); Ok(stub_analyze_sprint(&args)) }
+            Err(e) => {
+                tracing::warn!("analyze_sprint real query failed: {e}; falling back to stub");
+                Ok(stub_analyze_sprint(&args))
+            }
         },
         "get_project_metrics" => match exec_get_project_metrics(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("get_project_metrics real query failed: {e}; falling back to stub"); Ok(stub_get_project_metrics(&args)) }
+            Err(e) => {
+                tracing::warn!("get_project_metrics real query failed: {e}; falling back to stub");
+                Ok(stub_get_project_metrics(&args))
+            }
         },
         "weekly_recap" => match exec_weekly_recap(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("weekly_recap real query failed: {e}; falling back to stub"); Ok(stub_weekly_recap(&args)) }
+            Err(e) => {
+                tracing::warn!("weekly_recap real query failed: {e}; falling back to stub");
+                Ok(stub_weekly_recap(&args))
+            }
         },
         "suggest_priorities" => match exec_suggest_priorities(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("suggest_priorities real query failed: {e}; falling back to stub"); Ok(stub_suggest_priorities(&args)) }
+            Err(e) => {
+                tracing::warn!("suggest_priorities real query failed: {e}; falling back to stub");
+                Ok(stub_suggest_priorities(&args))
+            }
         },
         "plan_milestones" => match ai_plan_milestones(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("plan_milestones real query failed: {e}; falling back to stub"); Ok(stub_plan_milestones(&args)) }
+            Err(e) => {
+                tracing::warn!("plan_milestones real query failed: {e}; falling back to stub");
+                Ok(stub_plan_milestones(&args))
+            }
         },
-        "create_milestones_batch" => create_milestones_batch_real(pool, org_ids, user_id, &args).await,
+        "create_milestones_batch" => {
+            create_milestones_batch_real(pool, org_ids, user_id, &args).await
+        }
         "adjust_timeline" => match ai_adjust_timeline(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("adjust_timeline real query failed: {e}; falling back to stub"); Ok(stub_adjust_timeline(&args)) }
+            Err(e) => {
+                tracing::warn!("adjust_timeline real query failed: {e}; falling back to stub");
+                Ok(stub_adjust_timeline(&args))
+            }
         },
         "triage_issue" => triage_issue_real(pool, org_ids, user_id, &args).await,
         "manage_initiatives" => match ai_manage_initiatives(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("manage_initiatives real query failed: {e}; falling back to stub"); Ok(stub_manage_initiatives(&args)) }
+            Err(e) => {
+                tracing::warn!("manage_initiatives real query failed: {e}; falling back to stub");
+                Ok(stub_manage_initiatives(&args))
+            }
         },
         "manage_automations" => match ai_manage_automations(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("manage_automations real query failed: {e}; falling back to stub"); Ok(stub_manage_automations(&args)) }
+            Err(e) => {
+                tracing::warn!("manage_automations real query failed: {e}; falling back to stub");
+                Ok(stub_manage_automations(&args))
+            }
         },
         "manage_sla" => match ai_manage_sla(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("manage_sla real query failed: {e}; falling back to stub"); Ok(stub_manage_sla(&args)) }
+            Err(e) => {
+                tracing::warn!("manage_sla real query failed: {e}; falling back to stub");
+                Ok(stub_manage_sla(&args))
+            }
         },
         "manage_templates" => match ai_manage_templates(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("manage_templates real query failed: {e}; falling back to stub"); Ok(stub_manage_templates(&args)) }
+            Err(e) => {
+                tracing::warn!("manage_templates real query failed: {e}; falling back to stub");
+                Ok(stub_manage_templates(&args))
+            }
         },
         "manage_recurring" => match ai_manage_recurring(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("manage_recurring real query failed: {e}; falling back to stub"); Ok(stub_manage_recurring(&args)) }
+            Err(e) => {
+                tracing::warn!("manage_recurring real query failed: {e}; falling back to stub");
+                Ok(stub_manage_recurring(&args))
+            }
         },
+        "search_memories" => exec_search_memories(pool, org_ids, &args).await,
+        "add_memory" | "remember_project_memory" => {
+            exec_add_memory(pool, org_ids, user_id, user_display_name, &args).await
+        }
         "export_project" => match exec_export_project(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
-            Err(e) => { tracing::warn!("export_project real query failed: {e}; falling back to stub"); Ok(stub_export_project(&args)) }
+            Err(e) => {
+                tracing::warn!("export_project real query failed: {e}; falling back to stub");
+                Ok(stub_export_project(&args))
+            }
         },
         "find_similar_issues" => exec_find_similar_issues(pool, org_ids, &args).await,
         "workload_by_assignee" => exec_workload_by_assignee(pool, org_ids, &args).await,
@@ -2474,7 +3131,10 @@ pub async fn execute_tool(
 // Phase 2 will replace these with real DB queries.
 
 fn stub_search_issues(args: &Value) -> ToolResult {
-    let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("(all)");
+    let query = args
+        .get("query")
+        .and_then(|v| v.as_str())
+        .unwrap_or("(all)");
     let status = args.get("status").and_then(|v| v.as_str()).unwrap_or("any");
     let issues = json!([
         {"id": "11111111-0000-0000-0000-000000000001", "display_id": "PHI-1", "title": "Fix auth token refresh", "status": "in_progress", "priority": "high", "category": ["BACK"], "tags": ["auth"]},
@@ -2494,7 +3154,10 @@ fn stub_search_issues(args: &Value) -> ToolResult {
 
 #[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_create_issue(args: &Value) -> ToolResult {
-    let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("New issue");
+    let title = args
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("New issue");
     let display_id = "PHI-42";
     let issue = json!({
         "id": "22222222-0000-0000-0000-000000000001",
@@ -2506,7 +3169,10 @@ fn stub_create_issue(args: &Value) -> ToolResult {
     });
     ToolResult {
         data: issue,
-        for_model: format!("Created issue {} '{}' successfully with status=backlog.", display_id, title),
+        for_model: format!(
+            "Created issue {} '{}' successfully with status=backlog.",
+            display_id, title
+        ),
         component_hint: Some("IssueCreated".to_string()),
         summary: format!("Created issue: {}", title),
     }
@@ -2514,7 +3180,10 @@ fn stub_create_issue(args: &Value) -> ToolResult {
 
 #[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_update_issue(args: &Value) -> ToolResult {
-    let issue_id = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let issue_id = args
+        .get("issue_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     let changes: Vec<String> = ["status", "priority", "title", "type", "tags", "category"]
         .iter()
         .filter_map(|f| args.get(f).map(|v| format!("{}={}", f, v)))
@@ -2529,7 +3198,8 @@ fn stub_update_issue(args: &Value) -> ToolResult {
 
 #[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_bulk_update_issues(args: &Value) -> ToolResult {
-    let count = args.get("updates")
+    let count = args
+        .get("updates")
         .and_then(|v| v.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
@@ -2543,18 +3213,31 @@ fn stub_bulk_update_issues(args: &Value) -> ToolResult {
 
 #[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_add_comment(args: &Value) -> ToolResult {
-    let issue_id = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("(empty)");
+    let issue_id = args
+        .get("issue_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let content = args
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("(empty)");
     ToolResult {
         data: json!({"id": "33333333-0000-0000-0000-000000000001", "issue_id": issue_id, "content": content}),
-        for_model: format!("Added comment to issue {}: \"{}\"", issue_id, &content[..content.len().min(100)]),
+        for_model: format!(
+            "Added comment to issue {}: \"{}\"",
+            issue_id,
+            &content[..content.len().min(100)]
+        ),
         component_hint: None,
         summary: format!("Commented on issue {}", issue_id),
     }
 }
 
 fn stub_generate_prd(args: &Value) -> ToolResult {
-    let brief = args.get("brief").and_then(|v| v.as_str()).unwrap_or("feature");
+    let brief = args
+        .get("brief")
+        .and_then(|v| v.as_str())
+        .unwrap_or("feature");
     let prd = format!(
         r#"# PRD: {}
 
@@ -2584,14 +3267,20 @@ Users need this feature to improve their workflow.
     );
     ToolResult {
         data: json!({"prd_markdown": prd}),
-        for_model: format!("Generated PRD for: {}. See prd_markdown field for full document.", brief),
+        for_model: format!(
+            "Generated PRD for: {}. See prd_markdown field for full document.",
+            brief
+        ),
         component_hint: Some("PRDDocument".to_string()),
         summary: format!("Generated PRD: {}", brief),
     }
 }
 
 fn stub_analyze_sprint(args: &Value) -> ToolResult {
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("all");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("all");
     let analysis = json!({
         "project_id": project_id,
         "velocity": 8,
@@ -2615,7 +3304,10 @@ fn stub_analyze_sprint(args: &Value) -> ToolResult {
 }
 
 fn stub_get_project_metrics(args: &Value) -> ToolResult {
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("all");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("all");
     let metrics = json!({
         "project_id": project_id,
         "total_issues": 47,
@@ -2644,7 +3336,10 @@ fn stub_get_project_metrics(args: &Value) -> ToolResult {
 }
 
 fn stub_weekly_recap(args: &Value) -> ToolResult {
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("all");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("all");
     let days = args.get("days").and_then(|v| v.as_i64()).unwrap_or(7);
     let recap = json!({
         "period_days": days,
@@ -2676,7 +3371,10 @@ fn stub_weekly_recap(args: &Value) -> ToolResult {
 }
 
 fn stub_suggest_priorities(args: &Value) -> ToolResult {
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("all");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("all");
     let suggestions = json!([
         {
             "issue": {"display_id": "PHI-7", "title": "Stuck migration", "current_priority": "low"},
@@ -2709,7 +3407,10 @@ fn stub_suggest_priorities(args: &Value) -> ToolResult {
 }
 
 fn stub_plan_milestones(args: &Value) -> ToolResult {
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     let team_size = args.get("team_size").and_then(|v| v.as_i64()).unwrap_or(1);
     let plan = json!({
         "project_id": project_id,
@@ -2759,8 +3460,12 @@ fn stub_plan_milestones(args: &Value) -> ToolResult {
 
 #[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_create_milestones_batch(args: &Value) -> ToolResult {
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let count = args.get("milestones")
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let count = args
+        .get("milestones")
         .and_then(|v| v.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
@@ -2773,8 +3478,14 @@ fn stub_create_milestones_batch(args: &Value) -> ToolResult {
 }
 
 fn stub_adjust_timeline(args: &Value) -> ToolResult {
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let constraint = args.get("constraint").and_then(|v| v.as_str()).unwrap_or("unspecified");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let constraint = args
+        .get("constraint")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unspecified");
     ToolResult {
         data: json!({
             "project_id": project_id,
@@ -2795,7 +3506,10 @@ fn stub_adjust_timeline(args: &Value) -> ToolResult {
 
 #[allow(dead_code)] // kept as fallback during stub→real-impl migration
 fn stub_triage_issue(args: &Value) -> ToolResult {
-    let issue_id = args.get("issue_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let issue_id = args
+        .get("issue_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     ToolResult {
         data: json!({
             "issue_id": issue_id,
@@ -2818,7 +3532,10 @@ fn stub_triage_issue(args: &Value) -> ToolResult {
 }
 
 fn stub_manage_initiatives(args: &Value) -> ToolResult {
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list");
     ToolResult {
         data: json!([
             {"id": "aaaa0001-0000-0000-0000-000000000001", "name": "Q2 Product Launch", "status": "active", "projects": 3},
@@ -2834,8 +3551,14 @@ fn stub_manage_initiatives(args: &Value) -> ToolResult {
 }
 
 fn stub_manage_automations(args: &Value) -> ToolResult {
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     ToolResult {
         data: json!([
             {"id": "bbbb0001-0000-0000-0000-000000000001", "name": "Auto-escalate urgents", "trigger": "priority_changed", "action": "add_comment", "enabled": true},
@@ -2851,8 +3574,14 @@ fn stub_manage_automations(args: &Value) -> ToolResult {
 }
 
 fn stub_manage_sla(args: &Value) -> ToolResult {
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list_rules");
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list_rules");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     ToolResult {
         data: json!({
             "rules": [
@@ -2876,8 +3605,14 @@ fn stub_manage_sla(args: &Value) -> ToolResult {
 }
 
 fn stub_manage_templates(args: &Value) -> ToolResult {
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     ToolResult {
         data: json!([
             {"id": "cccc0001-0000-0000-0000-000000000001", "name": "Bug Report", "default_type": "bug", "default_priority": "medium"},
@@ -2893,8 +3628,14 @@ fn stub_manage_templates(args: &Value) -> ToolResult {
 }
 
 fn stub_manage_recurring(args: &Value) -> ToolResult {
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     ToolResult {
         data: json!([
             {"id": "dddd0001-0000-0000-0000-000000000001", "title": "Weekly Security Review", "cron": "0 9 * * 1", "enabled": true, "next_run": "2026-04-21T09:00:00Z"},
@@ -2910,7 +3651,10 @@ fn stub_manage_recurring(args: &Value) -> ToolResult {
 }
 
 fn stub_export_project(args: &Value) -> ToolResult {
-    let project_id = args.get("project_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let project_id = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     ToolResult {
         data: json!({
             "project_id": project_id,
@@ -2953,30 +3697,44 @@ async fn create_issue_real(
     let title = args.get("title").and_then(|v| v.as_str())
         .ok_or_else(|| "create_issue requires 'title'. Provide a short plain-text title (no brackets, no prefix). Good: 'Fix auth token refresh'. Bad: '[HLM][BUG] Fix auth'.".to_string())?;
     let description = args.get("description").and_then(|v| v.as_str());
-    let issue_type = args.get("type").and_then(|v| v.as_str()).unwrap_or("feature");
+    let issue_type = args
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("feature");
     let priority = args.get("priority").and_then(|v| v.as_str());
-    let category: Vec<String> = args.get("category")
+    let category: Vec<String> = args
+        .get("category")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default();
-    let tags: Vec<String> = args.get("tags")
+    let tags: Vec<String> = args
+        .get("tags")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default();
 
     // Verify project belongs to org + get prefix
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
-    )
-    .bind(project_id)
-    .bind(org_ids)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| format!("DB error: {}", e))?;
-    let (prefix,) = row.ok_or_else(|| format!(
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])")
+            .bind(project_id)
+            .bind(org_ids)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("DB error: {}", e))?;
+    let (prefix,) = row.ok_or_else(|| {
+        format!(
         "Project '{}' not found or you don't have access. Double-check the project UUID or prefix.",
         project_id_str
-    ))?;
+    )
+    })?;
 
     // Generate display_id: MAX existing number + 1
     let (next_num,): (i64,) = sqlx::query_as(
@@ -3024,7 +3782,11 @@ async fn create_issue_real(
         .map_err(|e| format!("Failed to create issue: {}", e))?;
 
     let priority_str = pri.as_deref().unwrap_or("none");
-    let category_str = if category.is_empty() { "none".to_string() } else { category.join(", ") };
+    let category_str = if category.is_empty() {
+        "none".to_string()
+    } else {
+        category.join(", ")
+    };
 
     Ok(ToolResult {
         data: json!({
@@ -3052,8 +3814,13 @@ async fn update_issue_real(
     _user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
-    let raw_issue_id = args.get("issue_id").and_then(|v| v.as_str())
-        .ok_or_else(|| "update_issue requires 'issue_id'. Provide a display_id (e.g. 'HLM-42') or full UUID.".to_string())?;
+    let raw_issue_id = args
+        .get("issue_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            "update_issue requires 'issue_id'. Provide a display_id (e.g. 'HLM-42') or full UUID."
+                .to_string()
+        })?;
     let issue_id: Uuid = raw_issue_id.parse().map_err(|_| format!(
         "Issue '{}' could not be resolved. Check that the display_id (e.g. 'HLM-42') or UUID is correct. Use search_issues to find the right issue.",
         raw_issue_id
@@ -3077,20 +3844,37 @@ async fn update_issue_real(
         ))?;
 
     // Extract optional update fields
-    let new_title    = args.get("title").and_then(|v| v.as_str());
-    let new_desc     = args.get("description").and_then(|v| v.as_str());
-    let new_status   = args.get("status").and_then(|v| v.as_str());
+    let new_title = args.get("title").and_then(|v| v.as_str());
+    let new_desc = args.get("description").and_then(|v| v.as_str());
+    let new_status = args.get("status").and_then(|v| v.as_str());
     let new_priority = args.get("priority").and_then(|v| v.as_str());
-    let new_tags: Option<Vec<String>> = args.get("tags").and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
-    let new_category: Option<Vec<String>> = args.get("category").and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
-    let new_milestone_id: Option<Uuid> = args.get("milestone_id")
-        .and_then(|v| v.as_str()).and_then(|s| s.parse().ok());
-    let new_sprint_id: Option<Uuid> = args.get("sprint_id")
-        .and_then(|v| v.as_str()).and_then(|s| s.parse().ok());
-    let new_assignee_ids: Option<Vec<String>> = args.get("assignee_ids").and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
+    let new_tags: Option<Vec<String>> = args.get("tags").and_then(|v| v.as_array()).map(|a| {
+        a.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect()
+    });
+    let new_category: Option<Vec<String>> =
+        args.get("category").and_then(|v| v.as_array()).map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        });
+    let new_milestone_id: Option<Uuid> = args
+        .get("milestone_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok());
+    let new_sprint_id: Option<Uuid> = args
+        .get("sprint_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok());
+    let new_assignee_ids: Option<Vec<String>> = args
+        .get("assignee_ids")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        });
 
     let (new_did, ret_status, ret_priority): (String, String, Option<String>) = sqlx::query_as(
         r#"UPDATE issues SET
@@ -3107,22 +3891,22 @@ async fn update_issue_real(
            WHERE id = $1
            RETURNING display_id, status, priority"#,
     )
-    .bind(issue_id)                   // $1
-    .bind(new_title)                  // $2
-    .bind(new_desc)                   // $3
-    .bind(new_status)                 // $4
-    .bind(new_priority.is_some())     // $5
-    .bind(new_priority)               // $6
-    .bind(new_tags.is_some())         // $7
-    .bind(&new_tags)                  // $8
-    .bind(new_category.is_some())     // $9
-    .bind(&new_category)              // $10
+    .bind(issue_id) // $1
+    .bind(new_title) // $2
+    .bind(new_desc) // $3
+    .bind(new_status) // $4
+    .bind(new_priority.is_some()) // $5
+    .bind(new_priority) // $6
+    .bind(new_tags.is_some()) // $7
+    .bind(&new_tags) // $8
+    .bind(new_category.is_some()) // $9
+    .bind(&new_category) // $10
     .bind(new_milestone_id.is_some()) // $11
-    .bind(new_milestone_id)           // $12
-    .bind(new_sprint_id.is_some())    // $13
-    .bind(new_sprint_id)              // $14
+    .bind(new_milestone_id) // $12
+    .bind(new_sprint_id.is_some()) // $13
+    .bind(new_sprint_id) // $14
     .bind(new_assignee_ids.is_some()) // $15
-    .bind(&new_assignee_ids)          // $16
+    .bind(&new_assignee_ids) // $16
     .fetch_one(pool)
     .await
     .map_err(|e| format!("Failed to update issue: {}", e))?;
@@ -3136,15 +3920,31 @@ async fn update_issue_real(
     }
     if let Some(p) = new_priority {
         let old = old_priority.as_deref().unwrap_or("none");
-        if old != p { changes.push(format!("priority: {} → {}", old, p)); }
+        if old != p {
+            changes.push(format!("priority: {} → {}", old, p));
+        }
     }
-    if new_title.is_some()        { changes.push("title updated".to_string()); }
-    if new_desc.is_some()         { changes.push("description updated".to_string()); }
-    if new_tags.is_some()         { changes.push("tags updated".to_string()); }
-    if new_category.is_some()     { changes.push("category updated".to_string()); }
-    if new_milestone_id.is_some() { changes.push("milestone updated".to_string()); }
-    if new_sprint_id.is_some()    { changes.push("sprint updated".to_string()); }
-    if new_assignee_ids.is_some() { changes.push("assignees updated".to_string()); }
+    if new_title.is_some() {
+        changes.push("title updated".to_string());
+    }
+    if new_desc.is_some() {
+        changes.push("description updated".to_string());
+    }
+    if new_tags.is_some() {
+        changes.push("tags updated".to_string());
+    }
+    if new_category.is_some() {
+        changes.push("category updated".to_string());
+    }
+    if new_milestone_id.is_some() {
+        changes.push("milestone updated".to_string());
+    }
+    if new_sprint_id.is_some() {
+        changes.push("sprint updated".to_string());
+    }
+    if new_assignee_ids.is_some() {
+        changes.push("assignees updated".to_string());
+    }
 
     let changes_str = if changes.is_empty() {
         "no changes".to_string()
@@ -3182,17 +3982,24 @@ async fn bulk_update_issues_real(
         let issue_id: Uuid = match item.get("issue_id").and_then(|v| v.as_str()) {
             Some(s) => match s.parse() {
                 Ok(uuid) => uuid,
-                Err(_)   => continue,
+                Err(_) => continue,
             },
             None => continue,
         };
 
-        let new_status   = item.get("status").and_then(|v| v.as_str());
+        let new_status = item.get("status").and_then(|v| v.as_str());
         let new_priority = item.get("priority").and_then(|v| v.as_str());
-        let new_tags: Option<Vec<String>> = item.get("tags").and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
-        let new_category: Option<Vec<String>> = item.get("category").and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
+        let new_tags: Option<Vec<String>> = item.get("tags").and_then(|v| v.as_array()).map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        });
+        let new_category: Option<Vec<String>> =
+            item.get("category").and_then(|v| v.as_array()).map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            });
 
         // Embedded org check in UPDATE — skip if issue doesn't belong to org
         let result: Option<(String, String, Option<String>)> = sqlx::query_as(
@@ -3222,10 +4029,21 @@ async fn bulk_update_issues_real(
         if let Some((did, status, priority)) = result {
             updated_count += 1;
             let mut changes: Vec<String> = Vec::new();
-            if new_status.is_some()   { changes.push(format!("status={}", status)); }
-            if new_priority.is_some() { changes.push(format!("priority={}", priority.as_deref().unwrap_or("none"))); }
-            if new_tags.is_some()     { changes.push("tags updated".to_string()); }
-            if new_category.is_some() { changes.push("category updated".to_string()); }
+            if new_status.is_some() {
+                changes.push(format!("status={}", status));
+            }
+            if new_priority.is_some() {
+                changes.push(format!(
+                    "priority={}",
+                    priority.as_deref().unwrap_or("none")
+                ));
+            }
+            if new_tags.is_some() {
+                changes.push("tags updated".to_string());
+            }
+            if new_category.is_some() {
+                changes.push("category updated".to_string());
+            }
             result_issues.push(json!({ "display_id": did, "changes": changes }));
         }
     }
@@ -3247,19 +4065,31 @@ async fn add_comment_real(
     user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
-    let raw_issue_id = args.get("issue_id").and_then(|v| v.as_str())
-        .ok_or_else(|| "add_comment requires 'issue_id'. Provide a display_id (e.g. 'HLM-42') or full UUID.".to_string())?;
+    let raw_issue_id = args
+        .get("issue_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            "add_comment requires 'issue_id'. Provide a display_id (e.g. 'HLM-42') or full UUID."
+                .to_string()
+        })?;
     let issue_id: Uuid = raw_issue_id.parse().map_err(|_| format!(
         "Issue '{}' could not be resolved. Check that the display_id (e.g. 'HLM-42') or UUID is correct. Use search_issues to find the right issue.",
         raw_issue_id
     ))?;
 
     // Tool uses "content" key; also accept "body" as alias
-    let body = args.get("content").or_else(|| args.get("body"))
+    let body = args
+        .get("content")
+        .or_else(|| args.get("body"))
         .and_then(|v| v.as_str())
-        .ok_or_else(|| "add_comment requires 'content'. Provide the comment body as a Markdown string.".to_string())?;
+        .ok_or_else(|| {
+            "add_comment requires 'content'. Provide the comment body as a Markdown string."
+                .to_string()
+        })?;
 
-    let author_name = args.get("author_name").and_then(|v| v.as_str())
+    let author_name = args
+        .get("author_name")
+        .and_then(|v| v.as_str())
         .unwrap_or("Baaton AI");
 
     // Verify issue belongs to org
@@ -3317,8 +4147,13 @@ async fn triage_issue_real(
     user_id: &str,
     args: &Value,
 ) -> Result<ToolResult, String> {
-    let raw_issue_id = args.get("issue_id").and_then(|v| v.as_str())
-        .ok_or_else(|| "triage_issue requires 'issue_id'. Provide a display_id (e.g. 'HLM-42') or full UUID.".to_string())?;
+    let raw_issue_id = args
+        .get("issue_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            "triage_issue requires 'issue_id'. Provide a display_id (e.g. 'HLM-42') or full UUID."
+                .to_string()
+        })?;
     let issue_id: Uuid = raw_issue_id.parse().map_err(|_| format!(
         "Issue '{}' could not be resolved. Check that the display_id (e.g. 'HLM-42') or UUID is correct. Use search_issues to find the right issue.",
         raw_issue_id
@@ -3342,7 +4177,11 @@ async fn triage_issue_real(
         ))?;
 
     // Move backlog → todo; leave other statuses unchanged
-    let new_status: &str = if current_status == "backlog" { "todo" } else { current_status.as_str() };
+    let new_status: &str = if current_status == "backlog" {
+        "todo"
+    } else {
+        current_status.as_str()
+    };
 
     let (updated_did, updated_status): (String, String) = sqlx::query_as(
         r#"UPDATE issues SET
@@ -3417,10 +4256,12 @@ async fn create_milestones_batch_real(
     .fetch_optional(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;
-    let project_org = project_org.ok_or_else(|| format!(
+    let project_org = project_org.ok_or_else(|| {
+        format!(
         "Project '{}' not found or you don't have access. Double-check the project UUID or prefix.",
         project_id_str
-    ))?;
+    )
+    })?;
 
     let mut created_count: usize = 0;
     let mut result_milestones: Vec<Value> = Vec::new();
@@ -3430,11 +4271,16 @@ async fn create_milestones_batch_real(
             Some(n) if !n.trim().is_empty() => n,
             _ => continue,
         };
-        let description  = milestone_val.get("description").and_then(|v| v.as_str());
-        let target_date  = milestone_val.get("target_date").and_then(|v| v.as_str());
-        let issue_ids: Vec<Uuid> = milestone_val.get("issue_ids")
+        let description = milestone_val.get("description").and_then(|v| v.as_str());
+        let target_date = milestone_val.get("target_date").and_then(|v| v.as_str());
+        let issue_ids: Vec<Uuid> = milestone_val
+            .get("issue_ids")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().and_then(|s| s.parse().ok())).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().and_then(|s| s.parse().ok()))
+                    .collect()
+            })
             .unwrap_or_default();
         let order = (order_idx as i32) + 1;
 
@@ -3490,17 +4336,27 @@ async fn create_milestones_batch_real(
             created_count, project_id_str
         ),
         component_hint: Some("MilestoneTimeline".to_string()),
-        summary: format!("Created {} milestones for project {}", created_count, project_id_str),
+        summary: format!(
+            "Created {} milestones for project {}",
+            created_count, project_id_str
+        ),
     })
 }
 
 // ─── Phase 2C: Complex Tool Executors ────────────────────────────────────────
 
-async fn ai_plan_milestones(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn ai_plan_milestones(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     use sqlx::Row;
-    let project_id_str = args.get("project_id").and_then(|v| v.as_str())
+    let project_id_str = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "project_id is required".to_string())?;
-    let project_id: Uuid = project_id_str.parse()
+    let project_id: Uuid = project_id_str
+        .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
 
     let rows = sqlx::query(
@@ -3509,7 +4365,7 @@ async fn ai_plan_milestones(pool: &PgPool, org_ids: &[String], args: &Value) -> 
          JOIN projects p ON p.id = i.project_id
          WHERE i.project_id = $1 AND p.org_id = ANY($2::text[])
            AND i.status NOT IN ('done', 'cancelled')
-         ORDER BY i.created_at ASC"
+         ORDER BY i.created_at ASC",
     )
     .bind(project_id)
     .bind(org_ids)
@@ -3519,11 +4375,11 @@ async fn ai_plan_milestones(pool: &PgPool, org_ids: &[String], args: &Value) -> 
 
     let domain_map: &[(&str, &str)] = &[
         ("FRONT", "Frontend Polish"),
-        ("BACK",  "Backend Stability"),
-        ("API",   "API Improvements"),
-        ("DB",    "Database & Migrations"),
+        ("BACK", "Backend Stability"),
+        ("API", "API Improvements"),
+        ("DB", "Database & Migrations"),
         ("INFRA", "Infrastructure"),
-        ("UX",    "UX & Design"),
+        ("UX", "UX & Design"),
     ];
 
     let mut groups: std::collections::BTreeMap<String, (&str, Vec<String>)> =
@@ -3538,9 +4394,11 @@ async fn ai_plan_milestones(pool: &PgPool, org_ids: &[String], args: &Value) -> 
         let mut matched = false;
         for &(domain, label) in domain_map {
             if tags_upper.iter().any(|t| t.contains(domain)) {
-                groups.entry(domain.to_string())
+                groups
+                    .entry(domain.to_string())
                     .or_insert_with(|| (label, Vec::new()))
-                    .1.push(id.clone());
+                    .1
+                    .push(id.clone());
                 matched = true;
                 break;
             }
@@ -3551,9 +4409,11 @@ async fn ai_plan_milestones(pool: &PgPool, org_ids: &[String], args: &Value) -> 
     }
 
     if !ungrouped.is_empty() {
-        groups.entry("ZGENERAL".to_string())
+        groups
+            .entry("ZGENERAL".to_string())
             .or_insert_with(|| ("General", Vec::new()))
-            .1.extend(ungrouped);
+            .1
+            .extend(ungrouped);
     }
 
     let today = chrono::Utc::now().date_naive();
@@ -3585,14 +4445,24 @@ async fn ai_plan_milestones(pool: &PgPool, org_ids: &[String], args: &Value) -> 
     })
 }
 
-async fn ai_adjust_timeline(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn ai_adjust_timeline(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     use sqlx::Row;
-    let project_id_str = args.get("project_id").and_then(|v| v.as_str())
+    let project_id_str = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "project_id is required".to_string())?;
-    let project_id: Uuid = project_id_str.parse()
+    let project_id: Uuid = project_id_str
+        .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
 
-    let constraint = args.get("constraint").and_then(|v| v.as_str()).unwrap_or("");
+    let constraint = args
+        .get("constraint")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let new_deadline_str = args.get("new_deadline").and_then(|v| v.as_str());
 
     let rows = sqlx::query(
@@ -3601,7 +4471,7 @@ async fn ai_adjust_timeline(pool: &PgPool, org_ids: &[String], args: &Value) -> 
          JOIN projects p ON p.id = m.project_id
          WHERE m.project_id = $1 AND p.org_id = ANY($2::text[])
            AND m.target_date IS NOT NULL
-         ORDER BY m.target_date ASC"
+         ORDER BY m.target_date ASC",
     )
     .bind(project_id)
     .bind(org_ids)
@@ -3618,12 +4488,13 @@ async fn ai_adjust_timeline(pool: &PgPool, org_ids: &[String], args: &Value) -> 
         });
     }
 
-    let dates: Vec<chrono::NaiveDate> = rows.iter()
+    let dates: Vec<chrono::NaiveDate> = rows
+        .iter()
         .filter_map(|r| r.try_get::<chrono::NaiveDate, _>("target_date").ok())
         .collect();
 
     let earliest = *dates.iter().min().unwrap();
-    let latest   = *dates.iter().max().unwrap();
+    let latest = *dates.iter().max().unwrap();
 
     let new_deadline = if let Some(d) = new_deadline_str {
         chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
@@ -3644,8 +4515,8 @@ async fn ai_adjust_timeline(pool: &PgPool, org_ids: &[String], args: &Value) -> 
             Err(_) => continue,
         };
         let offset_days = (old_date - earliest).num_days();
-        let new_offset  = (offset_days as f64 * new_span as f64 / old_span as f64).round() as i64;
-        let new_date    = earliest + chrono::Duration::days(new_offset);
+        let new_offset = (offset_days as f64 * new_span as f64 / old_span as f64).round() as i64;
+        let new_date = earliest + chrono::Duration::days(new_offset);
         revised.push(json!({
             "name":     name,
             "old_date": old_date.to_string(),
@@ -3664,13 +4535,20 @@ async fn ai_adjust_timeline(pool: &PgPool, org_ids: &[String], args: &Value) -> 
     })
 }
 
-async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn ai_generate_prd(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     use sqlx::Row;
 
     let project_id_str = match args.get("project_id").and_then(|v| v.as_str()) {
         Some(id) => id,
         None => {
-            let brief = args.get("brief").and_then(|v| v.as_str()).unwrap_or("feature");
+            let brief = args
+                .get("brief")
+                .and_then(|v| v.as_str())
+                .unwrap_or("feature");
             let prd = format!(
                 "# PRD: {}\n\n## Overview\n{}\n\n## Objectives\n- Deliver the described feature\n\n## Scope\n- TBD\n\n## Open Questions\n- None yet",
                 brief, brief
@@ -3684,11 +4562,12 @@ async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Res
         }
     };
 
-    let project_id: Uuid = project_id_str.parse()
+    let project_id: Uuid = project_id_str
+        .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
 
     let proj_row = sqlx::query(
-        "SELECT name, description FROM projects WHERE id = $1 AND org_id = ANY($2::text[])"
+        "SELECT name, description FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
     )
     .bind(project_id)
     .bind(org_ids)
@@ -3699,8 +4578,11 @@ async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Res
 
     let project_name: String = proj_row.get("name");
     let project_desc: Option<String> = proj_row.try_get("description").unwrap_or(None);
-    let prd_title = args.get("title").and_then(|v| v.as_str())
-        .unwrap_or(&project_name).to_string();
+    let prd_title = args
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&project_name)
+        .to_string();
 
     let issue_rows = sqlx::query(
         "SELECT i.title, i.type as issue_type, COALESCE(i.tags, ARRAY[]::text[]) as tags
@@ -3708,7 +4590,7 @@ async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Res
          WHERE i.project_id = $1
            AND i.status NOT IN ('done', 'cancelled')
          ORDER BY i.created_at ASC
-         LIMIT 200"
+         LIMIT 200",
     )
     .bind(project_id)
     .fetch_all(pool)
@@ -3719,7 +4601,7 @@ async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Res
         r#"SELECT name, description, target_date::text as target_date_str, status
          FROM milestones
          WHERE project_id = $1
-         ORDER BY "order" ASC NULLS LAST, target_date ASC NULLS LAST"#
+         ORDER BY "order" ASC NULLS LAST, target_date ASC NULLS LAST"#,
     )
     .bind(project_id)
     .fetch_all(pool)
@@ -3730,17 +4612,23 @@ async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Res
 
     // 1. Overview
     let overview = project_desc.unwrap_or_else(|| {
-        format!("{} is an active project with ongoing development work.", project_name)
+        format!(
+            "{} is an active project with ongoing development work.",
+            project_name
+        )
     });
     sections.push(json!({ "heading": "Overview", "content": overview }));
 
     // 2. Objectives (milestones)
     if !milestone_rows.is_empty() {
-        let objectives: Vec<String> = milestone_rows.iter().map(|r| {
-            let name: String = r.get("name");
-            let date: String = r.try_get("target_date_str").unwrap_or_default();
-            format!("- **{}** (target: {})", name, date)
-        }).collect();
+        let objectives: Vec<String> = milestone_rows
+            .iter()
+            .map(|r| {
+                let name: String = r.get("name");
+                let date: String = r.try_get("target_date_str").unwrap_or_default();
+                format!("- **{}** (target: {})", name, date)
+            })
+            .collect();
         sections.push(json!({ "heading": "Objectives", "content": objectives.join("\n") }));
     }
 
@@ -3752,7 +4640,9 @@ async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Res
 
     for row in &issue_rows {
         let title: String = row.get("title");
-        let issue_type: String = row.try_get("issue_type").unwrap_or_else(|_| "feature".to_string());
+        let issue_type: String = row
+            .try_get("issue_type")
+            .unwrap_or_else(|_| "feature".to_string());
         let tags: Vec<String> = row.try_get("tags").unwrap_or_default();
 
         if issue_type == "question" {
@@ -3763,20 +4653,25 @@ async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Res
         let mut added = false;
         for key in &domain_keys {
             if tags_upper.iter().any(|t| t.contains(key)) {
-                by_domain.entry(key.to_string()).or_default()
+                by_domain
+                    .entry(key.to_string())
+                    .or_default()
                     .push(format!("- {}", title));
                 added = true;
                 break;
             }
         }
         if !added {
-            by_domain.entry("General".to_string()).or_default()
+            by_domain
+                .entry("General".to_string())
+                .or_default()
                 .push(format!("- {}", title));
         }
     }
 
     if !by_domain.is_empty() {
-        let content: Vec<String> = by_domain.iter()
+        let content: Vec<String> = by_domain
+            .iter()
             .map(|(cat, items)| format!("### {}\n{}", cat, items.join("\n")))
             .collect();
         sections.push(json!({ "heading": "Scope", "content": content.join("\n\n") }));
@@ -3787,24 +4682,36 @@ async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Res
         std::collections::BTreeMap::new();
     for row in &issue_rows {
         let title: String = row.get("title");
-        let issue_type: String = row.try_get("issue_type").unwrap_or_else(|_| "feature".to_string());
-        by_type.entry(issue_type).or_default().push(format!("- {}", title));
+        let issue_type: String = row
+            .try_get("issue_type")
+            .unwrap_or_else(|_| "feature".to_string());
+        by_type
+            .entry(issue_type)
+            .or_default()
+            .push(format!("- {}", title));
     }
     if !by_type.is_empty() {
-        let content: Vec<String> = by_type.iter()
+        let content: Vec<String> = by_type
+            .iter()
             .map(|(t, items)| format!("**{}**\n{}", t.to_uppercase(), items.join("\n")))
             .collect();
-        sections.push(json!({ "heading": "Technical Requirements", "content": content.join("\n\n") }));
+        sections
+            .push(json!({ "heading": "Technical Requirements", "content": content.join("\n\n") }));
     }
 
     // 5. Timeline
     if !milestone_rows.is_empty() {
-        let timeline: Vec<String> = milestone_rows.iter().map(|r| {
-            let name: String   = r.get("name");
-            let date: String   = r.try_get("target_date_str").unwrap_or_default();
-            let status: String = r.try_get("status").unwrap_or_else(|_| "planned".to_string());
-            format!("- **{}** — {} ({})", name, date, status)
-        }).collect();
+        let timeline: Vec<String> = milestone_rows
+            .iter()
+            .map(|r| {
+                let name: String = r.get("name");
+                let date: String = r.try_get("target_date_str").unwrap_or_default();
+                let status: String = r
+                    .try_get("status")
+                    .unwrap_or_else(|_| "planned".to_string());
+                format!("- **{}** — {} ({})", name, date, status)
+            })
+            .collect();
         sections.push(json!({ "heading": "Timeline", "content": timeline.join("\n") }));
     }
 
@@ -3814,7 +4721,8 @@ async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Res
         sections.push(json!({ "heading": "Open Questions", "content": content.join("\n") }));
     }
 
-    let heading_list: Vec<&str> = sections.iter()
+    let heading_list: Vec<&str> = sections
+        .iter()
         .filter_map(|s| s.get("heading").and_then(|h| h.as_str()))
         .collect();
 
@@ -3822,17 +4730,27 @@ async fn ai_generate_prd(pool: &PgPool, org_ids: &[String], args: &Value) -> Res
         data: json!({ "title": prd_title, "sections": sections }),
         for_model: format!(
             "Generated PRD '{}' with {} sections: {}. {} open issues, {} milestones referenced.",
-            prd_title, sections.len(), heading_list.join(", "),
-            issue_rows.len(), milestone_rows.len()
+            prd_title,
+            sections.len(),
+            heading_list.join(", "),
+            issue_rows.len(),
+            milestone_rows.len()
         ),
         component_hint: Some("PRDDocument".to_string()),
         summary: format!("Generated PRD for project {}", project_id_str),
     })
 }
 
-async fn ai_manage_initiatives(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn ai_manage_initiatives(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     use sqlx::Row;
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list");
 
     match action {
         "list" => {
@@ -3844,7 +4762,7 @@ async fn ai_manage_initiatives(pool: &PgPool, org_ids: &[String], args: &Value) 
                  LEFT JOIN initiative_projects ip ON ip.initiative_id = i.id
                  WHERE i.org_id = ANY($1::text[])
                  GROUP BY i.id
-                 ORDER BY i.created_at DESC"
+                 ORDER BY i.created_at DESC",
             )
             .bind(org_ids)
             .fetch_all(pool)
@@ -3869,17 +4787,24 @@ async fn ai_manage_initiatives(pool: &PgPool, org_ids: &[String], args: &Value) 
         }
 
         "create" => {
-            let name = args.get("name").and_then(|v| v.as_str())
+            let name = args
+                .get("name")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "name is required".to_string())?;
             let description = args.get("description").and_then(|v| v.as_str());
-            let status      = args.get("status").and_then(|v| v.as_str()).unwrap_or("active");
+            let status = args
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("active");
             let target_date = args.get("target_date").and_then(|v| v.as_str());
 
-            let primary_org = org_ids.first().ok_or_else(|| "No org context".to_string())?;
+            let primary_org = org_ids
+                .first()
+                .ok_or_else(|| "No org context".to_string())?;
             let new_id: String = sqlx::query(
                 "INSERT INTO initiatives (org_id, name, description, status, target_date)
                  VALUES ($1, $2, $3, $4, $5::date)
-                 RETURNING id::text"
+                 RETURNING id::text",
             )
             .bind(primary_org)
             .bind(name)
@@ -3900,9 +4825,12 @@ async fn ai_manage_initiatives(pool: &PgPool, org_ids: &[String], args: &Value) 
         }
 
         "update" => {
-            let initiative_id = args.get("initiative_id").and_then(|v| v.as_str())
+            let initiative_id = args
+                .get("initiative_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "initiative_id is required".to_string())?;
-            let initiative_uuid: Uuid = initiative_id.parse()
+            let initiative_uuid: Uuid = initiative_id
+                .parse()
                 .map_err(|_| "Invalid initiative_id".to_string())?;
 
             sqlx::query(
@@ -3910,7 +4838,7 @@ async fn ai_manage_initiatives(pool: &PgPool, org_ids: &[String], args: &Value) 
                  SET name        = COALESCE($3, name),
                      description = COALESCE($4, description),
                      status      = COALESCE($5, status)
-                 WHERE id = $1 AND org_id = ANY($2::text[])"
+                 WHERE id = $1 AND org_id = ANY($2::text[])",
             )
             .bind(initiative_uuid)
             .bind(org_ids)
@@ -3930,18 +4858,24 @@ async fn ai_manage_initiatives(pool: &PgPool, org_ids: &[String], args: &Value) 
         }
 
         "add_project" => {
-            let initiative_id = args.get("initiative_id").and_then(|v| v.as_str())
+            let initiative_id = args
+                .get("initiative_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "initiative_id is required".to_string())?;
-            let project_id = args.get("project_id").and_then(|v| v.as_str())
+            let project_id = args
+                .get("project_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "project_id is required".to_string())?;
-            let initiative_uuid: Uuid = initiative_id.parse()
+            let initiative_uuid: Uuid = initiative_id
+                .parse()
                 .map_err(|_| "Invalid initiative_id".to_string())?;
-            let project_uuid: Uuid = project_id.parse()
+            let project_uuid: Uuid = project_id
+                .parse()
                 .map_err(|_| "Invalid project_id".to_string())?;
 
             sqlx::query(
                 "INSERT INTO initiative_projects (initiative_id, project_id)
-                 VALUES ($1, $2) ON CONFLICT DO NOTHING"
+                 VALUES ($1, $2) ON CONFLICT DO NOTHING",
             )
             .bind(initiative_uuid)
             .bind(project_uuid)
@@ -3951,24 +4885,33 @@ async fn ai_manage_initiatives(pool: &PgPool, org_ids: &[String], args: &Value) 
 
             Ok(ToolResult {
                 data: json!({ "initiative_id": initiative_id, "project_id": project_id }),
-                for_model: format!("Added project {} to initiative {}.", project_id, initiative_id),
+                for_model: format!(
+                    "Added project {} to initiative {}.",
+                    project_id, initiative_id
+                ),
                 component_hint: None,
                 summary: "Added project to initiative".to_string(),
             })
         }
 
         "remove_project" => {
-            let initiative_id = args.get("initiative_id").and_then(|v| v.as_str())
+            let initiative_id = args
+                .get("initiative_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "initiative_id is required".to_string())?;
-            let project_id = args.get("project_id").and_then(|v| v.as_str())
+            let project_id = args
+                .get("project_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "project_id is required".to_string())?;
-            let initiative_uuid: Uuid = initiative_id.parse()
+            let initiative_uuid: Uuid = initiative_id
+                .parse()
                 .map_err(|_| "Invalid initiative_id".to_string())?;
-            let project_uuid: Uuid = project_id.parse()
+            let project_uuid: Uuid = project_id
+                .parse()
                 .map_err(|_| "Invalid project_id".to_string())?;
 
             sqlx::query(
-                "DELETE FROM initiative_projects WHERE initiative_id = $1 AND project_id = $2"
+                "DELETE FROM initiative_projects WHERE initiative_id = $1 AND project_id = $2",
             )
             .bind(initiative_uuid)
             .bind(project_uuid)
@@ -3978,22 +4921,38 @@ async fn ai_manage_initiatives(pool: &PgPool, org_ids: &[String], args: &Value) 
 
             Ok(ToolResult {
                 data: json!({ "initiative_id": initiative_id, "project_id": project_id }),
-                for_model: format!("Removed project {} from initiative {}.", project_id, initiative_id),
+                for_model: format!(
+                    "Removed project {} from initiative {}.",
+                    project_id, initiative_id
+                ),
                 component_hint: None,
                 summary: "Removed project from initiative".to_string(),
             })
         }
 
-        _ => Err(format!("Unknown action '{}' for manage_initiatives", action)),
+        _ => Err(format!(
+            "Unknown action '{}' for manage_initiatives",
+            action
+        )),
     }
 }
 
-async fn ai_manage_automations(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn ai_manage_automations(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     use sqlx::Row;
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
-    let project_id_str = args.get("project_id").and_then(|v| v.as_str())
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list");
+    let project_id_str = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "project_id is required".to_string())?;
-    let project_id: Uuid = project_id_str.parse()
+    let project_id: Uuid = project_id_str
+        .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
 
     match action {
@@ -4002,7 +4961,7 @@ async fn ai_manage_automations(pool: &PgPool, org_ids: &[String], args: &Value) 
                 "SELECT id::text, name, trigger, conditions, actions, enabled
                  FROM automation_rules
                  WHERE project_id = $1 AND org_id = ANY($2::text[])
-                 ORDER BY created_at DESC"
+                 ORDER BY created_at DESC",
             )
             .bind(project_id)
             .bind(org_ids)
@@ -4010,36 +4969,58 @@ async fn ai_manage_automations(pool: &PgPool, org_ids: &[String], args: &Value) 
             .await
             .map_err(|e| e.to_string())?;
 
-            let rules: Vec<Value> = rows.iter().map(|r| json!({
-                "id":         r.get::<String, _>("id"),
-                "name":       r.get::<String, _>("name"),
-                "trigger":    r.get::<String, _>("trigger"),
-                "conditions": r.try_get::<Value, _>("conditions").unwrap_or(json!([])),
-                "actions":    r.try_get::<Value, _>("actions").unwrap_or(json!([])),
-                "enabled":    r.try_get::<bool, _>("enabled").unwrap_or(true),
-            })).collect();
+            let rules: Vec<Value> = rows
+                .iter()
+                .map(|r| {
+                    json!({
+                        "id":         r.get::<String, _>("id"),
+                        "name":       r.get::<String, _>("name"),
+                        "trigger":    r.get::<String, _>("trigger"),
+                        "conditions": r.try_get::<Value, _>("conditions").unwrap_or(json!([])),
+                        "actions":    r.try_get::<Value, _>("actions").unwrap_or(json!([])),
+                        "enabled":    r.try_get::<bool, _>("enabled").unwrap_or(true),
+                    })
+                })
+                .collect();
 
             Ok(ToolResult {
                 data: json!(rules),
-                for_model: format!("Found {} automation rules for project {}.", rules.len(), project_id_str),
+                for_model: format!(
+                    "Found {} automation rules for project {}.",
+                    rules.len(),
+                    project_id_str
+                ),
                 component_hint: None,
                 summary: format!("Listed {} automations", rules.len()),
             })
         }
 
         "create" => {
-            let name = args.get("name").and_then(|v| v.as_str())
+            let name = args
+                .get("name")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "name is required".to_string())?;
-            let trigger = args.get("trigger_type").and_then(|v| v.as_str())
+            let trigger = args
+                .get("trigger_type")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "trigger_type is required".to_string())?;
-            let trigger_cfg = args.get("trigger_config").and_then(|v| v.as_str()).unwrap_or("{}");
-            let action_type = args.get("action_type").and_then(|v| v.as_str()).unwrap_or("add_comment");
-            let action_cfg  = args.get("action_config").and_then(|v| v.as_str()).unwrap_or("{}");
+            let trigger_cfg = args
+                .get("trigger_config")
+                .and_then(|v| v.as_str())
+                .unwrap_or("{}");
+            let action_type = args
+                .get("action_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("add_comment");
+            let action_cfg = args
+                .get("action_config")
+                .and_then(|v| v.as_str())
+                .unwrap_or("{}");
 
-            let conditions: Value = serde_json::from_str(trigger_cfg)
-                .unwrap_or_else(|_| json!([{"type": trigger}]));
-            let actions_val: Value = serde_json::from_str(action_cfg)
-                .unwrap_or_else(|_| json!([{"type": action_type}]));
+            let conditions: Value =
+                serde_json::from_str(trigger_cfg).unwrap_or_else(|_| json!([{"type": trigger}]));
+            let actions_val: Value =
+                serde_json::from_str(action_cfg).unwrap_or_else(|_| json!([{"type": action_type}]));
 
             let new_id: String = sqlx::query(
                 "INSERT INTO automation_rules (project_id, org_id, name, trigger, conditions, actions)
@@ -4058,22 +5039,28 @@ async fn ai_manage_automations(pool: &PgPool, org_ids: &[String], args: &Value) 
 
             Ok(ToolResult {
                 data: json!({ "id": new_id, "name": name, "trigger": trigger }),
-                for_model: format!("Created automation '{}' (trigger: {}) — id: {}.", name, trigger, new_id),
+                for_model: format!(
+                    "Created automation '{}' (trigger: {}) — id: {}.",
+                    name, trigger, new_id
+                ),
                 component_hint: None,
                 summary: format!("Created automation: {}", name),
             })
         }
 
         "toggle" => {
-            let automation_id = args.get("automation_id").and_then(|v| v.as_str())
+            let automation_id = args
+                .get("automation_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "automation_id is required".to_string())?;
-            let automation_uuid: Uuid = automation_id.parse()
+            let automation_uuid: Uuid = automation_id
+                .parse()
                 .map_err(|_| "Invalid automation_id".to_string())?;
 
             let row = sqlx::query(
                 "UPDATE automation_rules SET enabled = NOT enabled
                  WHERE id = $1 AND project_id = $2 AND org_id = ANY($3::text[])
-                 RETURNING enabled"
+                 RETURNING enabled",
             )
             .bind(automation_uuid)
             .bind(project_id)
@@ -4085,17 +5072,23 @@ async fn ai_manage_automations(pool: &PgPool, org_ids: &[String], args: &Value) 
             let enabled: bool = row.get("enabled");
             Ok(ToolResult {
                 data: json!({ "id": automation_id, "enabled": enabled }),
-                for_model: format!("Automation {} is now {}.", automation_id,
-                    if enabled { "enabled" } else { "disabled" }),
+                for_model: format!(
+                    "Automation {} is now {}.",
+                    automation_id,
+                    if enabled { "enabled" } else { "disabled" }
+                ),
                 component_hint: None,
                 summary: format!("Toggled automation {}", automation_id),
             })
         }
 
         "delete" => {
-            let automation_id = args.get("automation_id").and_then(|v| v.as_str())
+            let automation_id = args
+                .get("automation_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "automation_id is required".to_string())?;
-            let automation_uuid: Uuid = automation_id.parse()
+            let automation_uuid: Uuid = automation_id
+                .parse()
                 .map_err(|_| "Invalid automation_id".to_string())?;
 
             sqlx::query(
@@ -4116,16 +5109,29 @@ async fn ai_manage_automations(pool: &PgPool, org_ids: &[String], args: &Value) 
             })
         }
 
-        _ => Err(format!("Unknown action '{}' for manage_automations", action)),
+        _ => Err(format!(
+            "Unknown action '{}' for manage_automations",
+            action
+        )),
     }
 }
 
-async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn ai_manage_sla(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     use sqlx::Row;
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list_rules");
-    let project_id_str = args.get("project_id").and_then(|v| v.as_str())
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list_rules");
+    let project_id_str = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "project_id is required".to_string())?;
-    let project_id: Uuid = project_id_str.parse()
+    let project_id: Uuid = project_id_str
+        .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
 
     match action {
@@ -4136,7 +5142,7 @@ async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Resul
                  WHERE project_id = $1 AND org_id = ANY($2::text[])
                  ORDER BY CASE priority
                    WHEN 'urgent' THEN 1 WHEN 'high' THEN 2
-                   WHEN 'medium' THEN 3 ELSE 4 END"
+                   WHEN 'medium' THEN 3 ELSE 4 END",
             )
             .bind(project_id)
             .bind(org_ids)
@@ -4144,15 +5150,24 @@ async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Resul
             .await
             .map_err(|e| e.to_string())?;
 
-            let rules: Vec<Value> = rows.iter().map(|r| json!({
-                "id":             r.get::<String, _>("id"),
-                "priority":       r.get::<String, _>("priority"),
-                "deadline_hours": r.get::<i32, _>("deadline_hours"),
-            })).collect();
+            let rules: Vec<Value> = rows
+                .iter()
+                .map(|r| {
+                    json!({
+                        "id":             r.get::<String, _>("id"),
+                        "priority":       r.get::<String, _>("priority"),
+                        "deadline_hours": r.get::<i32, _>("deadline_hours"),
+                    })
+                })
+                .collect();
 
             Ok(ToolResult {
                 data: json!(rules),
-                for_model: format!("Found {} SLA rules for project {}.", rules.len(), project_id_str),
+                for_model: format!(
+                    "Found {} SLA rules for project {}.",
+                    rules.len(),
+                    project_id_str
+                ),
                 component_hint: None,
                 summary: format!("Listed {} SLA rules", rules.len()),
             })
@@ -4160,7 +5175,7 @@ async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Resul
 
         "stats" => {
             let breached: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM issues WHERE project_id = $1 AND sla_breached = true"
+                "SELECT COUNT(*) FROM issues WHERE project_id = $1 AND sla_breached = true",
             )
             .bind(project_id)
             .fetch_one(pool)
@@ -4169,7 +5184,7 @@ async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Resul
 
             let total_open: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM issues
-                 WHERE project_id = $1 AND status NOT IN ('done', 'cancelled')"
+                 WHERE project_id = $1 AND status NOT IN ('done', 'cancelled')",
             )
             .bind(project_id)
             .fetch_one(pool)
@@ -4178,7 +5193,9 @@ async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Resul
 
             let compliance = if total_open > 0 {
                 ((1.0 - breached as f64 / total_open as f64) * 100.0).round() / 100.0
-            } else { 1.0 };
+            } else {
+                1.0
+            };
 
             Ok(ToolResult {
                 data: json!({
@@ -4189,7 +5206,9 @@ async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Resul
                 }),
                 for_model: format!(
                     "SLA stats for project {}: {} open, {} breached ({}% compliance).",
-                    project_id_str, total_open, breached,
+                    project_id_str,
+                    total_open,
+                    breached,
                     (compliance * 100.0).round() as i64
                 ),
                 component_hint: None,
@@ -4198,17 +5217,22 @@ async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Resul
         }
 
         "create_rule" => {
-            let priority = args.get("priority").and_then(|v| v.as_str())
+            let priority = args
+                .get("priority")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "priority is required".to_string())?;
-            let deadline_hours = args.get("deadline_hours").and_then(|v| v.as_i64())
-                .ok_or_else(|| "deadline_hours is required".to_string())? as i32;
+            let deadline_hours = args
+                .get("deadline_hours")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| "deadline_hours is required".to_string())?
+                as i32;
 
             let new_id: String = sqlx::query(
                 "INSERT INTO sla_rules (project_id, org_id, priority, deadline_hours)
                  VALUES ($1, (SELECT org_id FROM projects WHERE id = $1), $2, $3)
                  ON CONFLICT (project_id, priority)
                  DO UPDATE SET deadline_hours = EXCLUDED.deadline_hours
-                 RETURNING id::text"
+                 RETURNING id::text",
             )
             .bind(project_id)
             .bind(priority)
@@ -4220,17 +5244,21 @@ async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Resul
 
             Ok(ToolResult {
                 data: json!({ "id": new_id, "priority": priority, "deadline_hours": deadline_hours }),
-                for_model: format!("Created/updated SLA rule: {} = {}h deadline.", priority, deadline_hours),
+                for_model: format!(
+                    "Created/updated SLA rule: {} = {}h deadline.",
+                    priority, deadline_hours
+                ),
                 component_hint: None,
                 summary: format!("SLA rule: {}={}h", priority, deadline_hours),
             })
         }
 
         "delete_rule" => {
-            let rule_id = args.get("rule_id").and_then(|v| v.as_str())
+            let rule_id = args
+                .get("rule_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "rule_id is required".to_string())?;
-            let rule_uuid: Uuid = rule_id.parse()
-                .map_err(|_| "Invalid rule_id".to_string())?;
+            let rule_uuid: Uuid = rule_id.parse().map_err(|_| "Invalid rule_id".to_string())?;
 
             sqlx::query(
                 "DELETE FROM sla_rules WHERE id = $1 AND project_id = $2 AND org_id = ANY($3::text[])"
@@ -4255,12 +5283,22 @@ async fn ai_manage_sla(pool: &PgPool, org_ids: &[String], args: &Value) -> Resul
 }
 
 // Table: issue_templates (migration 031)
-async fn ai_manage_templates(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn ai_manage_templates(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     use sqlx::Row;
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
-    let project_id_str = args.get("project_id").and_then(|v| v.as_str())
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list");
+    let project_id_str = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "project_id is required".to_string())?;
-    let project_id: Uuid = project_id_str.parse()
+    let project_id: Uuid = project_id_str
+        .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
 
     match action {
@@ -4270,7 +5308,7 @@ async fn ai_manage_templates(pool: &PgPool, org_ids: &[String], args: &Value) ->
                         default_issue_type, default_tags, is_default
                  FROM issue_templates
                  WHERE project_id = $1 AND org_id = ANY($2::text[])
-                 ORDER BY is_default DESC, created_at DESC"
+                 ORDER BY is_default DESC, created_at DESC",
             )
             .bind(project_id)
             .bind(org_ids)
@@ -4290,24 +5328,36 @@ async fn ai_manage_templates(pool: &PgPool, org_ids: &[String], args: &Value) ->
 
             Ok(ToolResult {
                 data: json!(templates),
-                for_model: format!("Found {} issue templates for project {}.", templates.len(), project_id_str),
+                for_model: format!(
+                    "Found {} issue templates for project {}.",
+                    templates.len(),
+                    project_id_str
+                ),
                 component_hint: None,
                 summary: format!("Listed {} templates", templates.len()),
             })
         }
 
         "create" => {
-            let name = args.get("name").and_then(|v| v.as_str())
+            let name = args
+                .get("name")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "name is required".to_string())?;
             let description = args.get("description").and_then(|v| v.as_str());
-            let priority    = args.get("default_priority").and_then(|v| v.as_str()).unwrap_or("medium");
-            let issue_type  = args.get("default_type").and_then(|v| v.as_str()).unwrap_or("feature");
+            let priority = args
+                .get("default_priority")
+                .and_then(|v| v.as_str())
+                .unwrap_or("medium");
+            let issue_type = args
+                .get("default_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("feature");
 
             let new_id: String = sqlx::query(
                 "INSERT INTO issue_templates
                    (project_id, org_id, name, description, default_priority, default_issue_type)
                  VALUES ($1, (SELECT org_id FROM projects WHERE id = $1), $2, $3, $4, $5)
-                 RETURNING id::text"
+                 RETURNING id::text",
             )
             .bind(project_id)
             .bind(name)
@@ -4328,9 +5378,12 @@ async fn ai_manage_templates(pool: &PgPool, org_ids: &[String], args: &Value) ->
         }
 
         "delete" => {
-            let template_id = args.get("template_id").and_then(|v| v.as_str())
+            let template_id = args
+                .get("template_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "template_id is required".to_string())?;
-            let template_uuid: Uuid = template_id.parse()
+            let template_uuid: Uuid = template_id
+                .parse()
                 .map_err(|_| "Invalid template_id".to_string())?;
 
             sqlx::query(
@@ -4356,12 +5409,22 @@ async fn ai_manage_templates(pool: &PgPool, org_ids: &[String], args: &Value) ->
 }
 
 // Table: recurrence_rules (migration 026)
-async fn ai_manage_recurring(pool: &PgPool, org_ids: &[String], args: &Value) -> Result<ToolResult, String> {
+async fn ai_manage_recurring(
+    pool: &PgPool,
+    org_ids: &[String],
+    args: &Value,
+) -> Result<ToolResult, String> {
     use sqlx::Row;
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
-    let project_id_str = args.get("project_id").and_then(|v| v.as_str())
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("list");
+    let project_id_str = args
+        .get("project_id")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "project_id is required".to_string())?;
-    let project_id: Uuid = project_id_str.parse()
+    let project_id: Uuid = project_id_str
+        .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
 
     match action {
@@ -4372,7 +5435,7 @@ async fn ai_manage_recurring(pool: &PgPool, org_ids: &[String], args: &Value) ->
                         occurrence_count
                  FROM recurrence_rules
                  WHERE project_id = $1 AND org_id = ANY($2::text[])
-                 ORDER BY created_at DESC"
+                 ORDER BY created_at DESC",
             )
             .bind(project_id)
             .bind(org_ids)
@@ -4393,21 +5456,35 @@ async fn ai_manage_recurring(pool: &PgPool, org_ids: &[String], args: &Value) ->
 
             Ok(ToolResult {
                 data: json!(rules),
-                for_model: format!("Found {} recurring configs for project {}.", rules.len(), project_id_str),
+                for_model: format!(
+                    "Found {} recurring configs for project {}.",
+                    rules.len(),
+                    project_id_str
+                ),
                 component_hint: None,
                 summary: format!("Listed {} recurring configs", rules.len()),
             })
         }
 
         "create" => {
-            let title = args.get("title").and_then(|v| v.as_str())
+            let title = args
+                .get("title")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "title is required".to_string())?;
-            let cron = args.get("cron_expression").and_then(|v| v.as_str())
+            let cron = args
+                .get("cron_expression")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "cron_expression is required".to_string())?;
-            let priority    = args.get("priority").and_then(|v| v.as_str()).unwrap_or("medium");
-            let issue_type  = args.get("issue_type").and_then(|v| v.as_str()).unwrap_or("feature");
+            let priority = args
+                .get("priority")
+                .and_then(|v| v.as_str())
+                .unwrap_or("medium");
+            let issue_type = args
+                .get("issue_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("feature");
             let description = args.get("description").and_then(|v| v.as_str());
-            let next_run    = chrono::Utc::now() + chrono::Duration::days(1);
+            let next_run = chrono::Utc::now() + chrono::Duration::days(1);
 
             let new_id: String = sqlx::query(
                 "INSERT INTO recurrence_rules
@@ -4429,22 +5506,28 @@ async fn ai_manage_recurring(pool: &PgPool, org_ids: &[String], args: &Value) ->
 
             Ok(ToolResult {
                 data: json!({ "id": new_id, "title": title, "cron": cron }),
-                for_model: format!("Created recurring config '{}' (cron: {}) — id: {}.", title, cron, new_id),
+                for_model: format!(
+                    "Created recurring config '{}' (cron: {}) — id: {}.",
+                    title, cron, new_id
+                ),
                 component_hint: None,
                 summary: format!("Created recurring: {}", title),
             })
         }
 
         "toggle" => {
-            let recurring_id = args.get("recurring_id").and_then(|v| v.as_str())
+            let recurring_id = args
+                .get("recurring_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "recurring_id is required".to_string())?;
-            let recurring_uuid: Uuid = recurring_id.parse()
+            let recurring_uuid: Uuid = recurring_id
+                .parse()
                 .map_err(|_| "Invalid recurring_id".to_string())?;
 
             let row = sqlx::query(
                 "UPDATE recurrence_rules SET paused = NOT paused
                  WHERE id = $1 AND project_id = $2 AND org_id = ANY($3::text[])
-                 RETURNING paused"
+                 RETURNING paused",
             )
             .bind(recurring_uuid)
             .bind(project_id)
@@ -4456,17 +5539,23 @@ async fn ai_manage_recurring(pool: &PgPool, org_ids: &[String], args: &Value) ->
             let paused: bool = row.get("paused");
             Ok(ToolResult {
                 data: json!({ "id": recurring_id, "enabled": !paused }),
-                for_model: format!("Recurring config {} is now {}.", recurring_id,
-                    if paused { "paused" } else { "active" }),
+                for_model: format!(
+                    "Recurring config {} is now {}.",
+                    recurring_id,
+                    if paused { "paused" } else { "active" }
+                ),
                 component_hint: None,
                 summary: format!("Toggled recurring {}", recurring_id),
             })
         }
 
         "delete" => {
-            let recurring_id = args.get("recurring_id").and_then(|v| v.as_str())
+            let recurring_id = args
+                .get("recurring_id")
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| "recurring_id is required".to_string())?;
-            let recurring_uuid: Uuid = recurring_id.parse()
+            let recurring_uuid: Uuid = recurring_id
+                .parse()
                 .map_err(|_| "Invalid recurring_id".to_string())?;
 
             sqlx::query(
