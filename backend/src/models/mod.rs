@@ -347,6 +347,38 @@ pub struct AppendContextField {
     pub content: String,
 }
 
+// ─── Project Memory ────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Memory {
+    pub id: Uuid,
+    pub org_id: String,
+    pub project_id: Option<Uuid>,
+    pub source: String,
+    pub kind: String,
+    pub content: String,
+    pub tags: Vec<String>,
+    pub confidence: f64,
+    pub external_url: Option<String>,
+    pub embedding: Option<serde_json::Value>,
+    pub metadata: serde_json::Value,
+    pub created_by: Option<String>,
+    pub created_by_name: Option<String>,
+    pub updated_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateMemory {
+    pub kind: Option<String>,
+    pub content: String,
+    pub tags: Option<Vec<String>>,
+    pub confidence: Option<f64>,
+    pub source: Option<String>,
+    pub external_url: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
 // ─── Project Template ──────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]

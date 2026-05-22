@@ -42,8 +42,9 @@ Lecture :
 - **org_overview** = SANTÉ multi-projets (KPIs agrégés, action requise, sprints, milestones, rollup). 1ᵉʳ choix pour « état des lieux », « comment vont les projets », « dashboard santé ». 1 SEUL appel — jamais chaîné avec get_project_metrics+analyze_sprint.
 - **weekly_recap** = ACTIVITÉ par période (qui a créé quoi, qui a changé quel statut, ce qui a landé). 1ᵉʳ choix pour « récap semaine », « qui a fait quoi », « tickets créés cette semaine », « changements de statut », « activité semaine ». Retourne les LISTES réelles avec auteurs.
 - search_issues, get_project_metrics (drill-down 1 projet), analyze_sprint (1 sprint précis), suggest_priorities, find_similar_issues, workload_by_assignee, compare_projects (2-5 projets head-to-head), export_project.
+- **search_memories** = mémoire projet durable (décisions, learnings, contraintes, risques, handoffs, intégrations). 1er choix pour « qu'est-ce qu'on sait déjà », « pourquoi », « gotcha », « remember ».
 
-Écriture : enchaîner **propose_issue / propose_update_issue / propose_bulk_update / propose_comment** → validation UI → **create_issue, update_issue, bulk_update_issues, add_comment** avec les `finalValues` retournés. Planning : plan_milestones → create_milestones_batch, adjust_timeline. Autres : generate_prd, triage_issue, manage_* (initiatives, automations, SLA, templates, recurring).
+Écriture : enchaîner **propose_issue / propose_update_issue / propose_bulk_update / propose_comment** → validation UI → **create_issue, update_issue, bulk_update_issues, add_comment** avec les `finalValues` retournés. Planning : plan_milestones → create_milestones_batch, adjust_timeline. Mémoire : **add_memory** quand l'utilisateur demande explicitement de retenir/noter une info durable, ou après une décision claire dans le chat. Autres : generate_prd, triage_issue, manage_* (initiatives, automations, SLA, templates, recurring).
 
 ## Écritures
 - Ne jamais appeler create/update/bulk/comment sans passage par le **propose_*** correspondant. Si `approved` est faux, une phrase d'acquittement suffit.
@@ -54,7 +55,6 @@ Lecture :
 - Titres : phrase claire, sans préfixe projet ni étiquette type [BUG] dans le titre.
 - Citer les **display_id** (HLM-42). Pour les champs techniques, utiliser les UUID fournis par les outils quand nécessaire.
 - **propose_issue** : description Markdown structurée selon le type (bug : contexte + reproduction + attendu/actuel ; feature : besoin + solution + critères d'acceptation ; improvement : bénéfice ; question : question + contexte). Enrichir avec le contexte projet ci-dessous ; ne pas laisser vide.
-- **Pièces jointes** : la carte de proposition propose un upload d'images (drag, paste, ou clic). Si l'utilisateur a clairement décrit un bug visuel ou parlé d'une capture, mentionne en une phrase qu'il peut joindre une image dans la carte. Sinon n'en parle pas. Tu ne fournis JAMAIS de URL d'attachment toi-même — seul le formulaire le fait.
 
 ## Analyse — règle stricte (anti-doublons)
 - "état des lieux", "dashboard santé", "comment vont les projets", "vue d'ensemble multi-projets" → **un SEUL appel à `org_overview`**, jamais combiné avec get_project_metrics/analyze_sprint, jamais appelé deux fois.
@@ -91,6 +91,28 @@ pub(super) async fn build_project_context(
         project_name: String,
         status: String,
         cnt: i64,
+    }
+
+    #[derive(sqlx::FromRow)]
+    struct ContextRow {
+        project_id: uuid::Uuid,
+        stack: Option<String>,
+        conventions: Option<String>,
+        architecture: Option<String>,
+        constraints: Option<String>,
+        current_focus: Option<String>,
+        learnings: Option<String>,
+    }
+
+    #[derive(sqlx::FromRow)]
+    struct MemoryRow {
+        project_id: uuid::Uuid,
+        source: String,
+        kind: String,
+        content: String,
+        tags: Vec<String>,
+        confidence: f64,
+        created_at: chrono::DateTime<chrono::Utc>,
     }
 
     let projects: Vec<ProjectRow> = if project_ids.is_empty() {
@@ -149,6 +171,39 @@ pub(super) async fn build_project_context(
         .unwrap_or_default()
     };
 
+    let project_uuid_list: Vec<uuid::Uuid> = projects.iter().map(|p| p.id).collect();
+
+    let project_contexts: Vec<ContextRow> = sqlx::query_as::<_, ContextRow>(
+        r#"
+        SELECT project_id, stack, conventions, architecture, constraints, current_focus, learnings
+        FROM project_contexts
+        WHERE org_id = ANY($1::text[]) AND project_id = ANY($2::uuid[])
+        "#,
+    )
+    .bind(org_ids)
+    .bind(&project_uuid_list)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let memories: Vec<MemoryRow> = sqlx::query_as::<_, MemoryRow>(
+        r#"
+        SELECT project_id, source, kind, content, tags, confidence, created_at
+        FROM (
+            SELECT m.*, row_number() OVER (PARTITION BY project_id ORDER BY confidence DESC, created_at DESC) AS rn
+            FROM memories m
+            WHERE m.org_id = ANY($1::text[]) AND m.project_id = ANY($2::uuid[])
+        ) ranked
+        WHERE rn <= 5
+        ORDER BY project_id, confidence DESC, created_at DESC
+        "#,
+    )
+    .bind(org_ids)
+    .bind(&project_uuid_list)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
     let mut ctx = String::from("## Projets disponibles\n\n");
     for project in &projects {
         ctx.push_str(&format!(
@@ -166,6 +221,55 @@ pub(super) async fn build_project_context(
             ctx.push_str(&format!("- **{}** issues ouvertes\n", total));
             for c in &project_counts {
                 ctx.push_str(&format!("  - {}: {}\n", c.status, c.cnt));
+            }
+        }
+        if let Some(pc) = project_contexts.iter().find(|c| c.project_id == project.id) {
+            let fields = [
+                ("Stack", pc.stack.as_deref()),
+                ("Conventions", pc.conventions.as_deref()),
+                ("Architecture", pc.architecture.as_deref()),
+                ("Constraints", pc.constraints.as_deref()),
+                ("Current focus", pc.current_focus.as_deref()),
+                ("Learnings", pc.learnings.as_deref()),
+            ];
+            let non_empty: Vec<(&str, &str)> = fields
+                .iter()
+                .filter_map(|(label, value)| {
+                    (*value)
+                        .map(str::trim)
+                        .filter(|v| !v.is_empty())
+                        .map(|v| (*label, v))
+                })
+                .collect();
+            if !non_empty.is_empty() {
+                ctx.push_str("- Project context:\n");
+                for (label, value) in non_empty {
+                    ctx.push_str(&format!("  - {}: {}\n", label, truncate(value, 900)));
+                }
+            }
+        }
+
+        let project_memories: Vec<&MemoryRow> = memories
+            .iter()
+            .filter(|m| m.project_id == project.id)
+            .collect();
+        if !project_memories.is_empty() {
+            ctx.push_str("- Relevant memories:\n");
+            for m in project_memories {
+                let tags = if m.tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" tags={}", m.tags.join(","))
+                };
+                ctx.push_str(&format!(
+                    "  - [{} / {} / {:.2}{} / {}] {}\n",
+                    m.kind,
+                    m.source,
+                    m.confidence,
+                    tags,
+                    m.created_at.format("%Y-%m-%d"),
+                    truncate(&m.content, 500)
+                ));
             }
         }
         ctx.push('\n');
@@ -214,12 +318,6 @@ pub fn build_stream(
         let mut total_tokens_in: i32 = 0;
         let mut total_tokens_out: i32 = 0;
         let mut total_tokens_cached: i32 = 0;
-        // Track whether the loop terminated on a Gemini error so we can skip
-        // the ai_usage INSERT — billing the user for a 400/429/503 round-trip
-        // that produced nothing visible would feel punitive (and historically
-        // burned quota when the conversation history desynced with Gemini's
-        // strict functionCall/functionResponse pairing).
-        let mut errored_out = false;
 
         'agent_loop: for step in 0..5usize {
             tracing::info!(
@@ -278,7 +376,6 @@ pub fn build_stream(
                                 yield sse_chunk(&UIMessageChunk::Error {
                                     error_text: "Impossible de joindre l'IA. Verifie ta connexion et reessaie.".into(),
                                 });
-                                errored_out = true;
                                 break 'agent_loop;
                             }
                             let wait = backoff_ms[attempt.min(backoff_ms.len() - 1)];
@@ -326,7 +423,6 @@ pub fn build_stream(
                 };
 
                 yield sse_chunk(&UIMessageChunk::Error { error_text: user_msg });
-                errored_out = true;
                 break 'agent_loop;
             }
 
@@ -337,7 +433,6 @@ pub fn build_stream(
                     yield sse_chunk(&UIMessageChunk::Error {
                         error_text: "Invalid AI service response".into(),
                     });
-                    errored_out = true;
                     break 'agent_loop;
                 }
             };
@@ -381,7 +476,6 @@ pub fn build_stream(
                 yield sse_chunk(&UIMessageChunk::Error {
                     error_text: "Empty response from AI service".into(),
                 });
-                errored_out = true;
                 break 'agent_loop;
             }
 
@@ -544,26 +638,19 @@ pub fn build_stream(
             total_prompt_tokens = total_tokens_in,
             total_output_tokens = total_tokens_out,
             total_cached_prompt_tokens = total_tokens_cached,
-            errored_out = errored_out,
             "ai_chat turn usage (cachedContentTokenCount sum per request steps)"
         );
-        // Only meter successful turns. A Gemini 4xx (e.g. 400 on a desynced
-        // history, 429 quota, 503 overloaded) means the user got nothing
-        // useful back — billing it against their monthly AI quota would feel
-        // punitive and historically caused real complaints (Aïcha, Apr 2026).
-        if !errored_out {
-            let _ = sqlx::query(
-                "INSERT INTO ai_usage (org_id, user_id, event_type, tokens_in, tokens_out, model, metadata) VALUES ($1, $2, 'ai_chat', $3, $4, $5, $6)",
-            )
-            .bind(org_ids.first().map(|s| s.as_str()).unwrap_or(""))
-            .bind(&user_id)
-            .bind(total_tokens_in)
-            .bind(total_tokens_out)
-            .bind(&model)
-            .bind(Json(meta))
-            .execute(&pool)
-            .await;
-        }
+        let _ = sqlx::query(
+            "INSERT INTO ai_usage (org_id, user_id, event_type, tokens_in, tokens_out, model, metadata) VALUES ($1, $2, 'ai_chat', $3, $4, $5, $6)",
+        )
+        .bind(org_ids.first().map(|s| s.as_str()).unwrap_or(""))
+        .bind(&user_id)
+        .bind(total_tokens_in)
+        .bind(total_tokens_out)
+        .bind(&model)
+        .bind(Json(meta))
+        .execute(&pool)
+        .await;
 
         yield sse_chunk(&UIMessageChunk::FinishStep);
         yield sse_chunk(&UIMessageChunk::Finish);

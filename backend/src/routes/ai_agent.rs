@@ -13,11 +13,20 @@ use axum::{
 };
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::PgPool;
 use std::{convert::Infallible, time::Duration};
 
 use crate::middleware::AuthUser;
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{}…", truncated)
+    }
+}
 
 // ─── Request / Response Types ─────────────────────────────────────────────────
 
@@ -276,6 +285,28 @@ async fn build_project_context(pool: &PgPool, org_id: &str, project_ids: &[Strin
         cnt: i64,
     }
 
+    #[derive(sqlx::FromRow)]
+    struct ContextRow {
+        project_id: uuid::Uuid,
+        stack: Option<String>,
+        conventions: Option<String>,
+        architecture: Option<String>,
+        constraints: Option<String>,
+        current_focus: Option<String>,
+        learnings: Option<String>,
+    }
+
+    #[derive(sqlx::FromRow)]
+    struct MemoryRow {
+        project_id: uuid::Uuid,
+        source: String,
+        kind: String,
+        content: String,
+        tags: Vec<String>,
+        confidence: f64,
+        created_at: chrono::DateTime<chrono::Utc>,
+    }
+
     let projects: Vec<ProjectRow> = if project_ids.is_empty() {
         sqlx::query_as::<_, ProjectRow>(
             "SELECT id, name, prefix FROM projects WHERE org_id = $1 ORDER BY name ASC LIMIT 20",
@@ -333,10 +364,46 @@ async fn build_project_context(pool: &PgPool, org_id: &str, project_ids: &[Strin
         .unwrap_or_default()
     };
 
+    let project_uuid_list: Vec<uuid::Uuid> = projects.iter().map(|p| p.id).collect();
+
+    let project_contexts: Vec<ContextRow> = sqlx::query_as::<_, ContextRow>(
+        r#"
+        SELECT project_id, stack, conventions, architecture, constraints, current_focus, learnings
+        FROM project_contexts
+        WHERE org_id = $1 AND project_id = ANY($2::uuid[])
+        "#,
+    )
+    .bind(org_id)
+    .bind(&project_uuid_list)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let memories: Vec<MemoryRow> = sqlx::query_as::<_, MemoryRow>(
+        r#"
+        SELECT project_id, source, kind, content, tags, confidence, created_at
+        FROM (
+            SELECT m.*, row_number() OVER (PARTITION BY project_id ORDER BY confidence DESC, created_at DESC) AS rn
+            FROM memories m
+            WHERE m.org_id = $1 AND m.project_id = ANY($2::uuid[])
+        ) ranked
+        WHERE rn <= 5
+        ORDER BY project_id, confidence DESC, created_at DESC
+        "#,
+    )
+    .bind(org_id)
+    .bind(&project_uuid_list)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
     // Build context string
     let mut ctx = String::from("## Projets disponibles\n\n");
     for project in &projects {
-        ctx.push_str(&format!("### {} (prefix: {}, id: {})\n", project.name, project.prefix, project.id));
+        ctx.push_str(&format!(
+            "### {} (prefix: {}, id: {})\n",
+            project.name, project.prefix, project.id
+        ));
         let project_counts: Vec<&IssueCountRow> = counts
             .iter()
             .filter(|c| c.project_name == project.name)
@@ -348,6 +415,56 @@ async fn build_project_context(pool: &PgPool, org_id: &str, project_ids: &[Strin
             ctx.push_str(&format!("- **{}** issues ouvertes\n", total));
             for c in &project_counts {
                 ctx.push_str(&format!("  - {}: {}\n", c.status, c.cnt));
+            }
+        }
+
+        if let Some(pc) = project_contexts.iter().find(|c| c.project_id == project.id) {
+            let fields = [
+                ("Stack", pc.stack.as_deref()),
+                ("Conventions", pc.conventions.as_deref()),
+                ("Architecture", pc.architecture.as_deref()),
+                ("Constraints", pc.constraints.as_deref()),
+                ("Current focus", pc.current_focus.as_deref()),
+                ("Learnings", pc.learnings.as_deref()),
+            ];
+            let non_empty: Vec<(&str, &str)> = fields
+                .iter()
+                .filter_map(|(label, value)| {
+                    (*value)
+                        .map(str::trim)
+                        .filter(|v| !v.is_empty())
+                        .map(|v| (*label, v))
+                })
+                .collect();
+            if !non_empty.is_empty() {
+                ctx.push_str("- Project context:\n");
+                for (label, value) in non_empty {
+                    ctx.push_str(&format!("  - {}: {}\n", label, truncate(value, 900)));
+                }
+            }
+        }
+
+        let project_memories: Vec<&MemoryRow> = memories
+            .iter()
+            .filter(|m| m.project_id == project.id)
+            .collect();
+        if !project_memories.is_empty() {
+            ctx.push_str("- Relevant memories:\n");
+            for m in project_memories {
+                let tags = if m.tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" tags={}", m.tags.join(","))
+                };
+                ctx.push_str(&format!(
+                    "  - [{} / {} / {:.2}{} / {}] {}\n",
+                    m.kind,
+                    m.source,
+                    m.confidence,
+                    tags,
+                    m.created_at.format("%Y-%m-%d"),
+                    truncate(&m.content, 500)
+                ));
             }
         }
         ctx.push('\n');

@@ -411,6 +411,24 @@ export interface ProjectContext {
   created_at: string;
 }
 
+export interface ProjectMemory {
+  id: string;
+  org_id: string;
+  project_id: string | null;
+  source: 'manual' | 'api' | 'ai_chat' | 'tldr' | 'github' | 'slack' | 'email' | 'memory_store';
+  kind: 'fact' | 'decision' | 'learning' | 'constraint' | 'risk' | 'handoff' | 'integration' | 'note';
+  content: string;
+  tags: string[];
+  confidence: number;
+  external_url: string | null;
+  embedding: unknown | null;
+  metadata: Record<string, unknown>;
+  created_by: string | null;
+  created_by_name: string | null;
+  updated_at: string;
+  created_at: string;
+}
+
 // ─── Project Template ─────────────────────────────────
 
 export interface ProjectTemplate {

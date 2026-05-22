@@ -49,6 +49,7 @@ pub mod gamification;
 pub mod sse;
 pub mod event_bus;
 pub mod project_context;
+pub mod memory;
 pub mod project_templates;
 mod dashboard;
 
@@ -225,9 +226,12 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // README badge for a tracked GitHub repo (public, cached 5 min).
         // The `{repo}` segment may include a `.svg` suffix (handler strips it).
         .route("/public/badge/repo/{owner}/{repo}", get(badge::render))
-        // Project Context
+        // Project Context + Memory Layer
         .route("/projects/{id}/context", get(project_context::get_or_create).patch(project_context::update))
         .route("/projects/{id}/context/append", post(project_context::append))
+        .route("/projects/{id}/memory", get(memory::list_project_memory).post(memory::create_project_memory))
+        .route("/projects/{id}/memory/{memory_id}", delete(memory::delete_project_memory))
+        .route("/memory/search", post(memory::search_memory))
         // Dependency Graph
         .route("/projects/{id}/dependency-graph", get(relations::dependency_graph))
         // Project Templates

@@ -16,18 +16,16 @@ async fn record_github_activity(
     action: &str,
     metadata: serde_json::Value,
 ) {
-    let org_id: Option<String> = sqlx::query_scalar(
-        "SELECT org_id FROM projects WHERE id = $1"
-    )
-    .bind(project_id)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
+    let org_id: Option<String> = sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
 
     let Some(org_id) = org_id else { return };
 
-    let user_id   = format!("github:{}", sender_login);
+    let user_id = format!("github:{}", sender_login);
     let user_name = format!("@{}", sender_login);
 
     crate::routes::activity::log_activity(
@@ -38,26 +36,24 @@ async fn record_github_activity(
         &user_id,
         Some(&user_name),
         action,
-        None, None, None,
+        None,
+        None,
+        None,
         Some(metadata),
-    ).await;
+    )
+    .await;
 }
 
 /// Process a webhook event that was previously stored in github_webhook_events.
 ///
 /// Called from the webhook handler's spawned task AND from the job runner
 /// (for retries of failed events).
-pub async fn process_webhook_event(
-    pool: &PgPool,
-    delivery_id: &str,
-) -> Result<(), anyhow::Error> {
+pub async fn process_webhook_event(pool: &PgPool, delivery_id: &str) -> Result<(), anyhow::Error> {
     // Mark as processing
-    sqlx::query(
-        "UPDATE github_webhook_events SET status = 'processing' WHERE delivery_id = $1",
-    )
-    .bind(delivery_id)
-    .execute(pool)
-    .await?;
+    sqlx::query("UPDATE github_webhook_events SET status = 'processing' WHERE delivery_id = $1")
+        .bind(delivery_id)
+        .execute(pool)
+        .await?;
 
     // Fetch the event
     let event = sqlx::query_as::<_, GitHubWebhookEvent>(
@@ -91,7 +87,11 @@ pub async fn process_webhook_event(
         }
         Err(ref e) => {
             let retry_count = event.retry_count + 1;
-            let new_status = if retry_count >= 3 { "failed" } else { "pending" };
+            let new_status = if retry_count >= 3 {
+                "failed"
+            } else {
+                "pending"
+            };
 
             sqlx::query(
                 r#"UPDATE github_webhook_events
@@ -359,7 +359,7 @@ async fn handle_pull_request_event(
 
     // Record PR activity (opened or merged only — not every draft update)
     let gh_action = match (action, pr["merged"].as_bool()) {
-        ("opened", _)         => Some("github_pr_opened"),
+        ("opened", _) => Some("github_pr_opened"),
         ("closed", Some(true)) => Some("github_pr_merged"),
         _ => None,
     };
@@ -377,7 +377,55 @@ async fn handle_pull_request_event(
                 "pr_title":  pr_title,
                 "branch":    head_branch,
             }),
-        ).await;
+        )
+        .await;
+
+        let memory_org_id: Option<String> =
+            sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
+                .bind(mapping.project_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten();
+        if let Some(memory_org_id) = memory_org_id {
+            crate::routes::memory::record_memory_best_effort(
+                pool,
+                crate::routes::memory::NewMemory {
+                    org_id: memory_org_id,
+                    project_id: Some(mapping.project_id),
+                    source: "github".to_string(),
+                    kind: if gh_action == "github_pr_merged" {
+                        "learning".to_string()
+                    } else {
+                        "note".to_string()
+                    },
+                    content: format!(
+                        "GitHub PR #{} {} for linked issue: {} ({})",
+                        pr_number,
+                        if gh_action == "github_pr_merged" {
+                            "merged"
+                        } else {
+                            "opened"
+                        },
+                        pr_title,
+                        head_branch
+                    ),
+                    tags: vec!["github".to_string(), "pull-request".to_string()],
+                    confidence: 0.85,
+                    external_url: pr["html_url"].as_str().map(|s| s.to_string()),
+                    metadata: serde_json::json!({
+                        "issue_id": issue_id,
+                        "repo": pr["base"]["repo"]["full_name"].as_str().unwrap_or(""),
+                        "pr_number": pr_number,
+                        "action": gh_action,
+                        "branch": head_branch,
+                    }),
+                    created_by: Some(format!("github:{}", sender_login)),
+                    created_by_name: Some(format!("@{}", sender_login)),
+                },
+            )
+            .await;
+        }
     }
 
     Ok(())
@@ -420,10 +468,7 @@ async fn handle_pr_review_event(
 
 // ─── Push Events (Commits) ────────────────────────────
 
-async fn handle_push_event(
-    pool: &PgPool,
-    event: &GitHubWebhookEvent,
-) -> Result<(), anyhow::Error> {
+async fn handle_push_event(pool: &PgPool, event: &GitHubWebhookEvent) -> Result<(), anyhow::Error> {
     let payload = &event.payload;
     let repo = &payload["repository"];
     let github_repo_id = repo["id"].as_i64().unwrap_or(0);
@@ -456,10 +501,9 @@ async fn handle_push_event(
         let timestamp = commit["timestamp"].as_str().unwrap_or("");
 
         // Try to find linked issue from branch name or commit message
-        let issue_id = crate::github::issue_linker::find_linked_issue(
-            pool, &mapping, branch, message, "",
-        )
-        .await?;
+        let issue_id =
+            crate::github::issue_linker::find_linked_issue(pool, &mapping, branch, message, "")
+                .await?;
 
         let issue_id = match issue_id {
             Some(id) => id,
@@ -498,7 +542,8 @@ async fn handle_push_event(
                 "sha":          sha,
                 "message":      message,
             }),
-        ).await;
+        )
+        .await;
     }
 
     Ok(())
