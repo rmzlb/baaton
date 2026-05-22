@@ -142,6 +142,7 @@ async fn main() -> anyhow::Result<()> {
         (56, include_str!("../migrations/056_pr_comment_job_type.sql")),
         (57, include_str!("../migrations/057_org_signing_keys.sql")),
         (58, include_str!("../migrations/058_source_slack.sql")),
+        (59, include_str!("../migrations/059_memories.sql")),
     ];
 
     for &(version, sql) in migrations {

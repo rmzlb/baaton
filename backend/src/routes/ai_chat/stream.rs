@@ -103,6 +103,17 @@ pub(super) async fn build_project_context(
         learnings: Option<String>,
     }
 
+    #[derive(sqlx::FromRow)]
+    struct MemoryRow {
+        project_id: uuid::Uuid,
+        source: String,
+        kind: String,
+        content: String,
+        tags: Vec<String>,
+        confidence: f64,
+        created_at: chrono::DateTime<chrono::Utc>,
+    }
+
     let projects: Vec<ProjectRow> = if project_ids.is_empty() {
         sqlx::query_as::<_, ProjectRow>(
             "SELECT id, name, prefix FROM projects WHERE org_id = ANY($1::text[]) ORDER BY name ASC LIMIT 20",
@@ -174,6 +185,24 @@ pub(super) async fn build_project_context(
     .await
     .unwrap_or_default();
 
+    let memories: Vec<MemoryRow> = sqlx::query_as::<_, MemoryRow>(
+        r#"
+        SELECT project_id, source, kind, content, tags, confidence, created_at
+        FROM (
+            SELECT m.*, row_number() OVER (PARTITION BY project_id ORDER BY confidence DESC, created_at DESC) AS rn
+            FROM memories m
+            WHERE m.org_id = ANY($1::text[]) AND m.project_id = ANY($2::uuid[])
+        ) ranked
+        WHERE rn <= 5
+        ORDER BY project_id, confidence DESC, created_at DESC
+        "#,
+    )
+    .bind(org_ids)
+    .bind(&project_uuid_list)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
     let mut ctx = String::from("## Projets disponibles\n\n");
     for project in &projects {
         ctx.push_str(&format!(
@@ -219,6 +248,29 @@ pub(super) async fn build_project_context(
             }
         }
 
+        let project_memories: Vec<&MemoryRow> = memories
+            .iter()
+            .filter(|m| m.project_id == project.id)
+            .collect();
+        if !project_memories.is_empty() {
+            ctx.push_str("- Relevant memories:\n");
+            for m in project_memories {
+                let tags = if m.tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" tags={}", m.tags.join(","))
+                };
+                ctx.push_str(&format!(
+                    "  - [{} / {} / {:.2}{} / {}] {}\n",
+                    m.kind,
+                    m.source,
+                    m.confidence,
+                    tags,
+                    m.created_at.format("%Y-%m-%d"),
+                    truncate(&m.content, 500)
+                ));
+            }
+        }
         ctx.push('\n');
     }
 
