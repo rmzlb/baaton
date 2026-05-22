@@ -1711,6 +1711,91 @@ pub async fn update(
         });
     }
 
+    // ── Memory ingestion on done/cancelled (fire-and-forget) ──────────
+    if status_changed && (new_status == "done" || new_status == "cancelled") {
+        let has_content = existing
+            .description
+            .as_deref()
+            .map(|d| d.trim().len() > 100)
+            .unwrap_or(false);
+
+        if has_content {
+            let pool2 = pool.clone();
+            let oid = target_org_id.clone();
+            let pid = existing.project_id;
+            let display_id = issue.display_id.clone();
+            let title = issue.title.clone();
+            let desc_preview: String = existing
+                .description
+                .as_deref()
+                .unwrap_or("")
+                .chars()
+                .take(300)
+                .collect();
+            let is_done = new_status == "done";
+            let user_id = auth.user_id.clone();
+            let user_name = auth.display_name.clone();
+
+            tokio::spawn(async move {
+                // Check if there's a TLDR for richer content
+                let tldr_summary: Option<String> = sqlx::query_scalar(
+                    "SELECT summary FROM tldrs WHERE issue_id = $1 ORDER BY created_at DESC LIMIT 1",
+                )
+                .bind(id)
+                .fetch_optional(&pool2)
+                .await
+                .ok()
+                .flatten();
+
+                let content = if let Some(ref summary) = tldr_summary {
+                    format!(
+                        "{} {}: {}\n\nTLDR: {}",
+                        display_id,
+                        if is_done { "shipped" } else { "cancelled" },
+                        title,
+                        &summary[..summary.len().min(500)]
+                    )
+                } else {
+                    format!(
+                        "{} {}: {}\n\n{}",
+                        display_id,
+                        if is_done { "shipped" } else { "cancelled" },
+                        title,
+                        desc_preview
+                    )
+                };
+
+                let kind = if is_done {
+                    "handoff".to_string()
+                } else {
+                    "decision".to_string()
+                };
+
+                crate::routes::memory::record_memory_best_effort(
+                    &pool2,
+                    crate::routes::memory::NewMemory {
+                        org_id: oid,
+                        project_id: Some(pid),
+                        source: "api".to_string(),
+                        kind,
+                        content,
+                        tags: vec!["auto".to_string(), "status_change".to_string()],
+                        confidence: 0.65,
+                        external_url: None,
+                        metadata: serde_json::json!({
+                            "issue_id": id,
+                            "display_id": display_id,
+                            "transition": if is_done { "done" } else { "cancelled" }
+                        }),
+                        created_by: Some(user_id),
+                        created_by_name: user_name,
+                    },
+                )
+                .await;
+            });
+        }
+    }
+
     // ── Activity logging (fire-and-forget) ───────────────
     {
         let pool_ref = pool.clone();
