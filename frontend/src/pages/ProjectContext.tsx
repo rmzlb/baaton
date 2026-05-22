@@ -14,11 +14,12 @@ import {
   Layers, BookOpen, Network, Shield, Target, Lightbulb,
   ChevronDown, Clock, Search,
   CheckCircle2, AlertCircle, Loader2, FolderOpen, Braces, X,
+  Database, Plus, Tag,
 } from 'lucide-react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useApi } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
-import type { ProjectContext as ProjectContextType, Project } from '@/lib/types';
+import type { ProjectContext as ProjectContextType, Project, ProjectMemory } from '@/lib/types';
 
 // ─── Field config ─────────────────────────────
 
@@ -104,6 +105,9 @@ export default function ProjectContext() {
   const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set(CONTEXT_FIELDS.map(f => f.key)));
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [newMemoryContent, setNewMemoryContent] = useState('');
+  const [newMemoryKind, setNewMemoryKind] = useState<ProjectMemory['kind']>('fact');
+  const [newMemoryTags, setNewMemoryTags] = useState('');
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // Fetch all projects for the selector
@@ -146,6 +150,33 @@ export default function ProjectContext() {
       setLocalValues({});
     }
   }, [context]);
+
+  const { data: memories = [], isLoading: memoriesLoading } = useQuery({
+    queryKey: ['project-memory', currentProject?.id],
+    queryFn: () => apiClient.get<ProjectMemory[]>(`/projects/${currentProject!.id}/memory?limit=20`),
+    enabled: !!currentProject?.id,
+  });
+
+  const createMemoryMutation = useMutation({
+    mutationFn: (payload: { content: string; kind: ProjectMemory['kind']; tags: string[] }) =>
+      apiClient.post<ProjectMemory>(`/projects/${currentProject!.id}/memory`, {
+        ...payload,
+        source: 'manual',
+        confidence: 0.85,
+      }),
+    onSuccess: () => {
+      setNewMemoryContent('');
+      setNewMemoryTags('');
+      queryClient.invalidateQueries({ queryKey: ['project-memory', currentProject?.id] });
+    },
+  });
+
+  const deleteMemoryMutation = useMutation({
+    mutationFn: (memoryId: string) => apiClient.del(`/projects/${currentProject!.id}/memory/${memoryId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-memory', currentProject?.id] });
+    },
+  });
 
   // Save mutation with optimistic updates
   const saveMutation = useMutation({
@@ -224,6 +255,16 @@ export default function ProjectContext() {
 
   const handleProjectSwitch = (project: Project) => {
     navigate(`/projects/${project.slug}/context`);
+  };
+
+  const handleCreateMemory = () => {
+    const content = newMemoryContent.trim();
+    if (!content || createMemoryMutation.isPending) return;
+    createMemoryMutation.mutate({
+      content,
+      kind: newMemoryKind,
+      tags: newMemoryTags.split(',').map(t => t.trim()).filter(Boolean),
+    });
   };
 
   // Filled fields count for the selector badge
@@ -402,6 +443,93 @@ export default function ProjectContext() {
                 </motion.div>
               );
             })}
+          </motion.div>
+
+          {/* Memory Layer */}
+          <motion.div variants={cardVariants} className="rounded-xl border border-border bg-surface p-4 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Database size={18} className="text-accent" />
+                <div>
+                  <h2 className="font-medium text-primary text-sm">Memory Layer</h2>
+                  <p className="text-xs text-tertiary">Atomic memories injected into the in-app agent context.</p>
+                </div>
+              </div>
+              <span className="text-[10px] px-2 py-1 rounded-full bg-surface-hover text-tertiary">
+                {memories.length} memories
+              </span>
+            </div>
+
+            <div className="grid gap-2 md:grid-cols-[140px_1fr_160px_auto]">
+              <select
+                value={newMemoryKind}
+                onChange={(e) => setNewMemoryKind(e.target.value as ProjectMemory['kind'])}
+                className="rounded-lg border border-border/50 bg-bg px-3 py-2 text-sm text-primary outline-none focus:border-accent/50"
+              >
+                {['fact', 'decision', 'learning', 'constraint', 'risk', 'handoff', 'integration', 'note'].map(kind => (
+                  <option key={kind} value={kind}>{kind}</option>
+                ))}
+              </select>
+              <input
+                value={newMemoryContent}
+                onChange={(e) => setNewMemoryContent(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleCreateMemory();
+                }}
+                placeholder="Remember a durable decision, gotcha, constraint..."
+                className="rounded-lg border border-border/50 bg-bg px-3 py-2 text-sm text-primary placeholder:text-tertiary outline-none focus:border-accent/50"
+              />
+              <input
+                value={newMemoryTags}
+                onChange={(e) => setNewMemoryTags(e.target.value)}
+                placeholder="tags, comma separated"
+                className="rounded-lg border border-border/50 bg-bg px-3 py-2 text-sm text-primary placeholder:text-tertiary outline-none focus:border-accent/50"
+              />
+              <button
+                onClick={handleCreateMemory}
+                disabled={!newMemoryContent.trim() || createMemoryMutation.isPending}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-black disabled:opacity-40"
+              >
+                {createMemoryMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                Add
+              </button>
+            </div>
+
+            {memoriesLoading ? (
+              <div className="text-xs text-tertiary">Loading memories...</div>
+            ) : memories.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/50 bg-bg/40 p-4 text-center text-sm text-tertiary">
+                No memories yet. TLDRs, Slack, email, GitHub and agent chat will enrich this automatically.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {memories.slice(0, 12).map(memory => (
+                  <div key={memory.id} className="rounded-lg border border-border/40 bg-bg/60 p-3">
+                    <div className="mb-1.5 flex items-start justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide text-tertiary">
+                        <span className="rounded bg-accent/10 px-1.5 py-0.5 text-accent">{memory.kind}</span>
+                        <span>{memory.source}</span>
+                        <span>{Math.round(memory.confidence * 100)}%</span>
+                        {memory.tags.map(tag => (
+                          <span key={tag} className="inline-flex items-center gap-1 rounded bg-surface px-1.5 py-0.5 normal-case">
+                            <Tag size={10} /> {tag}
+                          </span>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => deleteMemoryMutation.mutate(memory.id)}
+                        disabled={deleteMemoryMutation.isPending}
+                        className="rounded p-1 text-tertiary hover:bg-surface-hover hover:text-danger disabled:opacity-40"
+                        aria-label="Delete memory"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-secondary">{memory.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </motion.div>
 
           {/* Custom context (JSON) */}
