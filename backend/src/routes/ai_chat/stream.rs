@@ -92,6 +92,17 @@ pub(super) async fn build_project_context(
         cnt: i64,
     }
 
+    #[derive(sqlx::FromRow)]
+    struct ContextRow {
+        project_id: uuid::Uuid,
+        stack: Option<String>,
+        conventions: Option<String>,
+        architecture: Option<String>,
+        constraints: Option<String>,
+        current_focus: Option<String>,
+        learnings: Option<String>,
+    }
+
     let projects: Vec<ProjectRow> = if project_ids.is_empty() {
         sqlx::query_as::<_, ProjectRow>(
             "SELECT id, name, prefix FROM projects WHERE org_id = ANY($1::text[]) ORDER BY name ASC LIMIT 20",
@@ -148,6 +159,21 @@ pub(super) async fn build_project_context(
         .unwrap_or_default()
     };
 
+    let project_uuid_list: Vec<uuid::Uuid> = projects.iter().map(|p| p.id).collect();
+
+    let project_contexts: Vec<ContextRow> = sqlx::query_as::<_, ContextRow>(
+        r#"
+        SELECT project_id, stack, conventions, architecture, constraints, current_focus, learnings
+        FROM project_contexts
+        WHERE org_id = ANY($1::text[]) AND project_id = ANY($2::uuid[])
+        "#,
+    )
+    .bind(org_ids)
+    .bind(&project_uuid_list)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
     let mut ctx = String::from("## Projets disponibles\n\n");
     for project in &projects {
         ctx.push_str(&format!(
@@ -167,6 +193,32 @@ pub(super) async fn build_project_context(
                 ctx.push_str(&format!("  - {}: {}\n", c.status, c.cnt));
             }
         }
+        if let Some(pc) = project_contexts.iter().find(|c| c.project_id == project.id) {
+            let fields = [
+                ("Stack", pc.stack.as_deref()),
+                ("Conventions", pc.conventions.as_deref()),
+                ("Architecture", pc.architecture.as_deref()),
+                ("Constraints", pc.constraints.as_deref()),
+                ("Current focus", pc.current_focus.as_deref()),
+                ("Learnings", pc.learnings.as_deref()),
+            ];
+            let non_empty: Vec<(&str, &str)> = fields
+                .iter()
+                .filter_map(|(label, value)| {
+                    (*value)
+                        .map(str::trim)
+                        .filter(|v| !v.is_empty())
+                        .map(|v| (*label, v))
+                })
+                .collect();
+            if !non_empty.is_empty() {
+                ctx.push_str("- Project context:\n");
+                for (label, value) in non_empty {
+                    ctx.push_str(&format!("  - {}: {}\n", label, truncate(value, 900)));
+                }
+            }
+        }
+
         ctx.push('\n');
     }
 
