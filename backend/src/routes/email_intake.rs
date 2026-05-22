@@ -1,4 +1,8 @@
-use axum::{extract::{Path, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::PgPool;
@@ -30,13 +34,24 @@ pub async fn intake(
     .bind(&slug)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?
+    .ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )
+    })?;
 
     let (project_id, org_id, prefix, max_num) = project;
 
     // Generate title from subject or body
-    let title = body.subject
+    let title = body
+        .subject
         .as_deref()
         .filter(|s| !s.is_empty() && !s.starts_with("Re:") && !s.starts_with("Fwd:"))
         .map(|s| s.to_string())
@@ -53,7 +68,12 @@ pub async fn intake(
     // Use body text for description, append sender info
     let mut desc = body.body.clone().unwrap_or_default();
     if let Some(name) = &body.from_name {
-        desc = format!("**From:** {} {}\n\n{}", name, body.from_email.as_deref().unwrap_or(""), desc);
+        desc = format!(
+            "**From:** {} {}\n\n{}",
+            name,
+            body.from_email.as_deref().unwrap_or(""),
+            desc
+        );
     }
 
     let issue_number = max_num + 1;
@@ -74,6 +94,32 @@ pub async fn intake(
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    crate::routes::memory::record_memory_best_effort(
+        &pool,
+        crate::routes::memory::NewMemory {
+            org_id: org_id.clone(),
+            project_id: Some(project_id),
+            source: "email".to_string(),
+            kind: "note".to_string(),
+            content: format!("Email intake created {}: {}\n\n{}", display_id, title, desc),
+            tags: vec!["email".to_string(), "intake".to_string()],
+            confidence: 0.7,
+            external_url: None,
+            metadata: json!({
+                "issue_id": issue_id.0,
+                "display_id": display_id,
+                "from_name": body.from_name.clone(),
+                "from_email": body.from_email.clone(),
+            }),
+            created_by: body
+                .from_email
+                .clone()
+                .map(|email| format!("email:{}", email)),
+            created_by_name: body.from_name.clone(),
+        },
+    )
+    .await;
 
     Ok(Json(json!({
         "data": {

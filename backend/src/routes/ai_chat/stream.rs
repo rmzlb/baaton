@@ -42,8 +42,9 @@ Lecture :
 - **org_overview** = SANTÉ multi-projets (KPIs agrégés, action requise, sprints, milestones, rollup). 1ᵉʳ choix pour « état des lieux », « comment vont les projets », « dashboard santé ». 1 SEUL appel — jamais chaîné avec get_project_metrics+analyze_sprint.
 - **weekly_recap** = ACTIVITÉ par période (qui a créé quoi, qui a changé quel statut, ce qui a landé). 1ᵉʳ choix pour « récap semaine », « qui a fait quoi », « tickets créés cette semaine », « changements de statut », « activité semaine ». Retourne les LISTES réelles avec auteurs.
 - search_issues, get_project_metrics (drill-down 1 projet), analyze_sprint (1 sprint précis), suggest_priorities, find_similar_issues, workload_by_assignee, compare_projects (2-5 projets head-to-head), export_project.
+- **search_memories** = mémoire projet durable (décisions, learnings, contraintes, risques, handoffs, intégrations). 1er choix pour « qu'est-ce qu'on sait déjà », « pourquoi », « gotcha », « remember ».
 
-Écriture : enchaîner **propose_issue / propose_update_issue / propose_bulk_update / propose_comment** → validation UI → **create_issue, update_issue, bulk_update_issues, add_comment** avec les `finalValues` retournés. Planning : plan_milestones → create_milestones_batch, adjust_timeline. Autres : generate_prd, triage_issue, manage_* (initiatives, automations, SLA, templates, recurring).
+Écriture : enchaîner **propose_issue / propose_update_issue / propose_bulk_update / propose_comment** → validation UI → **create_issue, update_issue, bulk_update_issues, add_comment** avec les `finalValues` retournés. Planning : plan_milestones → create_milestones_batch, adjust_timeline. Mémoire : **add_memory** quand l'utilisateur demande explicitement de retenir/noter une info durable, ou après une décision claire dans le chat. Autres : generate_prd, triage_issue, manage_* (initiatives, automations, SLA, templates, recurring).
 
 ## Écritures
 - Ne jamais appeler create/update/bulk/comment sans passage par le **propose_*** correspondant. Si `approved` est faux, une phrase d'acquittement suffit.

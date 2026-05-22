@@ -1,4 +1,8 @@
-use axum::{extract::{Extension, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Extension, State},
+    http::StatusCode,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{FromRow, PgPool};
@@ -35,8 +39,12 @@ pub async fn list(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Vec<SlackIntegration>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let integrations = sqlx::query_as::<_, SlackIntegration>(
         "SELECT id, org_id, team_id, team_name, channel_mappings, webhook_url, created_at FROM slack_integrations WHERE org_id = $1"
@@ -55,8 +63,12 @@ pub async fn create(
     State(pool): State<PgPool>,
     Json(body): Json<CreateSlackIntegration>,
 ) -> Result<Json<ApiResponse<SlackIntegration>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let integration = sqlx::query_as::<_, SlackIntegration>(
         r#"INSERT INTO slack_integrations (org_id, team_id, team_name, bot_token, webhook_url)
@@ -83,8 +95,12 @@ pub async fn update_channels(
     axum::extract::Path(id): axum::extract::Path<uuid::Uuid>,
     Json(body): Json<UpdateChannelMapping>,
 ) -> Result<Json<ApiResponse<SlackIntegration>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     let integration = sqlx::query_as::<_, SlackIntegration>(
         r#"UPDATE slack_integrations SET channel_mappings = $3
@@ -96,8 +112,18 @@ pub async fn update_channels(
     .bind(&body.channel_mappings)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Integration not found"}))))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?
+    .ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Integration not found"})),
+        )
+    })?;
 
     Ok(Json(ApiResponse::new(integration)))
 }
@@ -108,15 +134,24 @@ pub async fn remove(
     State(pool): State<PgPool>,
     axum::extract::Path(id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     sqlx::query("DELETE FROM slack_integrations WHERE id = $1 AND org_id = $2")
         .bind(id)
         .bind(org_id)
         .execute(&pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            )
+        })?;
 
     Ok(Json(json!({"deleted": true})))
 }
@@ -134,12 +169,17 @@ pub async fn handle_command(
 
     // Look up integration
     let integration = sqlx::query_as::<_, (String, serde_json::Value)>(
-        "SELECT org_id, channel_mappings FROM slack_integrations WHERE team_id = $1 LIMIT 1"
+        "SELECT org_id, channel_mappings FROM slack_integrations WHERE team_id = $1 LIMIT 1",
     )
     .bind(&team_id)
     .fetch_optional(&pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
 
     let Some((org_id, mappings)) = integration else {
         return Ok(Json(json!({
@@ -149,7 +189,8 @@ pub async fn handle_command(
     };
 
     // Find project for this channel
-    let project_id = mappings.get(&channel_id)
+    let project_id = mappings
+        .get(&channel_id)
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
@@ -170,7 +211,7 @@ pub async fn handle_command(
     // Create issue
     let pid: uuid::Uuid = project_id.parse().unwrap_or_default();
     let issue_number: (i32,) = sqlx::query_as(
-        "SELECT COALESCE(MAX(issue_number), 0) + 1 FROM issues WHERE project_id = $1"
+        "SELECT COALESCE(MAX(issue_number), 0) + 1 FROM issues WHERE project_id = $1",
     )
     .bind(pid)
     .fetch_one(&pool)
@@ -185,18 +226,33 @@ pub async fn handle_command(
 
     let display_id = format!("{}-{}", prefix.0, issue_number.0);
 
-    sqlx::query(
+    let issue_id: uuid::Uuid = sqlx::query_scalar(
         r#"INSERT INTO issues (project_id, org_id, title, status, priority, issue_type, issue_number, display_id, source)
-           VALUES ($1, $2, $3, 'backlog', 'medium', 'feature', $4, $5, 'slack')"#,
+           VALUES ($1, $2, $3, 'backlog', 'medium', 'feature', $4, $5, 'slack')
+           RETURNING id"#,
     )
     .bind(pid)
     .bind(&org_id)
     .bind(&text)
     .bind(issue_number.0)
     .bind(&display_id)
-    .execute(&pool)
+    .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    crate::routes::memory::record_memory_best_effort(&pool, crate::routes::memory::NewMemory {
+        org_id: org_id.clone(),
+        project_id: Some(pid),
+        source: "slack".to_string(),
+        kind: "note".to_string(),
+        content: format!("Slack command created {}: {}", display_id, text),
+        tags: vec!["slack".to_string(), "intake".to_string()],
+        confidence: 0.7,
+        external_url: None,
+        metadata: json!({ "issue_id": issue_id, "display_id": display_id, "channel_id": channel_id }),
+        created_by: Some(format!("slack:{}", user_name)),
+        created_by_name: Some(user_name.clone()),
+    }).await;
 
     Ok(Json(json!({
         "response_type": "in_channel",

@@ -353,7 +353,6 @@ pub async fn search_memory(
     Ok(Json(ApiResponse::new(memories)))
 }
 
-#[allow(dead_code)]
 pub async fn record_memory_best_effort(pool: &PgPool, input: NewMemory) {
     if input.content.trim().is_empty() {
         return;

@@ -1,4 +1,8 @@
-use axum::{extract::{Path, State}, http::StatusCode, Extension, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Extension, Json,
+};
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -12,8 +16,12 @@ pub async fn create(
     Path(issue_id): Path<Uuid>,
     Json(body): Json<CreateTldr>,
 ) -> Result<Json<ApiResponse<Tldr>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
 
     // Verify issue belongs to org
     let exists: bool = sqlx::query_scalar(
@@ -26,7 +34,10 @@ pub async fn create(
     .unwrap_or(false);
 
     if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Issue not found"})),
+        ));
     }
 
     let decisions_made = body.decisions_made.clone().unwrap_or_default();
@@ -68,24 +79,61 @@ pub async fn create(
             .await
             .unwrap_or(None);
 
-        // If context_updates present, append to project_contexts.learnings
+        // If context_updates present, append to project_contexts.learnings and store atomic memories.
         if !context_updates.is_empty() {
             if let Some(project_id) = pid {
                 let pool3 = pool.clone();
                 let oid2 = org_id.to_string();
+                let agent_name = body.agent_name.clone();
+                let created_by = auth.user_id.clone();
+                let pr_url = body.pr_url.clone();
                 let updates = context_updates.join("\n- ");
-                let content = format!("[{}] Context updates from {}:\n- {}", tldr.created_at.format("%Y-%m-%d"), body.agent_name, updates);
+                let content = format!(
+                    "[{}] Context updates from {}:\n- {}",
+                    tldr.created_at.format("%Y-%m-%d"),
+                    body.agent_name,
+                    updates
+                );
+                let memories = context_updates.clone();
                 tokio::spawn(async move {
-                    crate::routes::project_context::append_to_learnings(&pool3, project_id, &oid2, &content).await;
+                    crate::routes::project_context::append_to_learnings(
+                        &pool3, project_id, &oid2, &content,
+                    )
+                    .await;
+                    for item in memories {
+                        crate::routes::memory::record_memory_best_effort(&pool3, crate::routes::memory::NewMemory {
+                            org_id: oid2.clone(),
+                            project_id: Some(project_id),
+                            source: "tldr".to_string(),
+                            kind: "learning".to_string(),
+                            content: item,
+                            tags: vec!["tldr".to_string(), "agent".to_string()],
+                            confidence: 0.9,
+                            external_url: pr_url.clone(),
+                            metadata: serde_json::json!({ "issue_id": iid, "agent_name": agent_name }),
+                            created_by: Some(created_by.clone()),
+                            created_by_name: Some(agent_name.clone()),
+                        }).await;
+                    }
                 });
             }
         }
 
         tokio::spawn(async move {
             crate::routes::activity::log_activity(
-                &pool2, &oid, pid, Some(iid), &uid, uname.as_deref(),
-                "tldr_posted", Some("agent_name"), None, Some(&aname), None,
-            ).await;
+                &pool2,
+                &oid,
+                pid,
+                Some(iid),
+                &uid,
+                uname.as_deref(),
+                "tldr_posted",
+                Some("agent_name"),
+                None,
+                Some(&aname),
+                None,
+            )
+            .await;
             crate::routes::gamification::record_activity(&pool2, &uid, &oid, "tldr").await;
         });
     }
@@ -96,7 +144,8 @@ pub async fn create(
         org_id.to_string(),
         "tldr.created",
         serde_json::to_value(&tldr).unwrap_or_default(),
-    ).await;
+    )
+    .await;
 
     // AI-first: action hints
     let hints = vec![
