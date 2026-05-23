@@ -96,7 +96,14 @@ const collapseVariants = {
 
 // ─── Component ────────────────────────────────
 
-export default function ProjectContext() {
+export interface ProjectContextProps {
+  /** When true, skip page-level header/padding so it can be embedded in another page (e.g. ProjectMemory). */
+  embedded?: boolean;
+  /** Override the redirect target for the project selector (defaults to /projects/:slug/context). */
+  basePath?: string;
+}
+
+export default function ProjectContext({ embedded = false, basePath = '/projects' }: ProjectContextProps = {}) {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const apiClient = useApi();
@@ -126,9 +133,10 @@ export default function ProjectContext() {
   // Redirect to first project if no slug
   useEffect(() => {
     if (!slug && projects.length > 0 && !projectsLoading) {
-      navigate(`/projects/${projects[0].slug}/context`, { replace: true });
+      const target = basePath === '/projects' ? `/projects/${projects[0].slug}/context` : `${basePath}/${projects[0].slug}/memory`;
+      navigate(target, { replace: true });
     }
-  }, [slug, projects, projectsLoading, navigate]);
+  }, [slug, projects, projectsLoading, navigate, basePath]);
 
   // Fetch context for current project
   const { data: context, isLoading: contextLoading } = useQuery({
@@ -254,7 +262,8 @@ export default function ProjectContext() {
   };
 
   const handleProjectSwitch = (project: Project) => {
-    navigate(`/projects/${project.slug}/context`);
+    const target = basePath === '/projects' ? `/projects/${project.slug}/context` : `${basePath}/${project.slug}/memory`;
+    navigate(target);
   };
 
   const handleCreateMemory = () => {
@@ -309,39 +318,46 @@ export default function ProjectContext() {
 
   return (
     <motion.div
-      className="p-4 md:p-6 space-y-5 max-w-4xl mx-auto"
+      className={cn(embedded ? 'space-y-5' : 'p-4 md:p-6 space-y-5 max-w-4xl mx-auto')}
       variants={pageVariants}
       initial="initial"
       animate="animate"
     >
       {/* ─── Header with project selector ─────────── */}
-      <motion.div variants={cardVariants} className="space-y-3">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl md:text-2xl font-bold text-primary">Project Context</h1>
-            <p className="mt-0.5 text-sm text-secondary">
-              The brain of your project. Agents pull this automatically to understand stack, conventions, and constraints.
-            </p>
+      {!embedded && (
+        <motion.div variants={cardVariants} className="space-y-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl md:text-2xl font-bold text-primary">Project Context</h1>
+              <p className="mt-0.5 text-sm text-secondary">
+                The brain of your project. Agents pull this automatically to understand stack, conventions, and constraints.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <SaveIndicator status={saveStatus} />
+              {context?.updated_at && (
+                <span className="hidden lg:flex items-center gap-1.5 text-xs text-tertiary">
+                  <Clock size={12} />
+                  {timeAgo(context.updated_at)}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <SaveIndicator status={saveStatus} />
-            {context?.updated_at && (
-              <span className="hidden lg:flex items-center gap-1.5 text-xs text-tertiary">
-                <Clock size={12} />
-                {timeAgo(context.updated_at)}
-              </span>
-            )}
-          </div>
-        </div>
 
-        {/* Project selector */}
-        <ProjectSelector
-          projects={projects}
-          currentProject={currentProject || null}
-          onSelect={handleProjectSwitch}
-          filledCount={filledCount}
-        />
-      </motion.div>
+          {/* Project selector */}
+          <ProjectSelector
+            projects={projects}
+            currentProject={currentProject || null}
+            onSelect={handleProjectSwitch}
+            filledCount={filledCount}
+          />
+        </motion.div>
+      )}
+      {embedded && (
+        <motion.div variants={cardVariants} className="flex justify-end">
+          <SaveIndicator status={saveStatus} />
+        </motion.div>
+      )}
 
       {/* ─── Context fields ────────────────────────── */}
       {contextLoading ? (

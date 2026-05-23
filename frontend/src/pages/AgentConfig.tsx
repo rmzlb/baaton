@@ -334,7 +334,12 @@ function TaskCard({
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export function AgentConfig() {
+export interface AgentConfigProps {
+  /** When true, skip page-level header/padding for embedding in another page. */
+  embedded?: boolean;
+}
+
+export function AgentConfig({ embedded = false }: AgentConfigProps = {}) {
   const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
@@ -489,23 +494,33 @@ export function AgentConfig() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-4 md:p-6">
+    <div className={embedded ? '' : 'p-4 md:p-6'}>
 
       {/* ── Page Header ─────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-primary mb-1">
-            {t('agentConfig.title')}
-          </h1>
-          <p className="text-sm text-muted">{t('agentConfig.subtitle')}</p>
+      {!embedded && (
+        <div className="flex items-start justify-between mb-8 gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-primary mb-1">
+              {t('agentConfig.title')}
+            </h1>
+            <p className="text-sm text-muted">{t('agentConfig.subtitle')}</p>
+          </div>
+          {isSaving && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-muted shrink-0">
+              <Loader2 size={12} className="animate-spin" />
+              {t('agentConfig.saving')}
+            </div>
+          )}
         </div>
-        {isSaving && (
-          <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-muted shrink-0">
+      )}
+      {embedded && isSaving && (
+        <div className="mb-3 flex justify-end">
+          <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-muted">
             <Loader2 size={12} className="animate-spin" />
             {t('agentConfig.saving')}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ── Pro plan gate ─────────────────────────────────────────────── */}
       {showProGate && (

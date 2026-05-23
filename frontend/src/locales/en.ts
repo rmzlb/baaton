@@ -13,6 +13,8 @@ const en = {
   'sidebar.docs': 'API Docs',
   'sidebar.planning': 'Planning',
   'sidebar.tools': 'Tools',
+  'sidebar.agent': 'Agent',
+  'sidebar.memory': 'Memory',
   'sidebar.feedback': 'Feedback',
   'sidebar.apiKeys': 'API Keys',
   // ─── API Keys Page

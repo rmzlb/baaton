@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Kanban, PanelLeftClose, PanelLeft, X,
   Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox,
   CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink, KeyRound, Search,
-  Flag, Workflow, CreditCard, Bot, Sparkles, Shield, Plug, Brain, LayoutTemplate,
+  Flag, Workflow, CreditCard, Sparkles, Shield, Plug, Brain, LayoutTemplate,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -100,19 +100,20 @@ export function Sidebar() {
     { to: currentProjectSlug ? `/projects/${currentProjectSlug}/milestones` : '/milestones', icon: Target, label: t('sidebar.milestones') },
     { to: '/roadmap', icon: CalendarRange, label: t('sidebar.roadmap') },
     ...(currentProjectSlug ? [{ to: `/projects/${currentProjectSlug}/sprints`, icon: Zap, label: t('sidebar.sprints') }] : []),
-    { to: currentProjectSlug ? `/projects/${currentProjectSlug}/context` : '/context', icon: Brain, label: 'Context' },
     { to: '/initiatives', icon: Flag, label: t('sidebar.initiatives') },
+  ];
+
+  const agentItems = [
+    { to: currentProjectSlug ? `/projects/${currentProjectSlug}/memory` : '/memory', icon: Brain, label: t('sidebar.memory') },
   ];
 
   const toolItems = [
     { to: '/search', icon: Search, label: t('sidebar.search') || 'Search' },
-    { to: '/ai', icon: Sparkles, label: t('sidebar.aiChat') },
     { to: '/analytics', icon: BarChart3, label: t('sidebar.analytics') },
 
     { to: '/webhooks', icon: Webhook, label: t('sidebar.webhooks') },
     { to: '/api-keys', icon: KeyRound, label: t('sidebar.apiKeys') },
     { to: '/billing', icon: CreditCard, label: t('sidebar.billing') },
-    { to: '/agents', icon: Bot, label: t('sidebar.agentConfig') },
     ...(isSuperAdmin ? [{ to: '/admin', icon: Shield, label: t('sidebar.admin') }] : []),
     { to: currentProjectSlug ? `/projects/${currentProjectSlug}/automations` : '/automations', icon: Workflow, label: t('sidebar.automations') },
     { to: '/integrations', icon: Plug, label: t('sidebar.integrations') },
@@ -253,6 +254,9 @@ export function Sidebar() {
 
           <Divider label={t('sidebar.planning')} />
           {planItems.map((item) => <NavItem key={item.to} {...item} />)}
+
+          <Divider label={t('sidebar.agent')} />
+          {agentItems.map((item) => <NavItem key={item.to} {...item} />)}
 
           <Divider label={t('sidebar.tools')} />
           {toolItems.map((item) => <NavItem key={item.to} {...item} />)}

@@ -38,6 +38,7 @@ const AIChat = lazy(() => import('./pages/AIChat'));
 // TableView integrated into AllIssues as 3rd view mode
 const Integrations = lazy(() => import('./pages/Integrations'));
 const ProjectContext = lazy(() => import('./pages/ProjectContext'));
+const ProjectMemory = lazy(() => import('./pages/ProjectMemory'));
 const ProjectTemplates = lazy(() => import('./pages/ProjectTemplates'));
 const GithubInstallCallback = lazy(() => import('./pages/GithubInstallCallback'));
 
@@ -199,6 +200,8 @@ export function App() {
             <Route path="/admin" element={<Admin />} />
             <Route path="/ai" element={<AIChat />} />
             <Route path="/integrations" element={<Integrations />} />
+            <Route path="/projects/:slug/memory" element={<ProjectMemory />} />
+            <Route path="/memory" element={<ProjectMemory />} />
             <Route path="/projects/:slug/context" element={<ProjectContext />} />
             <Route path="/context" element={<ProjectContext />} />
             <Route path="/templates" element={<ProjectTemplates />} />
