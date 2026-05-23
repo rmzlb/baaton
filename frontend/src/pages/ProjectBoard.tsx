@@ -41,6 +41,7 @@ type ViewMode = 'kanban' | 'list';
 export function ProjectBoard() {
   const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
+  const { organization } = useOrganization();
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const setIssues = useIssuesStore((s) => s.setIssues);
@@ -74,7 +75,7 @@ export function ProjectBoard() {
   // Single composite query: project + issues + tags in one request
   const boardFetchStart = useRef(0);
   const { data: boardData, isLoading: boardLoading, error: projectError } = useQuery({
-    queryKey: ['project-board', slug],
+    queryKey: ['project-board', slug, organization?.id],
     queryFn: async () => {
       boardFetchStart.current = performance.now();
       const result = await apiClient.projects.getBoardBySlug(slug!);
@@ -82,7 +83,7 @@ export function ProjectBoard() {
       console.info(`[perf] board loaded: ${result.issues.length} issues in ${elapsed}ms (${slug})`);
       return result;
     },
-    enabled: !!slug,
+    enabled: !!slug && !!organization?.id,
     staleTime: 30_000,
     retry: 1,
   });
@@ -172,7 +173,7 @@ export function ProjectBoard() {
       });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-board', slug] });
+      queryClient.invalidateQueries({ queryKey: ['project-board', slug, organization?.id] });
     },
   });
 
@@ -410,7 +411,7 @@ export function ProjectBoard() {
         <ProjectSettingsModal
           project={project}
           onClose={() => setShowProjectSettings(false)}
-          onSaved={() => queryClient.invalidateQueries({ queryKey: ['project-board', slug] })}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: ['project-board', slug, organization?.id] })}
         />
       )}
 
