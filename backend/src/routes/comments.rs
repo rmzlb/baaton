@@ -35,6 +35,24 @@ async fn verify_issue_org(pool: &PgPool, issue_id: Uuid, org_id: &str) -> Result
     })
 }
 
+/// Check issue belongs to ANY of the user's scoped orgs (for all_dynamic keys)
+async fn verify_issue_org_any(pool: &PgPool, issue_id: Uuid, org_ids: &[String]) -> Result<bool, (StatusCode, Json<serde_json::Value>)> {
+    if org_ids.is_empty() {
+        return Ok(false);
+    }
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2))"
+    )
+    .bind(issue_id)
+    .bind(org_ids)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "verify_issue_org_any query failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"})))
+    })
+}
+
 pub async fn list_by_issue(
     Extension(auth): Extension<AuthUser>,
     Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
@@ -44,7 +62,7 @@ pub async fn list_by_issue(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    if !verify_issue_org(&pool, issue_id, org_id).await? {
+    if !verify_issue_org(&pool, issue_id, org_id).await? && !verify_issue_org_any(&pool, issue_id, &auth.scoped_org_ids).await? {
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
     }
 
@@ -79,7 +97,7 @@ pub async fn create(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    if !verify_issue_org(&pool, issue_id, org_id).await? {
+    if !verify_issue_org(&pool, issue_id, org_id).await? && !verify_issue_org_any(&pool, issue_id, &auth.scoped_org_ids).await? {
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
     }
 
@@ -314,7 +332,7 @@ pub async fn remove(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    if !verify_issue_org(&pool, issue_id, org_id).await? {
+    if !verify_issue_org(&pool, issue_id, org_id).await? && !verify_issue_org_any(&pool, issue_id, &auth.scoped_org_ids).await? {
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
     }
 
