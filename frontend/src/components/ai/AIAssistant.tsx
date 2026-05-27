@@ -410,6 +410,23 @@ export function AIAssistant() {
     },
     onError: (err) => {
       console.error('[AI panel]', err);
+      // Auto-recovery: if the error looks like a corrupted history issue
+      // (Gemini 400 "function call turn" or fetch failures after loop corruption),
+      // reset the conversation so the user isn't stuck.
+      const errStr = String(err?.message ?? err ?? '');
+      const isCorruptedHistory =
+        errStr.includes('function call turn') ||
+        errStr.includes('function response turn') ||
+        errStr.includes('INVALID_ARGUMENT');
+      if (isCorruptedHistory && messages.length > 1) {
+        console.warn('[AI panel] Corrupted history detected, resetting conversation');
+        setMessages([]);
+        addNotification({
+          type: 'warning',
+          title: 'Conversation r\u00e9initialis\u00e9e',
+          message: "L'historique \u00e9tait corrompu. Nouvelle conversation d\u00e9marr\u00e9e.",
+        });
+      }
     },
   });
 
