@@ -52,6 +52,34 @@ import { makeThinkingMessage } from '@/lib/ai-thinking';
 
 const PROPOSE_TOOLS = ['propose_issue', 'propose_update_issue', 'propose_bulk_update', 'propose_comment'];
 
+/** Maps proposal tools to their write-mutation counterparts. */
+const PROPOSE_TO_WRITE: Record<string, string> = {
+  propose_issue: 'create_issue',
+  propose_update_issue: 'update_issue',
+  propose_bulk_update: 'bulk_update_issues',
+  propose_comment: 'add_comment',
+};
+
+/**
+ * Filter out approved propose_* parts when the corresponding write tool
+ * already succeeded in the same message. The "Issue created" card is
+ * sufficient feedback — the separate "Approuvé" badge is redundant noise.
+ */
+function filterRedundantProposals(toolParts: Array<{ type: string; state?: string; output?: unknown }>): typeof toolParts {
+  const completedWrites = new Set(
+    toolParts
+      .filter(p => p.state === 'output-available')
+      .map(p => p.type.replace(/^tool-/, '')),
+  );
+  return toolParts.filter(p => {
+    const name = p.type.replace(/^tool-/, '');
+    const writeName = PROPOSE_TO_WRITE[name];
+    if (!writeName) return true; // not a proposal → keep
+    // Hide if the write counterpart succeeded
+    return !completedWrites.has(writeName);
+  });
+}
+
 function isPendingProposal(part: { type: string; state?: string }): boolean {
   const toolName = part.type.replace(/^tool-/, '');
   return PROPOSE_TOOLS.includes(toolName) && (part as any).state === 'input-available';
@@ -737,7 +765,7 @@ export function AIAssistant() {
                                 );
                               }
                               const textParts = msg.parts.filter(p => p.type === 'text');
-                              const toolParts = msg.parts.filter(isToolPart);
+                              const toolParts = filterRedundantProposals(msg.parts.filter(isToolPart) as any) as any[];
                               const combinedText = textParts.map(p => (p as any).text).join('\n');
                               if (toolParts.length > 0 && combinedText.length > 0) {
                                 return (
@@ -757,6 +785,12 @@ export function AIAssistant() {
                                   return <MessageResponse key={idx} isAnimating={isLast && status === 'streaming'}>{(part as any).text}</MessageResponse>;
                                 }
                                 if (isToolPart(part)) {
+                                  // Skip redundant proposals when write mutation succeeded
+                                  const name = part.type.replace(/^tool-/, '');
+                                  const writeName = PROPOSE_TO_WRITE[name];
+                                  if (writeName && msg.parts.some(p => p.type === `tool-${writeName}` && (p as any).state === 'output-available')) {
+                                    return null;
+                                  }
                                   return <ToolPartRenderer key={idx} part={part} addToolOutput={addToolOutput} />;
                                 }
                                 return null;
