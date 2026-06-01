@@ -199,3 +199,40 @@ pub async fn rewrite_str(field: &mut String, s3: Option<&S3State>) {
         *field = rewrite_markdown(field, s3).await;
     }
 }
+
+/// Recursively rewrite `s3://baaton-uploads/<key>` markers to presigned HTTPS
+/// URLs inside an arbitrary JSON value.
+///
+/// Used for inline `issue.attachments` (a `serde_json::Value`) so the client
+/// receives fetchable URLs for any attachment whose payload lives in S3 rather
+/// than inline as a `data:` URL. No-op when `s3` is None or no marker is found.
+pub async fn rewrite_json_value(value: &mut serde_json::Value, s3: Option<&S3State>) {
+    let Some(s3) = s3 else { return };
+    rewrite_json_inner(value, s3).await;
+}
+
+fn rewrite_json_inner<'a>(
+    value: &'a mut serde_json::Value,
+    s3: &'a S3State,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+    Box::pin(async move {
+        match value {
+            serde_json::Value::String(s) => {
+                if s.contains(S3_URL_SCHEME) {
+                    *s = rewrite_markdown(s, s3).await;
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                for v in arr.iter_mut() {
+                    rewrite_json_inner(v, s3).await;
+                }
+            }
+            serde_json::Value::Object(map) => {
+                for (_k, v) in map.iter_mut() {
+                    rewrite_json_inner(v, s3).await;
+                }
+            }
+            _ => {}
+        }
+    })
+}

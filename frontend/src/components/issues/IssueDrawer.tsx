@@ -9,7 +9,7 @@ import {
   MessageSquare, Activity, Bot, CheckCircle2, AlertTriangle, OctagonAlert,
   Minus, ArrowUp, ArrowDown, Bug, Sparkles, Zap, HelpCircle,
   FileText, GitPullRequest, TestTube2, Paperclip, Upload, Image,
-  Send, Plus, RotateCw, AlertCircle,
+  Send, Plus, RotateCw, AlertCircle, Download, Eye, FileCode2, File as FileIcon,
 } from 'lucide-react';
 import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
@@ -93,6 +93,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const [newTagName, setNewTagName] = useState('');
   const [commentText, setCommentText] = useState('');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [viewerAttachment, setViewerAttachment] = useState<Attachment | null>(null);
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
@@ -263,6 +264,8 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       if (e.key === 'Escape') {
         if (annotatingIndex !== null) {
           setAnnotatingIndex(null);
+        } else if (viewerAttachment !== null) {
+          setViewerAttachment(null);
         } else if (lightboxIndex !== null) {
           setLightboxIndex(null);
         } else {
@@ -292,12 +295,12 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose, lightboxIndex]);
+  }, [onClose, lightboxIndex, viewerAttachment, annotatingIndex]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      // Don't close drawer when lightbox or annotator is open
-      if (lightboxIndex !== null || annotatingIndex !== null) return;
+      // Don't close drawer when lightbox, viewer or annotator is open
+      if (lightboxIndex !== null || viewerAttachment !== null || annotatingIndex !== null) return;
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose();
       }
@@ -309,7 +312,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       clearTimeout(timer);
       document.removeEventListener('mousedown', handler);
     };
-  }, [onClose, lightboxIndex, annotatingIndex]);
+  }, [onClose, lightboxIndex, viewerAttachment, annotatingIndex]);
 
   // ── Handlers ──
   const handleTitleSave = useCallback(() => {
@@ -595,6 +598,22 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     [issue?.attachments],
   );
 
+  // S3-backed attachments (separate `attachments` table). The API presigns
+  // storage_url so these are directly fetchable/previewable. Mapped to the
+  // inline Attachment shape for unified rendering (read-only, no inline delete).
+  const tableAttachments = useMemo<Attachment[]>(
+    () =>
+      ((issue as Issue & { file_attachments?: import('@/lib/types').FileAttachment[] })?.file_attachments || [])
+        .filter((f) => !!f.storage_url)
+        .map((f) => ({
+          url: f.storage_url as string,
+          name: f.filename,
+          size: f.size_bytes ?? 0,
+          mime_type: f.content_type ?? '',
+        })),
+    [issue],
+  );
+
   // ── Loading State ──
   if (isLoading || !issue) {
     return (
@@ -840,6 +859,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
               <AttachmentSection
                 imageAttachments={imageAttachments}
                 nonImageAttachments={nonImageAttachments}
+                tableAttachments={tableAttachments}
                 pendingFiles={pendingFiles}
                 isUploading={isUploading}
                 isDragging={isDragging}
@@ -853,6 +873,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                 onRetryFile={handleRetryFile}
                 onRemovePending={removePending}
                 onLightbox={setLightboxIndex}
+                onPreview={setViewerAttachment}
                 t={t}
               />
 
@@ -899,6 +920,14 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
           imageName={imageAttachments[annotatingIndex].name}
           onSave={handleAnnotationSave}
           onClose={() => setAnnotatingIndex(null)}
+        />
+      )}
+
+      {/* Universal attachment viewer (PDF / HTML / image / fallback) */}
+      {viewerAttachment && (
+        <AttachmentViewer
+          attachment={viewerAttachment}
+          onClose={() => setViewerAttachment(null)}
         />
       )}
 
@@ -1585,6 +1614,7 @@ function SidebarField({ label, children }: { label: string; children: React.Reac
 interface AttachmentSectionProps {
   imageAttachments: Attachment[];
   nonImageAttachments: Attachment[];
+  tableAttachments: Attachment[];
   pendingFiles: PendingFile[];
   isUploading: boolean;
   isDragging: boolean;
@@ -1598,12 +1628,14 @@ interface AttachmentSectionProps {
   onRetryFile: (fileId: string) => void;
   onRemovePending: (fileId: string) => void;
   onLightbox: (idx: number) => void;
+  onPreview: (att: Attachment) => void;
   t: (key: string, vars?: Record<string, string | number>) => string;
 }
 
 function AttachmentSection({
   imageAttachments,
   nonImageAttachments,
+  tableAttachments,
   pendingFiles,
   isUploading: _isUploading,
   isDragging,
@@ -1617,6 +1649,7 @@ function AttachmentSection({
   onRetryFile,
   onRemovePending,
   onLightbox,
+  onPreview,
   t,
 }: AttachmentSectionProps) {
   const pendingImageFiles = pendingFiles.filter(
@@ -1763,21 +1796,23 @@ function AttachmentSection({
         </div>
       )}
 
-      {/* Non-image attachments */}
+      {/* Non-image attachments (inline) — click to preview */}
       {nonImageAttachments.map((att, idx) => (
-        <div key={idx} className="group flex items-center gap-1.5 rounded-md bg-surface border border-border px-2 py-1.5 mb-1">
-          <FileText size={10} className="text-secondary shrink-0" />
-          <span className="text-[11px] text-secondary truncate flex-1">{att.name}</span>
-          <span className="text-[9px] text-muted shrink-0">
-            {att.size > 1024 * 1024 ? `${(att.size / (1024 * 1024)).toFixed(1)}MB` : `${Math.round(att.size / 1024)}KB`}
-          </span>
-          <button
-            onClick={() => onDeleteNonImage(idx)}
-            className="text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-          >
-            <X size={10} />
-          </button>
-        </div>
+        <AttachmentRow
+          key={`inline-${idx}`}
+          att={att}
+          onPreview={onPreview}
+          onDelete={() => onDeleteNonImage(idx)}
+        />
+      ))}
+
+      {/* S3-backed file attachments (read-only: preview + download) */}
+      {tableAttachments.map((att, idx) => (
+        <AttachmentRow
+          key={`table-${idx}`}
+          att={att}
+          onPreview={onPreview}
+        />
       ))}
 
       {/* Pending non-image files */}
@@ -2175,6 +2210,196 @@ function MilestonePicker({
                 </button>
               );
             })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Attachment helpers + universal viewer ─────── */
+
+type AttachmentKind = 'image' | 'pdf' | 'html' | 'text' | 'other';
+
+function attachmentKind(att: { name?: string; mime_type?: string; url?: string }): AttachmentKind {
+  const mime = (att.mime_type || '').toLowerCase();
+  const name = (att.name || '').toLowerCase();
+  const url = (att.url || '').toLowerCase();
+  const ext = name.includes('.') ? name.split('.').pop()! : '';
+  if (
+    mime.startsWith('image/') ||
+    url.startsWith('data:image/') ||
+    ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'heic', 'heif', 'avif'].includes(ext)
+  )
+    return 'image';
+  if (mime === 'application/pdf' || ext === 'pdf' || url.startsWith('data:application/pdf')) return 'pdf';
+  if (mime === 'text/html' || ext === 'html' || ext === 'htm' || url.startsWith('data:text/html')) return 'html';
+  if (mime.startsWith('text/') || ['txt', 'md', 'csv', 'json', 'log'].includes(ext)) return 'text';
+  return 'other';
+}
+
+function formatAttachmentSize(bytes: number): string {
+  if (!bytes) return '';
+  return bytes > 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)}MB` : `${Math.round(bytes / 1024)}KB`;
+}
+
+function AttachmentRow({
+  att,
+  onPreview,
+  onDelete,
+}: {
+  att: Attachment;
+  onPreview: (att: Attachment) => void;
+  onDelete?: () => void;
+}) {
+  const kind = attachmentKind(att);
+  const Icon = kind === 'pdf' ? FileText : kind === 'html' ? FileCode2 : kind === 'image' ? Image : FileIcon;
+  const canPreview = kind !== 'other';
+  return (
+    <div className="group flex items-center gap-1.5 rounded-md bg-surface border border-border px-2 py-1.5 mb-1">
+      <Icon size={11} className="text-secondary shrink-0" />
+      <button
+        type="button"
+        onClick={() =>
+          canPreview ? onPreview(att) : window.open(att.url, '_blank', 'noopener,noreferrer')
+        }
+        className="text-[11px] text-secondary truncate flex-1 text-left hover:text-accent transition-colors"
+        title={att.name}
+      >
+        {att.name}
+      </button>
+      {att.size > 0 && (
+        <span className="text-[9px] text-muted shrink-0">{formatAttachmentSize(att.size)}</span>
+      )}
+      {canPreview && (
+        <button
+          type="button"
+          onClick={() => onPreview(att)}
+          aria-label="Preview"
+          className="text-muted hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+        >
+          <Eye size={11} />
+        </button>
+      )}
+      <a
+        href={att.url}
+        download={att.name}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        aria-label="Download"
+        className="text-muted hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+      >
+        <Download size={11} />
+      </a>
+      {onDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label="Delete"
+          className="text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+        >
+          <X size={11} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AttachmentViewer({
+  attachment,
+  onClose,
+}: {
+  attachment: Attachment;
+  onClose: () => void;
+}) {
+  const kind = attachmentKind(attachment);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 sm:p-8"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Attachment viewer: ${attachment.name}`}
+    >
+      {/* Toolbar */}
+      <div
+        className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3 rounded-xl bg-black/70 backdrop-blur-sm px-4 py-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="text-xs text-white/90 truncate max-w-[240px]">{attachment.name}</span>
+        <a
+          href={attachment.url}
+          download={attachment.name}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-md bg-white/10 px-2 py-1 text-[10px] text-white hover:bg-white/20 transition-colors flex items-center gap-1"
+        >
+          <Download size={11} /> Download
+        </a>
+        {(kind === 'html' || kind === 'pdf') && (
+          <a
+            href={attachment.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-md bg-white/10 px-2 py-1 text-[10px] text-white hover:bg-white/20 transition-colors flex items-center gap-1"
+          >
+            <Eye size={11} /> Open tab
+          </a>
+        )}
+      </div>
+
+      <button
+        onClick={onClose}
+        aria-label="Close viewer"
+        className="absolute top-4 right-4 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
+      >
+        <X size={20} aria-hidden="true" />
+      </button>
+
+      <div
+        className="w-full h-full max-w-5xl max-h-[86vh] mt-10 rounded-lg overflow-hidden bg-white shadow-2xl flex items-center justify-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {kind === 'image' ? (
+          <img
+            src={attachment.url}
+            alt={attachment.name}
+            className="max-h-full max-w-full object-contain"
+          />
+        ) : kind === 'pdf' ? (
+          <iframe src={attachment.url} title={attachment.name} className="w-full h-full border-0" />
+        ) : kind === 'html' || kind === 'text' ? (
+          // Sandboxed: external/user-supplied HTML must not run scripts or access the app origin.
+          <iframe
+            src={attachment.url}
+            title={attachment.name}
+            sandbox=""
+            referrerPolicy="no-referrer"
+            className="w-full h-full border-0 bg-white"
+          />
+        ) : (
+          <div className="flex flex-col items-center gap-3 p-10 text-center">
+            <FileIcon size={40} className="text-gray-400" />
+            <p className="text-sm text-gray-600 break-all">{attachment.name}</p>
+            <p className="text-xs text-gray-400">Aperçu indisponible pour ce type de fichier.</p>
+            <a
+              href={attachment.url}
+              download={attachment.name}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-md bg-gray-900 px-3 py-1.5 text-xs text-white hover:bg-gray-700 transition-colors flex items-center gap-1.5"
+            >
+              <Download size={13} /> Télécharger
+            </a>
           </div>
         )}
       </div>

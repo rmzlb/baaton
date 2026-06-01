@@ -492,6 +492,23 @@ export interface IssueDetail extends Issue {
   comments: Comment[];
   /** Optional: backend may include agent sessions for this issue. */
   agent_sessions?: AgentSession[];
+  /** S3-backed attachments (separate `attachments` table). storage_url is presigned by the API. */
+  file_attachments?: FileAttachment[];
+}
+
+/** Attachment stored in the `attachments` table (S3-backed). */
+export interface FileAttachment {
+  id: string;
+  issue_id: string;
+  project_id: string;
+  org_id: string;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  /** Presigned HTTPS URL when the backend can mint one. */
+  storage_url: string | null;
+  uploaded_by: string | null;
+  created_at: string;
 }
 
 export interface PublicSubmission {

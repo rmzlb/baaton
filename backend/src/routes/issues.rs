@@ -1484,6 +1484,15 @@ pub async fn get_one(
         crate::s3::rewrite_str(&mut c.body, s3_ref).await;
     }
 
+    // Presign attachment payloads so the client can actually fetch/preview them:
+    //   - file_attachments (S3 `attachments` table) — `storage_url` is an `s3://` marker
+    //   - inline issue.attachments JSON — any `s3://` marker in a string field
+    // Inline `data:` URLs are left untouched (already self-contained).
+    for a in detail.file_attachments.iter_mut() {
+        crate::s3::rewrite_opt(&mut a.storage_url, s3_ref).await;
+    }
+    crate::s3::rewrite_json_value(&mut detail.issue.attachments, s3_ref).await;
+
     Ok(Json(ApiResponse::with_hints(detail, hints)))
 }
 
