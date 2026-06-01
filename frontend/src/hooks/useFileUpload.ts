@@ -80,6 +80,7 @@ const ACCEPTED_FILE_TYPES = new Set([
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'text/plain',
+  'text/html',
 ]);
 
 /* ── Validation ────────────────────────────────── */
@@ -117,7 +118,7 @@ export function validateFiles(
     const mime = file.type || '';
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
     const isImage = mime.startsWith('image/') || ['heic', 'heif', 'avif', 'webp', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'].includes(ext);
-    const isAccepted = ACCEPTED_FILE_TYPES.has(mime) || isImage || ['pdf', 'doc', 'docx', 'txt'].includes(ext);
+    const isAccepted = ACCEPTED_FILE_TYPES.has(mime) || isImage || ['pdf', 'doc', 'docx', 'txt', 'html', 'htm'].includes(ext);
 
     if (!isAccepted) {
       errors.push({

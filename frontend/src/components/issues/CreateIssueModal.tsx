@@ -1009,7 +1009,7 @@ function StepDescription({
             <input
               type="file"
               multiple
-              accept="image/*,.pdf,.doc,.docx,.txt,.heic,.heif"
+              accept="image/*,.pdf,.doc,.docx,.txt,.heic,.heif,.html,.htm"
               className="hidden"
               aria-label={t('publicSubmit.uploadFiles') || 'Upload files'}
               onChange={(e) => {
