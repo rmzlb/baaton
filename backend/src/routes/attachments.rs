@@ -38,11 +38,19 @@ pub async fn list(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
+    // API keys may be scoped to multiple orgs (all_dynamic); honor the full scope
+    // instead of just the key's home org so cross-org reads match get_one.
+    let org_ids: Vec<String> = if auth.user_id.starts_with("apikey:") && !auth.scoped_org_ids.is_empty() {
+        auth.scoped_org_ids.clone()
+    } else {
+        vec![org_id.to_string()]
+    };
+
     let attachments = sqlx::query_as::<_, Attachment>(
-        "SELECT * FROM attachments WHERE issue_id = $1 AND org_id = $2 ORDER BY created_at ASC"
+        "SELECT * FROM attachments WHERE issue_id = $1 AND org_id = ANY($2) ORDER BY created_at ASC"
     )
     .bind(issue_id)
-    .bind(org_id)
+    .bind(&org_ids)
     .fetch_all(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;

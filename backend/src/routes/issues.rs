@@ -1318,8 +1318,19 @@ pub async fn get_one(
         )
     })?;
 
-    // Use all user org IDs (cross-org) so the drawer works from /all-issues
-    let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
+    // Use all user org IDs (cross-org) so the drawer works from /all-issues.
+    // API keys carry their own org scope (incl. all_dynamic); the Clerk-based
+    // resolver no-ops for `apikey:` pseudo-users and would collapse access to a
+    // single org, so honor scoped_org_ids directly for keys.
+    let all_org_ids = if auth.user_id.starts_with("apikey:") {
+        if auth.scoped_org_ids.is_empty() {
+            vec![org_id.to_string()]
+        } else {
+            auth.scoped_org_ids.clone()
+        }
+    } else {
+        resolve_user_org_ids(&pool, org_id, &auth.user_id).await
+    };
 
     let issue = sqlx::query_as::<_, Issue>(
         r#"
