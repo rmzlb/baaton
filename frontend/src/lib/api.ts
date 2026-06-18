@@ -75,12 +75,22 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    const errorBody = json.error as Record<string, string> | undefined;
-    throw new ApiError(
-      res.status,
-      errorBody?.code || 'UNKNOWN',
-      errorBody?.message || 'An error occurred',
-    );
+    // Backend errors come in two shapes:
+    //   { "error": "plain message" }              (most routes)
+    //   { "error": { code, message } }            (structured)
+    const rawError = json.error;
+    let code = 'UNKNOWN';
+    let message = 'An error occurred';
+    if (typeof rawError === 'string') {
+      message = rawError;
+    } else if (rawError && typeof rawError === 'object') {
+      const errorBody = rawError as Record<string, string>;
+      code = errorBody.code || code;
+      message = errorBody.message || message;
+    } else if (typeof json.message === 'string') {
+      message = json.message;
+    }
+    throw new ApiError(res.status, code, message);
   }
 
   return json.data as T;

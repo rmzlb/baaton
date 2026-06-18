@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization, useOrganizationList } from '@clerk/clerk-react';
 import {
   Plus, Trash2, Copy, CheckCircle2, AlertTriangle, BookOpen,
-  RefreshCw, Key, X, ChevronDown, Pencil, Shield, Zap, Bot,
+  RefreshCw, Key, X, Pencil, Shield, Zap, Bot,
   GitBranch, Eye, EyeOff,
 } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
@@ -343,9 +343,13 @@ function CreateModal({ onClose, onCreated, projects, organizations, activeOrgId 
   );
 
   useEffect(() => {
-    if (!activeOrgId) return;
-    setSelectedOrgIds(prev => (prev.length > 0 ? prev : [activeOrgId]));
-  }, [activeOrgId]);
+    setSelectedOrgIds(prev => {
+      if (prev.length > 0) return prev;
+      if (activeOrgId) return [activeOrgId];
+      if (organizations[0]) return [organizations[0].id];
+      return prev;
+    });
+  }, [activeOrgId, organizations]);
 
   useEffect(() => {
     const visibleIds = new Set(visibleProjects.map(project => project.id));
@@ -655,6 +659,21 @@ function CreateModal({ onClose, onCreated, projects, organizations, activeOrgId 
           </div>
         </div>
 
+        {createMutation.isError && (
+          <div className="px-6 pt-3">
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2">
+              <AlertTriangle size={15} className="text-red-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-300">
+                {t('apiKeys.createModal.createError')}: {(createMutation.error as Error)?.message}
+              </p>
+            </div>
+          </div>
+        )}
+        {!createMutation.isPending && effectiveOrgIds.length === 0 && (
+          <div className="px-6 pt-3">
+            <p className="text-xs text-amber-400">{t('apiKeys.createModal.noOrgsAvailable')}</p>
+          </div>
+        )}
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
           <button
             type="button"
@@ -937,6 +956,16 @@ function EditDrawer({ apiKey, projects, organizations, activeOrgId, onClose, onS
           </div>
         </div>
 
+        {updateMutation.isError && (
+          <div className="px-5 pt-3 shrink-0">
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2">
+              <AlertTriangle size={15} className="text-red-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-300">
+                {t('apiKeys.editDrawer.saveError')}: {(updateMutation.error as Error)?.message}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-border shrink-0">
           <button
             type="button"
