@@ -83,7 +83,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/issues/{id}/archive", post(issues::archive))
         .route("/issues/{id}/unarchive", post(issues::unarchive))
         .route("/issues/{id}/comments", get(comments::list_by_issue).post(comments::create))
-        .route("/issues/{issue_id}/comments/{comment_id}", delete(comments::remove))
+        .route("/issues/{issue_id}/comments/{comment_id}", patch(comments::update).delete(comments::remove))
         // Approval workflow
         .route("/issues/{id}/approval-request", post(approvals::create_approval_request))
         .route("/issues/{id}/approval-response", post(approvals::create_approval_response))

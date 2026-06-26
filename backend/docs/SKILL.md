@@ -47,6 +47,8 @@ Response format: `{ "data": ... }` — errors: `{ "error": "...", "accepted_valu
 | Bulk update | PATCH | `/issues/batch` with `{ ids[], updates{} }` |
 | My issues | GET | `/issues/mine` |
 | Add comment | POST | `/issues/{id}/comments` |
+| Edit comment | PATCH | `/issues/{issue_id}/comments/{comment_id}` (own comments only) |
+| Delete comment | DELETE | `/issues/{issue_id}/comments/{comment_id}` (own; admins delete any) |
 | Post TLDR | POST | `/issues/{id}/tldr` |
 | Triage issue | POST | `/issues/{id}/triage` |
 | List untriaged | GET | `/triage` |

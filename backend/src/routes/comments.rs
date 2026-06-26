@@ -20,6 +20,11 @@ pub struct CreateComment {
     pub body: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateComment {
+    pub body: String,
+}
+
 /// Verify issue belongs to caller's org. Returns true if it exists.
 async fn verify_issue_org(pool: &PgPool, issue_id: Uuid, org_id: &str) -> Result<bool, (StatusCode, Json<serde_json::Value>)> {
     sqlx::query_scalar(
@@ -322,6 +327,116 @@ pub async fn create(
     Ok(Json(ApiResponse::with_hints(comment, hints)))
 }
 
+/// PATCH /api/v1/issues/{issue_id}/comments/{comment_id}
+///
+/// Edit a comment's body. Permission model: only the comment's author may edit
+/// it (ownership is tied to `author_id`, which is auto-filled with the caller's
+/// identity at creation — i.e. the API key id for agents, the Clerk user id for
+/// humans). Admins can delete any comment but may only edit their own.
+pub async fn update(
+    Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
+    Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
+    State(pool): State<PgPool>,
+    Path((issue_id, comment_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<UpdateComment>,
+) -> Result<Json<ApiResponse<Comment>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+
+    if !verify_issue_org(&pool, issue_id, org_id).await? && !verify_issue_org_any(&pool, issue_id, &auth.scoped_org_ids).await? {
+        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
+    }
+
+    if body.body.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Comment body cannot be empty"}))));
+    }
+    if body.body.len() > 50_000 {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Comment body must be under 50000 characters"}))));
+    }
+
+    // Fetch current author to enforce ownership.
+    let author_id: Option<String> = sqlx::query_scalar(
+        "SELECT author_id FROM comments WHERE id = $1 AND issue_id = $2",
+    )
+    .bind(comment_id)
+    .bind(issue_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    let author_id = author_id
+        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Comment not found"}))))?;
+
+    // Edit is restricted to the author — admins included.
+    if author_id != auth.user_id {
+        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "You can only edit your own comments"}))));
+    }
+
+    // Collapse presigned baaton-uploads URLs back to stable s3:// markers so the
+    // DB never holds short-lived URLs.
+    let body_text = crate::s3::collapse_to_markers(&body.body);
+
+    let mut comment = sqlx::query_as::<_, Comment>(
+        r#"
+        UPDATE comments
+        SET body = $1, updated_at = now()
+        WHERE id = $2 AND issue_id = $3
+        RETURNING *
+        "#,
+    )
+    .bind(&body_text)
+    .bind(comment_id)
+    .bind(issue_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    tracing::info!(
+        user_id = %auth.user_id,
+        comment_id = %comment_id,
+        issue_id = %issue_id,
+        "comments.update"
+    );
+
+    // ── Activity log (fire-and-forget) ───────────────────
+    {
+        let pool2 = pool.clone();
+        let uid = auth.user_id.clone();
+        let uname_opt = auth.created_by_label();
+        let comment_preview = if body.body.len() > 120 {
+            format!("{}...", &body.body[..120])
+        } else {
+            body.body.clone()
+        };
+        let oid = org_id.to_string();
+        tokio::spawn(async move {
+            let pid: Option<uuid::Uuid> = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
+                .bind(issue_id)
+                .fetch_optional(&pool2)
+                .await
+                .ok()
+                .flatten();
+            log_activity(
+                &pool2, &oid, pid, Some(issue_id), &uid, uname_opt.as_deref(),
+                "comment_updated", None, None, None,
+                Some(serde_json::json!({"preview": comment_preview})),
+            ).await;
+        });
+    }
+
+    // ── Webhook dispatch (fire-and-forget) ───────────
+    dispatch_event(pool.clone(), org_id.to_string(), "comment.updated", serde_json::to_value(&comment).unwrap_or_default()).await;
+
+    // ── SSE broadcast ────────────────────────────────
+    broadcast_event(&sse_tx, org_id, "comment.updated", &serde_json::to_string(&comment).unwrap_or_default());
+
+    // Rewrite S3 markers in body to presigned HTTPS URLs before returning.
+    crate::s3::rewrite_str(&mut comment.body, s3.as_deref()).await;
+
+    Ok(Json(ApiResponse::new(comment)))
+}
+
 /// DELETE /api/v1/issues/{issue_id}/comments/{comment_id}
 pub async fn remove(
     Extension(auth): Extension<AuthUser>,
@@ -334,6 +449,24 @@ pub async fn remove(
 
     if !verify_issue_org(&pool, issue_id, org_id).await? && !verify_issue_org_any(&pool, issue_id, &auth.scoped_org_ids).await? {
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
+    }
+
+    // Permission model: admins may delete any comment; everyone else may only
+    // delete their own (ownership tied to author_id == caller identity).
+    let author_id: Option<String> = sqlx::query_scalar(
+        "SELECT author_id FROM comments WHERE id = $1 AND issue_id = $2",
+    )
+    .bind(comment_id)
+    .bind(issue_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    let author_id = author_id
+        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Comment not found"}))))?;
+
+    if !auth.is_admin() && author_id != auth.user_id {
+        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "You can only delete your own comments"}))));
     }
 
     let result = sqlx::query("DELETE FROM comments WHERE id = $1 AND issue_id = $2")

@@ -189,6 +189,24 @@ POST /issues/{issue_id}/comments
 }
 ```
 
+### Edit Comment
+```
+PATCH /issues/{issue_id}/comments/{comment_id}
+```
+**Body:**
+```json
+{
+  "body": "updated markdown comment (required)"
+}
+```
+You may only edit **your own** comments (ownership tied to the API key / user that created it). `403` otherwise.
+
+### Delete Comment
+```
+DELETE /issues/{issue_id}/comments/{comment_id}
+```
+Org admins delete any comment; everyone else deletes **their own** only.
+
 ---
 
 ## Activity Log

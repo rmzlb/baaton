@@ -427,6 +427,18 @@ export function useApi() {
           const token = await getAuthToken();
           return api.post<Comment>(`/issues/${issueId}/comments`, body, token);
         }),
+
+      update: async (issueId: string, commentId: string, body: string): Promise<Comment> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<Comment>(`/issues/${issueId}/comments/${commentId}`, { body }, token);
+        }),
+
+      remove: async (issueId: string, commentId: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/issues/${issueId}/comments/${commentId}`, token);
+        }),
     },
 
     // ─── Tags ──────────────────────────────────

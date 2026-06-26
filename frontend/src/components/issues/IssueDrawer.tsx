@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useUser } from '@clerk/clerk-react';
+import { useUser, useOrganization } from '@clerk/clerk-react';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { useOrgMembers } from '@/hooks/useOrgMembers';
 import DOMPurify from 'dompurify';
@@ -10,6 +10,7 @@ import {
   Minus, ArrowUp, ArrowDown, Bug, Sparkles, Zap, HelpCircle,
   FileText, GitPullRequest, TestTube2, Paperclip, Upload, Image,
   Send, Plus, RotateCw, AlertCircle, Download, Eye, FileCode2, File as FileIcon,
+  Pencil, Trash2, Check,
 } from 'lucide-react';
 import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
@@ -80,6 +81,9 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   const apiClient = useApi();
   const queryClient = useQueryClient();
   const { user } = useUser();
+  const { membership } = useOrganization();
+  const currentUserId = user?.id;
+  const isAdmin = (membership?.role || '').includes('admin') || (membership?.role || '').includes('owner');
   const { resolveUserName } = useClerkMembers();
 
   const updateIssue = useIssuesStore((s) => s.updateIssue);
@@ -213,6 +217,21 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       }),
     onSuccess: () => {
       setCommentText('');
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+    },
+  });
+
+  const updateCommentMutation = useMutation({
+    mutationFn: ({ commentId, body }: { commentId: string; body: string }) =>
+      apiClient.comments.update(issueId, commentId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
+    },
+  });
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: (commentId: string) => apiClient.comments.remove(issueId, commentId),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
     },
   });
@@ -774,6 +793,10 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     isPending={commentMutation.isPending}
                     t={t}
                     issueId={issue.id}
+                    currentUserId={currentUserId}
+                    isAdmin={isAdmin}
+                    onEditComment={(commentId, body) => updateCommentMutation.mutate({ commentId, body })}
+                    onDeleteComment={(commentId) => deleteCommentMutation.mutate(commentId)}
                   />
                 ) : (
                   <ActivityTimeline issueId={issue.id} />
@@ -1861,9 +1884,13 @@ interface CommentSectionProps {
   isPending: boolean;
   t: (key: string, vars?: Record<string, string | number>) => string;
   issueId: string;
+  currentUserId?: string;
+  isAdmin?: boolean;
+  onEditComment: (commentId: string, body: string) => void;
+  onDeleteComment: (commentId: string) => void;
 }
 
-function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, isPending, t, issueId }: CommentSectionProps) {
+function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, isPending, t, issueId, currentUserId, isAdmin, onEditComment, onDeleteComment }: CommentSectionProps) {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -1884,7 +1911,15 @@ function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, 
           comment.comment_type === 'approval_request' ? (
             <ApprovalCard key={comment.id} comment={comment} issueId={issueId} />
           ) : (
-            <CommentCard key={comment.id} comment={comment} />
+            <CommentCard
+              key={comment.id}
+              comment={comment}
+              canEdit={!!currentUserId && comment.author_id === currentUserId}
+              canDelete={(!!currentUserId && comment.author_id === currentUserId) || !!isAdmin}
+              onEdit={(body) => onEditComment(comment.id, body)}
+              onDelete={() => onDeleteComment(comment.id)}
+              t={t}
+            />
           )
         ))}
       </div>
@@ -2064,9 +2099,49 @@ function TldrCard({ tldr }: { tldr: TLDR }) {
 
 /* ── Comment Card ─────────────────────────────── */
 
-function CommentCard({ comment }: { comment: Comment }) {
+function CommentCard({
+  comment,
+  canEdit = false,
+  canDelete = false,
+  onEdit,
+  onDelete,
+  t,
+}: {
+  comment: Comment;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  onEdit?: (body: string) => void;
+  onDelete?: () => void;
+  t?: (key: string, vars?: Record<string, string | number>) => string;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(comment.body);
+
+  const tr = (key: string, fallback: string) => {
+    const v = t?.(key);
+    return v && v !== key ? v : fallback;
+  };
+
+  const handleSave = () => {
+    const next = draft.trim();
+    if (!next || next === comment.body) {
+      setIsEditing(false);
+      setDraft(comment.body);
+      return;
+    }
+    onEdit?.(next);
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setDraft(comment.body);
+    setIsEditing(false);
+  };
+
+  const edited = comment.updated_at && comment.updated_at !== comment.created_at;
+
   return (
-    <div className="rounded-md border border-border bg-surface p-2.5">
+    <div className="group rounded-md border border-border bg-surface p-2.5">
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5">
           <div className="h-5 w-5 rounded-full bg-surface-hover flex items-center justify-center text-[8px] font-bold text-secondary">
@@ -2074,11 +2149,76 @@ function CommentCard({ comment }: { comment: Comment }) {
           </div>
           <span className="text-[11px] font-medium text-primary">{comment.author_name}</span>
         </div>
-        <span className="text-[9px] text-muted">{timeAgo(comment.created_at)}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] text-muted">
+            {timeAgo(comment.created_at)}{edited ? ` · ${tr('issueDrawer.edited', 'edited')}` : ''}
+          </span>
+          {!isEditing && (canEdit || canDelete) && (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => { setDraft(comment.body); setIsEditing(true); }}
+                  className="text-muted hover:text-primary"
+                  aria-label={tr('issueDrawer.editComment', 'Edit comment')}
+                  title={tr('issueDrawer.editComment', 'Edit comment')}
+                >
+                  <Pencil size={11} />
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(tr('issueDrawer.deleteCommentConfirm', 'Delete this comment?'))) onDelete?.();
+                  }}
+                  className="text-muted hover:text-danger"
+                  aria-label={tr('issueDrawer.deleteComment', 'Delete comment')}
+                  title={tr('issueDrawer.deleteComment', 'Delete comment')}
+                >
+                  <Trash2 size={11} />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-      <p className="text-xs text-primary/90 leading-relaxed whitespace-pre-wrap">
-        {comment.body}
-      </p>
+      {isEditing ? (
+        <div>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave();
+              if (e.key === 'Escape') handleCancel();
+            }}
+            rows={3}
+            autoFocus
+            className="w-full bg-transparent text-xs text-primary placeholder-muted outline-none resize-none border border-border rounded-md p-1.5"
+          />
+          <div className="flex items-center justify-end gap-1.5 mt-1.5">
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="flex items-center gap-1 px-2 py-1 text-[10px] text-muted hover:text-primary"
+            >
+              <X size={11} /> {tr('issueDrawer.cancel', 'Cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!draft.trim() || draft.trim() === comment.body}
+              className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Check size={11} /> {tr('issueDrawer.save', 'Save')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-primary/90 leading-relaxed whitespace-pre-wrap">
+          {comment.body}
+        </p>
+      )}
     </div>
   );
 }

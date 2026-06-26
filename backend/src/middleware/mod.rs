@@ -265,6 +265,15 @@ impl AuthUser {
         self.scoped_project_ids.is_empty() || self.scoped_project_ids.contains(&project_id)
     }
 
+    /// True if the caller is an org admin/owner (Clerk JWT users). API keys are
+    /// never admins (org_role is None), so they can only act on their own posts.
+    pub fn is_admin(&self) -> bool {
+        self.org_role
+            .as_deref()
+            .map(|r| r.contains("admin") || r.contains("owner"))
+            .unwrap_or(false)
+    }
+
     pub fn created_by_label(&self) -> Option<String> {
         if let Some(name) = self
             .display_name

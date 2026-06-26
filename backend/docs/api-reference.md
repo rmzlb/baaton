@@ -42,7 +42,7 @@ curl -s -X POST $BAATON/issues/ISSUE_ID/tldr -H "Authorization: Bearer $KEY" \
 - **Issue Type:** `bug` | `feature` | `improvement` | `question`
 - **Status:** per-project (default: `backlog` | `todo` | `in_progress` | `in_review` | `done` | `cancelled`)
 - **Tests Status:** `passed` | `failed` | `skipped` | `none`
-- **Webhook Events:** `issue.created` | `issue.updated` | `issue.deleted` | `issue.archived` | `issue.unarchived` | `issue.auto_triaged` | `status.changed` | `comment.created` | `comment.deleted` | `project.created` | `project.updated` | `project.deleted` | `milestone.created` | `milestone.updated` | `milestone.completed` | `sprint.created` | `sprint.completed` | `tldr.created` | `approval.requested` | `approval.responded`
+- **Webhook Events:** `issue.created` | `issue.updated` | `issue.deleted` | `issue.archived` | `issue.unarchived` | `issue.auto_triaged` | `status.changed` | `comment.created` | `comment.updated` | `comment.deleted` | `project.created` | `project.updated` | `project.deleted` | `milestone.created` | `milestone.updated` | `milestone.completed` | `sprint.created` | `sprint.completed` | `tldr.created` | `approval.requested` | `approval.responded`
 - **Automation Triggers:** `status_changed` | `priority_changed` | `label_added` | `issue_created` | `comment_added` | `assignee_changed` | `due_date_passed`
 - **Automation Actions:** `set_status` | `set_priority` | `add_label` | `assign_user` | `send_webhook` | `add_comment` | `run_agent`
 - **Permissions:** `issues:read` | `issues:write` | `issues:delete` | `projects:read` | `projects:write` | `projects:delete` | `comments:read` | `comments:write` | `comments:delete` | `labels:read` | `labels:write` | `milestones:read` | `milestones:write` | `sprints:read` | `sprints:write` | `automations:read` | `automations:write` | `webhooks:read` | `webhooks:write` | `members:read` | `members:invite` | `ai:chat` | `ai:triage` | `context:read` | `context:write` | `templates:read` | `templates:write` | `billing:read` | `admin:full`
@@ -256,8 +256,29 @@ curl -s -X POST $BAATON/issues/ISSUE_ID/comments -H "Authorization: Bearer $KEY"
 
 Fields: `body` (required), `author_id` (optional, auto-filled), `author_name` (optional, auto-filled from API key name)
 
+### PATCH /issues/{issue_id}/comments/{comment_id}
+Edit a comment's body (Markdown supported, max 50,000 chars).
+
+```bash
+curl -s -X PATCH $BAATON/issues/ISSUE_ID/comments/COMMENT_ID -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"body":"Updated: root cause confirmed in `auth.rs`."}'
+```
+
+Fields: `body` (required).
+
+**Permissions:** you may only edit **your own** comments. Ownership is tied to
+`author_id`, which is auto-filled at creation with the caller identity (the API
+key for agents, the Clerk user for humans). Admins can delete any comment but
+may only edit their own. Returns `403` when editing someone else's comment.
+
+Fires the `comment.updated` webhook event.
+
 ### DELETE /issues/{issue_id}/comments/{comment_id}
 Delete a comment.
+
+**Permissions:** org admins/owners may delete **any** comment; everyone else
+(including API keys) may only delete **their own**. Returns `403` otherwise.
 
 ---
 
@@ -609,7 +630,7 @@ Failed deliveries (non-2xx or network error) are retried with exponential backof
 After 4 consecutive failures, delivery is marked as `failed`. Webhook `failure_count` increments on each failure and resets to 0 on success.
 
 ### Event Types (20)
-`issue.created` | `issue.updated` | `issue.deleted` | `issue.archived` | `issue.unarchived` | `status.changed` | `comment.created` | `comment.deleted` | `project.created` | `project.updated` | `project.deleted` | `milestone.created` | `milestone.updated` | `milestone.completed` | `sprint.created` | `sprint.completed` | `tldr.created` | `approval.requested` | `approval.responded`
+`issue.created` | `issue.updated` | `issue.deleted` | `issue.archived` | `issue.unarchived` | `status.changed` | `comment.created` | `comment.updated` | `comment.deleted` | `project.created` | `project.updated` | `project.deleted` | `milestone.created` | `milestone.updated` | `milestone.completed` | `sprint.created` | `sprint.completed` | `tldr.created` | `approval.requested` | `approval.responded`
 
 ### GET /webhooks/{id}
 Get webhook details (secret is masked).
