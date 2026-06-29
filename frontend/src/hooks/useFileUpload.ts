@@ -79,7 +79,11 @@ const ACCEPTED_FILE_TYPES = new Set([
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'text/plain',
+  'text/markdown',
+  'text/csv',
   'text/html',
 ]);
 
@@ -118,7 +122,7 @@ export function validateFiles(
     const mime = file.type || '';
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
     const isImage = mime.startsWith('image/') || ['heic', 'heif', 'avif', 'webp', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'].includes(ext);
-    const isAccepted = ACCEPTED_FILE_TYPES.has(mime) || isImage || ['pdf', 'doc', 'docx', 'txt', 'html', 'htm'].includes(ext);
+    const isAccepted = ACCEPTED_FILE_TYPES.has(mime) || isImage || ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'md', 'markdown', 'csv', 'html', 'htm'].includes(ext);
 
     if (!isAccepted) {
       errors.push({

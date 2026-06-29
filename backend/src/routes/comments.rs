@@ -40,6 +40,30 @@ async fn verify_issue_org(pool: &PgPool, issue_id: Uuid, org_id: &str) -> Result
     })
 }
 
+/// Resolve any caller/author identity to its underlying human owner.
+///
+/// API-key identities (`apikey:<uuid>`) map to the key's `created_by` user, so
+/// a human and every API key they created share a single ownership identity.
+/// This lets a human edit/delete comments their own key posted (and vice-versa)
+/// while still blocking unrelated users and unrelated keys.
+async fn resolve_owner_identity(pool: &PgPool, identity: &str) -> String {
+    if let Some(key_id_str) = identity.strip_prefix("apikey:") {
+        if let Ok(key_id) = Uuid::parse_str(key_id_str) {
+            let owner: Option<String> = sqlx::query_scalar(
+                "SELECT created_by FROM api_keys WHERE id = $1",
+            )
+            .bind(key_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(None);
+            if let Some(owner) = owner {
+                return owner;
+            }
+        }
+    }
+    identity.to_string()
+}
+
 /// Check issue belongs to ANY of the user's scoped orgs (for all_dynamic keys)
 async fn verify_issue_org_any(pool: &PgPool, issue_id: Uuid, org_ids: &[String]) -> Result<bool, (StatusCode, Json<serde_json::Value>)> {
     if org_ids.is_empty() {
@@ -329,10 +353,12 @@ pub async fn create(
 
 /// PATCH /api/v1/issues/{issue_id}/comments/{comment_id}
 ///
-/// Edit a comment's body. Permission model: only the comment's author may edit
-/// it (ownership is tied to `author_id`, which is auto-filled with the caller's
-/// identity at creation — i.e. the API key id for agents, the Clerk user id for
-/// humans). Admins can delete any comment but may only edit their own.
+/// Edit a comment's body. Permission model: ownership is tied to `author_id`,
+/// which is auto-filled with the caller's identity at creation (the API key id
+/// for agents, the Clerk user id for humans). API-key authors are mapped to the
+/// human who created the key (`resolve_owner_identity`), so a human can edit
+/// comments posted by their own keys and vice-versa. Admins may delete any
+/// comment but may only edit their own (or their keys').
 pub async fn update(
     Extension(auth): Extension<AuthUser>,
     Extension(sse_tx): Extension<EventSender>,
@@ -368,8 +394,11 @@ pub async fn update(
     let author_id = author_id
         .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Comment not found"}))))?;
 
-    // Edit is restricted to the author — admins included.
-    if author_id != auth.user_id {
+    // Edit is restricted to the author identity. API-key authors resolve to the
+    // human who owns the key, so a human and their keys count as one author.
+    let caller_owner = resolve_owner_identity(&pool, &auth.user_id).await;
+    let comment_owner = resolve_owner_identity(&pool, &author_id).await;
+    if comment_owner != caller_owner {
         return Err((StatusCode::FORBIDDEN, Json(json!({"error": "You can only edit your own comments"}))));
     }
 
@@ -465,8 +494,12 @@ pub async fn remove(
     let author_id = author_id
         .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Comment not found"}))))?;
 
-    if !auth.is_admin() && author_id != auth.user_id {
-        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "You can only delete your own comments"}))));
+    if !auth.is_admin() {
+        let caller_owner = resolve_owner_identity(&pool, &auth.user_id).await;
+        let comment_owner = resolve_owner_identity(&pool, &author_id).await;
+        if comment_owner != caller_owner {
+            return Err((StatusCode::FORBIDDEN, Json(json!({"error": "You can only delete your own comments"}))));
+        }
     }
 
     let result = sqlx::query("DELETE FROM comments WHERE id = $1 AND issue_id = $2")

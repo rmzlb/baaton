@@ -1864,7 +1864,7 @@ function AttachmentSection({
         <input
           type="file"
           multiple
-          accept="image/*,.pdf,.doc,.docx,.txt,.heic,.heif,.html,.htm"
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.heic,.heif,.html,.htm"
           className="hidden"
           aria-label={t('issueDrawer.dropFiles') || 'Upload files'}
           onChange={(e) => onFileUpload(e.target.files)}
