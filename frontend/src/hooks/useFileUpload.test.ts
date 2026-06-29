@@ -34,12 +34,16 @@ describe('validateFiles — accepted types', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('rejects an unsupported type (exe)', () => {
+  it('accepts arbitrary types now that any file is allowed (e.g. xlsx, md, exe)', () => {
     const { valid, errors } = validateFiles(
-      [file('virus.exe', 'application/x-msdownload')], 0, MAX_ATTACHMENTS, MAX_IMAGE, MAX_FILE,
+      [
+        file('sheet.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+        file('notes.md', ''),
+        file('tool.exe', 'application/x-msdownload'),
+      ], 0, MAX_ATTACHMENTS, MAX_IMAGE, MAX_FILE,
     );
-    expect(valid).toHaveLength(0);
-    expect(errors[0].reason).toBe('type');
+    expect(valid).toHaveLength(3);
+    expect(errors).toHaveLength(0);
   });
 
   it('rejects a PDF over the file size limit', () => {

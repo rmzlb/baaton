@@ -61,31 +61,11 @@ interface UseFileUploadReturn {
 }
 
 /* ── Accepted file types ───────────────────────── */
-
-const ACCEPTED_IMAGE_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/svg+xml',
-  'image/bmp',
-  'image/heic',
-  'image/heif',
-  'image/avif',
-]);
-
-const ACCEPTED_FILE_TYPES = new Set([
-  ...ACCEPTED_IMAGE_TYPES,
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'text/plain',
-  'text/markdown',
-  'text/csv',
-  'text/html',
-]);
+// Attachments are downloaded, not executed by the browser, so we accept any
+// file type. The real guards are the size cap (below) and the sanitized
+// html/svg preview. Image extensions are still detected for the compression
+// path and the per-file size limit.
+const IMAGE_EXTS = ['heic', 'heif', 'avif', 'webp', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'];
 
 /* ── Validation ────────────────────────────────── */
 
@@ -118,20 +98,11 @@ export function validateFiles(
       continue;
     }
 
-    // Type check — be lenient: if MIME is empty (e.g. HEIC on some browsers), allow if it looks like an image ext
+    // Any file type is accepted (downloaded, not executed). We only detect
+    // images to pick the right size limit and compression path.
     const mime = file.type || '';
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
-    const isImage = mime.startsWith('image/') || ['heic', 'heif', 'avif', 'webp', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'].includes(ext);
-    const isAccepted = ACCEPTED_FILE_TYPES.has(mime) || isImage || ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'md', 'markdown', 'csv', 'html', 'htm'].includes(ext);
-
-    if (!isAccepted) {
-      errors.push({
-        file,
-        reason: 'type',
-        message: `Unsupported file type: ${mime || ext}`,
-      });
-      continue;
-    }
+    const isImage = mime.startsWith('image/') || IMAGE_EXTS.includes(ext);
 
     const maxSize = isImage ? maxImageBytes : maxFileBytes;
     if (file.size > maxSize) {
