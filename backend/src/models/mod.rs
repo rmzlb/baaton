@@ -98,6 +98,9 @@ pub struct Issue {
     #[sqlx(rename = "type")]
     pub issue_type: String,
     pub status: String,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub status_category: Option<String>,
     pub priority: Option<String>,
     pub source: String,
     pub reporter_name: Option<String>,

@@ -2554,7 +2554,7 @@ pub async fn search(
           AND p.org_id = $2
           AND ($3::uuid IS NULL OR i.project_id = $3)
           AND ($4::text IS NULL OR i.status = $4)
-          AND (NOT $6::boolean OR (i.due_date < CURRENT_DATE AND i.status NOT IN ('done', 'cancelled')))
+          AND (NOT $6::boolean OR (i.due_date < CURRENT_DATE AND i.status_category NOT IN ('completed', 'canceled')))
         ORDER BY ts_rank(i.search_vector, plainto_tsquery('english', $1)) DESC
         LIMIT $5
         "#,
@@ -2666,7 +2666,7 @@ pub async fn search_global(
           )
           AND ($3::uuid IS NULL OR i.project_id = $3)
           AND ($4::text IS NULL OR i.status = $4)
-          AND (NOT $6::boolean OR (i.due_date < CURRENT_DATE AND i.status NOT IN ('done', 'cancelled')))
+          AND (NOT $6::boolean OR (i.due_date < CURRENT_DATE AND i.status_category NOT IN ('completed', 'canceled')))
         ORDER BY i.id, i.created_at DESC
         LIMIT $5
         "##,

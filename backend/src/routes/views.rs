@@ -265,7 +265,7 @@ pub async fn get_issues(
 
     // filter: is_overdue
     if let Some(true) = filters.get("is_overdue").and_then(|v| v.as_bool()) {
-        qb.push(" AND i.due_date < CURRENT_DATE AND i.status NOT IN ('done', 'cancelled')");
+        qb.push(" AND i.due_date < CURRENT_DATE AND i.status_category NOT IN ('completed', 'canceled')");
     }
 
     // Scope to view's project if set

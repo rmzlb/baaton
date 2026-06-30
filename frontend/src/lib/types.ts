@@ -1,7 +1,14 @@
 // ─── Enums ────────────────────────────────────────────
 
 export type IssueType = 'bug' | 'feature' | 'improvement' | 'question';
-export type IssueStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
+export type IssueStatus =
+  | 'backlog'
+  | 'todo'
+  | 'in_progress'
+  | 'in_review'
+  | 'done'
+  | 'cancelled'
+  | (string & {});
 export type IssuePriority = 'urgent' | 'high' | 'medium' | 'low';
 export type IssueSource = 'web' | 'api' | 'form' | 'email' | 'github';
 export type TestsStatus = 'passed' | 'failed' | 'skipped' | 'none';
@@ -28,6 +35,10 @@ export interface ProjectStatus {
   label: string;
   color: string;
   hidden: boolean;
+  /** Semantic group business logic keys off of. */
+  category?: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
+  /** True for the 6 immutable anchor statuses (key + category locked, not deletable). */
+  core?: boolean;
 }
 
 export type AutoAssignMode = 'off' | 'default_assignee' | 'round_robin';
@@ -117,6 +128,7 @@ export interface Issue {
   description: string | null;
   type: IssueType;
   status: IssueStatus;
+  status_category?: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
   priority: IssuePriority | null;
   source: IssueSource;
   reporter_name: string | null;

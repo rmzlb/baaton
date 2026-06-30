@@ -337,7 +337,7 @@ async fn build_project_context(pool: &PgPool, org_id: &str, project_ids: &[Strin
             SELECT p.name AS project_name, i.status, COUNT(*) AS cnt
             FROM issues i
             JOIN projects p ON p.id = i.project_id
-            WHERE p.org_id = $1 AND LOWER(i.status) NOT IN ('done', 'cancelled')
+            WHERE p.org_id = $1 AND i.status_category NOT IN ('completed', 'canceled')
             GROUP BY p.name, i.status
             ORDER BY p.name ASC
             "#,
@@ -352,7 +352,7 @@ async fn build_project_context(pool: &PgPool, org_id: &str, project_ids: &[Strin
             SELECT p.name AS project_name, i.status, COUNT(*) AS cnt
             FROM issues i
             JOIN projects p ON p.id = i.project_id
-            WHERE p.org_id = $1 AND p.id = ANY($2::uuid[]) AND LOWER(i.status) NOT IN ('done', 'cancelled')
+            WHERE p.org_id = $1 AND p.id = ANY($2::uuid[]) AND i.status_category NOT IN ('completed', 'canceled')
             GROUP BY p.name, i.status
             ORDER BY p.name ASC
             "#,

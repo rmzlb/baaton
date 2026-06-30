@@ -235,7 +235,7 @@ pub async fn list_untriaged(
         SELECT i.id, i.display_id, i.title, i.description, i.status, i.priority,
                i.project_id, p.name AS project_name, p.prefix AS project_prefix,
                i.source, i.created_at,
-               i."type" AS issue_type
+               i."type" AS "type"
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE p.org_id = ANY($1)
@@ -245,7 +245,7 @@ pub async fn list_untriaged(
             OR (i.status = 'backlog' AND i.assignee_ids = '{}')
             OR i.source = 'form'
           )
-          AND i.status NOT IN ('done', 'cancelled')
+          AND i.status_category NOT IN ('completed', 'canceled')
         ORDER BY i.created_at DESC
         LIMIT 100
         "#,

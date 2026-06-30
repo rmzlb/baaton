@@ -899,7 +899,7 @@ async fn exec_get_project_metrics(
     ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
 
     let open: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status NOT IN ('done', 'cancelled')"
+        "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) AND i.status_category NOT IN ('completed', 'canceled')"
     ).bind(org_ids).bind(project_id).fetch_one(pool).await.unwrap_or(0);
 
     let in_progress: i64 = sqlx::query_scalar(
@@ -1029,11 +1029,11 @@ async fn exec_analyze_sprint(
             .unwrap_or(0);
 
     let carried_over: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues WHERE sprint_id = $1 AND status NOT IN ('done', 'cancelled') AND updated_at < NOW() - INTERVAL '3 days'"
+        "SELECT COUNT(*) FROM issues WHERE sprint_id = $1 AND status_category NOT IN ('completed', 'canceled') AND updated_at < NOW() - INTERVAL '3 days'"
     ).bind(sprint.id).fetch_one(pool).await.unwrap_or(0);
 
     let blocked: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM issues WHERE sprint_id = $1 AND priority = 'urgent' AND status NOT IN ('done', 'cancelled') AND updated_at < NOW() - INTERVAL '2 days'"
+        "SELECT COUNT(*) FROM issues WHERE sprint_id = $1 AND priority = 'urgent' AND status_category NOT IN ('completed', 'canceled') AND updated_at < NOW() - INTERVAL '2 days'"
     ).bind(sprint.id).fetch_one(pool).await.unwrap_or(0);
 
     let pct = if planned > 0 {
@@ -1134,7 +1134,7 @@ async fn exec_weekly_recap(
     let blockers_fut = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id \
          WHERE p.org_id = ANY($1::text[]) AND ($2::uuid IS NULL OR i.project_id = $2) \
-         AND i.priority IN ('urgent', 'high') AND i.status NOT IN ('done', 'cancelled') \
+         AND i.priority IN ('urgent', 'high') AND i.status_category NOT IN ('completed', 'canceled') \
          AND i.updated_at < NOW() - INTERVAL '2 days'",
     )
     .bind(org_ids)
@@ -1426,7 +1426,7 @@ async fn exec_suggest_priorities(
            JOIN projects p ON p.id = i.project_id
            WHERE p.org_id = ANY($1::text[])
              AND ($2::uuid IS NULL OR i.project_id = $2)
-             AND i.status NOT IN ('done', 'cancelled')
+             AND i.status_category NOT IN ('completed', 'canceled')
            ORDER BY score DESC
            LIMIT 10"#,
     )
@@ -2163,7 +2163,7 @@ async fn exec_workload_by_assignee(
               ) AS unnested
          WHERE p.org_id = ANY($1::text[])
            AND ($2::uuid IS NULL OR i.project_id = $2)
-           AND ($3 = 'all' OR i.status NOT IN ('done', 'cancelled'))
+           AND ($3 = 'all' OR i.status_category NOT IN ('completed', 'canceled'))
          GROUP BY unnested.assignee_id, i.status
          ORDER BY COUNT(*) DESC
          LIMIT 200",
@@ -2286,7 +2286,7 @@ async fn exec_compare_projects(
             .fetch_one(pool)
             .await
             .unwrap_or(0);
-        let open: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1 AND status NOT IN ('done', 'cancelled')")
+        let open: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1 AND status_category NOT IN ('completed', 'canceled')")
             .bind(uuid).fetch_one(pool).await.unwrap_or(0);
         let done: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM issues WHERE project_id = $1 AND status = 'done'",
@@ -2429,7 +2429,7 @@ async fn exec_org_overview(
         "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
          WHERE p.org_id = ANY($1::text[])
          AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
-         AND i.status NOT IN ('done', 'cancelled')",
+         AND i.status_category NOT IN ('completed', 'canceled')",
     )
     .bind(org_ids)
     .bind(has_pf)
@@ -2463,7 +2463,7 @@ async fn exec_org_overview(
         "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
          WHERE p.org_id = ANY($1::text[])
          AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
-         AND i.sla_breached = true AND i.status NOT IN ('done', 'cancelled')",
+         AND i.sla_breached = true AND i.status_category NOT IN ('completed', 'canceled')",
     )
     .bind(org_ids)
     .bind(has_pf)
@@ -2483,7 +2483,7 @@ async fn exec_org_overview(
          WHERE p.org_id = ANY($1::text[])
          AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
          AND i.priority = 'urgent'
-         AND i.status NOT IN ('done', 'cancelled')
+         AND i.status_category NOT IN ('completed', 'canceled')
          AND i.updated_at < NOW() - INTERVAL '2 days'",
     )
     .bind(org_ids)
@@ -2506,7 +2506,7 @@ async fn exec_org_overview(
         "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
          WHERE p.org_id = ANY($1::text[])
          AND ($2::boolean = false OR i.project_id = ANY($3::uuid[]))
-         AND i.status NOT IN ('done', 'cancelled')
+         AND i.status_category NOT IN ('completed', 'canceled')
          AND i.updated_at < NOW() - INTERVAL '7 days'",
     )
     .bind(org_ids)
@@ -2538,12 +2538,12 @@ async fn exec_org_overview(
         "SELECT
            p.id, p.name, p.prefix,
            COALESCE(COUNT(i.id), 0)::bigint AS total,
-           COALESCE(COUNT(*) FILTER (WHERE i.status NOT IN ('done', 'cancelled')), 0)::bigint AS open,
+           COALESCE(COUNT(*) FILTER (WHERE i.status_category NOT IN ('completed', 'canceled')), 0)::bigint AS open,
            COALESCE(COUNT(*) FILTER (WHERE i.status = 'in_progress'), 0)::bigint AS in_progress,
            COALESCE(COUNT(*) FILTER (WHERE i.status = 'done'), 0)::bigint AS done,
            COALESCE(COUNT(*) FILTER (WHERE i.status = 'done' AND i.updated_at >= NOW() - INTERVAL '14 days'), 0)::bigint AS velocity_14d,
            COALESCE(COUNT(*) FILTER (WHERE i.type = 'bug'), 0)::bigint AS bugs,
-           COALESCE(COUNT(*) FILTER (WHERE i.status NOT IN ('done', 'cancelled') AND i.updated_at < NOW() - INTERVAL '7 days'), 0)::bigint AS stale_open
+           COALESCE(COUNT(*) FILTER (WHERE i.status_category NOT IN ('completed', 'canceled') AND i.updated_at < NOW() - INTERVAL '7 days'), 0)::bigint AS stale_open
          FROM projects p
          LEFT JOIN issues i ON i.project_id = p.id
          WHERE p.org_id = ANY($1::text[])
@@ -4364,7 +4364,7 @@ async fn ai_plan_milestones(
          FROM issues i
          JOIN projects p ON p.id = i.project_id
          WHERE i.project_id = $1 AND p.org_id = ANY($2::text[])
-           AND i.status NOT IN ('done', 'cancelled')
+           AND i.status_category NOT IN ('completed', 'canceled')
          ORDER BY i.created_at ASC",
     )
     .bind(project_id)
@@ -4588,7 +4588,7 @@ async fn ai_generate_prd(
         "SELECT i.title, i.type as issue_type, COALESCE(i.tags, ARRAY[]::text[]) as tags
          FROM issues i
          WHERE i.project_id = $1
-           AND i.status NOT IN ('done', 'cancelled')
+           AND i.status_category NOT IN ('completed', 'canceled')
          ORDER BY i.created_at ASC
          LIMIT 200",
     )
@@ -5184,7 +5184,7 @@ async fn ai_manage_sla(
 
             let total_open: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM issues
-                 WHERE project_id = $1 AND status NOT IN ('done', 'cancelled')",
+                 WHERE project_id = $1 AND status_category NOT IN ('completed', 'canceled')",
             )
             .bind(project_id)
             .fetch_one(pool)

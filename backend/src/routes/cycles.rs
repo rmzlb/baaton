@@ -260,7 +260,7 @@ pub async fn complete(
 
     // Rollover incomplete issues to the next cycle
     let rolled = sqlx::query(
-        "UPDATE issues SET cycle_id = $2 WHERE cycle_id = $1 AND status NOT IN ('done', 'cancelled')"
+        "UPDATE issues SET cycle_id = $2 WHERE cycle_id = $1 AND status_category NOT IN ('completed', 'canceled')"
     )
     .bind(id)
     .bind(next_cycle.id)

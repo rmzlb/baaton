@@ -102,7 +102,7 @@ pub async fn get_metrics(
         SELECT COUNT(*)
         FROM issues i
         JOIN projects p ON p.id = i.project_id
-        WHERE p.org_id = $1 AND i.status NOT IN ('done', 'cancelled')
+        WHERE p.org_id = $1 AND i.status_category NOT IN ('completed', 'canceled')
         "#,
     )
     .bind(org_id)

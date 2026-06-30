@@ -326,7 +326,7 @@ pub async fn summary(
         // f) Active issues count
         sqlx::query_scalar::<_, i64>(
             r#"SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
-               WHERE p.org_id = ANY($1) AND i.status NOT IN ('done', 'cancelled')"#
+               WHERE p.org_id = ANY($1) AND i.status_category NOT IN ('completed', 'canceled')"#
         ).bind(&all_org_ids).fetch_one(&pool),
 
         // g) Personal: this week
@@ -410,7 +410,7 @@ pub async fn summary(
             r#"SELECT i.id, p.org_id, i.display_id, i.title, i.status, i.priority, p.prefix AS project_prefix
                FROM issues i JOIN projects p ON p.id = i.project_id
                WHERE p.org_id = ANY($1) AND $2 = ANY(i.assignee_ids)
-                 AND i.status NOT IN ('done', 'cancelled')
+                 AND i.status_category NOT IN ('completed', 'canceled')
                ORDER BY CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
                         i.created_at DESC
                LIMIT 20"#

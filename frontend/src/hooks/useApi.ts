@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react';
 import { api, ApiError } from '@/lib/api';
 import type {
   Project,
+  ProjectStatus,
   ProjectAutoAssignSettings,
   PublicSubmitSettings,
   Issue,
@@ -188,6 +189,15 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.post<Project>(`/projects/${id}/refresh-github`, {}, token);
+        }),
+
+      updateStatuses: async (
+        id: string,
+        body: { statuses: ProjectStatus[]; reassign?: Record<string, string> },
+      ): Promise<Project> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.put<Project>(`/projects/${id}/statuses`, body, token);
         }),
 
       delete: async (id: string): Promise<void> =>

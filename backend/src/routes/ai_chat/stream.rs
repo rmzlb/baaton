@@ -144,7 +144,7 @@ pub(super) async fn build_project_context(
             SELECT p.name AS project_name, i.status, COUNT(*) AS cnt
             FROM issues i
             JOIN projects p ON p.id = i.project_id
-            WHERE p.org_id = ANY($1::text[]) AND LOWER(i.status) NOT IN ('done', 'cancelled')
+            WHERE p.org_id = ANY($1::text[]) AND i.status_category NOT IN ('completed', 'canceled')
             GROUP BY p.name, i.status
             ORDER BY p.name ASC
             "#,
@@ -159,7 +159,7 @@ pub(super) async fn build_project_context(
             SELECT p.name AS project_name, i.status, COUNT(*) AS cnt
             FROM issues i
             JOIN projects p ON p.id = i.project_id
-            WHERE p.org_id = ANY($1::text[]) AND p.id = ANY($2::uuid[]) AND LOWER(i.status) NOT IN ('done', 'cancelled')
+            WHERE p.org_id = ANY($1::text[]) AND p.id = ANY($2::uuid[]) AND i.status_category NOT IN ('completed', 'canceled')
             GROUP BY p.name, i.status
             ORDER BY p.name ASC
             "#,

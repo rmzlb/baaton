@@ -851,3 +851,301 @@ pub async fn update_auto_assign_settings(
         )),
     }
 }
+
+// ─── Custom workflow statuses ─────────────────────────
+
+const CORE_STATUS_KEYS: &[&str] = &[
+    "backlog",
+    "todo",
+    "in_progress",
+    "in_review",
+    "done",
+    "cancelled",
+];
+
+#[allow(dead_code)]
+const VALID_CATEGORIES: &[&str] = &[
+    "backlog",
+    "unstarted",
+    "started",
+    "completed",
+    "canceled",
+];
+
+/// Categories a user-created (custom) status may use. Terminal (completed/canceled)
+/// and backlog remain reserved for the immutable core anchors.
+const CUSTOM_ALLOWED_CATEGORIES: &[&str] = &["unstarted", "started"];
+
+/// Canonical (immutable) category for the 6 core statuses.
+fn core_category(key: &str) -> Option<&'static str> {
+    match key {
+        "backlog" => Some("backlog"),
+        "todo" => Some("unstarted"),
+        "in_progress" => Some("started"),
+        "in_review" => Some("started"),
+        "done" => Some("completed"),
+        "cancelled" => Some("canceled"),
+        _ => None,
+    }
+}
+
+fn is_valid_status_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() <= 40
+        && key
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            .unwrap_or(false)
+        && key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
+fn bad_request(msg: impl Into<String>) -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "error": msg.into() })),
+    )
+}
+
+/// PUT /projects/{id}/statuses
+///
+/// Full-array replacement of a project's workflow statuses. Supports add, rename
+/// (label), recolor, hide, reorder, and delete (with issue reassignment).
+///
+/// Rules:
+///   * The 6 core statuses must all be present; their key + category are immutable.
+///   * Custom statuses can be added/removed; category must be a valid semantic group.
+///   * Deleting a custom status reassigns its issues to `reassign[key]` if provided,
+///     else the status immediately before it in the previous ordering, else the first.
+pub async fn update_statuses(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth
+        .org_id
+        .as_deref()
+        .ok_or_else(|| bad_request("Organization required"))?;
+
+    // ── Load existing project (org-scoped) ───────────────
+    let existing: Option<(serde_json::Value,)> =
+        sqlx::query_as("SELECT statuses FROM projects WHERE id = $1 AND org_id = $2")
+            .bind(id)
+            .bind(org_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+            })?;
+
+    let (old_statuses,) = existing.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Project not found" })),
+        )
+    })?;
+
+    let old_keys: Vec<String> = old_statuses
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|s| s.get("key").and_then(|k| k.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // ── Parse + validate incoming statuses ───────────────
+    let incoming = body
+        .get("statuses")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| bad_request("Body must contain a 'statuses' array"))?;
+
+    if incoming.is_empty() {
+        return Err(bad_request("statuses cannot be empty"));
+    }
+
+    let mut normalized: Vec<serde_json::Value> = Vec::with_capacity(incoming.len());
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for s in incoming {
+        let key = s
+            .get("key")
+            .and_then(|v| v.as_str())
+            .map(|k| k.trim().to_string())
+            .ok_or_else(|| bad_request("Each status needs a 'key'"))?;
+
+        if !is_valid_status_key(&key) {
+            return Err(bad_request(format!(
+                "Invalid status key '{}'. Use lowercase letters, digits, '_' or '-'.",
+                key
+            )));
+        }
+        if !seen.insert(key.clone()) {
+            return Err(bad_request(format!("Duplicate status key '{}'", key)));
+        }
+
+        let label = s
+            .get("label")
+            .and_then(|v| v.as_str())
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .ok_or_else(|| bad_request(format!("Status '{}' needs a non-empty label", key)))?;
+
+        let color = s
+            .get("color")
+            .and_then(|v| v.as_str())
+            .filter(|c| !c.is_empty())
+            .unwrap_or("#6b7280")
+            .to_string();
+
+        let hidden = s.get("hidden").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        // Category: core statuses are forced to canonical; custom must be valid.
+        let is_core = CORE_STATUS_KEYS.contains(&key.as_str());
+        let category = if let Some(canon) = core_category(&key) {
+            canon.to_string()
+        } else {
+            let cat = s
+                .get("category")
+                .and_then(|v| v.as_str())
+                .unwrap_or("started");
+            // Custom statuses are mid-flow only (non-terminal, non-backlog) so the
+            // backlog/done/cancelled anchors stay the single source of truth for
+            // terminal + triage logic. backlog/completed/canceled stay core-only.
+            if !CUSTOM_ALLOWED_CATEGORIES.contains(&cat) {
+                return Err(bad_request(format!(
+                    "Invalid category '{}' for custom status '{}'. Custom statuses must be one of: {}",
+                    cat,
+                    key,
+                    CUSTOM_ALLOWED_CATEGORIES.join(", ")
+                )));
+            }
+            cat.to_string()
+        };
+
+        normalized.push(json!({
+            "key": key,
+            "label": label,
+            "color": color,
+            "hidden": hidden,
+            "category": category,
+            "core": is_core,
+        }));
+    }
+
+    // ── All core statuses must be present ─────────────────
+    for core in CORE_STATUS_KEYS {
+        if !seen.contains(*core) {
+            return Err(bad_request(format!(
+                "Core status '{}' cannot be removed",
+                core
+            )));
+        }
+    }
+
+    let new_keys: std::collections::HashSet<&str> =
+        normalized.iter().filter_map(|s| s["key"].as_str()).collect();
+
+    // ── Determine removed statuses + reassignment targets ─
+    let reassign = body.get("reassign").and_then(|v| v.as_object());
+
+    let mut tx = pool.begin().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })?;
+
+    for (idx, old_key) in old_keys.iter().enumerate() {
+        if new_keys.contains(old_key.as_str()) {
+            continue;
+        }
+        // Resolve reassignment target for this removed status.
+        let target: String = reassign
+            .and_then(|m| m.get(old_key))
+            .and_then(|v| v.as_str())
+            .filter(|t| new_keys.contains(*t))
+            .map(String::from)
+            .or_else(|| {
+                // previous status in old ordering that still exists
+                old_keys[..idx]
+                    .iter()
+                    .rev()
+                    .find(|k| new_keys.contains(k.as_str()))
+                    .cloned()
+            })
+            .or_else(|| {
+                // next status in old ordering that still exists
+                old_keys[idx + 1..]
+                    .iter()
+                    .find(|k| new_keys.contains(k.as_str()))
+                    .cloned()
+            })
+            .or_else(|| normalized.first().and_then(|s| s["key"].as_str().map(String::from)))
+            .ok_or_else(|| bad_request("No valid status to reassign issues to"))?;
+
+        sqlx::query("UPDATE issues SET status = $1, updated_at = now() WHERE project_id = $2 AND status = $3")
+            .bind(&target)
+            .bind(id)
+            .bind(old_key)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+            })?;
+    }
+
+    // ── Persist new statuses ──────────────────────────────
+    let new_statuses = serde_json::Value::Array(normalized);
+    let project = sqlx::query_as::<_, Project>(
+        "UPDATE projects SET statuses = $3 WHERE id = $1 AND org_id = $2 RETURNING *",
+    )
+    .bind(id)
+    .bind(org_id)
+    .bind(&new_statuses)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })?;
+
+    // ── Re-sync status_category for all issues (categories of kept keys may
+    //    have changed; the BEFORE-UPDATE-OF-status trigger doesn't fire here). ──
+    sqlx::query(
+        r#"UPDATE issues i SET status_category = COALESCE(
+             (SELECT s->>'category' FROM projects p, jsonb_array_elements(p.statuses) AS s
+                WHERE p.id = i.project_id AND s->>'key' = i.status LIMIT 1),
+             i.status_category)
+           WHERE i.project_id = $1"#,
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })?;
+
+    tx.commit().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })?;
+
+    Ok(Json(ApiResponse::new(project)))
+}

@@ -12,6 +12,7 @@ import { TemplatesSection } from '@/components/settings/TemplatesSection';
 import { SlaSection } from '@/components/settings/SlaSection';
 import { RecurringSection } from '@/components/settings/RecurringSection';
 import { EmailIntakeSection } from '@/components/settings/EmailIntakeSection';
+import { WorkflowStatusEditor } from '@/components/settings/WorkflowStatusEditor';
 import { ShortcutHelp } from '@/components/shared/ShortcutHelp';
 import { KanbanBoardSkeleton, ListViewSkeleton } from '@/components/shared/Skeleton';
 import { useApi } from '@/hooks/useApi';
@@ -35,6 +36,20 @@ const DEFAULT_STATUSES: ProjectStatus[] = [
   { key: 'done', label: 'Done', color: '#22c55e', hidden: false },
   { key: 'cancelled', label: 'Cancelled', color: '#ef4444', hidden: true },
 ];
+
+// Parse a project's statuses field (array, JSON string, or missing) into a list.
+function parseStatuses(raw: unknown): ProjectStatus[] {
+  if (Array.isArray(raw)) return raw as ProjectStatus[];
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed as ProjectStatus[];
+    } catch {
+      // fall through
+    }
+  }
+  return DEFAULT_STATUSES;
+}
 
 type ViewMode = 'kanban' | 'list';
 
@@ -469,7 +484,7 @@ function DensityToggle() {
 
 /* ── Project Settings Modal ─────────────────────── */
 
-type SettingsTab = 'general' | 'templates' | 'sla' | 'recurring' | 'email';
+type SettingsTab = 'general' | 'workflow' | 'templates' | 'sla' | 'recurring' | 'email';
 
 function ProjectSettingsModal({
   project,
@@ -549,6 +564,7 @@ function ProjectSettingsModal({
 
   const SETTINGS_TABS: { key: SettingsTab; label: string }[] = [
     { key: 'general', label: 'General' },
+    { key: 'workflow', label: t('workflow.tab', { defaultValue: 'Workflow' }) },
     { key: 'templates', label: t('templates.title') },
     { key: 'sla', label: t('slaRules.title') },
     { key: 'recurring', label: t('recurring.title') },
@@ -733,6 +749,13 @@ function ProjectSettingsModal({
             </div>
           )}
 
+          {activeTab === 'workflow' && (
+            <WorkflowStatusEditor
+              projectId={project.id}
+              statuses={parseStatuses(project.statuses)}
+              onSaved={onSaved}
+            />
+          )}
           {activeTab === 'templates' && <TemplatesSection projectId={project.id} />}
           {activeTab === 'sla' && <SlaSection projectId={project.id} />}
           {activeTab === 'recurring' && <RecurringSection projectId={project.id} />}

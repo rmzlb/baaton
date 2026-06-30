@@ -827,7 +827,7 @@ pub async fn get_dashboard(
          JOIN projects p ON p.id = i.project_id
          WHERE p.org_id = ANY($1)
            AND $2 = ANY(i.assignee_ids)
-           AND i.status NOT IN ('done', 'cancelled')
+           AND i.status_category NOT IN ('completed', 'canceled')
          ORDER BY
            CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
            i.created_at DESC

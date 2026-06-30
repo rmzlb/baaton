@@ -616,7 +616,7 @@ pub async fn pm_full_review(
         JOIN projects p ON p.id = i.project_id
         WHERE p.org_id = $1
           AND ($2::uuid[] IS NULL OR i.project_id = ANY($2))
-          AND LOWER(i.status) NOT IN ('done', 'cancelled')
+          AND i.status_category NOT IN ('completed', 'canceled')
         ORDER BY p.name ASC, i.created_at ASC, i.display_id ASC
         "#,
     )
