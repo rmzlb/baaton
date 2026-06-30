@@ -5,11 +5,11 @@ WORKDIR /app
 
 # ── Stage 2: Planner — capture deps ────────────
 FROM chef AS planner
-COPY Cargo.toml ./
+# Use the committed Cargo.lock so dependency versions are reproducible
+# (do NOT regenerate: a fresh resolve can pull breaking patch releases).
+COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
 COPY docs/ docs/
-# Generate Cargo.lock if missing
-RUN cargo generate-lockfile
 RUN cargo chef prepare --recipe-path recipe.json
 
 # ── Stage 3: Builder — cached dep compilation ──
@@ -20,13 +20,12 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Now copy real source and build (only our code recompiles — seconds, not minutes)
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
 COPY docs/ docs/
 COPY migrations/ migrations/
-RUN cargo generate-lockfile
 
-RUN cargo build --release
+RUN cargo build --release --locked
 
 # ── Stage 4: Runtime — minimal image (~20MB) ───
 FROM debian:bookworm-slim AS runtime
