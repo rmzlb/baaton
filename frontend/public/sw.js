@@ -1,4 +1,4 @@
-const CACHE_NAME = 'baaton-v3';
+const CACHE_NAME = 'baaton-v4';
 
 // Install: skip waiting immediately
 self.addEventListener('install', () => self.skipWaiting());
