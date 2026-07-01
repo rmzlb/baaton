@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { useNotificationStore } from '@/stores/notifications';
-import type { SSEEvent } from '@/lib/types';
 
 import { resolveApiOrigin } from '@/lib/api-origin';
 const API_URL = resolveApiOrigin();
@@ -41,65 +40,92 @@ export function useSSE() {
         const es = new EventSource(url);
         eventSourceRef.current = es;
 
-        es.onmessage = (event) => {
-          if (cancelled) return;
-
+        // The backend emits *named* SSE events (e.g. `issue.created`) whose
+        // `data` payload is the raw entity JSON — not a wrapped { type } object.
+        // Named events never reach `onmessage`, so each needs its own listener.
+        const parse = <T,>(event: Event): T | null => {
           try {
-            const data: SSEEvent = JSON.parse(event.data);
-
-            // ── Invalidate queries ──
-            if (data.type === 'issue_created' || data.type === 'issue_updated') {
-              queryClient.invalidateQueries({ queryKey: ['issues'] });
-              queryClient.invalidateQueries({ queryKey: ['all-issues'] });
-              if (data.issue_id) {
-                queryClient.invalidateQueries({ queryKey: ['issue', data.issue_id] });
-              }
-              if (data.project_id) {
-                queryClient.invalidateQueries({
-                  queryKey: ['issues', data.project_id],
-                  exact: false,
-                });
-              }
-              // Invalidate activity feeds
-              queryClient.invalidateQueries({ queryKey: ['activity'] });
-              if (data.issue_id) {
-                queryClient.invalidateQueries({ queryKey: ['activity', data.issue_id] });
-              }
-            }
-
-            if (data.type === 'comment_created') {
-              if (data.issue_id) {
-                queryClient.invalidateQueries({ queryKey: ['issue', data.issue_id] });
-                queryClient.invalidateQueries({ queryKey: ['activity', data.issue_id] });
-              }
-              queryClient.invalidateQueries({ queryKey: ['activity'] });
-            }
-
-            // ── Notifications (only for events caused by others) ──
-            if (data.type === 'issue_created' && data.title) {
-              addNotification({
-                type: 'info',
-                title: 'New issue created',
-                message: data.title,
-              });
-            }
-
-            if (data.type === 'comment_created' && data.author_name) {
-              // Don't notify for own comments
-              const isOwnComment = user?.fullName === data.author_name
-                || user?.firstName === data.author_name;
-              if (!isOwnComment) {
-                addNotification({
-                  type: 'info',
-                  title: `${data.author_name} commented`,
-                  message: `On issue ${data.issue_id?.slice(0, 8) ?? ''}…`,
-                });
-              }
-            }
+            return JSON.parse((event as MessageEvent).data) as T;
           } catch {
-            // Ignore parse errors (e.g. keep-alive pings)
+            return null;
           }
         };
+
+        // ── Issues: any mutation refreshes lists, board and the touched issue ──
+        const ISSUE_EVENTS = [
+          'issue.created',
+          'issue.updated',
+          'issue.status_changed',
+          'issue.archived',
+          'issue.unarchived',
+          'issue.deleted',
+        ] as const;
+        for (const name of ISSUE_EVENTS) {
+          es.addEventListener(name, (event) => {
+            if (cancelled) return;
+            const data = parse<{ id?: string; project_id?: string }>(event);
+            queryClient.invalidateQueries({ queryKey: ['issues'] });
+            queryClient.invalidateQueries({ queryKey: ['all-issues'] });
+            queryClient.invalidateQueries({ queryKey: ['project-board'] });
+            queryClient.invalidateQueries({ queryKey: ['activity'] });
+            if (data?.id) {
+              queryClient.invalidateQueries({ queryKey: ['issue', data.id] });
+            }
+          });
+        }
+
+        // ── Comments: refresh the parent issue thread + activity feeds ──
+        const COMMENT_EVENTS = ['comment.created', 'comment.updated', 'comment.deleted'] as const;
+        for (const name of COMMENT_EVENTS) {
+          es.addEventListener(name, (event) => {
+            if (cancelled) return;
+            const data = parse<{ issue_id?: string }>(event);
+            if (data?.issue_id) {
+              queryClient.invalidateQueries({ queryKey: ['issue', data.issue_id] });
+              queryClient.invalidateQueries({ queryKey: ['activity', data.issue_id] });
+            }
+            queryClient.invalidateQueries({ queryKey: ['activity'] });
+          });
+        }
+
+        // ── Project-level config (workflow statuses) ──
+        // Statuses live on the project, so an admin edit must refresh every
+        // connected member's board immediately.
+        es.addEventListener('project.updated', () => {
+          if (cancelled) return;
+          queryClient.invalidateQueries({ queryKey: ['project-board'] });
+          queryClient.invalidateQueries({ queryKey: ['projects'] });
+        });
+
+        // ── Client fell behind (broadcast buffer lag) → full refetch ──
+        es.addEventListener('system.lagged', () => {
+          if (cancelled) return;
+          queryClient.invalidateQueries();
+        });
+
+        // ── Notifications for events caused by others ──
+        es.addEventListener('issue.created', (event) => {
+          if (cancelled) return;
+          const issue = parse<{ title?: string }>(event);
+          if (issue?.title) {
+            addNotification({ type: 'info', title: 'New issue created', message: issue.title });
+          }
+        });
+
+        es.addEventListener('comment.created', (event) => {
+          if (cancelled) return;
+          const comment = parse<{ author_name?: string; issue_id?: string }>(event);
+          const author = comment?.author_name;
+          if (!author) return;
+          const isOwnComment = user?.fullName === author || user?.firstName === author;
+          if (!isOwnComment) {
+            addNotification({
+              type: 'info',
+              title: `${author} commented`,
+              message: `On issue ${comment?.issue_id?.slice(0, 8) ?? ''}…`,
+            });
+          }
+        });
 
         es.onerror = () => {
           if (cancelled) return;

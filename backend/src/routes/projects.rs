@@ -13,6 +13,7 @@ use crate::models::{
     ApiResponse, CreateProject, Project, ProjectAutoAssignSettings, UpdateProjectAutoAssignSettings,
 };
 use crate::routes::issues::fetch_user_org_ids;
+use crate::routes::sse::{broadcast_event, EventSender};
 
 /// Parse "owner/repo" from a GitHub URL like https://github.com/owner/repo
 fn parse_github_owner_repo(url: &str) -> Option<(String, String)> {
@@ -921,6 +922,7 @@ fn bad_request(msg: impl Into<String>) -> (StatusCode, Json<serde_json::Value>) 
 ///     else the status immediately before it in the previous ordering, else the first.
 pub async fn update_statuses(
     Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
@@ -1146,6 +1148,22 @@ pub async fn update_statuses(
             Json(json!({ "error": e.to_string() })),
         )
     })?;
+
+    // ── SSE broadcast: workflow statuses are project-level config, so every
+    //    connected member in the org must refresh their board immediately.
+    //    Payload carries id + slug so clients can target the exact board cache. ──
+    broadcast_event(
+        &sse_tx,
+        org_id,
+        "project.updated",
+        &json!({
+            "id": project.id,
+            "project_id": project.id,
+            "slug": project.slug,
+            "statuses": project.statuses,
+        })
+        .to_string(),
+    );
 
     Ok(Json(ApiResponse::new(project)))
 }
