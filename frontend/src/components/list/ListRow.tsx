@@ -56,6 +56,11 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
   const tc = typeConfig[issue.type] ?? typeConfig.feature;
   const TypeIcon = tc.icon;
   const status = statuses.find((s) => s.key === issue.status);
+  // Prefer the issue's denormalized status label/color so cross-project views
+  // (where `statuses` only holds the 6 canonical keys) still show the real
+  // custom status name + color instead of the mapped category label.
+  const statusLabel = issue.status_label ?? status?.label ?? issue.status;
+  const statusColor = issue.status_color ?? status?.color ?? '#6b7280';
   const priority = issue.priority ? priorityConfig[issue.priority] : null;
   const PriorityIcon = priority?.icon;
   const isDone = issue.status === 'done' || issue.status === 'cancelled';
@@ -111,8 +116,8 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
 
         {/* Status */}
         <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: status?.color }} />
-          <span className="text-secondary truncate text-[11px]">{status?.label || issue.status}</span>
+          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: statusColor }} />
+          <span className="text-secondary truncate text-[11px]">{statusLabel}</span>
         </span>
 
         {/* Priority */}
@@ -218,8 +223,8 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
           <CopyableId id={issue.display_id} className="text-secondary text-[11px]" iconSize={9} />
           {isNew(issue.created_at, issue.updated_at) && <span className="text-[8px] font-bold text-emerald-500 uppercase">NEW</span>}
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: status?.color }} />
-            <span className="text-[10px] text-secondary">{status?.label || issue.status}</span>
+            <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: statusColor }} />
+            <span className="text-[10px] text-secondary">{statusLabel}</span>
           </span>
           {(issue.created_by_id || issue.created_by_name) && (
             <span className="text-[10px] text-muted flex items-center gap-0.5">

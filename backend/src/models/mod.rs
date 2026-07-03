@@ -101,6 +101,12 @@ pub struct Issue {
     #[sqlx(default)]
     #[serde(default)]
     pub status_category: Option<String>,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub status_label: Option<String>,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub status_color: Option<String>,
     pub priority: Option<String>,
     pub source: String,
     pub reporter_name: Option<String>,

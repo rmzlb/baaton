@@ -3,7 +3,7 @@
  * Baaton AI Skill Executor — executes function calls from Gemini via the Baaton API.
  */
 
-import type { Issue, Project, Milestone } from './types';
+import type { Issue, Project, Milestone, ProjectStatus } from './types';
 import type { SkillResult } from './ai-skills';
 
 type ApiClient = {
@@ -69,7 +69,14 @@ function normalizeStringArray(value: unknown): string[] {
 
 const VALID_TYPES = new Set(['bug', 'feature', 'improvement', 'question']);
 const VALID_PRIORITIES = new Set(['urgent', 'high', 'medium', 'low']);
-const VALID_STATUSES = new Set(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']);
+const FALLBACK_STATUSES: ProjectStatus[] = [
+  { key: 'backlog', label: 'Backlog', color: '#6b7280', hidden: true },
+  { key: 'todo', label: 'Todo', color: '#3b82f6', hidden: false },
+  { key: 'in_progress', label: 'In Progress', color: '#f59e0b', hidden: false },
+  { key: 'in_review', label: 'In Review', color: '#8b5cf6', hidden: false },
+  { key: 'done', label: 'Done', color: '#22c55e', hidden: false },
+  { key: 'cancelled', label: 'Cancelled', color: '#ef4444', hidden: true },
+];
 const VALID_CATEGORIES = new Set(['FRONT', 'BACK', 'API', 'DB', 'INFRA', 'UX', 'DEVOPS']);
 
 // normalizeOptionalStringArray removed (unused)
@@ -182,10 +189,50 @@ function normalizePriority(value: unknown, text: string): string {
   return inferPriorityFromText(text);
 }
 
-function normalizeStatus(value: unknown): string {
-  const v = typeof value === 'string' ? value.toLowerCase().trim() : '';
-  if (v && VALID_STATUSES.has(v)) return v;
+function normalizeStatusToken(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+}
+
+function normalizeStatus(value: unknown, statuses?: ProjectStatus[]): string {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return 'backlog';
+
+  const rawKey = raw.toLowerCase();
+  const rawToken = normalizeStatusToken(raw);
+  const available = statuses?.length ? statuses : FALLBACK_STATUSES;
+  const match = available.find((s) =>
+    s.key.toLowerCase() === rawKey ||
+    normalizeStatusToken(s.label) === rawToken ||
+    normalizeStatusToken(s.key) === rawToken
+  );
+  if (match) return match.key;
+
+  // Last-resort passthrough: backend validates per-project status keys.
+  // This executor must not reject project custom statuses just because the
+  // local project list is stale or incomplete.
+  if (/^[a-z0-9_-]+$/i.test(raw)) return rawKey;
+
   return 'backlog';
+}
+
+function findIssue(issueId: string, allIssues: Record<string, Issue[]>): Issue | undefined {
+  return Object.values(allIssues)
+    .flat()
+    .find((issue) => issue.id === issueId || issue.display_id.toLowerCase() === issueId.toLowerCase());
+}
+
+function statusListForIssue(
+  issueId: string,
+  allIssues: Record<string, Issue[]>,
+  projects: Project[],
+): ProjectStatus[] | undefined {
+  const issue = findIssue(issueId, allIssues);
+  return issue ? projects.find((p) => p.id === issue.project_id)?.statuses : undefined;
 }
 
 function normalizeCategories(value: unknown, text: string): string[] {
@@ -317,7 +364,7 @@ async function executeCreateIssue(
       description: args.description as string || '',
       type: normalizeType(args.type, text),
       priority: normalizePriority(args.priority, text),
-      status: normalizeStatus(args.status),
+      status: normalizeStatus(args.status, project?.statuses),
       tags: normalizeStringArray(args.tags),
       category: normalizeCategories(args.category, text),
     });
@@ -365,6 +412,8 @@ async function executeCreateIssue(
 async function executeUpdateIssue(
   args: Record<string, unknown>,
   api: ApiClient,
+  allIssues: Record<string, Issue[]>,
+  projects: Project[],
 ): Promise<SkillResult> {
   try {
     const issueId = args.issue_id as string;
@@ -373,7 +422,7 @@ async function executeUpdateIssue(
     const body: Record<string, unknown> = {};
     if (args.title) body.title = args.title;
     if (args.description) body.description = args.description;
-    if (args.status) body.status = normalizeStatus(args.status);
+    if (args.status) body.status = normalizeStatus(args.status, statusListForIssue(issueId, allIssues, projects));
     if (args.priority) body.priority = normalizePriority(args.priority, `${args.title || ''} ${args.description || ''}`);
     if (args.type) body.type = normalizeType(args.type, `${args.title || ''} ${args.description || ''}`);
     if (args.tags !== undefined) body.tags = normalizeStringArray(args.tags);
@@ -398,6 +447,8 @@ async function executeUpdateIssue(
 async function executeBulkUpdateIssues(
   args: Record<string, unknown>,
   api: ApiClient,
+  allIssues: Record<string, Issue[]>,
+  projects: Project[],
 ): Promise<SkillResult> {
   try {
     const updates = args.updates as Array<{ issue_id: string; [key: string]: unknown }>;
@@ -422,7 +473,7 @@ async function executeBulkUpdateIssues(
           (body as any).type = normalizeType((body as any).type, `${(body as any).title || ''} ${(body as any).description || ''}`);
         }
         if ((body as any).status !== undefined) {
-          (body as any).status = normalizeStatus((body as any).status);
+          (body as any).status = normalizeStatus((body as any).status, statusListForIssue(issue_id, allIssues, projects));
         }
         const updated = await api.issues.update(issue_id, body);
         results.push(`✅ ${updated.display_id}`);
@@ -1287,10 +1338,10 @@ export async function executeSkill(
       result = await executeCreateIssue(args, api, projects);
       break;
     case 'update_issue':
-      result = await executeUpdateIssue(args, api);
+      result = await executeUpdateIssue(args, api, allIssues, projects);
       break;
     case 'bulk_update_issues':
-      result = await executeBulkUpdateIssues(args, api);
+      result = await executeBulkUpdateIssues(args, api, allIssues, projects);
       break;
     case 'add_comment':
       result = await executeAddComment(args, api);

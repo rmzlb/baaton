@@ -27,6 +27,23 @@ const STATUS_COLOR: Record<string, string> = {
   done: 'text-emerald-400',
   cancelled: 'text-red-400',
 };
+// Icon fallback by workflow-state category, so a custom status (no hardcoded key)
+// still gets a sensible icon in cross-project views.
+const CATEGORY_ICON: Record<string, typeof Circle> = {
+  backlog: Archive,
+  unstarted: Circle,
+  started: Clock,
+  completed: CheckCircle2,
+  canceled: XCircle,
+};
+const CATEGORY_OF: Record<string, string> = {
+  backlog: 'backlog',
+  todo: 'unstarted',
+  in_progress: 'started',
+  in_review: 'started',
+  done: 'completed',
+  cancelled: 'canceled',
+};
 
 /* ── Priority config ─── */
 const PRIORITY_ICON: Record<string, typeof ArrowUp> = {
@@ -165,7 +182,13 @@ export function IssuesTable({ issues, isLoading }: IssuesTableProps) {
 
   /* ── Row ── */
   function Row({ issue }: { issue: Issue }) {
-    const StatusIcon = STATUS_ICON[issue.status] ?? Circle;
+    const cat = issue.status_category ?? CATEGORY_OF[issue.status];
+    const StatusIcon = STATUS_ICON[issue.status] ?? (cat ? CATEGORY_ICON[cat] : undefined) ?? Circle;
+    // Prefer the issue's denormalized label/color: cross-project views only carry
+    // the 6 canonical keys, so custom statuses (e.g. "Pas ok") must render from
+    // their own row data instead of the hardcoded map.
+    const statusLabel = issue.status_label ?? issue.status.replace('_', ' ');
+    const statusColor = issue.status_color;
     const PriorityIcon = issue.priority ? (PRIORITY_ICON[issue.priority] ?? Minus) : null;
     const TypeIcon = issue.type ? (TYPE_ICON[issue.type] ?? Sparkles) : null;
 
@@ -191,9 +214,12 @@ export function IssuesTable({ issues, isLoading }: IssuesTableProps) {
         </td>
         {/* Status */}
         <td className="px-3 py-2 w-[120px]">
-          <span className={cn('flex items-center gap-1.5 text-xs', STATUS_COLOR[issue.status])}>
+          <span
+            className={cn('flex items-center gap-1.5 text-xs', !statusColor && STATUS_COLOR[issue.status])}
+            style={statusColor ? { color: statusColor } : undefined}
+          >
             <StatusIcon size={12} />
-            <span className="capitalize">{issue.status.replace('_', ' ')}</span>
+            <span className={cn(!issue.status_label && 'capitalize')}>{statusLabel}</span>
           </span>
         </td>
         {/* Priority */}

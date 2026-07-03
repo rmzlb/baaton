@@ -139,11 +139,22 @@ function IssueRow({ issue, onClick }: { issue: Issue; onClick: () => void }) {
     >
       <span
         className="h-2.5 w-2.5 rounded-full shrink-0"
-        style={{ backgroundColor: statusColors[issue.status] || categoryColors[catOf(issue)] || '#6b7280' }}
+        style={{ backgroundColor: issue.status_color || statusColors[issue.status] || categoryColors[catOf(issue)] || '#6b7280' }}
       />
       <TypeIcon size={14} className={typeColors[issue.type]} />
       <span className="text-[11px] font-mono text-muted shrink-0">{issue.display_id}</span>
       <span className="text-sm text-primary font-medium truncate flex-1">{issue.title}</span>
+      {issue.status_label && (
+        <span
+          className="rounded-full px-2 py-0.5 text-[9px] font-medium shrink-0 hidden sm:inline"
+          style={{
+            backgroundColor: `${issue.status_color || categoryColors[catOf(issue)] || '#6b7280'}22`,
+            color: issue.status_color || categoryColors[catOf(issue)] || '#9ca3af',
+          }}
+        >
+          {issue.status_label}
+        </span>
+      )}
       {PriorityIcon && <PriorityIcon size={14} style={{ color: priority?.color }} />}
       {issue.tags.slice(0, 2).map((tag) => (
         <span key={tag} className="rounded-full bg-surface-hover px-2 py-0.5 text-[9px] text-secondary hidden sm:inline">

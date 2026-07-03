@@ -129,6 +129,11 @@ export interface Issue {
   type: IssueType;
   status: IssueStatus;
   status_category?: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
+  /** Denormalized label + color of the issue's status (mirrors status_category).
+   *  Lets cross-project views render the real status badge without holding every
+   *  project's status list. Kept in sync by the backend trigger + update_statuses. */
+  status_label?: string;
+  status_color?: string;
   priority: IssuePriority | null;
   source: IssueSource;
   reporter_name: string | null;

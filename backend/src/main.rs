@@ -145,6 +145,7 @@ async fn main() -> anyhow::Result<()> {
         (59, include_str!("../migrations/059_source_slack.sql")),
         (60, include_str!("../migrations/060_memories.sql")),
         (61, include_str!("../migrations/061_custom_statuses.sql")),
+        (62, include_str!("../migrations/062_status_label_color.sql")),
     ];
 
     for &(version, sql) in migrations {

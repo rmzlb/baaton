@@ -179,7 +179,7 @@ describe('create_issue', () => {
     expect(api.issues.create).toHaveBeenCalledWith(expect.objectContaining({
       type: 'feature',
       priority: 'medium',
-      status: 'todo',
+      status: 'backlog',
       tags: [],
       category: [],
     }));
@@ -211,6 +211,30 @@ describe('update_issue', () => {
     expect(result.summary).toContain('Updated');
     expect(result.summary).toContain('status, priority');
     expect(api.issues.update).toHaveBeenCalledWith('issue-1', { status: 'done', priority: 'high' });
+  });
+
+  it('accepts a project custom status key', async () => {
+    projects[0].statuses = [
+      ...projects[0].statuses,
+      { key: 'custom_pas_ok', label: 'Pas ok', color: '#ec4899', hidden: false, category: 'started' },
+    ];
+    allIssues.p1[0].id = 'custom-issue';
+
+    await executeSkill('update_issue', { issue_id: 'custom-issue', status: 'custom_pas_ok' }, api, allIssues, projects);
+
+    expect(api.issues.update).toHaveBeenCalledWith('custom-issue', { status: 'custom_pas_ok' });
+  });
+
+  it('resolves a project custom status label to its key', async () => {
+    projects[0].statuses = [
+      ...projects[0].statuses,
+      { key: 'custom_pas_ok', label: 'Pas ok', color: '#ec4899', hidden: false, category: 'started' },
+    ];
+    allIssues.p1[0].id = 'custom-issue';
+
+    await executeSkill('update_issue', { issue_id: 'custom-issue', status: 'Pas ok' }, api, allIssues, projects);
+
+    expect(api.issues.update).toHaveBeenCalledWith('custom-issue', { status: 'custom_pas_ok' });
   });
 
   it('fails when issue_id is missing', async () => {
@@ -404,10 +428,10 @@ describe('get_project_metrics', () => {
   it('counts priorities correctly', async () => {
     const result = await executeSkill('get_project_metrics', { project_id: 'p1' }, api, allIssues, projects);
     const data = (result.data as any[])[0];
-    expect(data.priority.high).toBe(4);
+    expect(data.priority.high).toBe(5);
     expect(data.priority.medium).toBe(3);
     expect(data.priority.urgent).toBe(1);
-    expect(data.priority.low).toBe(3);
+    expect(data.priority.low).toBe(2);
   });
 
   it('counts categories', async () => {

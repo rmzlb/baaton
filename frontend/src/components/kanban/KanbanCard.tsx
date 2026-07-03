@@ -41,6 +41,31 @@ function shortName(raw: string): string {
   return raw.split(' ')[0].slice(0, 10);
 }
 
+const CORE_STATUS_LABELS: Record<string, string> = {
+  backlog: 'Backlog', todo: 'Todo', in_progress: 'In Progress',
+  in_review: 'In Review', done: 'Done', cancelled: 'Cancelled',
+};
+
+/** Cross-project boards map a custom status onto its canonical category column
+ *  (issue.status becomes a core key). Surface the issue's real status name +
+ *  color as a pill so nothing is hidden. Renders only when the denormalized
+ *  label differs from the column's canonical label (i.e. a mapped custom status);
+ *  stays silent on per-project boards where the column already IS the status. */
+function CustomStatusPill({ issue }: { issue: Issue }) {
+  const coreLabel = CORE_STATUS_LABELS[issue.status];
+  if (!issue.status_label || !coreLabel || issue.status_label === coreLabel) return null;
+  const color = issue.status_color || '#6b7280';
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-1.5 py-0 text-[9px] font-semibold whitespace-nowrap shrink-0"
+      style={{ backgroundColor: `${color}22`, color }}
+      title={`Status: ${issue.status_label}`}
+    >
+      {issue.status_label}
+    </span>
+  );
+}
+
 /* ─── Type config ───────────────────────────────────── */
 
 interface KanbanCardProps {
@@ -307,6 +332,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
 
           <SlaBadge issue={issue} />
           <StatusAge issue={issue} />
+          <CustomStatusPill issue={issue} />
 
           {/* Title — fills remaining space */}
           <span className={cn(
@@ -351,6 +377,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
             <CopyableId id={issue.display_id} className="text-xs text-gray-400 dark:text-muted whitespace-nowrap" />
             {isNew(issue.created_at, issue.updated_at) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
             <StatusAge issue={issue} />
+            <CustomStatusPill issue={issue} />
           </div>
           <div className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-hover text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
             <MoreHorizontal className="w-3.5 h-3.5" />
@@ -432,6 +459,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
           <CopyableId id={issue.display_id} className="text-[11px] text-gray-400 dark:text-muted whitespace-nowrap" />
           {isNew(issue.created_at, issue.updated_at) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
           <SlaBadge issue={issue} />
+          <CustomStatusPill issue={issue} />
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <StatusAge issue={issue} />

@@ -1123,13 +1123,23 @@ pub async fn update_statuses(
         )
     })?;
 
-    // ── Re-sync status_category for all issues (categories of kept keys may
-    //    have changed; the BEFORE-UPDATE-OF-status trigger doesn't fire here). ──
+    // ── Re-sync denormalized status_category / status_label / status_color for
+    //    all issues. Kept keys may have been renamed/recolored/re-categorized,
+    //    and the BEFORE-UPDATE-OF-status trigger doesn't fire on a project edit. ──
     sqlx::query(
-        r#"UPDATE issues i SET status_category = COALESCE(
-             (SELECT s->>'category' FROM projects p, jsonb_array_elements(p.statuses) AS s
-                WHERE p.id = i.project_id AND s->>'key' = i.status LIMIT 1),
-             i.status_category)
+        r#"UPDATE issues i SET
+             status_category = COALESCE(
+               (SELECT s->>'category' FROM projects p, jsonb_array_elements(p.statuses) AS s
+                  WHERE p.id = i.project_id AND s->>'key' = i.status LIMIT 1),
+               i.status_category),
+             status_label = COALESCE(
+               (SELECT s->>'label' FROM projects p, jsonb_array_elements(p.statuses) AS s
+                  WHERE p.id = i.project_id AND s->>'key' = i.status LIMIT 1),
+               i.status_label),
+             status_color = COALESCE(
+               (SELECT s->>'color' FROM projects p, jsonb_array_elements(p.statuses) AS s
+                  WHERE p.id = i.project_id AND s->>'key' = i.status LIMIT 1),
+               i.status_color)
            WHERE i.project_id = $1"#,
     )
     .bind(id)
