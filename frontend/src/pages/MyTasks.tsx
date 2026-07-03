@@ -55,6 +55,28 @@ const statusColors: Record<string, string> = {
   cancelled: '#ef4444',
 };
 
+// Every status is pinned to a category (Linear-style workflow-state type).
+// Focus sections group by category so custom project statuses (e.g. "Pas ok")
+// and in_review issues surface instead of falling through the hardcoded keys.
+const CATEGORY_OF: Record<string, string> = {
+  backlog: 'backlog',
+  todo: 'unstarted',
+  in_progress: 'started',
+  in_review: 'started',
+  done: 'completed',
+  cancelled: 'canceled',
+};
+const categoryColors: Record<string, string> = {
+  backlog: '#6b7280',
+  unstarted: '#3b82f6',
+  started: '#f59e0b',
+  completed: '#22c55e',
+  canceled: '#ef4444',
+};
+function catOf(i: Issue): string {
+  return i.status_category || CATEGORY_OF[i.status] || 'started';
+}
+
 type Tab = 'assigned' | 'created' | 'activity';
 
 interface FocusSection {
@@ -70,37 +92,37 @@ const FOCUS_SECTIONS: FocusSection[] = [
     key: 'urgent',
     icon: '🔴',
     label: 'Urgent',
-    filter: (i) => i.priority === 'urgent' && i.status !== 'done' && i.status !== 'cancelled',
+    filter: (i) => i.priority === 'urgent' && catOf(i) !== 'completed' && catOf(i) !== 'canceled',
   },
   {
     key: 'high',
     icon: '🟠',
     label: 'High Priority',
-    filter: (i) => i.priority === 'high' && i.status !== 'done' && i.status !== 'cancelled',
+    filter: (i) => i.priority === 'high' && catOf(i) !== 'completed' && catOf(i) !== 'canceled',
   },
   {
     key: 'in_progress',
     icon: '🔵',
     label: 'In Progress',
-    filter: (i) => i.status === 'in_progress',
+    filter: (i) => catOf(i) === 'started',
   },
   {
     key: 'todo',
     icon: '📋',
     label: 'Todo',
-    filter: (i) => i.status === 'todo',
+    filter: (i) => catOf(i) === 'unstarted',
   },
   {
     key: 'backlog',
     icon: '📥',
     label: 'Backlog',
-    filter: (i) => i.status === 'backlog',
+    filter: (i) => catOf(i) === 'backlog',
   },
   {
     key: 'completed',
     icon: '✅',
     label: 'Completed',
-    filter: (i) => i.status === 'done',
+    filter: (i) => catOf(i) === 'completed',
     collapsedByDefault: true,
   },
 ];
@@ -117,7 +139,7 @@ function IssueRow({ issue, onClick }: { issue: Issue; onClick: () => void }) {
     >
       <span
         className="h-2.5 w-2.5 rounded-full shrink-0"
-        style={{ backgroundColor: statusColors[issue.status] || '#6b7280' }}
+        style={{ backgroundColor: statusColors[issue.status] || categoryColors[catOf(issue)] || '#6b7280' }}
       />
       <TypeIcon size={14} className={typeColors[issue.type]} />
       <span className="text-[11px] font-mono text-muted shrink-0">{issue.display_id}</span>

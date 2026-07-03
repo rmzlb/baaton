@@ -33,6 +33,26 @@ const STATUSES: ProjectStatus[] = [
   { key: 'cancelled', label: 'Cancelled', color: '#ef4444', hidden: true },
 ];
 
+// Global cross-project views only render the 6 canonical statuses. Projects may
+// define custom statuses (e.g. "Pas ok"), but every status is pinned to a
+// category (Linear-style workflow-state type). Map any non-core status onto its
+// category's canonical column so the aggregated board never silently drops issues.
+const CORE_STATUS_KEYS = new Set(STATUSES.map((s) => s.key));
+const CATEGORY_TO_CORE_STATUS: Record<string, string> = {
+  backlog: 'backlog',
+  unstarted: 'todo',
+  started: 'in_progress',
+  completed: 'done',
+  canceled: 'cancelled',
+};
+function toGlobalStatus(status: string, category?: string | null): IssueStatus {
+  if (CORE_STATUS_KEYS.has(status)) return status as IssueStatus;
+  if (category && CATEGORY_TO_CORE_STATUS[category]) {
+    return CATEGORY_TO_CORE_STATUS[category] as IssueStatus;
+  }
+  return 'in_progress';
+}
+
 const STATUS_ICONS: Record<string, typeof Circle> = {
   backlog: Archive,
   todo: Circle,
@@ -437,7 +457,8 @@ export function AllIssues() {
       : allIssuesRaw;
     const counts: Record<string, number> = {};
     for (const i of source) {
-      counts[i.status] = (counts[i.status] || 0) + 1;
+      const key = toGlobalStatus(i.status, i.status_category);
+      counts[key] = (counts[key] || 0) + 1;
     }
     return counts;
   }, [allIssuesRaw, projectFilter]);
@@ -463,7 +484,7 @@ export function AllIssues() {
       result = result.filter((i) => projectFilter.includes(i.project_id));
     }
     if (statusFilter.length > 0) {
-      result = result.filter((i) => statusFilter.includes(i.status));
+      result = result.filter((i) => statusFilter.includes(toGlobalStatus(i.status, i.status_category)));
     }
     if (priorityFilter.length > 0) {
       result = result.filter((i) => i.priority && priorityFilter.includes(i.priority));
@@ -498,6 +519,17 @@ export function AllIssues() {
         return sorted;
     }
   }, [allIssuesRaw, projectFilter, statusFilter, priorityFilter, assigneeFilter, tagFilter, searchQuery, sortMode]);
+
+  // Normalize custom project statuses onto their canonical column so the
+  // aggregated board/list never drops issues sitting in a project-specific status.
+  const boardIssues = useMemo(
+    () =>
+      filteredIssues.map((i) => {
+        const g = toGlobalStatus(i.status, i.status_category);
+        return g === i.status ? i : { ...i, status: g };
+      }),
+    [filteredIssues],
+  );
 
   const hasFilters = projectFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || assigneeFilter.length > 0 || tagFilter.length > 0 || searchQuery.length > 0;
 
@@ -921,18 +953,18 @@ export function AllIssues() {
         {viewMode === 'kanban' ? (
           <KanbanBoard
             statuses={STATUSES}
-            issues={filteredIssues}
+            issues={boardIssues}
             onMoveIssue={handleMoveIssue}
             onIssueClick={(issue) => openDetail(issue.id)}
             onCreateIssue={() => {}}
             projectTags={allTags}
           />
         ) : viewMode === 'table' ? (
-          <IssuesTable issues={filteredIssues} />
+          <IssuesTable issues={boardIssues} />
         ) : (
           <ListView
             statuses={STATUSES}
-            issues={filteredIssues}
+            issues={boardIssues}
             onIssueClick={(issue) => openDetail(issue.id)}
             projectTags={allTags}
             projects={effectiveProjects}
