@@ -77,6 +77,7 @@ fn field_defs() -> Vec<(&'static str, FieldDef)> {
         ("closed_at", FieldDef { column: "i.closed_at", kind: FieldKind::Timestamp }),
         ("estimate", FieldDef { column: "i.estimate", kind: FieldKind::Int }),
         ("position", FieldDef { column: "i.position", kind: FieldKind::Float }),
+        ("rank", FieldDef { column: "i.rank", kind: FieldKind::TextNullable }),
         ("archived", FieldDef { column: "i.archived", kind: FieldKind::Bool }),
         ("created_by_id", FieldDef { column: "i.created_by_id", kind: FieldKind::TextNullable }),
         ("reporter_name", FieldDef { column: "i.reporter_name", kind: FieldKind::TextNullable }),

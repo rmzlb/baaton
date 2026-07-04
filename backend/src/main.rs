@@ -146,6 +146,10 @@ async fn main() -> anyhow::Result<()> {
         (60, include_str!("../migrations/060_memories.sql")),
         (61, include_str!("../migrations/061_custom_statuses.sql")),
         (62, include_str!("../migrations/062_status_label_color.sql")),
+        (63, include_str!("../migrations/063_issue_fractional_rank.sql")),
+        // DEFERRED — enable only after running backend/scripts/backfill-ranks.mjs
+        // and verifying zero NULL ranks. See migrations/064_issue_rank_not_null.sql.
+        // (64, include_str!("../migrations/064_issue_rank_not_null.sql")),
     ];
 
     for &(version, sql) in migrations {

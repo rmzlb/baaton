@@ -116,6 +116,11 @@ pub struct Issue {
     pub attachments: serde_json::Value,
     pub category: Vec<String>,
     pub position: f64,
+    /// Fractional-indexing rank (ASCII-sortable). Source of truth for board
+    /// ordering; `position` is kept as a legacy fallback until backfill lands.
+    #[sqlx(default)]
+    #[serde(default)]
+    pub rank: Option<String>,
     pub created_by_id: Option<String>,
     pub created_by_name: Option<String>,
     pub due_date: Option<NaiveDate>,

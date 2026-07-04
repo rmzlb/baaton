@@ -2188,6 +2188,12 @@ pub async fn update_position(
         .get("position")
         .and_then(|v| v.as_f64())
         .unwrap_or(1000.0);
+    // Fractional-indexing rank (source of truth for board ordering). Nullable
+    // for back-compat while backfill lands; NULL leaves rank untouched.
+    let rank = body
+        .get("rank")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     // Validate status against project config
     let project_id: Uuid = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
@@ -2211,9 +2217,10 @@ pub async fn update_position(
     let valid_statuses = get_project_statuses(&pool, project_id, &target_org_id).await?;
     validate_status(status, &valid_statuses)?;
 
+    // COALESCE keeps the existing rank when the client omits it (NULL param).
     let issue = sqlx::query_as::<_, Issue>(
         r#"
-        UPDATE issues SET status = $2, position = $3, updated_at = now()
+        UPDATE issues SET status = $2, position = $3, rank = COALESCE($4, rank), updated_at = now()
         WHERE id = $1
         RETURNING *
         "#,
@@ -2221,6 +2228,7 @@ pub async fn update_position(
     .bind(id)
     .bind(status)
     .bind(position)
+    .bind(rank.as_deref())
     .fetch_one(&pool)
     .await
     .map_err(|e| internal_err(e))?;
