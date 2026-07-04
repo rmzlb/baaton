@@ -661,7 +661,7 @@ pub async fn board_by_slug(
             WHERE project_id = $1
               AND (archived = false OR $2::boolean)
               AND (snoozed_until IS NULL OR snoozed_until <= CURRENT_DATE OR $3::boolean)
-            ORDER BY rank ASC NULLS LAST, position ASC
+            ORDER BY rank ASC NULLS LAST, position ASC, id ASC
             "#
         )
         .bind(project.id)

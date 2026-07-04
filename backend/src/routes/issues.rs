@@ -35,6 +35,30 @@ use crate::routes::sla::apply_sla_deadline;
 use crate::routes::sse::{broadcast_event, EventSender};
 use crate::routes::webhooks::dispatch_event;
 
+/// Extract the caller's tab id (`X-Client-Id`) for SSE echo suppression.
+/// The originating tab attaches this on mutations; the server echoes it back
+/// as `origin` on the SSE event so that tab can ignore its own broadcast
+/// (it already applied the change optimistically).
+fn client_origin(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-client-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+}
+
+/// Serialize an issue as an SSE JSON payload, injecting the originating tab id
+/// (`origin`) when present. Used by every issue.* broadcast for echo suppression.
+fn issue_sse_payload(issue: &Issue, origin: Option<&str>) -> String {
+    let mut payload = serde_json::to_value(issue).unwrap_or_default();
+    if let (Some(obj), Some(origin)) = (payload.as_object_mut(), origin) {
+        obj.insert(
+            "origin".to_string(),
+            serde_json::Value::String(origin.to_string()),
+        );
+    }
+    serde_json::to_string(&payload).unwrap_or_default()
+}
+
 /// Log internal error details and return a sanitized error response to the client.
 fn internal_err(e: impl std::fmt::Display) -> (StatusCode, Json<serde_json::Value>) {
     tracing::error!(error = %e, "Internal error");
@@ -841,6 +865,7 @@ pub async fn create(
     Extension(sse_tx): Extension<EventSender>,
     Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Json(body): Json<CreateIssue>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
     let org_id: String = sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
@@ -1202,7 +1227,7 @@ pub async fn create(
         &sse_tx,
         &org_id,
         "issue.created",
-        &serde_json::to_string(&issue).unwrap_or_default(),
+        &issue_sse_payload(&issue, client_origin(&headers).as_deref()),
     );
 
     // ── Auto-triage (fire-and-forget if enabled) ──────
@@ -1514,6 +1539,7 @@ pub async fn update(
     Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
     Json(body): Json<UpdateIssue>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
     let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
@@ -2099,7 +2125,7 @@ pub async fn update(
         &sse_tx,
         &target_org_id,
         sse_event,
-        &serde_json::to_string(&issue).unwrap_or_default(),
+        &issue_sse_payload(&issue, client_origin(&headers).as_deref()),
     );
 
     // AI-first: contextual action hints
@@ -2238,20 +2264,13 @@ pub async fn update_position(
     // ── SSE broadcast (realtime reorder for other tabs/users) ──
     // Echo suppression: attach the caller's X-Client-Id as `origin` so the
     // originating tab can ignore its own broadcast (it already applied the
-    // move optimistically). The payload stays the raw Issue JSON plus origin.
-    let origin = headers
-        .get("x-client-id")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    let mut payload = serde_json::to_value(&issue).unwrap_or_default();
-    if let (Some(obj), Some(origin)) = (payload.as_object_mut(), origin) {
-        obj.insert("origin".to_string(), serde_json::Value::String(origin));
-    }
+    // move optimistically).
+    let origin = client_origin(&headers);
     broadcast_event(
         &sse_tx,
         &target_org_id,
         "issue.updated",
-        &serde_json::to_string(&payload).unwrap_or_default(),
+        &issue_sse_payload(&issue, origin.as_deref()),
     );
 
     Ok(Json(ApiResponse::new(issue)))
@@ -2317,6 +2336,7 @@ pub async fn remove(
     Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
     let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
 
@@ -2359,7 +2379,13 @@ pub async fn remove(
             &sse_tx,
             &target_org_id,
             "issue.deleted",
-            &format!(r#"{{"id":"{}"}}"#, id),
+            &{
+                let mut del_payload = serde_json::json!({ "id": id.to_string() });
+                if let Some(o) = client_origin(&headers) {
+                    del_payload["origin"] = serde_json::Value::String(o);
+                }
+                del_payload.to_string()
+            },
         );
         Ok(Json(ApiResponse::new(())))
     } else {
@@ -2395,6 +2421,7 @@ pub async fn batch_update(
     Extension(auth): Extension<AuthUser>,
     Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
+    headers: HeaderMap,
     Json(body): Json<BatchUpdateBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
@@ -2489,7 +2516,7 @@ pub async fn batch_update(
                 &sse_tx,
                 &issue_org_id,
                 sse_event,
-                &serde_json::to_string(&issue).unwrap_or_default(),
+                &issue_sse_payload(&issue, client_origin(&headers).as_deref()),
             );
         }
     }
@@ -2981,6 +3008,7 @@ pub async fn archive(
     Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
     let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
 
@@ -3054,7 +3082,7 @@ pub async fn archive(
         &sse_tx,
         &org_id,
         "issue.archived",
-        &serde_json::to_string(&issue).unwrap_or_default(),
+        &issue_sse_payload(&issue, client_origin(&headers).as_deref()),
     );
 
     Ok(Json(ApiResponse::new(issue)))
@@ -3065,6 +3093,7 @@ pub async fn unarchive(
     Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
     let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
 
@@ -3138,7 +3167,7 @@ pub async fn unarchive(
         &sse_tx,
         &org_id,
         "issue.unarchived",
-        &serde_json::to_string(&issue).unwrap_or_default(),
+        &issue_sse_payload(&issue, client_origin(&headers).as_deref()),
     );
 
     Ok(Json(ApiResponse::new(issue)))

@@ -172,12 +172,18 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
         default:
           return sorted.sort((a, b) => {
             // Fractional rank is the source of truth; fall back to legacy position.
+            // Tie-break on id for a fully deterministic order when ranks collide.
             const ra = a.rank ?? null;
             const rb = b.rank ?? null;
-            if (ra !== null && rb !== null) return ra < rb ? -1 : ra > rb ? 1 : 0;
+            if (ra !== null && rb !== null) {
+              if (ra < rb) return -1;
+              if (ra > rb) return 1;
+              return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+            }
             if (ra !== null) return -1;
             if (rb !== null) return 1;
-            return a.position - b.position;
+            if (a.position !== b.position) return a.position - b.position;
+            return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
           });
       }
     },
