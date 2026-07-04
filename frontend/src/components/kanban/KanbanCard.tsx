@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import type { DraggableProvided } from '@hello-pangea/dnd';
 import {
   Bug, Sparkles, Zap, HelpCircle,
@@ -72,7 +73,7 @@ interface KanbanCardProps {
   issue: Issue;
   provided: DraggableProvided;
   isDragging: boolean;
-  onClick: () => void;
+  onClick: (issue: Issue) => void;
   onContextMenu?: (e: React.MouseEvent, issue: Issue) => void;
   selected?: boolean;
   onSelect?: (id: string, shiftKey: boolean) => void;
@@ -274,7 +275,19 @@ function getLeftBorderClass(issue: Issue): string {
 
 /* ─── Main Component ────────────────────────────────── */
 
-export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, selected = false, onSelect, projectTags = [], githubPrs = [], index = 0 }: KanbanCardProps) {
+// Tracks which cards have already played their entry animation. The animation
+// must fire only on a card's *first* real mount — never after a drop, an SSE
+// merge, or a re-render. This survives unmount/remount within the tab session.
+const animatedIssueIds = new Set<string>();
+
+export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, selected = false, onSelect, projectTags = [], githubPrs = [], index = 0 }: KanbanCardProps) {
+  const handleClick = () => onClick(issue);
+  // Play the entry animation only the first time this issue id is rendered.
+  const playEntry = useMemo(() => {
+    if (animatedIssueIds.has(issue.id)) return false;
+    animatedIssueIds.add(issue.id);
+    return true;
+  }, [issue.id]);
   const handleContextMenu = (e: React.MouseEvent) => {
     if (onContextMenu) { e.preventDefault(); e.stopPropagation(); onContextMenu(e, issue); }
   };
@@ -307,7 +320,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
     return (
       <div
         ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
-        onClick={onClick} onContextMenu={handleContextMenu}
+        onClick={handleClick} onContextMenu={handleContextMenu}
         role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
         style={provided.draggableProps.style}
         className={cn(
@@ -359,11 +372,12 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
     return (
       <div
         ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
-        onClick={onClick} onContextMenu={handleContextMenu}
+        onClick={handleClick} onContextMenu={handleContextMenu}
         role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
-        style={{ ...provided.draggableProps.style, ...(!isDragging ? { animationDelay: `${Math.min(index * 30, 300)}ms` } : {}) }}
+        style={{ ...provided.draggableProps.style, ...(playEntry && !isDragging ? { animationDelay: `${Math.min(index * 30, 300)}ms` } : {}) }}
         className={cn(
-          'group cursor-pointer rounded-lg bg-card ring-1 ring-foreground/12 p-4 will-change-transform transition-all duration-150 hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px animate-slide-in-up fill-mode-both',
+          'group cursor-pointer rounded-lg bg-card ring-1 ring-foreground/12 p-4 will-change-transform transition-all duration-150 hover:ring-foreground/20 hover:shadow-md hover:-translate-y-px',
+          playEntry && 'animate-slide-in-up fill-mode-both',
           isDone && 'opacity-70 hover:opacity-100',
           isDragging && 'shadow-xl border-accent/30 rotate-1 scale-[1.02] !animate-none',
           selected && 'ring-2 ring-accent/40 border-accent/30',
@@ -436,7 +450,7 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
   return (
     <div
       ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
-      onClick={onClick} onContextMenu={handleContextMenu}
+      onClick={handleClick} onContextMenu={handleContextMenu}
       role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
       style={provided.draggableProps.style}
       className={cn(
@@ -503,4 +517,4 @@ export function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu
       </div>
     </div>
   );
-}
+});

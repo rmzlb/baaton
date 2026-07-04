@@ -205,6 +205,12 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
 
   const allIssueIds = useMemo(() => issues.map((i) => i.id), [issues]);
 
+  // Stable callback so memoized KanbanCard doesn't re-render on every board render.
+  const handleSelect = useCallback(
+    (id: string, shift: boolean) => toggleSelect(id, shift, allIssueIds),
+    [toggleSelect, allIssueIds],
+  );
+
   const bulkMarkDone = useCallback(() => {
     mutations.bulkUpdateStatus(Array.from(selectedIds), 'done' as IssueStatus);
     deselectAll();
@@ -572,7 +578,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
                     onIssueClick={onIssueClick}
                     onContextMenu={handleContextMenu}
                     selectedIds={selectedIds}
-                    onSelect={(id, shift) => toggleSelect(id, shift, allIssueIds)}
+                    onSelect={handleSelect}
                     onCreateIssue={onCreateIssue}
                     projectTags={projectTags}
                   />

@@ -199,7 +199,7 @@ export function KanbanColumn({
                 issue={issue}
                 provided={dragProvided}
                 isDragging={dragSnapshot.isDragging}
-                onClick={() => onIssueClick(issue)}
+                onClick={onIssueClick}
                 onContextMenu={onContextMenu}
                 selected={selectedIds?.has(issue.id)}
                 onSelect={onSelect}
