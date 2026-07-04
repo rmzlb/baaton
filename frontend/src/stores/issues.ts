@@ -10,7 +10,7 @@ interface IssuesState {
   // Actions
   setIssues: (issues: Issue[]) => void;
   updateIssue: (id: string, patch: Partial<Issue>) => void;
-  moveIssue: (id: string, newStatus: IssueStatus, newPosition: number) => void;
+  moveIssue: (id: string, newStatus: IssueStatus, newPosition: number, newRank?: string | null) => void;
   selectIssue: (id: string | null) => void;
   openDetail: (id: string) => void;
   closeDetail: () => void;
@@ -18,7 +18,7 @@ interface IssuesState {
   removeIssue: (id: string) => void;
 
   // Optimistic operations
-  moveIssueOptimistic: (issueId: string, newStatus: IssueStatus, newPosition: number) => Record<string, Issue>;
+  moveIssueOptimistic: (issueId: string, newStatus: IssueStatus, newPosition: number, newRank?: string | null) => Record<string, Issue>;
   updateIssueOptimistic: (id: string, patch: Partial<Issue>) => Record<string, Issue>;
   restoreIssues: (snapshot: Record<string, Issue>) => void;
 }
@@ -49,11 +49,12 @@ export const useIssuesStore = create<IssuesState>()(
         delete state.issues[id];
       }),
 
-    moveIssue: (id, newStatus, newPosition) =>
+    moveIssue: (id, newStatus, newPosition, newRank) =>
       set((state) => {
         if (state.issues[id]) {
           state.issues[id].status = newStatus;
           state.issues[id].position = newPosition;
+          if (newRank !== undefined) state.issues[id].rank = newRank;
         }
       }),
 
@@ -74,7 +75,7 @@ export const useIssuesStore = create<IssuesState>()(
       }),
 
     // ── Optimistic: move issue, return previous snapshot for rollback ──
-    moveIssueOptimistic: (issueId, newStatus, newPosition) => {
+    moveIssueOptimistic: (issueId, newStatus, newPosition, newRank) => {
       // Deep-copy current state for rollback (plain JS objects from immer)
       const previousIssues = JSON.parse(JSON.stringify(get().issues)) as Record<string, Issue>;
 
@@ -83,6 +84,7 @@ export const useIssuesStore = create<IssuesState>()(
         if (issue) {
           issue.status = newStatus;
           issue.position = newPosition;
+          if (newRank !== undefined) issue.rank = newRank;
         }
       });
 

@@ -17,6 +17,7 @@ import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
+import { computeRankBetween } from '@/lib/rank';
 import { EmptyState } from '@/components/shared/EmptyState';
 import type { Issue, IssueStatus, IssuePriority, ProjectStatus, ProjectTag } from '@/lib/types';
 
@@ -47,7 +48,7 @@ const CATEGORY_CONFIG: { key: string; label: string; color: string }[] = [
 interface KanbanBoardProps {
   statuses: ProjectStatus[];
   issues: Issue[];
-  onMoveIssue: (issueId: string, newStatus: IssueStatus, newPosition: number) => void;
+  onMoveIssue: (issueId: string, newStatus: IssueStatus, newRank: string, newPosition?: number) => void;
   onIssueClick: (issue: Issue) => void;
   onCreateIssue?: (statusKey: string) => void;
   projectTags?: ProjectTag[];
@@ -169,7 +170,15 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
           );
         case 'manual':
         default:
-          return sorted.sort((a, b) => a.position - b.position);
+          return sorted.sort((a, b) => {
+            // Fractional rank is the source of truth; fall back to legacy position.
+            const ra = a.rank ?? null;
+            const rb = b.rank ?? null;
+            if (ra !== null && rb !== null) return ra < rb ? -1 : ra > rb ? 1 : 0;
+            if (ra !== null) return -1;
+            if (rb !== null) return 1;
+            return a.position - b.position;
+          });
       }
     },
     [sortMode],
@@ -232,22 +241,32 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
       const newStatus = destination.droppableId as IssueStatus;
       const columnIssues = issuesByStatus[newStatus] || [];
 
-      // Calculate new position
+      // If moving within the same column, exclude the dragged card from the
+      // neighbour computation so indices line up with the post-move list.
+      const sameColumn = destination.droppableId === source.droppableId;
+      const neighbours = sameColumn
+        ? columnIssues.filter((i) => i.id !== draggableId)
+        : columnIssues;
+
+      // Compute the fractional rank from the destination neighbours as shown.
+      const prev = destination.index > 0 ? neighbours[destination.index - 1] : undefined;
+      const next = neighbours[destination.index];
+      const newRank = computeRankBetween(prev?.rank ?? null, next?.rank ?? null);
+
+      // Keep a legacy position for back-compat (best-effort, not authoritative).
       let newPosition: number;
-      if (columnIssues.length === 0) {
+      if (neighbours.length === 0) {
         newPosition = 1000;
-      } else if (destination.index === 0) {
-        newPosition = columnIssues[0].position / 2;
-      } else if (destination.index >= columnIssues.length) {
-        newPosition = columnIssues[columnIssues.length - 1].position + 1000;
+      } else if (!prev) {
+        newPosition = (next?.position ?? 1000) / 2;
+      } else if (!next) {
+        newPosition = prev.position + 1000;
       } else {
-        const before = columnIssues[destination.index - 1].position;
-        const after = columnIssues[destination.index].position;
-        newPosition = (before + after) / 2;
+        newPosition = (prev.position + next.position) / 2;
       }
 
       // Optimistic update: immediately update store, get snapshot for rollback
-      const previousSnapshot = moveIssueOptimistic(draggableId, newStatus, newPosition);
+      const previousSnapshot = moveIssueOptimistic(draggableId, newStatus, newPosition, newRank);
 
       // Announce status change
       const movedIssue = issues.find((i) => i.id === draggableId);
@@ -258,7 +277,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
 
       // API call in background — rollback on failure
       try {
-        onMoveIssue(draggableId, newStatus, newPosition);
+        onMoveIssue(draggableId, newStatus, newRank, newPosition);
       } catch {
         restoreIssues(previousSnapshot);
         addNotification({

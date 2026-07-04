@@ -544,15 +544,29 @@ export function AllIssues() {
 
   // ─── Drag & drop ───────────────────────────
   const positionMutation = useMutation({
-    mutationFn: ({ id, status, position }: { id: string; status: string; position: number }) =>
-      apiClient.issues.updatePosition(id, status, position),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['all-issues'] });
+    mutationFn: ({ id, status, rank, position }: { id: string; status: string; rank: string; position?: number }) =>
+      apiClient.issues.updatePosition(id, status, rank, position),
+    onMutate: async ({ id, status, rank, position }) => {
+      await queryClient.cancelQueries({ queryKey: ['all-issues'] });
+      const previous = queryClient.getQueryData<Issue[]>(['all-issues']);
+      queryClient.setQueryData<Issue[]>(['all-issues'], (old) =>
+        old?.map((i) => (i.id === id ? { ...i, status: status as IssueStatus, rank, ...(position != null ? { position } : {}) } : i)),
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['all-issues'], context.previous);
+    },
+    onSuccess: (serverIssue) => {
+      // Merge server row; no board refetch.
+      queryClient.setQueryData<Issue[]>(['all-issues'], (old) =>
+        old?.map((i) => (i.id === serverIssue.id ? { ...i, ...serverIssue } : i)),
+      );
     },
   });
 
-  const handleMoveIssue = (issueId: string, newStatus: IssueStatus, newPosition: number) => {
-    positionMutation.mutate({ id: issueId, status: newStatus, position: newPosition });
+  const handleMoveIssue = (issueId: string, newStatus: IssueStatus, newRank: string, newPosition?: number) => {
+    positionMutation.mutate({ id: issueId, status: newStatus, rank: newRank, position: newPosition });
   };
 
   // ─── Deep link ─────────────────────────────

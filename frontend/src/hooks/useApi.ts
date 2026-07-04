@@ -307,14 +307,15 @@ export function useApi() {
       updatePosition: async (
         id: string,
         status: string,
-        position: number,
+        rank?: string | null,
+        position?: number,
       ): Promise<Issue> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
-          return api.patch<Issue>(`/issues/${id}/position`, {
-            status,
-            position,
-          }, token);
+          const payload: Record<string, unknown> = { status };
+          if (rank != null) payload.rank = rank;
+          if (position != null) payload.position = position;
+          return api.patch<Issue>(`/issues/${id}/position`, payload, token);
         }),
 
       delete: async (id: string): Promise<void> =>

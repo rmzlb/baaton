@@ -143,6 +143,8 @@ export interface Issue {
   category: string[];
   attachments: Attachment[];
   position: number;
+  /** Fractional-indexing rank; source of truth for manual board ordering. */
+  rank?: string | null;
   created_by_id: string | null;
   created_by_name: string | null;
   due_date: string | null;

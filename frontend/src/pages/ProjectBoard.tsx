@@ -66,6 +66,7 @@ export function ProjectBoard() {
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
   const restoreIssues = useIssuesStore((s) => s.restoreIssues);
   const moveIssueOptimistic = useIssuesStore((s) => s.moveIssueOptimistic);
+  const updateIssue = useIssuesStore((s) => s.updateIssue);
   const addNotification = useNotificationStore((s) => s.addNotification);
   const [showCreateIssue, setShowCreateIssue] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
@@ -154,27 +155,34 @@ export function ProjectBoard() {
 
   // Mutation for updating issue position (drag & drop) — with optimistic update in both Zustand + react-query
   const positionMutation = useMutation({
-    mutationFn: ({ id, status, position }: { id: string; status: string; position: number }) =>
-      apiClient.issues.updatePosition(id, status, position),
-    onMutate: async ({ id, status, position }) => {
-      // Cancel in-flight queries so they don't overwrite our optimistic update
-      await queryClient.cancelQueries({ queryKey: ['issues', project?.id] });
-      const previousQueryData = queryClient.getQueryData<Issue[]>(['issues', project?.id]);
+    mutationFn: ({ id, status, rank, position }: { id: string; status: string; rank: string; position?: number }) =>
+      apiClient.issues.updatePosition(id, status, rank, position),
+    onMutate: async ({ id, status, rank, position }) => {
+      // Cancel in-flight board query so it can't overwrite our optimistic write.
+      await queryClient.cancelQueries({ queryKey: ['project-board', slug, organization?.id] });
+      const previousBoard = queryClient.getQueryData<{ issues: Issue[] }>(['project-board', slug, organization?.id]);
 
-      // Optimistically update the react-query cache
-      queryClient.setQueryData<Issue[]>(['issues', project?.id], (old) =>
-        old?.map((i) => (i.id === id ? { ...i, status: status as IssueStatus, position } : i)),
+      // Optimistically patch the board cache (the display source of truth).
+      queryClient.setQueryData<typeof previousBoard>(['project-board', slug, organization?.id], (old) =>
+        old
+          ? {
+              ...old,
+              issues: old.issues.map((i) =>
+                i.id === id ? { ...i, status: status as IssueStatus, rank, ...(position != null ? { position } : {}) } : i,
+              ),
+            }
+          : old,
       );
 
       // Optimistically update Zustand store (returns snapshot for rollback)
-      const previousZustand = moveIssueOptimistic(id, status as IssueStatus, position);
+      const previousZustand = moveIssueOptimistic(id, status as IssueStatus, position ?? 0, rank);
 
-      return { previousQueryData, previousZustand };
+      return { previousBoard, previousZustand };
     },
     onError: (_err, _vars, context) => {
-      // Roll back react-query cache
-      if (context?.previousQueryData) {
-        queryClient.setQueryData(['issues', project?.id], context.previousQueryData);
+      // Roll back board cache
+      if (context?.previousBoard) {
+        queryClient.setQueryData(['project-board', slug, organization?.id], context.previousBoard);
       }
       // Roll back Zustand store
       if (context?.previousZustand) {
@@ -187,13 +195,20 @@ export function ProjectBoard() {
         message: t('optimistic.moveErrorDesc'),
       });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-board', slug, organization?.id] });
+    onSuccess: (serverIssue) => {
+      // Merge the authoritative server row into the board cache + store.
+      // No board refetch: keeps the drop instantaneous.
+      queryClient.setQueryData<{ issues: Issue[] }>(['project-board', slug, organization?.id], (old) =>
+        old
+          ? { ...old, issues: old.issues.map((i) => (i.id === serverIssue.id ? { ...i, ...serverIssue } : i)) }
+          : old,
+      );
+      updateIssue(serverIssue.id, serverIssue);
     },
   });
 
-  const handleMoveIssue = (issueId: string, newStatus: IssueStatus, newPosition: number) => {
-    positionMutation.mutate({ id: issueId, status: newStatus, position: newPosition });
+  const handleMoveIssue = (issueId: string, newStatus: IssueStatus, newRank: string, newPosition?: number) => {
+    positionMutation.mutate({ id: issueId, status: newStatus, rank: newRank, position: newPosition });
   };
 
   const handleExport = async () => {
