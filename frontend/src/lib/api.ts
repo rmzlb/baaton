@@ -1,4 +1,5 @@
 import { resolveApiOrigin } from './api-origin';
+import { getClientId } from './clientId';
 import type { UserActivityStats, HeatmapData } from './types';
 
 const API_BASE = `${resolveApiOrigin()}/api/v1`;
@@ -26,6 +27,9 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Per-tab id so the server can echo it on SSE events → origin tab suppresses
+    // its own broadcast (already applied optimistically). See lib/clientId.ts.
+    'X-Client-Id': getClientId(),
   };
 
   if (token && !isPublic) {

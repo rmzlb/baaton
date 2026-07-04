@@ -2,6 +2,9 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { useNotificationStore } from '@/stores/notifications';
+import { useIssuesStore } from '@/stores/issues';
+import { getClientId } from '@/lib/clientId';
+import type { Issue } from '@/lib/types';
 
 import { resolveApiOrigin } from '@/lib/api-origin';
 const API_URL = resolveApiOrigin();
@@ -51,28 +54,100 @@ export function useSSE() {
           }
         };
 
-        // ── Issues: any mutation refreshes lists, board and the touched issue ──
-        const ISSUE_EVENTS = [
-          'issue.created',
+        // ── Issues: per-entity merge (no board refetch on drops/updates) ──
+        // The backend emits the full issue JSON as the event payload. We merge
+        // it by id into every cache instead of invalidating, which avoids the
+        // post-drop flicker and keeps other tabs in sync in real time.
+        //
+        // Last-write-wins: an incoming event is applied only if its updated_at
+        // is >= the cached row's. This also suppresses the origin tab's own
+        // echo — after the mutation succeeds the tab already merged the server
+        // row (same updated_at), so the SSE copy is a no-op.
+        //
+        // Echo suppression (full): once the backend echoes the mutation's
+        // X-Client-Id as `origin` on the event, compare it to getClientId() and
+        // skip early. See useApi.ts (X-Client-Id header is already sent).
+        const isNewer = (incoming?: string | null, existing?: string | null): boolean => {
+          if (!incoming) return true;
+          if (!existing) return true;
+          return new Date(incoming).getTime() >= new Date(existing).getTime();
+        };
+
+        const mergeIssueEverywhere = (incoming: Issue) => {
+          // 1. Zustand store (drives optimistic board rendering)
+          const store = useIssuesStore.getState();
+          const current = store.issues[incoming.id];
+          if (!current || isNewer(incoming.updated_at, current.updated_at)) {
+            store.updateIssue(incoming.id, incoming);
+          }
+
+          // 2. Composite project-board caches ({ project, issues, tags })
+          queryClient.getQueriesData<{ issues?: Issue[] }>({ queryKey: ['project-board'] }).forEach(([key, data]) => {
+            if (!data?.issues) return;
+            const idx = data.issues.findIndex((i) => i.id === incoming.id);
+            if (idx === -1) return;
+            if (!isNewer(incoming.updated_at, data.issues[idx].updated_at)) return;
+            const next = data.issues.slice();
+            next[idx] = { ...next[idx], ...incoming };
+            queryClient.setQueryData(key, { ...data, issues: next });
+          });
+
+          // 3. Flat all-issues cache
+          queryClient.setQueryData<Issue[]>(['all-issues'], (old) =>
+            old?.map((i) => (i.id === incoming.id && isNewer(incoming.updated_at, i.updated_at) ? { ...i, ...incoming } : i)),
+          );
+
+          // 4. Touched issue detail
+          queryClient.invalidateQueries({ queryKey: ['issue', incoming.id] });
+        };
+
+        const removeIssueEverywhere = (id: string) => {
+          useIssuesStore.getState().removeIssue(id);
+          queryClient.getQueriesData<{ issues?: Issue[] }>({ queryKey: ['project-board'] }).forEach(([key, data]) => {
+            if (!data?.issues) return;
+            if (!data.issues.some((i) => i.id === id)) return;
+            queryClient.setQueryData(key, { ...data, issues: data.issues.filter((i) => i.id !== id) });
+          });
+          queryClient.setQueryData<Issue[]>(['all-issues'], (old) => old?.filter((i) => i.id !== id));
+        };
+
+        // issue.created: full refetch of lists it may belong to (we don't know
+        // which board/filter set it lands in without re-running queries).
+        es.addEventListener('issue.created', (event) => {
+          if (cancelled) return;
+          const incoming = parse<Issue & { origin?: string }>(event);
+          if (incoming?.origin && incoming.origin === getClientId()) return;
+          queryClient.invalidateQueries({ queryKey: ['project-board'] });
+          queryClient.invalidateQueries({ queryKey: ['all-issues'] });
+          queryClient.invalidateQueries({ queryKey: ['issues'] });
+        });
+
+        const MERGE_EVENTS = [
           'issue.updated',
           'issue.status_changed',
           'issue.archived',
           'issue.unarchived',
-          'issue.deleted',
         ] as const;
-        for (const name of ISSUE_EVENTS) {
+        for (const name of MERGE_EVENTS) {
           es.addEventListener(name, (event) => {
             if (cancelled) return;
-            const data = parse<{ id?: string; project_id?: string }>(event);
-            queryClient.invalidateQueries({ queryKey: ['issues'] });
-            queryClient.invalidateQueries({ queryKey: ['all-issues'] });
-            queryClient.invalidateQueries({ queryKey: ['project-board'] });
+            const incoming = parse<Issue & { origin?: string }>(event);
+            if (!incoming?.id) return;
+            // Echo suppression once backend wires `origin` (X-Client-Id).
+            if (incoming.origin && incoming.origin === getClientId()) return;
+            mergeIssueEverywhere(incoming);
             queryClient.invalidateQueries({ queryKey: ['activity'] });
-            if (data?.id) {
-              queryClient.invalidateQueries({ queryKey: ['issue', data.id] });
-            }
           });
         }
+
+        es.addEventListener('issue.deleted', (event) => {
+          if (cancelled) return;
+          const incoming = parse<{ id?: string; origin?: string }>(event);
+          if (!incoming?.id) return;
+          if (incoming.origin && incoming.origin === getClientId()) return;
+          removeIssueEverywhere(incoming.id);
+          queryClient.invalidateQueries({ queryKey: ['activity'] });
+        });
 
         // ── Comments: refresh the parent issue thread + activity feeds ──
         const COMMENT_EVENTS = ['comment.created', 'comment.updated', 'comment.deleted'] as const;
