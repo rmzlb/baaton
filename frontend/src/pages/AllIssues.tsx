@@ -21,7 +21,7 @@ import { FilterSelect } from '@/components/shared/FilterSelect';
 import { useCrossOrgMembers } from '@/hooks/useCrossOrgMembers';
 import { MemberResolutionProvider } from '@/contexts/MemberResolutionContext';
 import { cn } from '@/lib/utils';
-import type { IssueStatus, ProjectStatus, ProjectTag, SavedView } from '@/lib/types';
+import type { Issue, IssueStatus, ProjectStatus, ProjectTag, SavedView } from '@/lib/types';
 
 // ─── Statuses (global) ───────────────────────
 const STATUSES: ProjectStatus[] = [
@@ -51,6 +51,23 @@ function toGlobalStatus(status: string, category?: string | null): IssueStatus {
     return CATEGORY_TO_CORE_STATUS[category] as IssueStatus;
   }
   return 'in_progress';
+}
+
+// ─── Custom status columns (option 2) ─────────
+// A project can define custom statuses (e.g. "Pas ok"). On the aggregated board
+// we render them as real columns instead of folding them onto a canonical one.
+// Same-named custom statuses across projects merge into a single synthetic
+// column keyed `custom:<normalized-label>`; empty columns never appear because
+// they are derived from issues actually present.
+const CUSTOM_PREFIX = 'custom:';
+function normLabel(label: string): string {
+  return label.trim().toLowerCase();
+}
+function isCustomStatus(status: string, label?: string | null): boolean {
+  return !CORE_STATUS_KEYS.has(status) && !!label && label.trim().length > 0;
+}
+function customColumnKey(label: string): string {
+  return `${CUSTOM_PREFIX}${normLabel(label)}`;
 }
 
 const STATUS_ICONS: Record<string, typeof Circle> = {
@@ -433,6 +450,69 @@ export function AllIssues() {
     });
   };
 
+  // ─── Custom status columns (option 2: real merged custom columns) ──
+  // Column identity per issue: canonical key, or synthetic `custom:<label>`.
+  const columnKeyFor = useCallback(
+    (i: Issue): string =>
+      isCustomStatus(i.status, i.status_label)
+        ? customColumnKey(i.status_label as string)
+        : toGlobalStatus(i.status, i.status_category),
+    [],
+  );
+
+  // projectId → normalized custom label → real project status key. Lets a drop
+  // onto a synthetic custom column resolve to a status the backend accepts.
+  const projectStatusKeyByLabel = useMemo(() => {
+    const m = new Map<string, Map<string, string>>();
+    for (const i of allIssuesRaw) {
+      if (!isCustomStatus(i.status, i.status_label)) continue;
+      const inner = m.get(i.project_id) ?? new Map<string, string>();
+      inner.set(normLabel(i.status_label as string), i.status);
+      m.set(i.project_id, inner);
+    }
+    return m;
+  }, [allIssuesRaw]);
+
+  // Canonical columns + custom columns discovered from present issues, each
+  // slotted under its canonical category (stable left→right order). Same-label
+  // custom statuses merge; color = most frequent occurrence.
+  const dynamicStatuses = useMemo<ProjectStatus[]>(() => {
+    const custom = new Map<string, { key: string; label: string; color: string; canon: string; colorCounts: Record<string, number> }>();
+    for (const i of allIssuesRaw) {
+      if (!isCustomStatus(i.status, i.status_label)) continue;
+      const key = customColumnKey(i.status_label as string);
+      const color = i.status_color || '#6b7280';
+      const existing = custom.get(key);
+      if (existing) {
+        existing.colorCounts[color] = (existing.colorCounts[color] || 0) + 1;
+        if (existing.colorCounts[color] > (existing.colorCounts[existing.color] || 0)) existing.color = color;
+      } else {
+        custom.set(key, {
+          key,
+          label: (i.status_label as string).trim(),
+          color,
+          canon: toGlobalStatus(i.status, i.status_category),
+          colorCounts: { [color]: 1 },
+        });
+      }
+    }
+    if (custom.size === 0) return STATUSES;
+    const byCanon = new Map<string, ProjectStatus[]>();
+    for (const c of custom.values()) {
+      const arr = byCanon.get(c.canon) ?? [];
+      arr.push({ key: c.key, label: c.label, color: c.color, hidden: false });
+      byCanon.set(c.canon, arr);
+    }
+    for (const arr of byCanon.values()) arr.sort((a, b) => a.label.localeCompare(b.label));
+    const ordered: ProjectStatus[] = [];
+    for (const canon of STATUSES) {
+      ordered.push(canon);
+      const extras = byCanon.get(canon.key);
+      if (extras) ordered.push(...extras);
+    }
+    return ordered;
+  }, [allIssuesRaw]);
+
   // ─── Issue counts per project (for chips) ──
   const issueCountByProject = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -457,11 +537,11 @@ export function AllIssues() {
       : allIssuesRaw;
     const counts: Record<string, number> = {};
     for (const i of source) {
-      const key = toGlobalStatus(i.status, i.status_category);
+      const key = columnKeyFor(i);
       counts[key] = (counts[key] || 0) + 1;
     }
     return counts;
-  }, [allIssuesRaw, projectFilter]);
+  }, [allIssuesRaw, projectFilter, columnKeyFor]);
 
   // ─── Unique tags + assignees for filters ────
   const uniqueTags = useMemo(() => {
@@ -484,7 +564,7 @@ export function AllIssues() {
       result = result.filter((i) => projectFilter.includes(i.project_id));
     }
     if (statusFilter.length > 0) {
-      result = result.filter((i) => statusFilter.includes(toGlobalStatus(i.status, i.status_category)));
+      result = result.filter((i) => statusFilter.includes(columnKeyFor(i)));
     }
     if (priorityFilter.length > 0) {
       result = result.filter((i) => i.priority && priorityFilter.includes(i.priority));
@@ -518,17 +598,17 @@ export function AllIssues() {
       default:
         return sorted;
     }
-  }, [allIssuesRaw, projectFilter, statusFilter, priorityFilter, assigneeFilter, tagFilter, searchQuery, sortMode]);
+  }, [allIssuesRaw, projectFilter, statusFilter, priorityFilter, assigneeFilter, tagFilter, searchQuery, sortMode, columnKeyFor]);
 
-  // Normalize custom project statuses onto their canonical column so the
-  // aggregated board/list never drops issues sitting in a project-specific status.
+  // Route each issue to its column: synthetic custom key, or canonical column.
+  // Never drops an issue; custom statuses now land in their own column.
   const boardIssues = useMemo(
     () =>
       filteredIssues.map((i) => {
-        const g = toGlobalStatus(i.status, i.status_category);
-        return g === i.status ? i : { ...i, status: g };
+        const key = columnKeyFor(i);
+        return key === i.status ? i : { ...i, status: key as IssueStatus };
       }),
-    [filteredIssues],
+    [filteredIssues, columnKeyFor],
   );
 
   const hasFilters = projectFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || assigneeFilter.length > 0 || tagFilter.length > 0 || searchQuery.length > 0;
@@ -566,7 +646,18 @@ export function AllIssues() {
   });
 
   const handleMoveIssue = (issueId: string, newStatus: IssueStatus, newRank: string, newPosition?: number) => {
-    positionMutation.mutate({ id: issueId, status: newStatus, rank: newRank, position: newPosition });
+    // Synthetic custom columns must be translated back to a real status key the
+    // target issue's project accepts. If that project has no matching status,
+    // throw so KanbanBoard rolls back its optimistic move and warns the user.
+    let realStatus: string = newStatus;
+    if (typeof newStatus === 'string' && newStatus.startsWith(CUSTOM_PREFIX)) {
+      const norm = newStatus.slice(CUSTOM_PREFIX.length);
+      const issue = allIssuesRaw.find((i) => i.id === issueId);
+      const resolved = issue ? projectStatusKeyByLabel.get(issue.project_id)?.get(norm) : undefined;
+      if (!resolved) throw new Error('status-not-in-project');
+      realStatus = resolved;
+    }
+    positionMutation.mutate({ id: issueId, status: realStatus, rank: newRank, position: newPosition });
   };
 
   // ─── Deep link ─────────────────────────────
@@ -782,7 +873,7 @@ export function AllIssues() {
         <div className="flex items-center gap-2 px-3 md:px-6 pb-2 overflow-visible">
           {/* Status chips (always visible — most used filter) */}
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {STATUSES.map((s) => {
+            {dynamicStatuses.map((s) => {
               const StatusIcon = STATUS_ICONS[s.key] || Circle;
               return (
                 <FilterChip
@@ -966,7 +1057,7 @@ export function AllIssues() {
       <div className="flex-1 overflow-hidden">
         {viewMode === 'kanban' ? (
           <KanbanBoard
-            statuses={STATUSES}
+            statuses={dynamicStatuses}
             issues={boardIssues}
             onMoveIssue={handleMoveIssue}
             onIssueClick={(issue) => openDetail(issue.id)}
@@ -974,10 +1065,10 @@ export function AllIssues() {
             projectTags={allTags}
           />
         ) : viewMode === 'table' ? (
-          <IssuesTable issues={boardIssues} />
+          <IssuesTable issues={filteredIssues} />
         ) : (
           <ListView
-            statuses={STATUSES}
+            statuses={dynamicStatuses}
             issues={boardIssues}
             onIssueClick={(issue) => openDetail(issue.id)}
             projectTags={allTags}
