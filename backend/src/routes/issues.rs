@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Extension, Json,
 };
 use serde::{Deserialize, Serialize};
@@ -2157,8 +2157,10 @@ pub async fn update(
 
 pub async fn update_position(
     Extension(auth): Extension<AuthUser>,
+    Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
     let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
@@ -2232,6 +2234,25 @@ pub async fn update_position(
     .fetch_one(&pool)
     .await
     .map_err(|e| internal_err(e))?;
+
+    // ── SSE broadcast (realtime reorder for other tabs/users) ──
+    // Echo suppression: attach the caller's X-Client-Id as `origin` so the
+    // originating tab can ignore its own broadcast (it already applied the
+    // move optimistically). The payload stays the raw Issue JSON plus origin.
+    let origin = headers
+        .get("x-client-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let mut payload = serde_json::to_value(&issue).unwrap_or_default();
+    if let (Some(obj), Some(origin)) = (payload.as_object_mut(), origin) {
+        obj.insert("origin".to_string(), serde_json::Value::String(origin));
+    }
+    broadcast_event(
+        &sse_tx,
+        &target_org_id,
+        "issue.updated",
+        &serde_json::to_string(&payload).unwrap_or_default(),
+    );
 
     Ok(Json(ApiResponse::new(issue)))
 }
