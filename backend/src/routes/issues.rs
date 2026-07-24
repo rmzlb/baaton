@@ -1024,14 +1024,37 @@ pub async fn create(
         .attachments
         .unwrap_or_else(|| serde_json::Value::Array(vec![]));
 
+    // Origin of the ticket. Respect the caller-provided value (e.g. "ai" from a
+    // BO copilot) instead of forcing "web". Default to "web" when absent/empty.
+    let source = body
+        .source
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("web");
+
+    // Free-text reporter provenance. Never gated on a Baaton account: we persist
+    // the raw name/email for reporting, never reject or auto-create members.
+    let reporter_name = body
+        .reporter_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let reporter_email = body
+        .reporter_email
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
     let mut issue = sqlx::query_as::<_, Issue>(
         r#"
         INSERT INTO issues (
             project_id, display_id, title, description, type, status, priority,
             milestone_id, parent_id, tags, category, assignee_ids, position, source,
-            created_by_id, created_by_name, due_date, estimate, sprint_id, attachments
+            created_by_id, created_by_name, due_date, estimate, sprint_id, attachments,
+            reporter_name, reporter_email
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'web', $14, $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
         RETURNING *
         "#,
     )
@@ -1048,12 +1071,15 @@ pub async fn create(
     .bind(&body.category.unwrap_or_default())
     .bind(&resolved_assignees)
     .bind(position)
+    .bind(source)
     .bind(&auth.user_id)
     .bind(created_by_name)
     .bind(body.due_date)
     .bind(body.estimate)
     .bind(body.sprint_id)
     .bind(&attachments_json)
+    .bind(reporter_name)
+    .bind(reporter_email)
     .fetch_one(tx.as_mut())
     .await
     .map_err(|e| {

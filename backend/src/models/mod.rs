@@ -159,6 +159,12 @@ pub struct CreateIssue {
     pub estimate: Option<i32>,
     pub sprint_id: Option<Uuid>,
     pub attachments: Option<serde_json::Value>,
+    /// Origin of the ticket (e.g. "web", "ai", "api"). Defaults to "web" when absent.
+    pub source: Option<String>,
+    /// Free-text reporter name for provenance/reporting. Not tied to a Baaton account.
+    pub reporter_name: Option<String>,
+    /// Free-text reporter email for provenance/reporting. Not tied to a Baaton account.
+    pub reporter_email: Option<String>,
 }
 
 #[allow(dead_code)]
