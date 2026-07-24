@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
-import { ImagePlus, X, AlertCircle, Loader2 } from 'lucide-react';
+import { ImagePlus, X, AlertCircle, Loader2, FileText } from 'lucide-react';
 import { resolveApiOrigin } from '@/lib/api-origin';
 import { cn } from '@/lib/utils';
 
@@ -45,8 +45,44 @@ const MAX_COUNT = 5;
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_DIM = 1920;
 const WEBP_QUALITY = 0.82;
-const ALLOWED_MIME = new Set(['image/webp', 'image/jpeg', 'image/png', 'image/gif']);
-const ACCEPTED_INPUT = 'image/webp,image/jpeg,image/png,image/gif,image/heic,image/heif,image/avif';
+// Images are re-encoded client-side to WebP; docs are uploaded as-is. The
+// backend `/uploads` allowlist is the source of truth — keep these in sync.
+const ALLOWED_IMAGE_MIME = new Set(['image/webp', 'image/jpeg', 'image/png', 'image/gif']);
+const ALLOWED_DOC_MIME = new Set([
+  'application/pdf',
+  'text/plain',
+  'text/csv',
+  'text/markdown',
+  'application/json',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/zip',
+]);
+const DOC_EXT_RE = /\.(pdf|txt|csv|md|markdown|json|docx?|xlsx?|pptx?|zip)$/i;
+const ACCEPTED_INPUT =
+  'image/webp,image/jpeg,image/png,image/gif,image/heic,image/heif,image/avif,' +
+  '.pdf,.txt,.csv,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip';
+
+function isImageInput(file: File): boolean {
+  return file.type.startsWith('image/') || /\.(webp|jpe?g|png|gif|heic|heif|avif)$/i.test(file.name);
+}
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function humanSize(bytes: number): string {
+  return bytes > 1024 * 1024 ? `${(bytes / 1048576).toFixed(1)}MB` : `${Math.round(bytes / 1024)}KB`;
+}
 
 function compressToWebP(file: File): Promise<{ dataUrl: string; size: number; mime: string; name: string }> {
   return new Promise((resolve, reject) => {
@@ -108,20 +144,47 @@ export function IssueProposalAttachments({ attachments, onChange, disabled }: Pr
   const remainingSlots = MAX_COUNT - attachments.length;
 
   const uploadOne = useCallback(async (file: File) => {
-    // Pre-flight: detect non-image inputs early (drag/drop accepts anything).
-    const isImageMime = file.type.startsWith('image/');
-    const looksImage = /\.(webp|jpe?g|png|gif|heic|heif|avif)$/i.test(file.name);
-    if (!isImageMime && !looksImage) {
+    // Pre-flight: accept images and the doc allowlist (drag/drop accepts anything).
+    const isImage = isImageInput(file);
+    const isDoc =
+      ALLOWED_DOC_MIME.has(file.type) || (!isImage && DOC_EXT_RE.test(file.name));
+    if (!isImage && !isDoc) {
       throw new Error(`${file.name}: format non supporté`);
     }
 
-    // Compress (also re-encodes to WebP for HEIC/AVIF support on backend).
-    const compressed = await compressToWebP(file);
-    if (compressed.size > MAX_SIZE_BYTES) {
-      throw new Error(`${compressed.name}: dépasse ${Math.round(MAX_SIZE_BYTES / 1024 / 1024)} MB après compression`);
-    }
-    if (!ALLOWED_MIME.has(compressed.mime)) {
-      throw new Error(`${compressed.name}: type ${compressed.mime} refusé`);
+    let dataUrl: string;
+    let name: string;
+    let size: number;
+    let mime: string;
+
+    if (isImage) {
+      // Compress + re-encode to WebP (strips EXIF, supports HEIC/AVIF).
+      const compressed = await compressToWebP(file);
+      if (compressed.size > MAX_SIZE_BYTES) {
+        throw new Error(`${compressed.name}: dépasse ${Math.round(MAX_SIZE_BYTES / 1024 / 1024)} MB après compression`);
+      }
+      if (!ALLOWED_IMAGE_MIME.has(compressed.mime)) {
+        throw new Error(`${compressed.name}: type ${compressed.mime} refusé`);
+      }
+      dataUrl = compressed.dataUrl;
+      name = compressed.name;
+      size = compressed.size;
+      mime = compressed.mime;
+    } else {
+      // Documents are uploaded as-is (no compression).
+      if (file.size > MAX_SIZE_BYTES) {
+        throw new Error(`${file.name}: dépasse ${Math.round(MAX_SIZE_BYTES / 1024 / 1024)} MB`);
+      }
+      dataUrl = await readAsDataUrl(file);
+      name = file.name || `fichier-${Date.now()}`;
+      size = file.size;
+      // Normalize a couple of common empty/loose mimes to the backend allowlist.
+      mime = file.type
+        || (/\.md$/i.test(name) ? 'text/markdown'
+          : /\.csv$/i.test(name) ? 'text/csv'
+          : /\.json$/i.test(name) ? 'application/json'
+          : /\.txt$/i.test(name) ? 'text/plain'
+          : 'application/octet-stream');
     }
 
     const token = await getToken();
@@ -133,9 +196,9 @@ export function IssueProposalAttachments({ attachments, onChange, disabled }: Pr
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({
-        data: compressed.dataUrl,
-        filename: compressed.name,
-        content_type: compressed.mime,
+        data: dataUrl,
+        filename: name,
+        content_type: mime,
       }),
     });
     if (!res.ok) {
@@ -151,9 +214,9 @@ export function IssueProposalAttachments({ attachments, onChange, disabled }: Pr
     return {
       url: data.marker as string,
       preview_url: data.url as string,
-      name: compressed.name,
-      size: compressed.size,
-      mime_type: compressed.mime,
+      name,
+      size,
+      mime_type: mime,
     } satisfies ProposalAttachment;
   }, [getToken]);
 
@@ -208,7 +271,7 @@ export function IssueProposalAttachments({ attachments, onChange, disabled }: Pr
   return (
     <div>
       <label className="block text-[10px] font-medium text-muted uppercase tracking-wide mb-1.5">
-        Images <span className="text-muted/60 normal-case">— optionnel ({attachments.length}/{MAX_COUNT})</span>
+        Pièces jointes <span className="text-muted/60 normal-case">— optionnel ({attachments.length}/{MAX_COUNT})</span>
       </label>
 
       <div
@@ -228,27 +291,53 @@ export function IssueProposalAttachments({ attachments, onChange, disabled }: Pr
         )}
       >
         {attachments.length > 0 && (
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 p-1.5">
-            {attachments.map((a, idx) => (
-              <div key={`${a.url}-${idx}`} className="group relative aspect-square rounded-md bg-surface-hover overflow-hidden">
-                <img
-                  src={a.preview_url}
-                  alt={a.name}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeAt(idx)}
-                  className="absolute top-0.5 right-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80 focus:outline-none focus:opacity-100"
-                  aria-label={`Retirer ${a.name}`}
-                >
-                  <X size={10} />
-                </button>
-                <span className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 py-0.5 text-[8px] text-white font-mono opacity-0 group-hover:opacity-100 transition-opacity tabular-nums">
-                  {a.size > 1024 * 1024 ? `${(a.size / 1048576).toFixed(1)}MB` : `${Math.round(a.size / 1024)}KB`}
-                </span>
+          <div className="p-1.5 space-y-1.5">
+            {/* Image thumbnails */}
+            {attachments.some(a => a.mime_type.startsWith('image/')) && (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                {attachments.map((a, idx) => (
+                  a.mime_type.startsWith('image/') ? (
+                    <div key={`${a.url}-${idx}`} className="group relative aspect-square rounded-md bg-surface-hover overflow-hidden">
+                      <img
+                        src={a.preview_url}
+                        alt={a.name}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeAt(idx)}
+                        className="absolute top-0.5 right-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/80 focus:outline-none focus:opacity-100"
+                        aria-label={`Retirer ${a.name}`}
+                      >
+                        <X size={10} />
+                      </button>
+                      <span className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 py-0.5 text-[8px] text-white font-mono opacity-0 group-hover:opacity-100 transition-opacity tabular-nums">
+                        {humanSize(a.size)}
+                      </span>
+                    </div>
+                  ) : null
+                ))}
               </div>
+            )}
+
+            {/* Document chips — mirrors the issue drawer / detail rendering */}
+            {attachments.map((a, idx) => (
+              !a.mime_type.startsWith('image/') ? (
+                <div key={`${a.url}-${idx}`} className="group flex items-center gap-1.5 rounded-md bg-surface border border-border px-2 py-1.5">
+                  <FileText size={12} className="text-secondary shrink-0" />
+                  <span className="text-[11px] text-secondary truncate flex-1">{a.name}</span>
+                  <span className="text-[9px] text-muted shrink-0 tabular-nums">{humanSize(a.size)}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAt(idx)}
+                    className="text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 focus:outline-none focus:opacity-100"
+                    aria-label={`Retirer ${a.name}`}
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ) : null
             ))}
           </div>
         )}
@@ -258,12 +347,14 @@ export function IssueProposalAttachments({ attachments, onChange, disabled }: Pr
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || remainingSlots === 0 || uploading > 0}
           className={cn(
-            'w-full flex items-center justify-center gap-2 px-3 py-2 text-[11px] text-muted',
-            'hover:text-primary hover:bg-surface-hover/50 active:scale-[0.99]',
+            'w-full flex items-center justify-center gap-2 px-3 text-[11px]',
+            'hover:bg-surface-hover/50 active:scale-[0.99]',
             'transition-[transform,colors,background-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/30',
             'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent',
-            attachments.length === 0 ? 'rounded-lg' : 'rounded-b-lg border-t border-border',
+            attachments.length === 0
+              ? 'rounded-lg py-2.5 text-secondary font-medium hover:text-primary'
+              : 'rounded-b-lg border-t border-border py-2 text-muted hover:text-primary',
           )}
         >
           {uploading > 0 ? (
@@ -272,12 +363,12 @@ export function IssueProposalAttachments({ attachments, onChange, disabled }: Pr
               <span>Upload en cours…</span>
             </>
           ) : remainingSlots === 0 ? (
-            <span>Limite atteinte ({MAX_COUNT} images)</span>
+            <span>Limite atteinte ({MAX_COUNT} fichiers)</span>
           ) : (
             <>
-              <ImagePlus size={12} />
-              <span>Ajouter une image</span>
-              <span className="text-muted/60">— glisser, coller (⌘V) ou cliquer</span>
+              <ImagePlus size={attachments.length === 0 ? 15 : 12} className={attachments.length === 0 ? 'text-amber-500' : undefined} />
+              <span>Ajouter un fichier</span>
+              <span className="text-muted/60">— image ou doc, glisser, coller (⌘V) ou cliquer</span>
             </>
           )}
         </button>

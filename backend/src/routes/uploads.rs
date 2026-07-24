@@ -19,16 +19,65 @@ use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
 use crate::s3::S3State;
 
-/// Max decoded image size: 10MB.
+/// Max decoded file size: 10MB (covers compressed images + documents).
 const MAX_DECODED_BYTES: usize = 10 * 1024 * 1024;
 
-/// Allowed image MIME types.
+/// Allowed MIME types — images + common documents. Attachments are stored in
+/// S3 and served via presigned URLs / downloaded, never executed by the
+/// browser, so the doc set mirrors what the issue drawer accepts.
 const ALLOWED_MIME: &[&str] = &[
+    // Images
     "image/webp",
     "image/jpeg",
     "image/png",
     "image/gif",
+    // Documents
+    "application/pdf",
+    "text/plain",
+    "text/csv",
+    "text/markdown",
+    "application/json",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/zip",
 ];
+
+/// Map an allowed MIME type to a file extension for the S3 key. Falls back to
+/// the original filename's extension (sanitized) and finally `bin`.
+fn ext_for(content_type: &str, filename: Option<&str>) -> String {
+    match content_type {
+        "image/webp" => "webp",
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "application/pdf" => "pdf",
+        "text/plain" => "txt",
+        "text/csv" => "csv",
+        "text/markdown" => "md",
+        "application/json" => "json",
+        "application/msword" => "doc",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
+        "application/vnd.ms-excel" => "xls",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
+        "application/vnd.ms-powerpoint" => "ppt",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => "pptx",
+        "application/zip" => "zip",
+        _ => {
+            // Fallback: derive from filename extension (alnum only), else bin.
+            let ext = filename
+                .and_then(|f| f.rsplit('.').next())
+                .map(|e| e.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>())
+                .filter(|e| !e.is_empty() && e.len() <= 8)
+                .unwrap_or_else(|| "bin".to_string());
+            return ext.to_ascii_lowercase();
+        }
+    }
+    .to_string()
+}
 
 #[derive(Debug, Deserialize)]
 pub struct UploadRequest {
@@ -94,7 +143,7 @@ pub async fn upload(
         return Err((
             StatusCode::PAYLOAD_TOO_LARGE,
             Json(json!({
-                "error": "Image exceeds 10MB limit",
+                "error": "File exceeds 10MB limit",
                 "size": bytes.len(),
                 "max": MAX_DECODED_BYTES,
             })),
@@ -104,17 +153,11 @@ pub async fn upload(
     if bytes.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Empty image data"})),
+            Json(json!({"error": "Empty file data"})),
         ));
     }
 
-    let ext = match content_type.as_str() {
-        "image/webp" => "webp",
-        "image/jpeg" => "jpg",
-        "image/png" => "png",
-        "image/gif" => "gif",
-        _ => unreachable!(), // checked above
-    };
+    let ext = ext_for(&content_type, body.filename.as_deref());
 
     let id = Uuid::new_v4();
     // Key layout: `{org_id}/{uuid}.{ext}` — useful for per-tenant audit & purge.

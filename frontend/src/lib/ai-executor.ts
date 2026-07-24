@@ -358,6 +358,23 @@ async function executeCreateIssue(
 
     const cleanTitle = sanitizeTitle(String(args.title || ''), projects);
     const text = `${cleanTitle} ${String(args.description || '')}`;
+
+    // Forward attachments approved on the proposal card. The agent copies them
+    // verbatim from `finalValues.attachments` (stable s3:// markers). Keep only
+    // the persisted shape and cap at 5 to match backend validation.
+    const attachments = Array.isArray(args.attachments)
+      ? (args.attachments as unknown[])
+          .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
+          .map((a) => ({
+            url: String((a as any).url ?? ''),
+            name: String((a as any).name ?? 'fichier'),
+            size: Number((a as any).size ?? 0),
+            mime_type: String((a as any).mime_type ?? 'application/octet-stream'),
+          }))
+          .filter((a) => a.url.length > 0)
+          .slice(0, 5)
+      : [];
+
     const issue = await api.issues.create({
       project_id: targetProjectId,
       title: cleanTitle,
@@ -367,6 +384,7 @@ async function executeCreateIssue(
       status: normalizeStatus(args.status, project?.statuses),
       tags: normalizeStringArray(args.tags),
       category: normalizeCategories(args.category, text),
+      ...(attachments.length > 0 ? { attachments } : {}),
     });
 
     const createCategories = (issue.category || []).join(', ');

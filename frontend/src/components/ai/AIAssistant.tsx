@@ -433,8 +433,15 @@ export function AIAssistant() {
     // turns ("état des lieux" rendered twice, etc).
     sendAutomaticallyWhen: shouldAutoContinueAfterApproval,
     onFinish: () => {
+      // A write skill (create/update/bulk/comment) may have landed this turn.
+      // The board reads ['project-board', slug, orgId] and /all-issues reads
+      // ['all-issues'] — both must refetch or the originating tab stays stale
+      // (its own issue.created SSE is echo-suppressed via X-Client-Id).
       queryClient.invalidateQueries({ queryKey: ['issues'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['milestones'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['project-board'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['all-issues'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['my-issues'], refetchType: 'all' });
     },
     onError: (err) => {
       console.error('[AI panel]', err);

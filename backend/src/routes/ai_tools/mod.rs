@@ -150,6 +150,19 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                         "type": "ARRAY",
                         "items": {"type": "STRING"},
                         "description": "Technical domains from the approved proposal: FRONT, BACK, API, DB, INFRA, UX, DEVOPS."
+                    },
+                    "attachments": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "url": {"type": "STRING"},
+                                "name": {"type": "STRING"},
+                                "size": {"type": "NUMBER"},
+                                "mime_type": {"type": "STRING"}
+                            }
+                        },
+                        "description": "Files (images/docs) attached on the proposal card. Copy VERBATIM from finalValues.attachments if present — the `url` values are stable s3:// markers, do not alter or invent them. Omit if the proposal had none."
                     }
                 },
                 "required": ["project_id", "title"]
