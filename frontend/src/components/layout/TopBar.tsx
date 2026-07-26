@@ -44,7 +44,15 @@ export function TopBar() {
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex h-12 items-center justify-between border-b border-border bg-bg px-3 md:px-5 shrink-0" role="banner">
+      {/*
+        h-12 is the *content* height; the top safe-area inset is added as
+        padding so that in iOS standalone (viewport-fit=cover) the bar renders
+        below the Dynamic Island instead of under it. `safe-pl`/`safe-pr` keep
+        the breadcrumb and actions clear of the notch in landscape.
+        The opaque bg also colours the status bar area on iOS 26, which no
+        longer honours the theme-color meta tag.
+      */}
+      <header className="safe-pt safe-pl safe-pr sticky top-0 z-20 box-content flex h-12 items-center justify-between border-b border-border bg-bg px-3 md:px-5 shrink-0" role="banner">
         {/* Left: mobile menu + breadcrumb */}
         <div className="flex items-center gap-2 min-w-0">
           <button

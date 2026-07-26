@@ -615,9 +615,10 @@ export function AIAssistant() {
       <button
         onClick={toggleAiPanel}
         aria-label={t('ai.openAssistant') || 'Open AI assistant (Cmd+J)'}
-        // env(safe-area-inset-bottom) keeps the FAB above iOS home indicator in PWA mode.
+        // max() keeps the 1.5rem visual offset on devices without a home
+        // indicator and lifts the FAB clear of it on notched iPhones in PWA mode.
         // Touch target 48×48 (above WCAG 2.5.5 minimum of 44).
-        style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))' }}
+        style={{ bottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))' }}
         className="fixed right-4 sm:right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500 text-black shadow-lg transition-all duration-300 hover:scale-105 hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       >
         <Sparkles size={20} aria-hidden="true" />
@@ -647,7 +648,7 @@ export function AIAssistant() {
         //                 `lg:mr-[420px]` to the main wrapper so the page is
         //                 PUSHED (not covered). The user can keep working on
         //                 the visible left portion while chatting.
-        className="animate-slide-in-right flex shrink-0 w-full sm:w-[420px] sm:min-w-[420px] sm:max-w-[90vw] flex-col border-l border-border bg-bg h-dvh [@supports_not(height:100dvh)]:h-screen fixed right-0 top-0 bottom-0 z-40 shadow-2xl lg:shadow-none will-change-transform"
+        className="animate-slide-in-right safe-pt safe-pr flex shrink-0 w-full sm:w-[420px] sm:min-w-[420px] sm:max-w-[90vw] flex-col border-l border-border bg-bg h-dvh [@supports_not(height:100dvh)]:h-screen fixed right-0 top-0 bottom-0 z-40 shadow-2xl lg:shadow-none will-change-transform"
       >
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-3 sm:px-4 py-2 border-b border-border shrink-0 min-h-[48px]">

@@ -196,13 +196,19 @@ export function Sidebar() {
         aria-label={t('sidebar.navigation') || 'Sidebar'}
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200',
-          (collapsed || aiPanelOpen) ? 'w-14' : 'w-56',
-          'max-md:-translate-x-full max-md:w-56',
+          // `safe-panel-left` widens the panel by the left inset (landscape
+          // notch) while keeping the declared width for the content column.
+          'safe-panel-left',
+          (collapsed || aiPanelOpen) ? '[--panel-w:3.5rem]' : '[--panel-w:14rem]',
+          'max-md:-translate-x-full max-md:[--panel-w:14rem]',
           mobileOpen && 'max-md:translate-x-0',
         )}
       >
-        {/* ─── Header: Logo + Collapse ─── */}
-        <div className="flex h-12 items-center border-b border-sidebar-border px-2 justify-between">
+        {/* ─── Header: Logo + Collapse ───
+            safe-pt + box-content: h-12 stays the visual row height and the iOS
+            top inset is added on top, so the logo and the drawer close button
+            never sit under the Dynamic Island in standalone mode. */}
+        <div className="safe-pt box-content flex h-12 items-center border-b border-sidebar-border px-2 justify-between">
           <Link to="/dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity min-w-0">
             <div className="flex-shrink-0">
               <PixelTanuki size={isCompact ? 28 : 24} />
@@ -294,8 +300,10 @@ export function Sidebar() {
         {/* ─── System Status ─── */}
         {!isCompact && <SystemStatus />}
 
-        {/* ─── Footer ─── */}
-        <div className="border-t border-sidebar-border p-2">
+        {/* ─── Footer ───
+            safe-pb keeps the user button / theme + language toggles above the
+            iOS home indicator when installed as a PWA. */}
+        <div className="safe-pb border-t border-sidebar-border p-2">
           <div className={cn('flex items-center', isCompact ? 'flex-col gap-2' : 'gap-1 px-1')}>
             <UserButton appearance={{ elements: { avatarBox: 'h-7 w-7' } }} />
             {!isCompact && (

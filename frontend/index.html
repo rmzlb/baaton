@@ -6,8 +6,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="description" content="The project board agents actually use. AI agents and humans collaborate on issues, sprints, and backlogs — with API-first automation, keyboard shortcuts, and ambient gamification." />
+    <!-- Standalone PWA. `mobile-web-app-capable` is the modern tag; the legacy
+         apple- prefixed one is still required by older iOS versions.
+         `black-translucent` renders content behind the status bar — safe areas
+         are reserved in CSS (see globals.css `.safe-pt` / `.safe-pb`). -->
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Baaton" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- iOS turns phone-number-looking strings (issue ids, counts) into links
+         in standalone mode, which breaks layout and taps. -->
+    <meta name="format-detection" content="telephone=no" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
@@ -36,7 +45,8 @@
     <meta name="robots" content="index, follow" />
 
     <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/icon-192.svg" />
+    <!-- iOS ignores SVG here — must be a PNG, 180x180, no transparency. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>Baaton. The board agents actually use.</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

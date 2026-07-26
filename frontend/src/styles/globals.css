@@ -199,6 +199,44 @@ html.app-shell-locked body {
   position: relative;
 }
 
+/* ─── iOS / PWA safe areas ───────────────────
+   `viewport-fit=cover` in index.html makes the webview render edge-to-edge in
+   standalone mode (behind the Dynamic Island and the home indicator). Every
+   chrome element that touches a screen edge must therefore reserve the inset
+   itself. Reference insets (iPhone 17 Pro, portrait): top 62px, bottom 34px.
+
+   The vars fall back to 0px on every non-notched device and on desktop, so the
+   same classes are safe in the regular web build — no double padding. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* Chrome that sits against the top edge (TopBar, mobile drawer header). */
+.safe-pt { padding-top: var(--safe-top); }
+/* Chrome that sits against the bottom edge (drawer footer, FABs, sheets). */
+.safe-pb { padding-bottom: var(--safe-bottom); }
+/* Landscape notch side — the sidebar and full-bleed overlays need this. */
+.safe-pl { padding-left: var(--safe-left); }
+.safe-pr { padding-right: var(--safe-right); }
+
+/* Fixed left panel: widen by the left inset so its *content* stays clear of
+   the notch in landscape while the background still bleeds to the edge. */
+.safe-panel-left {
+  padding-left: var(--safe-left);
+  width: calc(var(--panel-w) + var(--safe-left));
+}
+
+/* iOS 26 dropped `theme-color` support: the status bar now inherits the body
+   background, or the background of a fixed element pinned to the top. Painting
+   <body> with the app background keeps the status bar area on-brand instead of
+   flashing white. */
+body {
+  background-color: var(--color-bg);
+}
+
 /* ─── Board scroll fade edges ──────────────── */
 .kanban-scroll-container {
   mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
