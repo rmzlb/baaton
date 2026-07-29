@@ -506,7 +506,7 @@ export function AllIssues() {
       }
     }
     if (custom.size === 0) {
-      return STATUSES.filter((status) => showDone || status.key !== 'done');
+      return STATUSES;
     }
     const byCanon = new Map<string, ProjectStatus[]>();
     for (const c of custom.values()) {
@@ -517,13 +517,12 @@ export function AllIssues() {
     for (const arr of byCanon.values()) arr.sort((a, b) => a.label.localeCompare(b.label));
     const ordered: ProjectStatus[] = [];
     for (const canon of STATUSES) {
-      if (!showDone && canon.key === 'done') continue;
       ordered.push(canon);
       const extras = byCanon.get(canon.key);
       if (extras) ordered.push(...extras);
     }
     return ordered;
-  }, [allIssuesRaw, showDone]);
+  }, [allIssuesRaw]);
 
   // ─── Issue counts per project (for chips) ──
   const issueCountByProject = useMemo(() => {
@@ -634,15 +633,16 @@ export function AllIssues() {
     setSearchQuery('');
   };
 
-  const toggleDoneVisibility = () => {
-    const next = !showDone;
+  const setDoneVisibility = useCallback((next: boolean) => {
     setShowDone(next);
     setSearchParams((prev) => {
       if (next) prev.set('showDone', '1');
       else prev.delete('showDone');
       return prev;
     }, { replace: true });
-  };
+  }, [setSearchParams]);
+
+  const toggleDoneVisibility = () => setDoneVisibility(!showDone);
 
   // ─── Drag & drop ───────────────────────────
   const positionMutation = useMutation({
@@ -1099,6 +1099,8 @@ export function AllIssues() {
             onIssueClick={(issue) => openDetail(issue.id)}
             onCreateIssue={() => {}}
             projectTags={allTags}
+            doneIssuesLoaded={showDone}
+            onLoadDoneIssues={() => setDoneVisibility(true)}
           />
         ) : viewMode === 'table' ? (
           <IssuesTable issues={filteredIssues} statuses={dynamicStatuses} />

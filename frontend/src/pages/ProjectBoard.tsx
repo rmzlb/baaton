@@ -250,29 +250,18 @@ export function ProjectBoard() {
     onToggleHelp: useCallback(() => setShowShortcutHelp((v) => !v), []),
   });
 
-  // Parse project statuses (could be JSON string or array)
-  const statuses: ProjectStatus[] = (() => {
-    if (!project?.statuses) return DEFAULT_STATUSES;
-    if (Array.isArray(project.statuses)) return project.statuses as ProjectStatus[];
-    if (typeof project.statuses === 'string') {
-      try {
-        return JSON.parse(project.statuses as string) as ProjectStatus[];
-      } catch {
-        return DEFAULT_STATUSES;
-      }
-    }
-    return DEFAULT_STATUSES;
-  })().filter((status) => showDone || (status.key !== 'done' && status.category !== 'completed'));
+  const statuses = useMemo(() => parseStatuses(project?.statuses), [project?.statuses]);
 
-  const toggleDoneVisibility = () => {
-    const next = !showDone;
+  const setDoneVisibility = useCallback((next: boolean) => {
     setShowDone(next);
     setSearchParams((prev) => {
       if (next) prev.set('showDone', '1');
       else prev.delete('showDone');
       return prev;
     }, { replace: true });
-  };
+  }, [setSearchParams]);
+
+  const toggleDoneVisibility = () => setDoneVisibility(!showDone);
 
   if (projectLoading || issuesLoading) {
     return (
@@ -433,6 +422,8 @@ export function ProjectBoard() {
             onIssueClick={(issue) => openDetail(issue.id)}
             onCreateIssue={() => setShowCreateIssue(true)}
             projectTags={projectTags}
+            doneIssuesLoaded={showDone}
+            onLoadDoneIssues={() => setDoneVisibility(true)}
           />
         ) : (
           <ListView

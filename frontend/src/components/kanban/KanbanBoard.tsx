@@ -52,9 +52,29 @@ interface KanbanBoardProps {
   onIssueClick: (issue: Issue) => void;
   onCreateIssue?: (statusKey: string) => void;
   projectTags?: ProjectTag[];
+  doneIssuesLoaded?: boolean;
+  onLoadDoneIssues?: () => void;
 }
 
-export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCreateIssue, projectTags = [] }: KanbanBoardProps) {
+const isBacklogStatus = (status: ProjectStatus) =>
+  status.key === 'backlog' || status.category === 'backlog';
+
+const isDoneStatus = (status: ProjectStatus) =>
+  status.key === 'done' || status.category === 'completed';
+
+const isCancelledStatus = (status: ProjectStatus) =>
+  status.key === 'cancelled' || status.category === 'canceled' || status.category === 'cancelled';
+
+export function KanbanBoard({
+  statuses,
+  issues,
+  onMoveIssue,
+  onIssueClick,
+  onCreateIssue,
+  projectTags = [],
+  doneIssuesLoaded = true,
+  onLoadDoneIssues,
+}: KanbanBoardProps) {
   const { t } = useTranslation();
   const moveIssueOptimistic = useIssuesStore((s) => s.moveIssueOptimistic);
   const restoreIssues = useIssuesStore((s) => s.restoreIssues);
@@ -97,17 +117,26 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
   const visibleStatuses = useMemo(() => {
     switch (filterTab) {
       case 'active':
-        return statuses.filter((s) => !s.hidden);
+        return statuses.filter((s) =>
+          (isBacklogStatus(s) || !s.hidden) && !isDoneStatus(s) && !isCancelledStatus(s),
+        );
       case 'all':
         return statuses;
       case 'backlog':
-        return statuses.filter((s) => s.key === 'backlog');
+        return statuses.filter(isBacklogStatus);
       case 'cancelled':
-        return statuses.filter((s) => s.key === 'cancelled');
+        return statuses.filter(isCancelledStatus);
       default:
-        return statuses.filter((s) => !s.hidden);
+        return statuses.filter((s) =>
+          (isBacklogStatus(s) || !s.hidden) && !isDoneStatus(s) && !isCancelledStatus(s),
+        );
     }
   }, [statuses, filterTab]);
+
+  const selectFilterTab = useCallback((tab: FilterTab) => {
+    if (tab === 'all' && !doneIssuesLoaded) onLoadDoneIssues?.();
+    setFilterTab(tab);
+  }, [doneIssuesLoaded, onLoadDoneIssues]);
 
   // Filter issues by all criteria
   const filteredIssues = useMemo(() => {
@@ -370,7 +399,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
           {filterTabs.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setFilterTab(tab.key)}
+              onClick={() => selectFilterTab(tab.key)}
               className={cn(
                 'rounded-[5px] px-2.5 py-1 text-[11px] font-medium transition-colors min-h-[28px]',
                 filterTab === tab.key
