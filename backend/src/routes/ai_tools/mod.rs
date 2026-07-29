@@ -3734,6 +3734,42 @@ async fn create_issue_real(
         })
         .unwrap_or_default();
 
+    // Attachments coming from an approved proposal card (finalValues.attachments).
+    // These MUST be persisted: dropping them silently is how uploaded files ended up
+    // orphaned in S3 while the issue was created with zero attachments.
+    let mut attachments_json = args
+        .get("attachments")
+        .cloned()
+        .unwrap_or_else(|| Value::Array(vec![]));
+    let attachments_in = attachments_json.as_array().map(|a| a.len()).unwrap_or(0);
+
+    if attachments_in > 0 {
+        let arr = attachments_json
+            .as_array()
+            .ok_or_else(|| "'attachments' must be an array of {url,name,size,mime_type} objects.".to_string())?;
+        if arr.len() > 5 {
+            return Err("Maximum 5 attachments allowed per issue.".to_string());
+        }
+        for att in arr {
+            if att.get("url").and_then(|v| v.as_str()).is_none()
+                || att.get("name").and_then(|v| v.as_str()).is_none()
+            {
+                return Err(
+                    "Each attachment requires at least 'url' and 'name'. Copy the objects verbatim from finalValues.attachments."
+                        .to_string(),
+                );
+            }
+        }
+        // Never persist short-lived presigned URLs — collapse back to stable s3:// markers.
+        let collapsed = crate::s3::collapse_json_value(&mut attachments_json);
+        if collapsed > 0 {
+            tracing::info!(
+                collapsed,
+                "ai_tools.create_issue.attachments.collapsed_presigned"
+            );
+        }
+    }
+
     // Verify project belongs to org + get prefix
     let row: Option<(String,)> =
         sqlx::query_as("SELECT prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])")
@@ -3775,8 +3811,9 @@ async fn create_issue_real(
         sqlx::query_as(
             r#"INSERT INTO issues (
                 project_id, display_id, title, description, type, status,
-                priority, category, tags, position, source, created_by_id, created_by_name
-               ) VALUES ($1, $2, $3, $4, $5, 'backlog', $6, $7, $8, $9, 'ai', $10, $11)
+                priority, category, tags, position, source, created_by_id, created_by_name,
+                attachments
+               ) VALUES ($1, $2, $3, $4, $5, 'backlog', $6, $7, $8, $9, 'ai', $10, $11, $12)
                RETURNING id, display_id, title, status, priority, type"#,
         )
         .bind(project_id)
@@ -3790,9 +3827,27 @@ async fn create_issue_real(
         .bind(position)
         .bind(user_id)
         .bind(user_display_name)
+        .bind(&attachments_json)
         .fetch_one(pool)
         .await
         .map_err(|e| format!("Failed to create issue: {}", e))?;
+
+    // Explicit trace so a dropped attachment is never silent again.
+    let attachments_persisted = attachments_json.as_array().map(|a| a.len()).unwrap_or(0);
+    if attachments_in != attachments_persisted {
+        tracing::error!(
+            issue = %did,
+            attachments_in,
+            attachments_persisted,
+            "ai_tools.create_issue.attachments_dropped"
+        );
+    } else if attachments_persisted > 0 {
+        tracing::info!(
+            issue = %did,
+            count = attachments_persisted,
+            "ai_tools.create_issue.attachments_persisted"
+        );
+    }
 
     let priority_str = pri.as_deref().unwrap_or("none");
     let category_str = if category.is_empty() {
