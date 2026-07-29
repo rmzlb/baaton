@@ -640,7 +640,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         <div className="fixed inset-0 z-40 bg-black/30 dark:bg-black/40 hidden md:block" aria-hidden="true" onClick={() => descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose()} />
         <div
           ref={panelRef}
-          className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right"
+          className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 h-[100dvh] w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right overflow-hidden safe-pt safe-pb safe-pl safe-pr"
         >
           {/* Header skeleton */}
           <div className="flex items-center justify-between border-b border-border px-4 py-2.5 shrink-0">
@@ -678,19 +678,19 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         role="dialog"
         aria-modal="true"
         aria-labelledby="issue-drawer-title"
-        className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border md:shadow-2xl flex flex-col animate-slide-in-right overflow-hidden"
+        className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 h-[100dvh] w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border md:shadow-2xl flex flex-col animate-slide-in-right overflow-hidden safe-pt safe-pb safe-pl safe-pr"
       >
         {/* ── Header ── */}
-        <div className="flex items-center justify-between border-b border-border px-4 py-2.5 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <TypeIcon size={14} className={typeColor} />
-            <CopyableId id={issue.display_id} className="text-sm font-semibold text-accent" iconSize={12} />
-            <span className="text-[10px] text-muted shrink-0">· {timeAgo(issue.created_at)}</span>
+        <div className="flex items-center justify-between gap-2 border-b border-border px-3 sm:px-4 py-2.5 shrink-0">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
+            <TypeIcon size={14} className={cn(typeColor, 'shrink-0')} />
+            <CopyableId id={issue.display_id} className="text-sm font-semibold text-accent shrink-0" iconSize={12} />
+            <span className="hidden sm:inline text-[10px] text-muted shrink-0">· {timeAgo(issue.created_at)}</span>
             {(issue.created_by_name || issue.created_by_id) && (() => {
               const creatorName = resolveUserName(issue.created_by_id, issue.created_by_name);
               return (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[10px] text-muted">by</span>
+                <div className="hidden sm:flex items-center gap-1.5 min-w-0">
+                  <span className="text-[10px] text-muted shrink-0">by</span>
                   <div className="h-5 w-5 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-[8px] font-mono font-bold text-accent">
                     {creatorName.slice(0, 2).toUpperCase()}
                   </div>
@@ -711,10 +711,10 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         </div>
 
         {/* ── Body: Two-column layout ── */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="flex flex-col md:flex-row min-h-full">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain md:overflow-hidden">
+          <div className="flex min-h-full flex-col md:h-full md:flex-row">
             {/* LEFT COLUMN: Title, Description, Comments */}
-            <div className="flex-1 min-w-0 p-5 md:p-6 space-y-5 border-b md:border-b-0 md:border-r border-border overflow-y-auto">
+            <div className="flex-1 min-w-0 space-y-5 border-b border-border p-4 pb-5 sm:p-5 md:border-b-0 md:border-r md:p-6 md:overflow-y-auto">
               {/* Title */}
               <div>
                 {editingTitle ? (
@@ -850,7 +850,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             </div>
 
             {/* RIGHT COLUMN: Metadata Sidebar */}
-            <div className="w-full md:w-56 lg:w-60 shrink-0 p-3 space-y-3 bg-surface/30">
+            <div className="w-full shrink-0 space-y-3 bg-surface/30 p-4 pb-6 sm:p-5 md:w-56 md:p-3 md:pb-3 md:overflow-y-auto lg:w-60">
               <MetadataSidebar
                 issue={issue}
                 availableStatuses={availableStatuses}
