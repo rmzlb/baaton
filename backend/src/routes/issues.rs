@@ -1020,9 +1020,16 @@ pub async fn create(
         "issues.create.attempt"
     );
 
-    let attachments_json = body
+    let mut attachments_json = body
         .attachments
         .unwrap_or_else(|| serde_json::Value::Array(vec![]));
+
+    // Never persist presigned URLs: collapse them back to `s3://` markers so the
+    // read path can mint a fresh signature on every GET (see s3::collapse_json_value).
+    let collapsed = crate::s3::collapse_json_value(&mut attachments_json);
+    if collapsed > 0 {
+        tracing::info!(collapsed, "issues.create.attachments.collapsed_presigned");
+    }
 
     // Origin of the ticket. Respect the caller-provided value (e.g. "ai" from a
     // BO copilot) instead of forcing "web". Default to "web" when absent/empty.
@@ -1566,9 +1573,23 @@ pub async fn update(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-    Json(body): Json<UpdateIssue>,
+    Json(mut body): Json<UpdateIssue>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
     let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
+
+    // Never persist presigned URLs. The client echoes back the whole `attachments`
+    // array it received from `get_one` (already presigned), so collapse it to
+    // stable `s3://` markers before it reaches the UPDATE.
+    if let Some(atts) = body.attachments.as_mut() {
+        let collapsed = crate::s3::collapse_json_value(atts);
+        if collapsed > 0 {
+            tracing::info!(
+                issue_id = %id,
+                collapsed,
+                "issues.update.attachments.collapsed_presigned"
+            );
+        }
+    }
 
     let target_org_id: String = sqlx::query_scalar(
         "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
@@ -2994,6 +3015,17 @@ pub async fn public_submit(
     } else {
         serde_json::Value::Array(vec![])
     };
+
+    // Never persist presigned URLs (public form can echo back a presigned preview
+    // URL). Collapse to stable `s3://` markers; the read path re-signs on GET.
+    let mut attachments_json = attachments_json;
+    let collapsed = crate::s3::collapse_json_value(&mut attachments_json);
+    if collapsed > 0 {
+        tracing::info!(
+            collapsed,
+            "issues.create_public.attachments.collapsed_presigned"
+        );
+    }
 
     let issue = sqlx::query_as::<_, Issue>(
         r#"

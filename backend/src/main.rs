@@ -150,6 +150,10 @@ async fn main() -> anyhow::Result<()> {
         // DEFERRED — enable only after running backend/scripts/backfill-ranks.mjs
         // and verifying zero NULL ranks. See migrations/064_issue_rank_not_null.sql.
         // (64, include_str!("../migrations/064_issue_rank_not_null.sql")),
+        (
+            65,
+            include_str!("../migrations/065_repair_attachment_urls.sql"),
+        ),
     ];
 
     for &(version, sql) in migrations {

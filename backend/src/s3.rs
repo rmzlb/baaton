@@ -144,6 +144,47 @@ pub fn collapse_str(field: &mut String) {
     }
 }
 
+/// Recursively collapse presigned `https://...baaton-uploads...` URLs back to
+/// stable `s3://baaton-uploads/<key>` markers inside an arbitrary JSON value.
+///
+/// WRITE-path counterpart of [`rewrite_json_value`], and the reason inline
+/// `issue.attachments` used to rot: `GET /issues/{id}` hands the client
+/// presigned URLs, the client echoes the whole array back on the next mutation,
+/// and without this call the short-lived URL is persisted and 403s once the
+/// SigV4 window closes. Per AWS guidance we only ever store the object key.
+///
+/// Returns the number of URLs collapsed so callers can log it.
+pub fn collapse_json_value(value: &mut serde_json::Value) -> usize {
+    let mut collapsed = 0usize;
+    collapse_json_inner(value, &mut collapsed);
+    collapsed
+}
+
+fn collapse_json_inner(value: &mut serde_json::Value, collapsed: &mut usize) {
+    match value {
+        serde_json::Value::String(s) => {
+            if s.contains("baaton-uploads") {
+                let next = collapse_to_markers(s);
+                if next != *s {
+                    *collapsed += 1;
+                    *s = next;
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                collapse_json_inner(v, collapsed);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (_k, v) in map.iter_mut() {
+                collapse_json_inner(v, collapsed);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Rewrite all `s3://baaton-uploads/<key>` occurrences in `markdown` to
 /// presigned HTTPS URLs. Non-S3 URLs are left untouched.
 ///
@@ -235,4 +276,57 @@ fn rewrite_json_inner<'a>(
             _ => {}
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The regression that made attachments look "removed": a presigned URL
+    /// round-tripped through the client must collapse back to a stable marker.
+    #[test]
+    fn collapses_presigned_attachment_urls() {
+        let mut atts = json!([
+            {
+                "url": "https://baaton-uploads.s3.eu-west-3.amazonaws.com/org_1/abc.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=604800",
+                "name": "shot.webp",
+                "size": 25518,
+                "mime_type": "image/webp"
+            }
+        ]);
+
+        assert_eq!(collapse_json_value(&mut atts), 1);
+        assert_eq!(atts[0]["url"], "s3://baaton-uploads/org_1/abc.webp");
+        // Sibling metadata must survive untouched.
+        assert_eq!(atts[0]["name"], "shot.webp");
+        assert_eq!(atts[0]["size"], 25518);
+    }
+
+    /// Idempotent + non-destructive: markers, inline data URIs and foreign
+    /// https URLs (legacy Airtable imports) must be left alone.
+    #[test]
+    fn leaves_markers_data_uris_and_foreign_urls_alone() {
+        let mut atts = json!([
+            {"url": "s3://baaton-uploads/org_1/abc.webp", "name": "a"},
+            {"url": "data:image/webp;base64,AAAA", "name": "b"},
+            {"url": "https://v5.airtableusercontent.com/v3/u/50/x.png", "name": "c"},
+        ]);
+        let before = atts.clone();
+
+        assert_eq!(collapse_json_value(&mut atts), 0);
+        assert_eq!(atts, before);
+    }
+
+    #[test]
+    fn collapses_path_style_and_regionless_urls() {
+        let mut atts = json!([
+            {"url": "https://s3.eu-west-3.amazonaws.com/baaton-uploads/org_1/p.png?X-Amz-Signature=deadbeef"},
+            {"url": "https://baaton-uploads.s3.amazonaws.com/org_2/q.pdf?X-Amz-Signature=deadbeef"},
+        ]);
+
+        assert_eq!(collapse_json_value(&mut atts), 2);
+        assert_eq!(atts[0]["url"], "s3://baaton-uploads/org_1/p.png");
+        assert_eq!(atts[1]["url"], "s3://baaton-uploads/org_2/q.pdf");
+    }
 }
