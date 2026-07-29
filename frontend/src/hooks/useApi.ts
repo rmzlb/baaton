@@ -314,10 +314,15 @@ export function useApi() {
           return api.get<IssueDetail>(`/issues/${id}`, token);
         }),
 
-      listMine: async (assigneeId: string): Promise<Issue[]> =>
+      listMine: async (
+        assigneeId: string,
+        params?: { excludeDone?: boolean },
+      ): Promise<Issue[]> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
-          return api.get<Issue[]>(`/issues/mine?assignee_id=${encodeURIComponent(assigneeId)}`, token);
+          const query = new URLSearchParams({ assignee_id: assigneeId });
+          if (params?.excludeDone) query.set('exclude_done', 'true');
+          return api.get<Issue[]>(`/issues/mine?${query.toString()}`, token);
         }),
 
       create: async (body: CreateIssueRequest): Promise<Issue> =>

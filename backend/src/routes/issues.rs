@@ -566,7 +566,7 @@ pub async fn list_all(
           AND (i.archived = false OR $8::boolean)
           AND ($9::text IS NULL OR i.created_at > $9::timestamptz)
           AND ($10::text IS NULL OR i.created_at < $10::timestamptz)
-          AND (NOT $12::boolean OR COALESCE(i.status_category, '') <> 'completed')
+          AND (NOT $12::boolean OR COALESCE(i.status_category, '') NOT IN ('completed', 'canceled'))
           {}
         ORDER BY {} {}
         LIMIT $6 OFFSET $7
@@ -761,7 +761,7 @@ pub async fn list_by_project(
           AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE OR $10::boolean)
           AND ($11::text IS NULL OR i.created_at > $11::timestamptz)
           AND ($12::text IS NULL OR i.created_at < $12::timestamptz)
-          AND (NOT $14::boolean OR COALESCE(i.status_category, '') <> 'completed')
+          AND (NOT $14::boolean OR COALESCE(i.status_category, '') NOT IN ('completed', 'canceled'))
           {}
           {}
         ORDER BY {} {}
@@ -826,7 +826,7 @@ pub async fn list_by_project(
               AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE OR $8::boolean)
               AND ($9::text IS NULL OR i.created_at > $9::timestamptz)
               AND ($10::text IS NULL OR i.created_at < $10::timestamptz)
-              AND (NOT $11::boolean OR COALESCE(i.status_category, '') <> 'completed')
+              AND (NOT $11::boolean OR COALESCE(i.status_category, '') NOT IN ('completed', 'canceled'))
             "#,
         )
         .bind(project_id)               // $1
@@ -2336,6 +2336,7 @@ pub async fn update_position(
 #[derive(Debug, Deserialize)]
 pub struct MineParams {
     pub assignee_id: String,
+    pub exclude_done: Option<bool>,
 }
 
 pub async fn list_mine(
@@ -2354,12 +2355,15 @@ pub async fn list_mine(
     // Cross-org: show tasks assigned to user from ALL orgs
     let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
 
+    let exclude_done = params.exclude_done.unwrap_or(false);
+
     let mut issues = sqlx::query_as::<_, Issue>(
         r#"
         SELECT i.*, p.org_id
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE $1 = ANY(i.assignee_ids) AND p.org_id = ANY($2)
+          AND (NOT $3::boolean OR COALESCE(i.status_category, '') NOT IN ('completed', 'canceled'))
         ORDER BY
             CASE i.priority
                 WHEN 'urgent' THEN 0
@@ -2373,6 +2377,7 @@ pub async fn list_mine(
     )
     .bind(&params.assignee_id)
     .bind(&all_org_ids)
+    .bind(exclude_done)
     .fetch_all(&pool)
     .await
     .unwrap_or_else(|e| {
@@ -2622,6 +2627,9 @@ pub struct SearchResult {
     pub title: String,
     pub snippet: Option<String>,
     pub status: String,
+    pub status_category: Option<String>,
+    pub status_label: Option<String>,
+    pub status_color: Option<String>,
     pub priority: Option<String>,
     pub project_id: Uuid,
 }
@@ -2659,6 +2667,9 @@ pub async fn search(
             ts_headline('english', COALESCE(i.description, ''), plainto_tsquery('english', $1),
                 'MaxWords=20, MinWords=5, ShortWord=3, HighlightAll=false') AS snippet,
             i.status,
+            i.status_category,
+            i.status_label,
+            i.status_color,
             i.priority,
             i.project_id
         FROM issues i
@@ -2700,6 +2711,9 @@ pub struct GlobalSearchResult {
     pub title: String,
     pub snippet: Option<String>,
     pub status: String,
+    pub status_category: Option<String>,
+    pub status_label: Option<String>,
+    pub status_color: Option<String>,
     pub priority: Option<String>,
     pub project_id: Uuid,
     pub org_id: String,
@@ -2758,6 +2772,9 @@ pub async fn search_global(
                 LEFT(COALESCE(i.description, ''), 120)
             ) AS snippet,
             i.status,
+            i.status_category,
+            i.status_label,
+            i.status_color,
             i.priority,
             i.project_id,
             p.org_id,

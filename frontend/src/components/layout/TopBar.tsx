@@ -20,6 +20,9 @@ interface SearchResult {
   display_id: string;
   title: string;
   status: string;
+  status_category?: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
+  status_label?: string | null;
+  status_color?: string | null;
   project_id: string;
 }
 
@@ -339,10 +342,16 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                 {filteredIssues.map((issue: SearchResult) => {
                   const project = projectMap[issue.project_id];
                   const issueParam = encodeURIComponent(issue.display_id);
-                  const showDoneParam = issue.status === 'done' ? '&showDone=1' : '';
+                  const isClosed =
+                    issue.status === 'done' ||
+                    issue.status === 'cancelled' ||
+                    issue.status_category === 'completed' ||
+                    issue.status_category === 'canceled';
+                  const showDoneParam = isClosed ? '&showDone=1' : '';
                   const target = project
                     ? `/projects/${project.slug}?issue=${issueParam}${showDoneParam}`
                     : `/all-issues?issue=${issueParam}${showDoneParam}`;
+                  const statusLabel = issue.status_label || issue.status.replace('_', ' ');
                   return (
                     <PaletteItem
                       key={issue.id}
@@ -353,14 +362,16 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                           <span className="font-mono text-[10px] text-secondary">{issue.display_id}</span>
                           <span className={cn(
                             'rounded-full px-1.5 py-0.5 text-[9px] font-medium',
-                            issue.status === 'done' ? 'bg-green-500/15 text-green-400' :
+                            issue.status_category === 'completed' || issue.status === 'done' ? 'bg-green-500/15 text-green-400' :
+                            issue.status_category === 'canceled' || issue.status === 'cancelled' ? 'bg-red-500/15 text-red-400' :
                             issue.status === 'in_progress' ? 'bg-amber-500/15 text-amber-400' :
                             issue.status === 'in_review' ? 'bg-violet-500/15 text-violet-400' :
                             issue.status === 'todo' ? 'bg-blue-500/15 text-blue-400' :
-                            issue.status === 'cancelled' ? 'bg-red-500/15 text-red-400' :
                             'bg-surface-hover text-muted'
-                          )}>
-                            {issue.status.replace('_', ' ')}
+                          )}
+                          style={issue.status_color ? { color: issue.status_color } : undefined}
+                          >
+                            {statusLabel}
                           </span>
                           {project && (
                             <span className="text-[10px] text-muted">· {project.name}</span>

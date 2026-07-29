@@ -663,7 +663,7 @@ pub async fn board_by_slug(
             WHERE project_id = $1
               AND (archived = false OR $2::boolean)
               AND (snoozed_until IS NULL OR snoozed_until <= CURRENT_DATE OR $3::boolean)
-              AND (NOT $4::boolean OR COALESCE(status_category, '') <> 'completed')
+              AND (NOT $4::boolean OR COALESCE(status_category, '') NOT IN ('completed', 'canceled'))
             ORDER BY rank ASC NULLS LAST, position ASC, id ASC
             "#
         )

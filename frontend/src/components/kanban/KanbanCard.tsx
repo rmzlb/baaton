@@ -43,8 +43,8 @@ function shortName(raw: string): string {
 }
 
 const CORE_STATUS_LABELS: Record<string, string> = {
-  backlog: 'Backlog', todo: 'Todo', in_progress: 'In Progress',
-  in_review: 'In Review', done: 'Done', cancelled: 'Cancelled',
+  todo: 'Draft', backlog: 'Backlog', in_progress: 'In Progress',
+  in_review: 'Not OK', done: 'Done', cancelled: 'Canceled',
 };
 
 /** Cross-project boards map a custom status onto its canonical category column

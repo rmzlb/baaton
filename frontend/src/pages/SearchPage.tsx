@@ -11,6 +11,9 @@ interface GlobalSearchResult {
   title: string;
   snippet: string | null;
   status: string;
+  status_category?: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
+  status_label?: string | null;
+  status_color?: string | null;
   priority: string;
   project_id: string;
   org_id: string;
@@ -157,10 +160,17 @@ export default function SearchPage() {
                   {projectName}
                 </h3>
                 <div className="space-y-1">
-                  {items.map(item => (
+                  {items.map(item => {
+                    const isClosed =
+                      item.status === 'done' ||
+                      item.status === 'cancelled' ||
+                      item.status_category === 'completed' ||
+                      item.status_category === 'canceled';
+                    const target = `/all-issues?issue=${encodeURIComponent(item.display_id)}${isClosed ? '&showDone=1' : ''}`;
+                    return (
                     <Link
                       key={item.id}
-                      to={`/all-issues?issue=${item.display_id}`}
+                      to={target}
                       className="flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover transition-colors group"
                     >
                       <CircleDot
@@ -171,6 +181,7 @@ export default function SearchPage() {
                           item.status === 'in_review' ? 'text-purple-400' :
                           'text-gray-400'
                         }`}
+                        style={item.status_color ? { color: item.status_color } : undefined}
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -190,7 +201,8 @@ export default function SearchPage() {
                         {item.priority}
                       </span>
                     </Link>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );

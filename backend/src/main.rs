@@ -154,6 +154,10 @@ async fn main() -> anyhow::Result<()> {
             65,
             include_str!("../migrations/065_repair_attachment_urls.sql"),
         ),
+        (
+            66,
+            include_str!("../migrations/066_normalize_workflow_statuses.sql"),
+        ),
     ];
 
     for &(version, sql) in migrations {

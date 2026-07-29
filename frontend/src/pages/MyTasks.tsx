@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useUser } from '@clerk/clerk-react';
 import {
   CheckSquare, Bug, Sparkles, Zap, HelpCircle,
   ArrowUp, ArrowDown, Minus, OctagonAlert,
-  ChevronDown, ChevronRight, Inbox,
+  ChevronDown, ChevronRight, Inbox, CheckCircle2,
 } from 'lucide-react';
 import { IssueDrawer } from '@/components/issues/IssueDrawer';
 import { useApi } from '@/hooks/useApi';
@@ -109,7 +109,7 @@ const FOCUS_SECTIONS: FocusSection[] = [
   {
     key: 'todo',
     icon: '📋',
-    label: 'Todo',
+    label: 'Draft',
     filter: (i) => catOf(i) === 'unstarted',
   },
   {
@@ -174,8 +174,13 @@ export function MyTasks() {
   const closeDetail = useIssuesStore((s) => s.closeDetail);
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
-  const [, setSearchParams] = useSearchParams();
-  const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
+  const [searchParams, setSearchParams] = useSearchParams();
+  const issueParam = searchParams.get('issue');
+  const [showClosed, setShowClosed] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('showDone') === '1' || params.has('issue')) return true;
+    return localStorage.getItem('baaton-show-closed-my-tasks') === 'true';
+  });
 
   const [activeTab, setActiveTab] = useState<Tab>('assigned');
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
@@ -194,17 +199,21 @@ export function MyTasks() {
     localStorage.setItem(MY_TASKS_PROJECT_FILTER_KEY, JSON.stringify(projectFilter));
   }, [projectFilter]);
 
+  useEffect(() => {
+    localStorage.setItem('baaton-show-closed-my-tasks', String(showClosed));
+  }, [showClosed]);
+
   // Fetch my issues (assigned) — cross-org via backend
   const { data: myIssuesRaw = [], isLoading: loadingMine } = useQuery({
-    queryKey: ['my-issues', user?.id],
-    queryFn: () => apiClient.issues.listMine(user!.id),
+    queryKey: ['my-issues', user?.id, { showClosed }],
+    queryFn: () => apiClient.issues.listMine(user!.id, { excludeDone: !showClosed }),
     enabled: !!user?.id,
   });
 
   // Fetch all issues (for created/activity tabs)
   const { data: allIssues = [], isLoading: loadingAll } = useQuery({
-    queryKey: ['all-issues'],
-    queryFn: () => apiClient.issues.listAll({ limit: 2000 }),
+    queryKey: ['all-issues', { showClosed }],
+    queryFn: () => apiClient.issues.listAll({ limit: 2000, excludeDone: !showClosed }),
     enabled: activeTab !== 'assigned',
     staleTime: 60_000,
   });
@@ -310,12 +319,19 @@ export function MyTasks() {
 
   // Deep link
   useEffect(() => {
-    const param = initialIssueParam.current;
-    if (!param || myIssues.length === 0) return;
-    const found = myIssues.find((i) => i.display_id.toLowerCase() === param.toLowerCase());
-    if (found) openDetail(found.id);
-    initialIssueParam.current = null;
-  }, [myIssues, openDetail]);
+    if (!issueParam) return;
+    if (searchParams.get('showDone') === '1' && !showClosed) {
+      setShowClosed(true);
+      return;
+    }
+    if (myIssues.length === 0) return;
+    const found = myIssues.find((i) => i.display_id.toLowerCase() === issueParam.toLowerCase());
+    if (found) {
+      openDetail(found.id);
+    } else if (!showClosed) {
+      setShowClosed(true);
+    }
+  }, [issueParam, searchParams, showClosed, myIssues, openDetail]);
 
   useEffect(() => {
     if (isDetailOpen && selectedIssueId) {
@@ -357,6 +373,29 @@ export function MyTasks() {
           </p>
         </div>
         {/* Cross-org project filter */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => {
+              const next = !showClosed;
+              setShowClosed(next);
+              setSearchParams((prev) => {
+                if (next) prev.set('showDone', '1');
+                else prev.delete('showDone');
+                return prev;
+              }, { replace: true });
+            }}
+            className={cn(
+              'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[32px]',
+              showClosed
+                ? 'border-green-500/30 bg-green-500/10 text-green-400'
+                : 'border-border bg-surface text-secondary hover:bg-surface-hover hover:text-primary',
+            )}
+            title={showClosed ? 'Closed loaded' : 'Closed hidden'}
+          >
+            <CheckCircle2 size={14} />
+            <span className="hidden lg:inline">{showClosed ? 'Closed loaded' : 'Closed hidden'}</span>
+          </button>
+        </div>
         {projectGroups.length > 1 && (
           <div className="flex items-center gap-2 shrink-0">
             <FilterSelect

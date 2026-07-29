@@ -29,12 +29,12 @@ import type { Issue, IssueStatus, Project, ProjectStatus } from '@/lib/types';
 
 // Default statuses (used when project statuses aren't loaded yet)
 const DEFAULT_STATUSES: ProjectStatus[] = [
-  { key: 'backlog', label: 'Backlog', color: '#6b7280', hidden: true },
-  { key: 'todo', label: 'Todo', color: '#3b82f6', hidden: false },
+  { key: 'todo', label: 'Draft', color: '#3b82f6', hidden: false },
+  { key: 'backlog', label: 'Backlog', color: '#6b7280', hidden: false },
   { key: 'in_progress', label: 'In Progress', color: '#f59e0b', hidden: false },
-  { key: 'in_review', label: 'In Review', color: '#8b5cf6', hidden: false },
+  { key: 'in_review', label: 'Not OK', color: '#8b5cf6', hidden: false },
   { key: 'done', label: 'Done', color: '#22c55e', hidden: false },
-  { key: 'cancelled', label: 'Cancelled', color: '#ef4444', hidden: true },
+  { key: 'cancelled', label: 'Canceled', color: '#ef4444', hidden: true },
 ];
 
 // Parse a project's statuses field (array, JSON string, or missing) into a list.
@@ -74,9 +74,8 @@ export function ProjectBoard() {
   const [showProjectSettings, setShowProjectSettings] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
-  const [, setSearchParams] = useSearchParams();
-  // Capture the initial deep-link param ONCE at mount, then forget it
-  const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
+  const [searchParams, setSearchParams] = useSearchParams();
+  const issueParam = searchParams.get('issue');
   const [showDone, setShowDone] = useState(() => {
     if (new URLSearchParams(window.location.search).get('showDone') === '1') return true;
     return localStorage.getItem(`baaton-show-done-${slug}`) === 'true';
@@ -122,19 +121,23 @@ export function ProjectBoard() {
     if (issuesList.length > 0) setIssues(issuesList);
   }, [issuesList, setIssues]);
 
-  // ── Deep link: open drawer from ?issue=HLM-18 on initial load ONCE ──
+  // ── Deep link: open drawer from ?issue=HLM-18, including same-route search jumps ──
   useEffect(() => {
-    const param = initialIssueParam.current;
-    if (!param || issuesList.length === 0) return;
+    if (!issueParam) return;
+    if (searchParams.get('showDone') === '1' && !showDone) {
+      setShowDone(true);
+      return;
+    }
+    if (issuesList.length === 0) return;
     const found = issuesList.find(
-      (i) => i.display_id.toLowerCase() === param.toLowerCase(),
+      (i) => i.display_id.toLowerCase() === issueParam.toLowerCase(),
     );
     if (found) {
       openDetail(found.id);
+    } else if (!showDone) {
+      setShowDone(true);
     }
-    // Clear so it never fires again
-    initialIssueParam.current = null;
-  }, [issuesList, openDetail]);
+  }, [issueParam, searchParams, showDone, issuesList, openDetail]);
 
   // When drawer opens: update URL with display_id
   useEffect(() => {
@@ -324,10 +327,10 @@ export function ProjectBoard() {
                 ? 'border-green-500/30 bg-green-500/10 text-green-400'
                 : 'border-border bg-surface text-secondary hover:bg-surface-hover hover:text-primary',
             )}
-            title={showDone ? 'Done loaded' : 'Done hidden'}
+            title={showDone ? 'Closed loaded' : 'Closed hidden'}
           >
             <CheckCircle2 size={14} />
-            <span className="hidden lg:inline">{showDone ? 'Done loaded' : 'Done hidden'}</span>
+            <span className="hidden lg:inline">{showDone ? 'Closed loaded' : 'Closed hidden'}</span>
           </button>
 
           {/* View Toggle */}

@@ -24,6 +24,9 @@ interface SearchResult {
   title: string;
   snippet?: string;
   status: string;
+  status_category?: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
+  status_label?: string | null;
+  status_color?: string | null;
   priority: string;
   project_id: string;
 }
@@ -102,15 +105,23 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     searchResults.map(r => {
       // Find project slug for navigation
       const project = projects.find(p => p.id === r.project_id);
+      const isClosed =
+        r.status === 'done' ||
+        r.status === 'cancelled' ||
+        r.status_category === 'completed' ||
+        r.status_category === 'canceled';
+      const showDoneParam = isClosed ? '&showDone=1' : '';
       return {
         id: `issue-${r.id}`,
         type: 'issue' as const,
         title: `${r.display_id}: ${r.title}`,
-        subtitle: r.snippet ? r.snippet.replace(/<\/?b>/g, '').slice(0, 80) : r.status,
-        icon: <CircleDot size={16} className={STATUS_COLORS[r.status] || 'text-gray-400'} />,
+        subtitle: r.snippet ? r.snippet.replace(/<\/?b>/g, '').slice(0, 80) : (r.status_label || r.status),
+        icon: <CircleDot size={16} className={STATUS_COLORS[r.status] || 'text-gray-400'} style={r.status_color ? { color: r.status_color } : undefined} />,
         action: () => {
           if (project) {
-            navigate(`/projects/${project.slug}?issue=${r.display_id}`);
+            navigate(`/projects/${project.slug}?issue=${encodeURIComponent(r.display_id)}${showDoneParam}`);
+          } else {
+            navigate(`/all-issues?issue=${encodeURIComponent(r.display_id)}${showDoneParam}`);
           }
           onClose();
         },

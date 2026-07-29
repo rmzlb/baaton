@@ -25,12 +25,12 @@ import type { Issue, IssueStatus, ProjectStatus, ProjectTag, SavedView } from '@
 
 // ─── Statuses (global) ───────────────────────
 const STATUSES: ProjectStatus[] = [
-  { key: 'backlog', label: 'Backlog', color: '#6b7280', hidden: true },
-  { key: 'todo', label: 'Todo', color: '#3b82f6', hidden: false },
+  { key: 'todo', label: 'Draft', color: '#3b82f6', hidden: false },
+  { key: 'backlog', label: 'Backlog', color: '#6b7280', hidden: false },
   { key: 'in_progress', label: 'In Progress', color: '#f59e0b', hidden: false },
-  { key: 'in_review', label: 'In Review', color: '#8b5cf6', hidden: false },
+  { key: 'in_review', label: 'Not OK', color: '#8b5cf6', hidden: false },
   { key: 'done', label: 'Done', color: '#22c55e', hidden: false },
-  { key: 'cancelled', label: 'Cancelled', color: '#ef4444', hidden: true },
+  { key: 'cancelled', label: 'Canceled', color: '#ef4444', hidden: true },
 ];
 
 // Global cross-project views only render the 6 canonical statuses. Projects may
@@ -272,7 +272,7 @@ export function AllIssues() {
   const isDetailOpen = useIssuesStore((s) => s.isDetailOpen);
   const selectedIssueId = useIssuesStore((s) => s.selectedIssueId);
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
+  const issueParam = searchParams.get('issue');
   const viewParam = searchParams.get('view');
   const [showDone, setShowDone] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -685,12 +685,19 @@ export function AllIssues() {
 
   // ─── Deep link ─────────────────────────────
   useEffect(() => {
-    const param = initialIssueParam.current;
-    if (!param || allIssuesRaw.length === 0) return;
-    const found = allIssuesRaw.find((i) => i.display_id.toLowerCase() === param.toLowerCase());
-    if (found) openDetail(found.id);
-    initialIssueParam.current = null;
-  }, [allIssuesRaw, openDetail]);
+    if (!issueParam) return;
+    if (searchParams.get('showDone') === '1' && !showDone) {
+      setShowDone(true);
+      return;
+    }
+    if (allIssuesRaw.length === 0) return;
+    const found = allIssuesRaw.find((i) => i.display_id.toLowerCase() === issueParam.toLowerCase());
+    if (found) {
+      openDetail(found.id);
+    } else if (!showDone) {
+      setShowDone(true);
+    }
+  }, [issueParam, searchParams, showDone, allIssuesRaw, openDetail]);
 
   useEffect(() => {
     if (isDetailOpen && selectedIssueId) {
@@ -773,10 +780,10 @@ export function AllIssues() {
                 ? 'border-green-500/30 bg-green-500/10 text-green-400'
                 : 'border-border bg-surface text-secondary hover:bg-surface-hover hover:text-primary',
             )}
-            title={showDone ? 'Done loaded' : 'Done hidden'}
+            title={showDone ? 'Closed loaded' : 'Closed hidden'}
           >
             <CheckCircle2 size={14} />
-            <span className="hidden lg:inline">{showDone ? 'Done loaded' : 'Done hidden'}</span>
+            <span className="hidden lg:inline">{showDone ? 'Closed loaded' : 'Closed hidden'}</span>
           </button>
           <div className="flex items-center rounded-md border border-border bg-surface p-0.5">
             <button
@@ -1120,7 +1127,7 @@ export function AllIssues() {
       {isDetailOpen && selectedIssueId && (
         <IssueDrawer
           issueId={selectedIssueId}
-          statuses={STATUSES}
+          statuses={dynamicStatuses}
           projectId={selectedIssue?.project_id}
           onClose={handleCloseDetail}
         />
