@@ -21,7 +21,7 @@ import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2, Settings, Star, GitFork, Circle, RefreshCw, ExternalLink, X, Download, Upload, Brain } from 'lucide-react';
+import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2, Settings, Star, GitFork, Circle, CheckCircle2, RefreshCw, ExternalLink, X, Download, Upload, Brain } from 'lucide-react';
 const Github = GitFork;
 import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { cn } from '@/lib/utils';
@@ -337,7 +337,7 @@ export function ProjectBoard() {
             )}
             title={showDone ? 'Done loaded' : 'Done hidden'}
           >
-            <CheckCircle size={14} />
+            <CheckCircle2 size={14} />
             <span className="hidden lg:inline">{showDone ? 'Done loaded' : 'Done hidden'}</span>
           </button>
 

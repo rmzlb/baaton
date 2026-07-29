@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  Trash2, Copy, ExternalLink,
+  Trash2, Copy, ExternalLink, CheckCircle2,
   ArrowUp, ArrowDown, Minus, OctagonAlert,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -107,6 +107,10 @@ export function IssueContextMenu({
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const [showPriority, setShowPriority] = useState(false);
+  const doneStatus = statuses.find((s) => s.key === 'done')
+    ?? statuses.find((s) => s.category === 'completed')
+    ?? { key: 'done', label: 'Done', color: STATUS_COLORS.done, hidden: false };
+  const canMarkDone = issue.status !== doneStatus.key;
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -162,6 +166,20 @@ export function IssueContextMenu({
       </button>
 
       <div className="border-t border-border my-0.5" />
+
+      {canMarkDone && (
+        <>
+          <button
+            onClick={() => { onStatusChange(issue.id, doneStatus.key as IssueStatus); onClose(); }}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+          >
+            <CheckCircle2 size={12} />
+            Mark as done
+          </button>
+
+          <div className="border-t border-border my-0.5" />
+        </>
+      )}
 
       {/* ── Statuses — flat, directly clickable ── */}
       <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted font-medium">
