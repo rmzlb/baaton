@@ -170,15 +170,16 @@ export function IssueContextMenu({
 
       {canMarkDone && (
         <>
-          <button
-            onClick={() => { onStatusChange(issue.id, doneStatus.key as IssueStatus); onClose(); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-          >
-            <CheckCircle2 size={12} />
-            Mark as done
-          </button>
-
-          <div className="border-t border-border my-0.5" />
+          <div className="px-1 py-0.5">
+            <button
+              onClick={() => { onStatusChange(issue.id, doneStatus.key as IssueStatus); onClose(); }}
+              className="flex w-full items-center gap-2 rounded-md border border-emerald-500/35 bg-emerald-500/15 px-2 py-2 text-sm font-semibold text-emerald-700 shadow-sm shadow-emerald-500/10 transition-colors hover:border-emerald-500/55 hover:bg-emerald-500/25 dark:text-emerald-300"
+            >
+              <CheckCircle2 size={15} className="shrink-0" />
+              Mark as done
+            </button>
+          </div>
+          <div className="border-t border-border my-1" />
         </>
       )}
 
