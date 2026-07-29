@@ -614,6 +614,7 @@ pub async fn update_public_submit_settings(
 pub struct BoardParams {
     pub include_archived: Option<bool>,
     pub include_snoozed: Option<bool>,
+    pub exclude_done: Option<bool>,
 }
 
 /// Composite board endpoint: project + issues + tags in one request
@@ -652,6 +653,7 @@ pub async fn board_by_slug(
 
     let include_archived = params.include_archived.unwrap_or(false);
     let include_snoozed = params.include_snoozed.unwrap_or(false);
+    let exclude_done = params.exclude_done.unwrap_or(false);
 
     // Fetch issues and tags in parallel
     let (issues, tags) = tokio::join!(
@@ -661,12 +663,14 @@ pub async fn board_by_slug(
             WHERE project_id = $1
               AND (archived = false OR $2::boolean)
               AND (snoozed_until IS NULL OR snoozed_until <= CURRENT_DATE OR $3::boolean)
+              AND (NOT $4::boolean OR COALESCE(status_category, '') <> 'completed')
             ORDER BY rank ASC NULLS LAST, position ASC, id ASC
             "#
         )
         .bind(project.id)
         .bind(include_archived)
         .bind(include_snoozed)
+        .bind(exclude_done)
         .fetch_all(&pool),
         sqlx::query_as::<_, crate::models::ProjectTag>(
             "SELECT * FROM project_tags WHERE project_id = $1 ORDER BY name ASC"
@@ -683,6 +687,7 @@ pub async fn board_by_slug(
         slug = %slug,
         issue_count = issues.len(),
         tag_count = tags.len(),
+        exclude_done,
         elapsed_ms = elapsed.as_millis() as u64,
         "board_by_slug"
     );

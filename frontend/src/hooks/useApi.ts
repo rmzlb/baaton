@@ -145,19 +145,31 @@ export function useApi() {
           return project;
         }),
 
-      getBoardBySlug: async (slug: string): Promise<{ project: Project; issues: Issue[]; tags: ProjectTag[] }> =>
+      getBoardBySlug: async (
+        slug: string,
+        params?: { excludeDone?: boolean },
+      ): Promise<{ project: Project; issues: Issue[]; tags: ProjectTag[] }> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
+          const query = new URLSearchParams();
+          if (params?.excludeDone) query.set('exclude_done', 'true');
+          const qs = query.toString();
           try {
             // Fast path: single composite request
-            return await api.get<{ project: Project; issues: Issue[]; tags: ProjectTag[] }>(`/projects/by-slug/${slug}/board`, token);
+            return await api.get<{ project: Project; issues: Issue[]; tags: ProjectTag[] }>(
+              `/projects/by-slug/${slug}/board${qs ? `?${qs}` : ''}`,
+              token,
+            );
           } catch {
             // Fallback: 3 separate requests (for backends not yet updated)
             const projects = await api.get<Project[]>('/projects', token);
             const project = projects.find(p => p.slug === slug);
             if (!project) throw new ApiError(404, 'NOT_FOUND', `Project "${slug}" not found`);
             const [issues, tags] = await Promise.all([
-              api.get<Issue[]>(`/projects/${project.id}/issues`, token),
+              api.get<Issue[]>(
+                `/projects/${project.id}/issues${qs ? `?${qs}` : ''}`,
+                token,
+              ),
               api.get<ProjectTag[]>(`/projects/${project.id}/tags`, token),
             ]);
             return { project, issues, tags };
@@ -246,11 +258,25 @@ export function useApi() {
 
     // ─── Issues ────────────────────────────────
     issues: {
-      listAll: async (params?: { limit?: number }): Promise<Issue[]> =>
+      listAll: async (params?: {
+        status?: string;
+        priority?: string;
+        type?: string;
+        search?: string;
+        limit?: number;
+        excludeDone?: boolean;
+      }): Promise<Issue[]> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
-          const qs = params?.limit ? `?limit=${params.limit}` : '';
-          return api.get<Issue[]>(`/issues${qs}`, token);
+          const query = new URLSearchParams();
+          if (params?.status) query.set('status', params.status);
+          if (params?.priority) query.set('priority', params.priority);
+          if (params?.type) query.set('type', params.type);
+          if (params?.search) query.set('search', params.search);
+          if (params?.limit) query.set('limit', String(params.limit));
+          if (params?.excludeDone) query.set('exclude_done', 'true');
+          const qs = query.toString();
+          return api.get<Issue[]>(`/issues${qs ? `?${qs}` : ''}`, token);
         }),
 
       listByProject: async (
@@ -262,6 +288,7 @@ export function useApi() {
           search?: string;
           limit?: number;
           offset?: number;
+          excludeDone?: boolean;
         },
       ): Promise<Issue[]> =>
         withErrorHandling(async () => {
@@ -273,6 +300,7 @@ export function useApi() {
           if (params?.search) query.set('search', params.search);
           if (params?.limit) query.set('limit', String(params.limit));
           if (params?.offset) query.set('offset', String(params.offset));
+          if (params?.excludeDone) query.set('exclude_done', 'true');
           const qs = query.toString();
           return api.get<Issue[]>(
             `/projects/${projectId}/issues${qs ? `?${qs}` : ''}`,

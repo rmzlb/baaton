@@ -39,8 +39,8 @@ export function Sidebar() {
   });
 
   const { data: allIssues = [] } = useQuery({
-    queryKey: ['all-issues'],
-    queryFn: () => apiClient.issues.listAll({ limit: 2000 }),
+    queryKey: ['sidebar-triage-issues'],
+    queryFn: () => apiClient.issues.listAll({ status: 'backlog', limit: 500 }),
     staleTime: 60_000,
   });
 

@@ -77,6 +77,10 @@ export function ProjectBoard() {
   const [, setSearchParams] = useSearchParams();
   // Capture the initial deep-link param ONCE at mount, then forget it
   const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
+  const [showDone, setShowDone] = useState(() => {
+    if (new URLSearchParams(window.location.search).get('showDone') === '1') return true;
+    return localStorage.getItem(`baaton-show-done-${slug}`) === 'true';
+  });
 
   // View mode with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -88,15 +92,19 @@ export function ProjectBoard() {
     localStorage.setItem(`baaton-view-${slug}`, viewMode);
   }, [viewMode, slug]);
 
+  useEffect(() => {
+    localStorage.setItem(`baaton-show-done-${slug}`, String(showDone));
+  }, [showDone, slug]);
+
   // Single composite query: project + issues + tags in one request
   const boardFetchStart = useRef(0);
   const { data: boardData, isLoading: boardLoading, error: projectError } = useQuery({
-    queryKey: ['project-board', slug, organization?.id],
+    queryKey: ['project-board', slug, organization?.id, { showDone }],
     queryFn: async () => {
       boardFetchStart.current = performance.now();
-      const result = await apiClient.projects.getBoardBySlug(slug!);
+      const result = await apiClient.projects.getBoardBySlug(slug!, { excludeDone: !showDone });
       const elapsed = Math.round(performance.now() - boardFetchStart.current);
-      console.info(`[perf] board loaded: ${result.issues.length} issues in ${elapsed}ms (${slug})`);
+      console.info(`[perf] board loaded: ${result.issues.length} issues in ${elapsed}ms (${slug}, showDone=${showDone})`);
       return result;
     },
     enabled: !!slug && !!organization?.id,
@@ -160,10 +168,11 @@ export function ProjectBoard() {
     onMutate: async ({ id, status, rank, position }) => {
       // Cancel in-flight board query so it can't overwrite our optimistic write.
       await queryClient.cancelQueries({ queryKey: ['project-board', slug, organization?.id] });
-      const previousBoard = queryClient.getQueryData<{ issues: Issue[] }>(['project-board', slug, organization?.id]);
+      const boardKey = ['project-board', slug, organization?.id, { showDone }] as const;
+      const previousBoard = queryClient.getQueryData<{ issues: Issue[] }>(boardKey);
 
       // Optimistically patch the board cache (the display source of truth).
-      queryClient.setQueryData<typeof previousBoard>(['project-board', slug, organization?.id], (old) =>
+      queryClient.setQueryData<typeof previousBoard>(boardKey, (old) =>
         old
           ? {
               ...old,
@@ -182,7 +191,7 @@ export function ProjectBoard() {
     onError: (_err, _vars, context) => {
       // Roll back board cache
       if (context?.previousBoard) {
-        queryClient.setQueryData(['project-board', slug, organization?.id], context.previousBoard);
+        queryClient.setQueryData(['project-board', slug, organization?.id, { showDone }], context.previousBoard);
       }
       // Roll back Zustand store
       if (context?.previousZustand) {
@@ -198,7 +207,7 @@ export function ProjectBoard() {
     onSuccess: (serverIssue) => {
       // Merge the authoritative server row into the board cache + store.
       // No board refetch: keeps the drop instantaneous.
-      queryClient.setQueryData<{ issues: Issue[] }>(['project-board', slug, organization?.id], (old) =>
+      queryClient.setQueryData<{ issues: Issue[] }>(['project-board', slug, organization?.id, { showDone }], (old) =>
         old
           ? { ...old, issues: old.issues.map((i) => (i.id === serverIssue.id ? { ...i, ...serverIssue } : i)) }
           : old,
@@ -253,7 +262,17 @@ export function ProjectBoard() {
       }
     }
     return DEFAULT_STATUSES;
-  })();
+  })().filter((status) => showDone || (status.key !== 'done' && status.category !== 'completed'));
+
+  const toggleDoneVisibility = () => {
+    const next = !showDone;
+    setShowDone(next);
+    setSearchParams((prev) => {
+      if (next) prev.set('showDone', '1');
+      else prev.delete('showDone');
+      return prev;
+    }, { replace: true });
+  };
 
   if (projectLoading || issuesLoading) {
     return (
@@ -307,6 +326,20 @@ export function ProjectBoard() {
           <div className="hidden sm:block">
             <DensityToggle />
           </div>
+
+          <button
+            onClick={toggleDoneVisibility}
+            className={cn(
+              'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[36px]',
+              showDone
+                ? 'border-green-500/30 bg-green-500/10 text-green-400'
+                : 'border-border bg-surface text-secondary hover:bg-surface-hover hover:text-primary',
+            )}
+            title={showDone ? 'Done loaded' : 'Done hidden'}
+          >
+            <CheckCircle size={14} />
+            <span className="hidden lg:inline">{showDone ? 'Done loaded' : 'Done hidden'}</span>
+          </button>
 
           {/* View Toggle */}
           <div data-tour="view-toggle" className="flex items-center rounded-md border border-border bg-surface p-0.5">

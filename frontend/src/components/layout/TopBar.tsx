@@ -13,7 +13,15 @@ import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { NotificationBell } from '@/components/providers/NovuNotificationProvider';
-import type { Issue, Project } from '@/lib/types';
+import type { Project } from '@/lib/types';
+
+interface SearchResult {
+  id: string;
+  display_id: string;
+  title: string;
+  status: string;
+  project_id: string;
+}
 
 export function TopBar() {
   const { t } = useTranslation();
@@ -162,18 +170,14 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     staleTime: 30_000,
   });
 
-  // Fetch issues from all projects for search
-  const { data: allIssues = [] } = useQuery({
-    queryKey: ['all-issues-cmd', projects.map((p) => p.id)],
+  const { data: issueResults = [] } = useQuery({
+    queryKey: ['command-search', search],
     queryFn: async () => {
-      if (projects.length === 0) return [];
-      const results = await Promise.all(
-        projects.map((p) => apiClient.issues.listByProject(p.id)),
-      );
-      return results.flat();
+      if (search.trim().length < 2) return [];
+      return apiClient.get<SearchResult[]>(`/search?q=${encodeURIComponent(search.trim())}&limit=10`);
     },
-    enabled: projects.length > 0,
-    staleTime: 30_000,
+    enabled: search.trim().length >= 2,
+    staleTime: 10_000,
   });
 
   const runAction = useCallback(
@@ -207,19 +211,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   // Filter
   const q = search.toLowerCase();
 
-  // Sort all issues by updated_at descending (recent first)
-  const sortedIssues = [...allIssues].sort(
-    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-  );
-
-  const filteredIssues = q
-    ? allIssues.filter(
-        (i) =>
-          i.title.toLowerCase().includes(q) ||
-          i.display_id.toLowerCase().includes(q) ||
-          i.tags.some((tag) => tag.toLowerCase().includes(q)),
-      ).slice(0, 10)
-    : sortedIssues.slice(0, 6); // show recent issues even without search
+  const filteredIssues = q ? issueResults : [];
 
   const filteredProjects = q
     ? projects.filter(
@@ -344,34 +336,42 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
             {/* Issues */}
             {filteredIssues.length > 0 && (
               <Command.Group heading={<GroupHeading>{q ? t('topbar.issues') : t('topbar.recentIssues')}</GroupHeading>}>
-                {filteredIssues.map((issue: Issue) => (
-                  <PaletteItem
-                    key={issue.id}
-                    icon={<FileText size={14} className="text-secondary" />}
-                    onSelect={() => runAction(`/all-issues?issue=${issue.display_id}`)}
-                    subtitle={
-                      <span className="flex items-center gap-1.5">
-                        <span className="font-mono text-[10px] text-secondary">{issue.display_id}</span>
-                        <span className={cn(
-                          'rounded-full px-1.5 py-0.5 text-[9px] font-medium',
-                          issue.status === 'done' ? 'bg-green-500/15 text-green-400' :
-                          issue.status === 'in_progress' ? 'bg-amber-500/15 text-amber-400' :
-                          issue.status === 'in_review' ? 'bg-violet-500/15 text-violet-400' :
-                          issue.status === 'todo' ? 'bg-blue-500/15 text-blue-400' :
-                          issue.status === 'cancelled' ? 'bg-red-500/15 text-red-400' :
-                          'bg-surface-hover text-muted'
-                        )}>
-                          {issue.status.replace('_', ' ')}
+                {filteredIssues.map((issue: SearchResult) => {
+                  const project = projectMap[issue.project_id];
+                  const issueParam = encodeURIComponent(issue.display_id);
+                  const showDoneParam = issue.status === 'done' ? '&showDone=1' : '';
+                  const target = project
+                    ? `/projects/${project.slug}?issue=${issueParam}${showDoneParam}`
+                    : `/all-issues?issue=${issueParam}${showDoneParam}`;
+                  return (
+                    <PaletteItem
+                      key={issue.id}
+                      icon={<FileText size={14} className="text-secondary" />}
+                      onSelect={() => runAction(target)}
+                      subtitle={
+                        <span className="flex items-center gap-1.5">
+                          <span className="font-mono text-[10px] text-secondary">{issue.display_id}</span>
+                          <span className={cn(
+                            'rounded-full px-1.5 py-0.5 text-[9px] font-medium',
+                            issue.status === 'done' ? 'bg-green-500/15 text-green-400' :
+                            issue.status === 'in_progress' ? 'bg-amber-500/15 text-amber-400' :
+                            issue.status === 'in_review' ? 'bg-violet-500/15 text-violet-400' :
+                            issue.status === 'todo' ? 'bg-blue-500/15 text-blue-400' :
+                            issue.status === 'cancelled' ? 'bg-red-500/15 text-red-400' :
+                            'bg-surface-hover text-muted'
+                          )}>
+                            {issue.status.replace('_', ' ')}
+                          </span>
+                          {project && (
+                            <span className="text-[10px] text-muted">· {project.name}</span>
+                          )}
                         </span>
-                        {projectMap[issue.project_id] && (
-                          <span className="text-[10px] text-muted">· {projectMap[issue.project_id].name}</span>
-                        )}
-                      </span>
-                    }
-                  >
-                    {issue.title}
-                  </PaletteItem>
-                ))}
+                      }
+                    >
+                      {issue.title}
+                    </PaletteItem>
+                  );
+                })}
               </Command.Group>
             )}
           </Command.List>

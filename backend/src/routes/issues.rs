@@ -365,6 +365,8 @@ pub struct ListParams {
     pub offset: Option<i64>,
     pub include_snoozed: Option<bool>,
     pub include_archived: Option<bool>,
+    /// Frontend performance filter: omit completed workflow states from heavy board/list views.
+    pub exclude_done: Option<bool>,
     /// JSON filter: {"priority":{"in":["urgent","high"]},"due_date":{"lt":"2026-04-01"}}
     pub filter: Option<String>,
     /// Order by: "created_at" (default), "updated_at", "priority", "position"
@@ -548,6 +550,7 @@ pub async fn list_all(
     };
 
     let include_archived = params.include_archived.unwrap_or(false);
+    let exclude_done = params.exclude_done.unwrap_or(false);
     let fetch_limit = limit + 1;
 
     let query = format!(
@@ -563,6 +566,7 @@ pub async fn list_all(
           AND (i.archived = false OR $8::boolean)
           AND ($9::text IS NULL OR i.created_at > $9::timestamptz)
           AND ($10::text IS NULL OR i.created_at < $10::timestamptz)
+          AND (NOT $12::boolean OR COALESCE(i.status_category, '') <> 'completed')
           {}
         ORDER BY {} {}
         LIMIT $6 OFFSET $7
@@ -582,6 +586,7 @@ pub async fn list_all(
         .bind(&params.created_after) // $9
         .bind(&params.created_before) // $10
         .bind(&cursor_ts) // $11 — safe parameterized cursor
+        .bind(exclude_done) // $12
         .fetch_all(&pool)
         .await
         .unwrap_or_else(|e| {
@@ -660,6 +665,7 @@ pub async fn list_by_project(
 
     let include_archived = params.include_archived.unwrap_or(false);
     let include_snoozed = params.include_snoozed.unwrap_or(false);
+    let exclude_done = params.exclude_done.unwrap_or(false);
 
     // Determine order column and direction
     let order_col = match params.order_by.as_deref() {
@@ -755,6 +761,7 @@ pub async fn list_by_project(
           AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE OR $10::boolean)
           AND ($11::text IS NULL OR i.created_at > $11::timestamptz)
           AND ($12::text IS NULL OR i.created_at < $12::timestamptz)
+          AND (NOT $14::boolean OR COALESCE(i.status_category, '') <> 'completed')
           {}
           {}
         ORDER BY {} {}
@@ -776,7 +783,8 @@ pub async fn list_by_project(
         .bind(include_snoozed) // $10
         .bind(&params.created_after) // $11
         .bind(&params.created_before) // $12
-        .bind(&cursor_ts); // $13 — safe parameterized cursor
+        .bind(&cursor_ts) // $13 — safe parameterized cursor
+        .bind(exclude_done); // $14
 
     // Bind filter params (starting at $13+)
     // Note: sqlx dynamic binds need to use the same type
@@ -818,6 +826,7 @@ pub async fn list_by_project(
               AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE OR $8::boolean)
               AND ($9::text IS NULL OR i.created_at > $9::timestamptz)
               AND ($10::text IS NULL OR i.created_at < $10::timestamptz)
+              AND (NOT $11::boolean OR COALESCE(i.status_category, '') <> 'completed')
             "#,
         )
         .bind(project_id)               // $1
@@ -830,6 +839,7 @@ pub async fn list_by_project(
         .bind(include_snoozed)           // $8
         .bind(&params.created_after)     // $9
         .bind(&params.created_before)    // $10
+        .bind(exclude_done)              // $11
         .fetch_optional(&pool)
         .await
         .ok()

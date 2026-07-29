@@ -274,6 +274,11 @@ export function AllIssues() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialIssueParam = useRef(new URLSearchParams(window.location.search).get('issue'));
   const viewParam = searchParams.get('view');
+  const [showDone, setShowDone] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('showDone') === '1' || params.has('issue')) return true;
+    return localStorage.getItem('baaton-show-done-all-issues') === 'true';
+  });
 
   // View mode (persisted)
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -283,6 +288,10 @@ export function AllIssues() {
   useEffect(() => {
     localStorage.setItem('baaton-view-all-issues', viewMode);
   }, [viewMode]);
+
+  useEffect(() => {
+    localStorage.setItem('baaton-show-done-all-issues', String(showDone));
+  }, [showDone]);
 
   // Filters
   const [projectFilter, setProjectFilter] = useState<string[]>(() => {
@@ -315,9 +324,9 @@ export function AllIssues() {
   });
 
   const { data: allIssuesRaw = [], isLoading } = useQuery({
-    queryKey: ['all-issues'],
+    queryKey: ['all-issues', { showDone }],
     queryFn: async () => {
-      return await apiClient.issues.listAll({ limit: 2000 });
+      return await apiClient.issues.listAll({ limit: 2000, excludeDone: !showDone });
     },
     staleTime: 60_000,
   });
@@ -496,7 +505,9 @@ export function AllIssues() {
         });
       }
     }
-    if (custom.size === 0) return STATUSES;
+    if (custom.size === 0) {
+      return STATUSES.filter((status) => showDone || status.key !== 'done');
+    }
     const byCanon = new Map<string, ProjectStatus[]>();
     for (const c of custom.values()) {
       const arr = byCanon.get(c.canon) ?? [];
@@ -506,12 +517,13 @@ export function AllIssues() {
     for (const arr of byCanon.values()) arr.sort((a, b) => a.label.localeCompare(b.label));
     const ordered: ProjectStatus[] = [];
     for (const canon of STATUSES) {
+      if (!showDone && canon.key === 'done') continue;
       ordered.push(canon);
       const extras = byCanon.get(canon.key);
       if (extras) ordered.push(...extras);
     }
     return ordered;
-  }, [allIssuesRaw]);
+  }, [allIssuesRaw, showDone]);
 
   // ─── Issue counts per project (for chips) ──
   const issueCountByProject = useMemo(() => {
@@ -622,24 +634,35 @@ export function AllIssues() {
     setSearchQuery('');
   };
 
+  const toggleDoneVisibility = () => {
+    const next = !showDone;
+    setShowDone(next);
+    setSearchParams((prev) => {
+      if (next) prev.set('showDone', '1');
+      else prev.delete('showDone');
+      return prev;
+    }, { replace: true });
+  };
+
   // ─── Drag & drop ───────────────────────────
   const positionMutation = useMutation({
     mutationFn: ({ id, status, rank, position }: { id: string; status: string; rank: string; position?: number }) =>
       apiClient.issues.updatePosition(id, status, rank, position),
     onMutate: async ({ id, status, rank, position }) => {
       await queryClient.cancelQueries({ queryKey: ['all-issues'] });
-      const previous = queryClient.getQueryData<Issue[]>(['all-issues']);
-      queryClient.setQueryData<Issue[]>(['all-issues'], (old) =>
+      const allIssuesKey = ['all-issues', { showDone }] as const;
+      const previous = queryClient.getQueryData<Issue[]>(allIssuesKey);
+      queryClient.setQueryData<Issue[]>(allIssuesKey, (old) =>
         old?.map((i) => (i.id === id ? { ...i, status: status as IssueStatus, rank, ...(position != null ? { position } : {}) } : i)),
       );
       return { previous };
     },
     onError: (_err, _vars, context) => {
-      if (context?.previous) queryClient.setQueryData(['all-issues'], context.previous);
+      if (context?.previous) queryClient.setQueryData(['all-issues', { showDone }], context.previous);
     },
     onSuccess: (serverIssue) => {
       // Merge server row; no board refetch.
-      queryClient.setQueryData<Issue[]>(['all-issues'], (old) =>
+      queryClient.setQueryData<Issue[]>(['all-issues', { showDone }], (old) =>
         old?.map((i) => (i.id === serverIssue.id ? { ...i, ...serverIssue } : i)),
       );
     },
@@ -742,6 +765,19 @@ export function AllIssues() {
           <div className="hidden sm:block">
             <DensityToggle />
           </div>
+          <button
+            onClick={toggleDoneVisibility}
+            className={cn(
+              'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[32px]',
+              showDone
+                ? 'border-green-500/30 bg-green-500/10 text-green-400'
+                : 'border-border bg-surface text-secondary hover:bg-surface-hover hover:text-primary',
+            )}
+            title={showDone ? 'Done loaded' : 'Done hidden'}
+          >
+            <CheckCircle2 size={14} />
+            <span className="hidden lg:inline">{showDone ? 'Done loaded' : 'Done hidden'}</span>
+          </button>
           <div className="flex items-center rounded-md border border-border bg-surface p-0.5">
             <button
               onClick={() => setViewMode('kanban')}

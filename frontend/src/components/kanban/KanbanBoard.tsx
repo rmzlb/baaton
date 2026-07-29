@@ -66,7 +66,7 @@ export function KanbanBoard({ statuses, issues, onMoveIssue, onIssueClick, onCre
   } = useIssueContextMenu(statuses, onIssueClick);
   const { selectedIds, toggle: toggleSelect, selectAll, deselectAll } = useSelection();
   const mutations = useIssueMutations();
-  const [filterTab, setFilterTab] = useState<FilterTab>('all');
+  const [filterTab, setFilterTab] = useState<FilterTab>('active');
   const [sortMode, setSortMode] = useState<SortMode>('created');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSort, setShowSort] = useState(false);

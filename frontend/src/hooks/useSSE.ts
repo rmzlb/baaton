@@ -72,6 +72,14 @@ export function useSSE() {
           if (!existing) return true;
           return new Date(incoming).getTime() >= new Date(existing).getTime();
         };
+        const isDoneIssue = (issue: Issue): boolean =>
+          issue.status === 'done' || issue.status_category === 'completed';
+        const queryShowsDone = (key: readonly unknown[]): boolean => {
+          const options = key.find((part) =>
+            part && typeof part === 'object' && 'showDone' in (part as Record<string, unknown>),
+          ) as { showDone?: boolean } | undefined;
+          return options?.showDone !== false;
+        };
 
         const mergeIssueEverywhere = (incoming: Issue) => {
           // 1. Zustand store (drives optimistic board rendering)
@@ -87,15 +95,24 @@ export function useSSE() {
             const idx = data.issues.findIndex((i) => i.id === incoming.id);
             if (idx === -1) return;
             if (!isNewer(incoming.updated_at, data.issues[idx].updated_at)) return;
+            if (!queryShowsDone(key) && isDoneIssue(incoming)) {
+              queryClient.setQueryData(key, { ...data, issues: data.issues.filter((i) => i.id !== incoming.id) });
+              return;
+            }
             const next = data.issues.slice();
             next[idx] = { ...next[idx], ...incoming };
             queryClient.setQueryData(key, { ...data, issues: next });
           });
 
-          // 3. Flat all-issues cache
-          queryClient.setQueryData<Issue[]>(['all-issues'], (old) =>
-            old?.map((i) => (i.id === incoming.id && isNewer(incoming.updated_at, i.updated_at) ? { ...i, ...incoming } : i)),
-          );
+          // 3. Flat all-issues caches (default filtered + optional show-done variants)
+          queryClient.getQueriesData<Issue[]>({ queryKey: ['all-issues'] }).forEach(([key, data]) => {
+            if (!data) return;
+            queryClient.setQueryData<Issue[]>(key, (old) =>
+              old
+                ?.map((i) => (i.id === incoming.id && isNewer(incoming.updated_at, i.updated_at) ? { ...i, ...incoming } : i))
+                .filter((i) => queryShowsDone(key) || !isDoneIssue(i)),
+            );
+          });
 
           // 4. Touched issue detail
           queryClient.invalidateQueries({ queryKey: ['issue', incoming.id] });
@@ -108,7 +125,9 @@ export function useSSE() {
             if (!data.issues.some((i) => i.id === id)) return;
             queryClient.setQueryData(key, { ...data, issues: data.issues.filter((i) => i.id !== id) });
           });
-          queryClient.setQueryData<Issue[]>(['all-issues'], (old) => old?.filter((i) => i.id !== id));
+          queryClient.getQueriesData<Issue[]>({ queryKey: ['all-issues'] }).forEach(([key]) => {
+            queryClient.setQueryData<Issue[]>(key, (old) => old?.filter((i) => i.id !== id));
+          });
         };
 
         // issue.created: full refetch of lists it may belong to (we don't know

@@ -37,8 +37,8 @@ export function Triage() {
   const [aiError, setAiError] = useState<string | null>(null);
 
   const { data: allIssues = [], isLoading } = useQuery({
-    queryKey: ['all-issues'],
-    queryFn: () => apiClient.issues.listAll({ limit: 2000 }),
+    queryKey: ['triage-issues'],
+    queryFn: () => apiClient.issues.listAll({ status: 'backlog', limit: 500 }),
     staleTime: 30_000,
   });
 
@@ -97,7 +97,7 @@ export function Triage() {
 
   // Optimistic removal: remove triaged issue from cache immediately
   const removeFromCache = useCallback((issueId: string) => {
-    queryClient.setQueryData<Issue[]>(['all-issues'], (old) =>
+    queryClient.setQueryData<Issue[]>(['triage-issues'], (old) =>
       old ? old.filter((i) => i.id !== issueId) : []
     );
     // Auto-select next issue
@@ -114,20 +114,20 @@ export function Triage() {
       apiClient.issues.update(id, body as any),
     onMutate: async ({ id }) => {
       // Cancel any outgoing refetches so they don't overwrite our optimistic update
-      await queryClient.cancelQueries({ queryKey: ['all-issues'] });
+      await queryClient.cancelQueries({ queryKey: ['triage-issues'] });
       // Snapshot the previous value for rollback
-      const previous = queryClient.getQueryData<Issue[]>(['all-issues']);
+      const previous = queryClient.getQueryData<Issue[]>(['triage-issues']);
       return { previous, removedId: id };
     },
     onError: (_err, _vars, context) => {
       // Rollback to the previous state on error
       if (context?.previous) {
-        queryClient.setQueryData(['all-issues'], context.previous);
+        queryClient.setQueryData(['triage-issues'], context.previous);
       }
     },
     onSettled: () => {
       // Always refetch after mutation settles to ensure server state
-      queryClient.invalidateQueries({ queryKey: ['all-issues'] });
+      queryClient.invalidateQueries({ queryKey: ['triage-issues'] });
     },
   });
 

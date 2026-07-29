@@ -66,9 +66,11 @@ export function useIssueMutations() {
   const addNotification = useNotificationStore((s) => s.addNotification);
 
   const findIssueInCache = useCallback((issueId: string): Issue | undefined => {
-    const all = queryClient.getQueryData<Issue[]>(['all-issues']);
-    const foundAll = all?.find((i) => i.id === issueId);
-    if (foundAll) return foundAll;
+    const allIssueLists = queryClient.getQueriesData<Issue[]>({ queryKey: ['all-issues'] });
+    for (const [, list] of allIssueLists) {
+      const found = list?.find((i) => i.id === issueId);
+      if (found) return found;
+    }
 
     const issueLists = queryClient.getQueriesData<Issue[]>({ queryKey: ['issues'] });
     for (const [, list] of issueLists) {
