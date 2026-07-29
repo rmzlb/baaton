@@ -1101,7 +1101,7 @@ export function AllIssues() {
             projectTags={allTags}
           />
         ) : viewMode === 'table' ? (
-          <IssuesTable issues={filteredIssues} />
+          <IssuesTable issues={filteredIssues} statuses={dynamicStatuses} />
         ) : (
           <ListView
             statuses={dynamicStatuses}

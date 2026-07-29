@@ -7,8 +7,9 @@ import {
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useIssuesStore } from '@/stores/issues';
+import { IssueContextMenu, DeleteConfirmModal, useIssueContextMenu } from '@/components/shared/IssueContextMenu';
 import { cn } from '@/lib/utils';
-import type { Issue } from '@/lib/types';
+import type { Issue, ProjectStatus } from '@/lib/types';
 
 /* ── Status config ─── */
 const STATUS_ICON: Record<string, typeof Circle> = {
@@ -44,6 +45,14 @@ const CATEGORY_OF: Record<string, string> = {
   done: 'completed',
   cancelled: 'canceled',
 };
+const TABLE_STATUSES: ProjectStatus[] = [
+  { key: 'backlog', label: 'Backlog', color: '#6b7280', hidden: true },
+  { key: 'todo', label: 'Todo', color: '#3b82f6', hidden: false },
+  { key: 'in_progress', label: 'In Progress', color: '#f59e0b', hidden: false },
+  { key: 'in_review', label: 'In Review', color: '#8b5cf6', hidden: false },
+  { key: 'done', label: 'Done', color: '#22c55e', hidden: false },
+  { key: 'cancelled', label: 'Cancelled', color: '#ef4444', hidden: true },
+];
 
 /* ── Priority config ─── */
 const PRIORITY_ICON: Record<string, typeof ArrowUp> = {
@@ -112,10 +121,11 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 
 interface IssuesTableProps {
   issues: Issue[];
+  statuses?: ProjectStatus[];
   isLoading?: boolean;
 }
 
-export function IssuesTable({ issues, isLoading }: IssuesTableProps) {
+export function IssuesTable({ issues, statuses = TABLE_STATUSES, isLoading }: IssuesTableProps) {
   const { t } = useTranslation();
   const [sortKey, setSortKey] = useState<SortKey>('created_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -127,6 +137,11 @@ export function IssuesTable({ issues, isLoading }: IssuesTableProps) {
   const handleRowClick = useCallback((issueId: string) => {
     openDetail(issueId);
   }, [openDetail]);
+  const {
+    contextMenu, setContextMenu, deleteTarget, setDeleteTarget,
+    handleContextMenu, handleStatusChange, handlePriorityChange,
+    handleDeleteConfirm, handleCopyId, handleOpen,
+  } = useIssueContextMenu(statuses, (issue) => openDetail(issue.id));
 
   /* ── Sorting ── */
   const handleSort = (col: SortKey) => {
@@ -201,6 +216,7 @@ export function IssuesTable({ issues, isLoading }: IssuesTableProps) {
           isSelected ? 'bg-accent/5' : 'hover:bg-surface-hover/50',
         )}
         onClick={() => handleRowClick(issue.id)}
+        onContextMenu={(e) => handleContextMenu(e, issue)}
       >
         {/* ID */}
         <td className="px-3 py-2 w-[90px]">
@@ -362,6 +378,26 @@ export function IssuesTable({ issues, isLoading }: IssuesTableProps) {
             ))}
           </tbody>
         </table>
+      )}
+      {contextMenu && (
+        <IssueContextMenu
+          issue={contextMenu.issue}
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          statuses={statuses}
+          onClose={() => setContextMenu(null)}
+          onStatusChange={handleStatusChange}
+          onPriorityChange={handlePriorityChange}
+          onDelete={(issue) => setDeleteTarget(issue)}
+          onCopyId={handleCopyId}
+          onOpen={handleOpen}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          issue={deleteTarget}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );
