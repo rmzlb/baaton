@@ -3,7 +3,7 @@ import {
   ArrowUp, ArrowDown, Minus, OctagonAlert,
   Circle, Clock, Eye, CheckCircle2, XCircle, Archive,
   Copy, Check, ChevronUp, ChevronDown, ChevronsUpDown,
-  Bug, Sparkles, Zap, HelpCircle,
+  Bug, Sparkles, Zap, HelpCircle, AlertTriangle,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useIssuesStore } from '@/stores/issues';
@@ -16,6 +16,7 @@ const STATUS_ICON: Record<string, typeof Circle> = {
   backlog: Archive,
   todo: Circle,
   in_progress: Clock,
+  not_ok: AlertTriangle,
   in_review: Eye,
   done: CheckCircle2,
   cancelled: XCircle,
@@ -24,6 +25,7 @@ const STATUS_COLOR: Record<string, string> = {
   backlog: 'text-muted',
   todo: 'text-blue-400',
   in_progress: 'text-amber-400',
+  not_ok: 'text-orange-400',
   in_review: 'text-purple-400',
   done: 'text-emerald-400',
   cancelled: 'text-red-400',
@@ -41,6 +43,7 @@ const CATEGORY_OF: Record<string, string> = {
   backlog: 'backlog',
   todo: 'unstarted',
   in_progress: 'started',
+  not_ok: 'started',
   in_review: 'started',
   done: 'completed',
   cancelled: 'canceled',
@@ -49,7 +52,8 @@ const TABLE_STATUSES: ProjectStatus[] = [
   { key: 'todo', label: 'Draft', color: '#3b82f6', hidden: false },
   { key: 'backlog', label: 'Backlog', color: '#6b7280', hidden: false },
   { key: 'in_progress', label: 'In Progress', color: '#f59e0b', hidden: false },
-  { key: 'in_review', label: 'Not OK', color: '#8b5cf6', hidden: false },
+  { key: 'not_ok', label: 'Not OK', color: '#fa6400', hidden: false },
+  { key: 'in_review', label: 'In Review', color: '#8b5cf6', hidden: false },
   { key: 'done', label: 'Done', color: '#22c55e', hidden: false },
   { key: 'cancelled', label: 'Canceled', color: '#ef4444', hidden: true },
 ];
@@ -155,7 +159,7 @@ export function IssuesTable({ issues, statuses = TABLE_STATUSES, isLoading }: Is
 
   const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3, '': 4 };
   const STATUS_ORDER: Record<string, number> = {
-    in_progress: 0, in_review: 1, todo: 2, backlog: 3, done: 4, cancelled: 5,
+    in_progress: 0, not_ok: 1, in_review: 2, todo: 3, backlog: 4, done: 5, cancelled: 6,
   };
 
   const sorted = useMemo(() => {

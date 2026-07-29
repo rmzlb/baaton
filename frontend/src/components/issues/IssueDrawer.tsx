@@ -46,7 +46,8 @@ const STATUS_OPTIONS: { key: IssueStatus; label: string; color: string }[] = [
   { key: 'todo', label: 'Draft', color: '#3b82f6' },
   { key: 'backlog', label: 'Backlog', color: '#6b7280' },
   { key: 'in_progress', label: 'In Progress', color: '#f59e0b' },
-  { key: 'in_review', label: 'Not OK', color: '#8b5cf6' },
+  { key: 'not_ok', label: 'Not OK', color: '#fa6400' },
+  { key: 'in_review', label: 'In Review', color: '#8b5cf6' },
   { key: 'done', label: 'Done', color: '#22c55e' },
   { key: 'cancelled', label: 'Canceled', color: '#ef4444' },
 ];

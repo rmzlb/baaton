@@ -64,7 +64,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     },
                     "status": {
                         "type": "STRING",
-                        "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
+                        "enum": ["backlog", "todo", "in_progress", "not_ok", "in_review", "done", "cancelled"],
                         "description": "Filter by workflow status. Only one value allowed per call. Example: 'in_progress' returns all active work."
                     },
                     "priority": {
@@ -138,7 +138,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     },
                     "status": {
                         "type": "STRING",
-                        "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
+                        "enum": ["backlog", "todo", "in_progress", "not_ok", "in_review", "done", "cancelled"],
                         "description": "Initial workflow status. Defaults to 'backlog' if omitted."
                     },
                     "tags": {
@@ -178,7 +178,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     "issue_id": {"type": "STRING", "description": "UUID or display_id of the issue to update (e.g. 'HLM-42' or full UUID). Required."},
                     "title": {"type": "STRING", "description": "New plain-text title. Omit if not changing."},
                     "description": {"type": "STRING", "description": "New Markdown description. Omit if not changing."},
-                    "status": {"type": "STRING", "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"], "description": "New workflow status. Omit if not changing."},
+                    "status": {"type": "STRING", "enum": ["backlog", "todo", "in_progress", "not_ok", "in_review", "done", "cancelled"], "description": "New workflow status. Omit if not changing."},
                     "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"], "description": "New priority level. Omit if not changing."},
                     "type": {"type": "STRING", "enum": ["bug", "feature", "improvement", "question"], "description": "New issue type. Omit if not changing."},
                     "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "New complete tag set (replaces existing). Omit if not changing."},
@@ -201,7 +201,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                             "type": "OBJECT",
                             "properties": {
                                 "issue_id": {"type": "STRING", "description": "UUID or display_id of the issue (e.g. 'HLM-42'). Required."},
-                                "status": {"type": "STRING", "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"], "description": "New workflow status."},
+                                "status": {"type": "STRING", "enum": ["backlog", "todo", "in_progress", "not_ok", "in_review", "done", "cancelled"], "description": "New workflow status."},
                                 "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"], "description": "New priority level."},
                                 "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "New complete tag set (replaces existing)."},
                                 "category": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "New technical domains (replaces existing)."}
@@ -241,7 +241,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     "description": {"type": "STRING", "description": "New Markdown description (replaces existing entirely). Omit if not changing."},
                     "status": {
                         "type": "STRING",
-                        "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
+                        "enum": ["backlog", "todo", "in_progress", "not_ok", "in_review", "done", "cancelled"],
                         "description": "New workflow status. Omit if not changing."
                     },
                     "priority": {
@@ -284,7 +284,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                                 "issue_id": {"type": "STRING", "description": "UUID or display_id of the issue (e.g. 'HLM-42'). Required."},
                                 "status": {
                                     "type": "STRING",
-                                    "enum": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
+                                    "enum": ["backlog", "todo", "in_progress", "not_ok", "in_review", "done", "cancelled"],
                                     "description": "New workflow status."
                                 },
                                 "priority": {
@@ -661,7 +661,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "type": "OBJECT",
                 "properties": {
                     "project_id": {"type": "STRING", "description": "Optional: Project UUID or prefix to scope."},
-                    "status_filter": {"type": "STRING", "enum": ["open", "all"], "description": "open = backlog/todo/in_progress/in_review (default). all = everything."}
+                    "status_filter": {"type": "STRING", "enum": ["open", "all"], "description": "open = backlog/todo/in_progress/not_ok/in_review (default). all = everything."}
                 }
             }),
         ),
@@ -2206,6 +2206,7 @@ async fn exec_workload_by_assignee(
                     "backlog": statuses.get("backlog").copied().unwrap_or(0),
                     "todo": statuses.get("todo").copied().unwrap_or(0),
                     "in_progress": statuses.get("in_progress").copied().unwrap_or(0),
+                    "not_ok": statuses.get("not_ok").copied().unwrap_or(0),
                     "in_review": statuses.get("in_review").copied().unwrap_or(0),
                     "done": statuses.get("done").copied().unwrap_or(0),
                     "cancelled": statuses.get("cancelled").copied().unwrap_or(0),

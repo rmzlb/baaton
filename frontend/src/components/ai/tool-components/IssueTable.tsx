@@ -1,5 +1,5 @@
 import {
-  Archive, CheckCircle2, Circle, Clock, Eye, XCircle,
+  Archive, AlertTriangle, CheckCircle2, Circle, Clock, Eye, XCircle,
   ArrowDown, ArrowUp, Minus, OctagonAlert,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,7 @@ const STATUS_COLOR: Record<string, string> = {
   backlog: 'text-muted',
   todo: 'text-blue-400',
   in_progress: 'text-amber-400',
+  not_ok: 'text-orange-400',
   in_review: 'text-purple-400',
   done: 'text-emerald-400',
   cancelled: 'text-red-400',
@@ -27,7 +28,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 const STATUS_ICON: Record<string, React.ElementType> = {
   backlog: Archive, todo: Circle, in_progress: Clock,
-  in_review: Eye, done: CheckCircle2, cancelled: XCircle,
+  not_ok: AlertTriangle, in_review: Eye, done: CheckCircle2, cancelled: XCircle,
 };
 
 const PRIORITY_COLOR: Record<string, string> = {

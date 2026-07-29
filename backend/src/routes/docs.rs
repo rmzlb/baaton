@@ -82,7 +82,7 @@ curl -s -X PATCH "$BASE/issues/{id}" -H "Authorization: Bearer $BAATON_API_KEY" 
 
 | Field | Values |
 |-------|--------|
-| status | backlog, todo, in_progress, in_review, done, cancelled |
+| status | backlog, todo, in_progress, not_ok, in_review, done, cancelled |
 | priority | urgent, high, medium, low |
 | issue_type | bug, feature, improvement, question |
 | tests_status | passed, failed, skipped, none |
@@ -171,8 +171,8 @@ Validation errors include `field` and `accepted_values`:
 
 ```json
 {
-  "error": "Invalid status 'open'. Accepted values: backlog, todo, in_progress, in_review, done, cancelled",
-  "accepted_values": ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
+  "error": "Invalid status 'open'. Accepted values: backlog, todo, in_progress, not_ok, in_review, done, cancelled",
+  "accepted_values": ["backlog", "todo", "in_progress", "not_ok", "in_review", "done", "cancelled"],
   "field": "status"
 }
 ```
@@ -313,7 +313,7 @@ Keys are org-scoped — one key accesses all projects in the organization.
 - Include code blocks, links, and structured data in descriptions
 - Use `tldr` for machine-generated summaries (separate from human comments)
 - Status transitions are **permissive**: any status → any status is allowed, but non-standard jumps return `_warnings` with guidance. Use `\"force\": true` to suppress warnings when the agent has confirmed with the user.
-- Natural workflow: backlog → todo → in_progress → in_review → done. Skipping steps (e.g. todo → done) works but warns.
+- Natural workflow: backlog → todo → in_progress → not_ok → in_review → done. Skipping steps (e.g. todo → done) works but warns.
 - Status transitions auto-set `due_date` and add `auto:status:*` tags
 - The `created_by_name` field shows the API key name — name your keys descriptively
 

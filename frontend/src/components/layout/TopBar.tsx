@@ -365,6 +365,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
                             issue.status_category === 'completed' || issue.status === 'done' ? 'bg-green-500/15 text-green-400' :
                             issue.status_category === 'canceled' || issue.status === 'cancelled' ? 'bg-red-500/15 text-red-400' :
                             issue.status === 'in_progress' ? 'bg-amber-500/15 text-amber-400' :
+                            issue.status === 'not_ok' ? 'bg-orange-500/15 text-orange-400' :
                             issue.status === 'in_review' ? 'bg-violet-500/15 text-violet-400' :
                             issue.status === 'todo' ? 'bg-blue-500/15 text-blue-400' :
                             'bg-surface-hover text-muted'

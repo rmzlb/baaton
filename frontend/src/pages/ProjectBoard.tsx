@@ -32,7 +32,8 @@ const DEFAULT_STATUSES: ProjectStatus[] = [
   { key: 'todo', label: 'Draft', color: '#3b82f6', hidden: false },
   { key: 'backlog', label: 'Backlog', color: '#6b7280', hidden: false },
   { key: 'in_progress', label: 'In Progress', color: '#f59e0b', hidden: false },
-  { key: 'in_review', label: 'Not OK', color: '#8b5cf6', hidden: false },
+  { key: 'not_ok', label: 'Not OK', color: '#fa6400', hidden: false },
+  { key: 'in_review', label: 'In Review', color: '#8b5cf6', hidden: false },
   { key: 'done', label: 'Done', color: '#22c55e', hidden: false },
   { key: 'cancelled', label: 'Canceled', color: '#ef4444', hidden: true },
 ];

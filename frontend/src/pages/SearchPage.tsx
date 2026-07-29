@@ -25,6 +25,7 @@ const STATUS_COLORS: Record<string, string> = {
   backlog: 'bg-gray-500/20 text-gray-400',
   todo: 'bg-blue-500/20 text-blue-400',
   in_progress: 'bg-yellow-500/20 text-yellow-400',
+  not_ok: 'bg-orange-500/20 text-orange-400',
   in_review: 'bg-purple-500/20 text-purple-400',
   done: 'bg-green-500/20 text-green-400',
   cancelled: 'bg-red-500/20 text-red-400',
@@ -81,7 +82,7 @@ export default function SearchPage() {
     return acc;
   }, {});
 
-  const statusOptions = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled'];
+  const statusOptions = ['backlog', 'todo', 'in_progress', 'not_ok', 'in_review', 'done', 'cancelled'];
 
   return (
     <div className="p-4 md:p-6">
@@ -178,6 +179,7 @@ export default function SearchPage() {
                         className={`mt-0.5 shrink-0 ${
                           item.status === 'done' ? 'text-green-400' :
                           item.status === 'in_progress' ? 'text-yellow-400' :
+                          item.status === 'not_ok' ? 'text-orange-400' :
                           item.status === 'in_review' ? 'text-purple-400' :
                           'text-gray-400'
                         }`}

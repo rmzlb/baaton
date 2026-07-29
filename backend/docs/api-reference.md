@@ -1142,7 +1142,7 @@ Check: Is your API key valid? Does the header use `Bearer` prefix? Is the key re
 
 ### Invalid Enum Value (400)
 ```json
-{"error": "Invalid status 'open'. Accepted values: backlog, todo, in_progress, in_review, done, cancelled", "accepted_values": ["backlog","todo","in_progress","in_review","done","cancelled"], "field": "status"}
+{"error": "Invalid status 'open'. Accepted values: backlog, todo, in_progress, not_ok, in_review, done, cancelled", "accepted_values": ["backlog","todo","in_progress","in_review","done","cancelled"], "field": "status"}
 ```
 Fix: Use the exact values from `accepted_values`. Statuses are per-project — fetch them via `GET /projects`.
 

@@ -405,7 +405,7 @@ fn priority_rank(priority: Option<&str>) -> i32 {
 }
 
 fn is_active_status(status: &str) -> bool {
-    matches!(normalize(status).as_str(), "in_progress" | "in_review")
+    matches!(normalize(status).as_str(), "in_progress" | "not_ok" | "in_review")
 }
 
 fn is_backlog_status(status: &str) -> bool {
@@ -494,6 +494,10 @@ fn score_issue_for_priority(issue: &PmIssueRow, today: NaiveDate) -> (i32, Strin
         "in_review" => {
             score += 30;
             reasons.push("waiting in review".to_string());
+        }
+        "not_ok" => {
+            score += 28;
+            reasons.push("marked not ok".to_string());
         }
         "in_progress" => {
             score += 25;

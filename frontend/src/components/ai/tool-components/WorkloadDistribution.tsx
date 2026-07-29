@@ -9,6 +9,7 @@ interface AssigneeEntry {
     backlog?: number;
     todo?: number;
     in_progress?: number;
+    not_ok?: number;
     in_review?: number;
     done?: number;
     cancelled?: number;
@@ -28,6 +29,7 @@ const STATUS_SEGMENTS: { key: keyof NonNullable<AssigneeEntry['by_status']>; col
   { key: 'backlog', color: 'bg-zinc-500', label: 'Backlog' },
   { key: 'todo', color: 'bg-blue-400', label: 'Todo' },
   { key: 'in_progress', color: 'bg-amber-400', label: 'In Progress' },
+  { key: 'not_ok', color: 'bg-orange-400', label: 'Not OK' },
   { key: 'in_review', color: 'bg-violet-400', label: 'In Review' },
 ];
 

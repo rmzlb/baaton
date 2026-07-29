@@ -1,4 +1,4 @@
-import { Copy, Archive, Circle, Clock, Eye, CheckCircle2, XCircle } from 'lucide-react';
+import { Copy, Archive, AlertTriangle, Circle, Clock, Eye, CheckCircle2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Candidate {
@@ -19,13 +19,14 @@ interface SimilarIssuesListProps {
 
 const STATUS_ICON: Record<string, React.ElementType> = {
   backlog: Archive, todo: Circle, in_progress: Clock,
-  in_review: Eye, done: CheckCircle2, cancelled: XCircle,
+  not_ok: AlertTriangle, in_review: Eye, done: CheckCircle2, cancelled: XCircle,
 };
 
 const STATUS_COLOR: Record<string, string> = {
   backlog: 'text-muted',
   todo: 'text-blue-400',
   in_progress: 'text-amber-400',
+  not_ok: 'text-orange-400',
   in_review: 'text-purple-400',
   done: 'text-emerald-400',
   cancelled: 'text-red-400',

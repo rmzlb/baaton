@@ -14,7 +14,7 @@ import {
   ChevronDown, X, Search, SlidersHorizontal,
   ArrowUp, ArrowDown, Minus, OctagonAlert,
   Circle, Clock, Eye, CheckCircle2, XCircle, Archive,
-  User, Tag, Bookmark,
+  User, Tag, Bookmark, AlertTriangle,
 } from 'lucide-react';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { FilterSelect } from '@/components/shared/FilterSelect';
@@ -28,7 +28,8 @@ const STATUSES: ProjectStatus[] = [
   { key: 'todo', label: 'Draft', color: '#3b82f6', hidden: false },
   { key: 'backlog', label: 'Backlog', color: '#6b7280', hidden: false },
   { key: 'in_progress', label: 'In Progress', color: '#f59e0b', hidden: false },
-  { key: 'in_review', label: 'Not OK', color: '#8b5cf6', hidden: false },
+  { key: 'not_ok', label: 'Not OK', color: '#fa6400', hidden: false },
+  { key: 'in_review', label: 'In Review', color: '#8b5cf6', hidden: false },
   { key: 'done', label: 'Done', color: '#22c55e', hidden: false },
   { key: 'cancelled', label: 'Canceled', color: '#ef4444', hidden: true },
 ];
@@ -74,6 +75,7 @@ const STATUS_ICONS: Record<string, typeof Circle> = {
   backlog: Archive,
   todo: Circle,
   in_progress: Clock,
+  not_ok: AlertTriangle,
   in_review: Eye,
   done: CheckCircle2,
   cancelled: XCircle,

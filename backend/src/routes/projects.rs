@@ -864,6 +864,7 @@ const CORE_STATUS_KEYS: &[&str] = &[
     "backlog",
     "todo",
     "in_progress",
+    "not_ok",
     "in_review",
     "done",
     "cancelled",
@@ -882,12 +883,13 @@ const VALID_CATEGORIES: &[&str] = &[
 /// and backlog remain reserved for the immutable core anchors.
 const CUSTOM_ALLOWED_CATEGORIES: &[&str] = &["unstarted", "started"];
 
-/// Canonical (immutable) category for the 6 core statuses.
+/// Canonical (immutable) category for the core statuses.
 fn core_category(key: &str) -> Option<&'static str> {
     match key {
         "backlog" => Some("backlog"),
         "todo" => Some("unstarted"),
         "in_progress" => Some("started"),
+        "not_ok" => Some("started"),
         "in_review" => Some("started"),
         "done" => Some("completed"),
         "cancelled" => Some("canceled"),
@@ -921,7 +923,7 @@ fn bad_request(msg: impl Into<String>) -> (StatusCode, Json<serde_json::Value>) 
 /// (label), recolor, hide, reorder, and delete (with issue reassignment).
 ///
 /// Rules:
-///   * The 6 core statuses must all be present; their key + category are immutable.
+///   * The core statuses must all be present; their key + category are immutable.
 ///   * Custom statuses can be added/removed; category must be a valid semantic group.
 ///   * Deleting a custom status reassigns its issues to `reassign[key]` if provided,
 ///     else the status immediately before it in the previous ordering, else the first.

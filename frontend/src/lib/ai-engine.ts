@@ -157,7 +157,7 @@ export function buildProjectContext(projects: Project[], allIssues: Record<strin
       lines.push(`Domains: ${Object.entries(categoryCounts).map(([k, v]) => `${k}=${v}`).join(', ')}`);
     }
 
-    const open = issues.filter((i) => i.status === 'todo' || i.status === 'in_progress' || i.status === 'in_review');
+    const open = issues.filter((i) => i.status === 'todo' || i.status === 'in_progress' || i.status === 'not_ok' || i.status === 'in_review');
     if (open.length > 0) {
       lines.push(`\nOpen issues:`);
       for (const i of open.slice(0, 30)) {

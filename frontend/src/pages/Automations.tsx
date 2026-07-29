@@ -79,7 +79,7 @@ const ACTION_META: Record<ActionType, ActionMeta> = {
   run_agent:    { Icon: Bot,           color: 'text-accent',      bg: 'bg-accent/10',      border: 'border-accent/20' },
 };
 
-const STATUS_OPTIONS: string[] = ['backlog', 'todo', 'in_progress', 'in_review', 'done'];
+const STATUS_OPTIONS: string[] = ['backlog', 'todo', 'in_progress', 'not_ok', 'in_review', 'done'];
 const PRIORITY_OPTIONS: string[] = ['none', 'low', 'medium', 'high', 'urgent'];
 
 // ─── Templates ───────────────────────────────────────────────────────────────

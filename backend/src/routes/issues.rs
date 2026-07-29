@@ -243,8 +243,9 @@ fn natural_transitions(status: &str) -> &[&str] {
     match status {
         "backlog" => &["todo", "in_progress", "cancelled"],
         "todo" => &["in_progress", "backlog", "cancelled"],
-        "in_progress" => &["in_review", "done", "todo", "cancelled"],
-        "in_review" => &["done", "in_progress", "cancelled"],
+        "in_progress" => &["not_ok", "in_review", "done", "todo", "cancelled"],
+        "not_ok" => &["in_progress", "in_review", "done", "cancelled"],
+        "in_review" => &["done", "not_ok", "in_progress", "cancelled"],
         "done" => &["backlog", "todo"],      // reopening allowed
         "cancelled" => &["backlog", "todo"], // recovery allowed
         _ => &[],                            // custom status — anything goes
@@ -256,8 +257,10 @@ fn skipped_steps(from: &str, to: &str) -> Vec<&'static str> {
     match (from, to) {
         ("backlog", "done") => vec!["todo", "in_progress", "in_review"],
         ("backlog", "in_review") => vec!["todo", "in_progress"],
+        ("backlog", "not_ok") => vec!["todo", "in_progress"],
         ("todo", "done") => vec!["in_progress", "in_review"],
         ("todo", "in_review") => vec!["in_progress"],
+        ("todo", "not_ok") => vec!["in_progress"],
         ("in_progress", "done") => vec![], // natural (can skip review)
         _ => vec![],
     }

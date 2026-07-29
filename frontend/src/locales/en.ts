@@ -999,7 +999,7 @@ As a [user], I want to [action] so that [benefit].
   'docs.integrations.skill.featuresTitle': 'What your agent gets',
   'docs.integrations.skill.feat1': 'Issue CRUD — create, list, update, close issues via API',
   'docs.integrations.skill.feat2': 'TLDR summaries — post work summaries with files changed and test status',
-  'docs.integrations.skill.feat3': 'Status workflow — move issues through backlog → todo → in_progress → in_review → done',
+  'docs.integrations.skill.feat3': 'Status workflow — move issues through backlog → todo → in_progress → not_ok → in_review → done',
   'docs.integrations.skill.feat4': 'Webhooks — subscribe to real-time events (issue.created, status.changed, etc.)',
   'docs.integrations.skill.feat5': 'Metrics — dashboard data (issues per day, resolution time, breakdowns)',
   'docs.integrations.skill.feat6': 'Helper script — baaton-api.sh wraps curl with auth, error handling, and pretty-print',

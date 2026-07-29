@@ -56,7 +56,7 @@ export const TOOL_SCHEMAS: Record<string, { description: string; inputSchema: z.
     inputSchema: z.object({
       query: z.string().optional().describe('Free-text search string matched against issue title and description. Leave empty to list all issues with only filter-based criteria. Example: "auth token refresh" or "onboarding bug".'),
       project_id: z.string().optional().describe('UUID of the project to search within. Omit to search across all projects the user has access to.'),
-      status: z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional().describe('Filter to issues in a specific workflow status. Omit to include all statuses.'),
+      status: z.enum(['backlog', 'todo', 'in_progress', 'not_ok', 'in_review', 'done', 'cancelled']).optional().describe('Filter to issues in a specific workflow status. Omit to include all statuses.'),
       priority: z.enum(['urgent', 'high', 'medium', 'low']).optional().describe('Filter to issues of a specific priority level. Omit to include all priorities.'),
       category: z.enum(['FRONT', 'BACK', 'API', 'DB', 'INFRA', 'UX', 'DEVOPS']).optional().describe('Filter to issues tagged with a specific technical domain. Omit to include all categories.'),
       limit: z.number().optional().describe('Maximum number of results to return. Defaults to 20. Increase up to 100 for broader scans; decrease to 5 for quick lookups.'),
@@ -72,7 +72,7 @@ export const TOOL_SCHEMAS: Record<string, { description: string; inputSchema: z.
       description: z.string().optional().describe('Detailed issue description in Markdown format. Include: reproduction steps for bugs, acceptance criteria for features, technical context, and any relevant links. Leave empty only if no additional context exists.'),
       type: z.enum(['bug', 'feature', 'improvement', 'question']).optional().describe('Issue classification. Infer from context when not explicitly stated.'),
       priority: z.enum(['urgent', 'high', 'medium', 'low']).optional().describe('Urgency level. Infer from language cues like "critical", "blocking", "when possible".'),
-      status: z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional().describe('Initial workflow status. Default to backlog unless the user explicitly says the work has started (→ in_progress) or is already queued (→ todo).'),
+      status: z.enum(['backlog', 'todo', 'in_progress', 'not_ok', 'in_review', 'done', 'cancelled']).optional().describe('Initial workflow status. Default to backlog unless the user explicitly says the work has started (→ in_progress) or is already queued (→ todo).'),
       tags: z.array(z.string()).optional().describe('Free-form labels to aid filtering and grouping. Examples: ["auth", "mobile", "regression"]. Use lowercase, hyphenated strings.'),
       category: z.array(z.string()).optional().describe('Technical domain(s) the issue belongs to. Valid values: FRONT (React/UI), BACK (server logic), API (REST/GraphQL endpoints), DB (database/migrations), INFRA (Docker/CI/CD), UX (design/accessibility), DEVOPS (deployment/monitoring). Auto-detect from description keywords; multiple values allowed.'),
     }),
@@ -85,7 +85,7 @@ export const TOOL_SCHEMAS: Record<string, { description: string; inputSchema: z.
       issue_id: z.string().describe('Internal UUID of the issue to update (not the display_id like HLM-42). Resolve via search_issues first if you only have the display_id.'),
       title: z.string().optional().describe('New plain-text title, following the same no-brackets rule as create_issue. Omit if not changing.'),
       description: z.string().optional().describe('New description in Markdown format. Omit if not changing. This replaces the full existing description.'),
-      status: z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional().describe('New workflow status.'),
+      status: z.enum(['backlog', 'todo', 'in_progress', 'not_ok', 'in_review', 'done', 'cancelled']).optional().describe('New workflow status.'),
       priority: z.enum(['urgent', 'high', 'medium', 'low']).optional().describe('New priority level.'),
       type: z.enum(['bug', 'feature', 'improvement', 'question']).optional().describe('New issue classification.'),
       tags: z.array(z.string()).optional().describe('New complete set of tags. This REPLACES existing tags, not appends. Pass the full desired tag list.'),
@@ -99,7 +99,7 @@ export const TOOL_SCHEMAS: Record<string, { description: string; inputSchema: z.
     inputSchema: z.object({
       updates: z.array(z.object({
         issue_id: z.string().describe('Internal UUID of the issue to update.'),
-        status: z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional().describe('New workflow status: backlog, todo, in_progress, in_review, done, cancelled.'),
+        status: z.enum(['backlog', 'todo', 'in_progress', 'not_ok', 'in_review', 'done', 'cancelled']).optional().describe('New workflow status: backlog, todo, in_progress, not_ok, in_review, done, cancelled.'),
         priority: z.enum(['urgent', 'high', 'medium', 'low']).optional().describe('New priority: urgent, high, medium, low.'),
         tags: z.array(z.string()).optional().describe('New complete tag set (replaces existing).'),
         category: z.array(z.string()).optional().describe('New technical domains: FRONT, BACK, API, DB, INFRA, UX, DEVOPS (replaces existing).'),
@@ -136,7 +136,7 @@ export const TOOL_SCHEMAS: Record<string, { description: string; inputSchema: z.
 
   get_project_metrics: {
     description:
-      'Fetch a comprehensive metrics dashboard for one project or all projects. Returns: total issue count, status breakdown (backlog/todo/in_progress/in_review/done/cancelled), priority distribution (urgent/high/medium/low), category split (FRONT/BACK/API/DB/INFRA), completion rate (%), and recent activity (issues created/closed in the last 7 days). Use when the user asks about project health, "show me stats", "how many open bugs", or wants a data overview. Does NOT return individual issue lists — use search_issues for that.',
+      'Fetch a comprehensive metrics dashboard for one project or all projects. Returns: total issue count, status breakdown (backlog/todo/in_progress/not_ok/in_review/done/cancelled), priority distribution (urgent/high/medium/low), category split (FRONT/BACK/API/DB/INFRA), completion rate (%), and recent activity (issues created/closed in the last 7 days). Use when the user asks about project health, "show me stats", "how many open bugs", or wants a data overview. Does NOT return individual issue lists — use search_issues for that.',
     inputSchema: z.object({
       project_id: z.string().optional().describe('UUID of the project to fetch metrics for. Omit to aggregate metrics across all projects the user has access to.'),
     }),

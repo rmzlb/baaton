@@ -12,6 +12,7 @@ const STATUS_COLORS: Record<string, string> = {
   backlog: '#6b7280',
   todo: '#3b82f6',
   in_progress: '#f59e0b',
+  not_ok: '#fa6400',
   in_review: '#8b5cf6',
   done: '#22c55e',
   cancelled: '#ef4444',

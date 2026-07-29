@@ -999,7 +999,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'docs.integrations.skill.featuresTitle': 'Ce que votre agent obtient',
   'docs.integrations.skill.feat1': 'CRUD Issues — créer, lister, modifier, fermer des issues via API',
   'docs.integrations.skill.feat2': 'Résumés TLDR — poster des bilans avec fichiers modifiés et statut des tests',
-  'docs.integrations.skill.feat3': 'Workflow statuts — déplacer les issues : backlog → todo → in_progress → in_review → done',
+  'docs.integrations.skill.feat3': 'Workflow statuts — déplacer les issues : backlog → todo → in_progress → not_ok → in_review → done',
   'docs.integrations.skill.feat4': 'Webhooks — s\'abonner aux événements temps réel (issue.created, status.changed, etc.)',
   'docs.integrations.skill.feat5': 'Métriques — données dashboard (issues/jour, temps résolution, répartitions)',
   'docs.integrations.skill.feat6': 'Script helper — baaton-api.sh avec auth, gestion erreurs et affichage formaté',

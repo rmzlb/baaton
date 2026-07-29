@@ -6,7 +6,7 @@ import {
   Kanban, ArrowRight, Clock, Circle, Eye,
   CheckCircle2, Building2, ChevronRight,
   TrendingUp, Zap, Timer, Flame, Bot, User, Target,
-  LayoutGrid, Table2,
+  LayoutGrid, Table2, AlertTriangle,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
@@ -205,7 +205,8 @@ function ProjectCard({ project, onNavigate }: {
     { key: 'todo', label: 'Draft', icon: Circle, color: 'text-blue-500' },
     { key: 'backlog', label: 'Backlog', icon: Circle, color: 'text-muted' },
     { key: 'in_progress', label: 'In Progress', icon: Clock, color: 'text-amber-500' },
-    { key: 'in_review', label: 'Not OK', icon: Eye, color: 'text-purple-500' },
+    { key: 'not_ok', label: 'Not OK', icon: AlertTriangle, color: 'text-orange-500' },
+    { key: 'in_review', label: 'In Review', icon: Eye, color: 'text-purple-500' },
   ];
 
   return (
@@ -439,7 +440,7 @@ function MiniHeatmap({ cells, label }: { cells: HeatmapCell[]; label: string }) 
 const PROJECT_COLORS = ['bg-amber-500', 'bg-emerald-500', 'bg-blue-500', 'bg-purple-500', 'bg-rose-500', 'bg-cyan-500'];
 const PROJECT_DOT_COLORS = ['text-amber-500', 'text-emerald-500', 'text-blue-500', 'text-purple-500', 'text-rose-500', 'text-cyan-500'];
 const PRIORITY_COLORS: Record<string, string> = { urgent: 'text-red-500', high: 'text-orange-500', medium: 'text-amber-500', low: 'text-blue-400' };
-const STATUS_BG: Record<string, string> = { backlog: 'bg-gray-500/10 text-gray-400', todo: 'bg-blue-500/10 text-blue-400', in_progress: 'bg-amber-500/10 text-amber-400', in_review: 'bg-purple-500/10 text-purple-400' };
+const STATUS_BG: Record<string, string> = { backlog: 'bg-gray-500/10 text-gray-400', todo: 'bg-blue-500/10 text-blue-400', in_progress: 'bg-amber-500/10 text-amber-400', not_ok: 'bg-orange-500/10 text-orange-400', in_review: 'bg-purple-500/10 text-purple-400' };
 
 function GamificationPanel({ data, onIssueClick }: { data: DashboardSummary; onIssueClick: (displayId: string, orgId: string | null) => void }) {
   const { personal: p, org_activity: o, projects_activity: projs, contributors, assigned } = data;
