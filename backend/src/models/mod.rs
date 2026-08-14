@@ -81,6 +81,72 @@ pub struct Milestone {
 
 // ─── Issue ────────────────────────────────────────────
 
+/// Column list for **list** endpoints (board, all-issues, project issues, my
+/// tasks). Deliberately excludes the real `attachments` payload: images are
+/// stored inline as base64 data-URIs on some legacy rows, which made a single
+/// board response reach 45 MB for 232 issues (44 MB of it attachments).
+///
+/// Lists get `attachments = '[]'` plus an `attachment_count`, so cards can show
+/// a paperclip badge. The full array is served by `GET /issues/{id}` when the
+/// drawer opens. Prefix every column with the table alias via `{a}`.
+pub fn issue_list_columns(alias: &str) -> String {
+    const COLS: &[&str] = &[
+        "id",
+        "project_id",
+        "milestone_id",
+        "parent_id",
+        "display_id",
+        "title",
+        "description",
+        "type",
+        "status",
+        "status_category",
+        "status_label",
+        "status_color",
+        "priority",
+        "source",
+        "reporter_name",
+        "reporter_email",
+        "assignee_ids",
+        "tags",
+        "category",
+        "position",
+        "rank",
+        "created_by_id",
+        "created_by_name",
+        "due_date",
+        "qualified_at",
+        "qualified_by",
+        "estimate",
+        "sprint_id",
+        "status_changed_at",
+        "closed_at",
+        "snoozed_until",
+        "archived",
+        "archived_at",
+        "sla_deadline",
+        "sla_breached",
+        "agent_status",
+        "agent_session_id",
+        "created_at",
+        "updated_at",
+    ];
+
+    let mut out = String::with_capacity(COLS.len() * 24 + 128);
+    for col in COLS {
+        out.push_str(alias);
+        out.push('.');
+        out.push_str(col);
+        out.push_str(", ");
+    }
+    // Heavy column replaced by a cheap count.
+    out.push_str("'[]'::jsonb AS attachments, ");
+    out.push_str(&format!(
+        "jsonb_array_length(COALESCE({alias}.attachments, '[]'::jsonb))::bigint AS attachment_count"
+    ));
+    out
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Issue {
@@ -114,6 +180,12 @@ pub struct Issue {
     pub assignee_ids: Vec<String>,
     pub tags: Vec<String>,
     pub attachments: serde_json::Value,
+    /// Number of attachments, always present. List endpoints strip the heavy
+    /// `attachments` payload (base64 data-URIs can be >1 MB each) and expose
+    /// only this count; the full array is served by `GET /issues/{id}`.
+    #[sqlx(default)]
+    #[serde(default)]
+    pub attachment_count: Option<i64>,
     pub category: Vec<String>,
     pub position: f64,
     /// Fractional-indexing rank (ASCII-sortable). Source of truth for board

@@ -50,11 +50,27 @@ fn client_origin(headers: &HeaderMap) -> Option<String> {
 /// (`origin`) when present. Used by every issue.* broadcast for echo suppression.
 fn issue_sse_payload(issue: &Issue, origin: Option<&str>) -> String {
     let mut payload = serde_json::to_value(issue).unwrap_or_default();
-    if let (Some(obj), Some(origin)) = (payload.as_object_mut(), origin) {
+    if let Some(obj) = payload.as_object_mut() {
+        // Never push attachment bodies over SSE: legacy rows store images as
+        // inline base64 data-URIs (>1 MB each), and this payload fans out to
+        // every connected client on every update. Clients merge this into their
+        // list caches, which hold `attachments: []` anyway, and refetch the full
+        // array from `GET /issues/{id}` when the drawer opens.
+        let count = issue.attachments.as_array().map_or(0, |a| a.len());
         obj.insert(
-            "origin".to_string(),
-            serde_json::Value::String(origin.to_string()),
+            "attachments".to_string(),
+            serde_json::Value::Array(Vec::new()),
         );
+        obj.insert(
+            "attachment_count".to_string(),
+            serde_json::Value::from(count),
+        );
+        if let Some(origin) = origin {
+            obj.insert(
+                "origin".to_string(),
+                serde_json::Value::String(origin.to_string()),
+            );
+        }
     }
     serde_json::to_string(&payload).unwrap_or_default()
 }
@@ -139,9 +155,10 @@ pub async fn list_children(
         ));
     }
 
-    let mut children = sqlx::query_as::<_, Issue>(
-        "SELECT * FROM issues WHERE parent_id = $1 ORDER BY created_at ASC",
-    )
+    let mut children = sqlx::query_as::<_, Issue>(&format!(
+        "SELECT {cols} FROM issues i WHERE i.parent_id = $1 ORDER BY i.created_at ASC",
+        cols = crate::models::issue_list_columns("i"),
+    ))
     .bind(parent_id)
     .fetch_all(&pool)
     .await
@@ -558,7 +575,7 @@ pub async fn list_all(
 
     let query = format!(
         r#"
-        SELECT i.*, p.org_id
+        SELECT {cols}, p.org_id
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE p.org_id = ANY($1)
@@ -574,7 +591,10 @@ pub async fn list_all(
         ORDER BY {} {}
         LIMIT $6 OFFSET $7
         "#,
-        cursor_condition, order_col, order_dir,
+        cursor_condition,
+        order_col,
+        order_dir,
+        cols = crate::models::issue_list_columns("i"),
     );
 
     let mut issues = sqlx::query_as::<_, Issue>(&query)
@@ -753,7 +773,7 @@ pub async fn list_by_project(
 
     let query = format!(
         r#"
-        SELECT i.* FROM issues i
+        SELECT {cols} FROM issues i
         WHERE i.project_id = $1
           AND ($2::text IS NULL OR i.status = $2)
           AND ($3::text IS NULL OR i.priority = $3)
@@ -770,7 +790,11 @@ pub async fn list_by_project(
         ORDER BY {} {}
         LIMIT $7 OFFSET $8
         "#,
-        cursor_condition, extra_where, order_col, order_dir,
+        cursor_condition,
+        extra_where,
+        order_col,
+        order_dir,
+        cols = crate::models::issue_list_columns("i"),
     );
 
     let q = sqlx::query_as::<_, Issue>(&query)
@@ -2360,9 +2384,9 @@ pub async fn list_mine(
 
     let exclude_done = params.exclude_done.unwrap_or(false);
 
-    let mut issues = sqlx::query_as::<_, Issue>(
+    let mut issues = sqlx::query_as::<_, Issue>(&format!(
         r#"
-        SELECT i.*, p.org_id
+        SELECT {cols}, p.org_id
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE $1 = ANY(i.assignee_ids) AND p.org_id = ANY($2)
@@ -2377,7 +2401,8 @@ pub async fn list_mine(
             END,
             i.updated_at DESC
         "#,
-    )
+        cols = crate::models::issue_list_columns("i"),
+    ))
     .bind(&params.assignee_id)
     .bind(&all_org_ids)
     .bind(exclude_done)

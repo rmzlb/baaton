@@ -143,6 +143,12 @@ export interface Issue {
   tags: string[];
   category: string[];
   attachments: Attachment[];
+  /**
+   * Number of attachments. List endpoints (board, all-issues, my-tasks,
+   * children) return `attachments: []` + this count to keep payloads small;
+   * the full array only arrives from `GET /issues/:id` when the drawer opens.
+   */
+  attachment_count?: number | null;
   position: number;
   /** Fractional-indexing rank; source of truth for manual board ordering. */
   rank?: string | null;

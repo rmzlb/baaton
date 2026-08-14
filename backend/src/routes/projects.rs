@@ -656,22 +656,25 @@ pub async fn board_by_slug(
     let exclude_done = params.exclude_done.unwrap_or(false);
 
     // Fetch issues and tags in parallel
+    let issues_sql = format!(
+        r#"
+            SELECT {cols} FROM issues i
+            WHERE i.project_id = $1
+              AND (i.archived = false OR $2::boolean)
+              AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE OR $3::boolean)
+              AND (NOT $4::boolean OR COALESCE(i.status_category, '') NOT IN ('completed', 'canceled'))
+            ORDER BY i.rank ASC NULLS LAST, i.position ASC, i.id ASC
+            "#,
+        cols = crate::models::issue_list_columns("i"),
+    );
+
     let (issues, tags) = tokio::join!(
-        sqlx::query_as::<_, crate::models::Issue>(
-            r#"
-            SELECT * FROM issues
-            WHERE project_id = $1
-              AND (archived = false OR $2::boolean)
-              AND (snoozed_until IS NULL OR snoozed_until <= CURRENT_DATE OR $3::boolean)
-              AND (NOT $4::boolean OR COALESCE(status_category, '') NOT IN ('completed', 'canceled'))
-            ORDER BY rank ASC NULLS LAST, position ASC, id ASC
-            "#
-        )
-        .bind(project.id)
-        .bind(include_archived)
-        .bind(include_snoozed)
-        .bind(exclude_done)
-        .fetch_all(&pool),
+        sqlx::query_as::<_, crate::models::Issue>(&issues_sql)
+            .bind(project.id)
+            .bind(include_archived)
+            .bind(include_snoozed)
+            .bind(exclude_done)
+            .fetch_all(&pool),
         sqlx::query_as::<_, crate::models::ProjectTag>(
             "SELECT * FROM project_tags WHERE project_id = $1 ORDER BY name ASC"
         )

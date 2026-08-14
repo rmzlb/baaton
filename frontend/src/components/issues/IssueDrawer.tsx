@@ -425,6 +425,22 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   }, [commentText, commentMutation]);
 
   // ── File upload handler (uses hook) ──
+  // Attachments are written as a whole array, so we must never build that array
+  // from a payload that could be missing entries. List endpoints and SSE events
+  // deliberately return `attachments: []` (see `issue_list_columns` in the API),
+  // so we always re-read the authoritative detail right before writing. Without
+  // this, a stale/light cache entry would silently wipe existing attachments.
+  const readFreshAttachments = useCallback(async (): Promise<Attachment[]> => {
+    try {
+      const fresh = await apiClient.issues.get(issueId);
+      if (Array.isArray(fresh?.attachments)) return fresh.attachments;
+    } catch (err) {
+      console.error('[Upload] Could not re-read attachments before write:', err);
+      throw err;
+    }
+    return [];
+  }, [apiClient, issueId]);
+
   const handleFileUpload = useCallback(async (files: FileList | File[] | null) => {
     if (!files || files.length === 0 || !issue) return;
 
@@ -455,7 +471,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     try {
       const newAttachments = await processFiles(files, existingAttachments);
       if (newAttachments.length > 0) {
-        const allAttachments = [...existingAttachments, ...newAttachments];
+        const allAttachments = [...(await readFreshAttachments()), ...newAttachments];
         await apiClient.issues.update(issueId, { attachments: allAttachments } as any);
         queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
         addNotification({ type: 'success', title: t('upload.success'), message: t('upload.successDesc', { count: newAttachments.length }) });
@@ -464,7 +480,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
       console.error('[Upload] Failed to save attachments:', err);
       addNotification({ type: 'warning', title: t('upload.error'), message: t('upload.errorDesc') });
     }
-  }, [issue, issueId, apiClient, queryClient, processFiles, addNotification, t]);
+  }, [issue, issueId, apiClient, queryClient, processFiles, readFreshAttachments, addNotification, t]);
 
   const handleRetryFile = useCallback(async (fileId: string) => {
     if (!issue) return;
@@ -472,7 +488,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     const result = await retryFile(fileId, existingAttachments);
     if (result) {
       try {
-        const allAttachments = [...existingAttachments, result];
+        const allAttachments = [...(await readFreshAttachments()), result];
         await apiClient.issues.update(issueId, { attachments: allAttachments } as any);
         queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
         addNotification({ type: 'success', title: t('upload.success'), message: t('upload.successDesc', { count: 1 }) });
@@ -480,7 +496,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         addNotification({ type: 'warning', title: t('upload.error'), message: t('upload.errorDesc') });
       }
     }
-  }, [issue, issueId, apiClient, queryClient, retryFile, addNotification, t]);
+  }, [issue, issueId, apiClient, queryClient, retryFile, readFreshAttachments, addNotification, t]);
 
   // ── Paste handler (skip when focused inside NotionEditor) ──
   useEffect(() => {

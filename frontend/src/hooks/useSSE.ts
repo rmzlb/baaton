@@ -82,11 +82,26 @@ export function useSSE() {
         };
 
         const mergeIssueEverywhere = (incoming: Issue) => {
+          // List payloads and SSE events carry `attachments: []` + an
+          // `attachment_count` (the real array is only served by
+          // `GET /issues/:id`). Merging that empty array over a cache entry that
+          // already holds real attachments would make them vanish from the UI —
+          // and worse, a subsequent drawer save would persist the empty list.
+          // Keep whatever the target already has when the event brings nothing.
+          const mergeIssue = (existing: Issue, next: Issue): Issue => {
+            const merged = { ...existing, ...next };
+            const nextHasAttachments = Array.isArray(next.attachments) && next.attachments.length > 0;
+            if (!nextHasAttachments && Array.isArray(existing.attachments) && existing.attachments.length > 0) {
+              merged.attachments = existing.attachments;
+            }
+            return merged;
+          };
+
           // 1. Zustand store (drives optimistic board rendering)
           const store = useIssuesStore.getState();
           const current = store.issues[incoming.id];
           if (!current || isNewer(incoming.updated_at, current.updated_at)) {
-            store.updateIssue(incoming.id, incoming);
+            store.updateIssue(incoming.id, current ? mergeIssue(current, incoming) : incoming);
           }
 
           // 2. Composite project-board caches ({ project, issues, tags })
@@ -100,7 +115,7 @@ export function useSSE() {
               return;
             }
             const next = data.issues.slice();
-            next[idx] = { ...next[idx], ...incoming };
+            next[idx] = mergeIssue(next[idx], incoming);
             queryClient.setQueryData(key, { ...data, issues: next });
           });
 
@@ -109,7 +124,7 @@ export function useSSE() {
             if (!data) return;
             queryClient.setQueryData<Issue[]>(key, (old) =>
               old
-                ?.map((i) => (i.id === incoming.id && isNewer(incoming.updated_at, i.updated_at) ? { ...i, ...incoming } : i))
+                ?.map((i) => (i.id === incoming.id && isNewer(incoming.updated_at, i.updated_at) ? mergeIssue(i, incoming) : i))
                 .filter((i) => queryShowsDone(key) || !isDoneIssue(i)),
             );
           });
