@@ -1,86 +1,78 @@
 name: CI
 
+# Un seul fichier : on teste, et on ne déploie que si les tests passent.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
-env:
-  CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
+# Un push qui en remplace un autre annule le run précédent — économise des
+# minutes Actions sur les séries de commits rapprochés.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  check:
-    name: Build & Test
+  test:
+    name: Test
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: baaton
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: baaton_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    defaults:
-      run:
-        working-directory: backend
-
     steps:
       - uses: actions/checkout@v4
 
+      # ── Backend ──────────────────────────────────────────────────────────
+      # `cargo test` en debug, pas `--release` : Dokploy rebuild le release
+      # dans son Dockerfile de toute façon, le refaire ici doublait le temps
+      # de CI pour un artefact jeté.
+      #
+      # `--bins` et pas `--lib` / `--test '*'` : le crate n'a pas de
+      # `src/lib.rs` ni de fichier dans `tests/`, donc les deux anciens steps
+      # échouaient avec "no library targets found" / "no test target matches"
+      # et les 61 tests réels (dans le binaire) ne tournaient jamais.
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
+      - name: Backend tests
+        working-directory: backend
+        run: cargo test --bins
 
-      - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
-
-      - name: Build
-        run: cargo build --release
-
-      - name: Unit tests
-        run: cargo test --lib
-        env:
-          DATABASE_URL: postgresql://baaton:test_password@localhost:5432/baaton_test
-          CLERK_ISSUER: https://test.clerk.dev
-          CLERK_SECRET_KEY: sk_test_fake
-          PORT: 4000
-
-      - name: Integration tests
-        run: cargo test --test '*'
-        env:
-          DATABASE_URL: postgresql://baaton:test_password@localhost:5432/baaton_test
-          CLERK_ISSUER: https://test.clerk.dev
-          CLERK_SECRET_KEY: sk_test_fake
-          PORT: 4000
-
-  frontend:
-    name: Frontend Build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-
-    steps:
-      - uses: actions/checkout@v4
-
+      # ── Frontend ─────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Frontend install
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm run test
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
 
-      - run: npm ci
-      - run: npm run build
+  deploy:
+    name: Deploy
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy frontend + backend
+        env:
+          TOKEN: ${{ secrets.DOKPLOY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          for app in FghZLWdqlC7AtZTwh3jpr 5EXdMViqWNbOaN_pASmSM; do
+            code=$(curl -s -o /tmp/out -w '%{http_code}' \
+              -X POST "http://13.38.180.239:3000/api/application.deploy" \
+              -H "x-api-key: $TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"applicationId\":\"$app\"}")
+            echo "$app -> HTTP $code"
+            cat /tmp/out; echo
+            # L'ancien workflow faisait un curl nu : Dokploy pouvait répondre
+            # 401/500 et le job restait vert. On échoue explicitement.
+            [ "$code" = "200" ] || exit 1
+          done

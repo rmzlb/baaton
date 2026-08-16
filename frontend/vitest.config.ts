@@ -12,6 +12,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    // `e2e/` contient des specs Playwright : vitest les ramassait et faisait
+    // échouer le run entier alors que les 163 tests unitaires passent.
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
     setupFiles: ['./src/test/setup.ts'],
     css: true,
     coverage: {
