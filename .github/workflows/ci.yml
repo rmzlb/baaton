@@ -6,6 +6,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # Un push qui en remplace un autre annule le run précédent — économise des
 # minutes Actions sur les séries de commits rapprochés.
@@ -64,6 +65,9 @@ jobs:
           TOKEN: ${{ secrets.DOKPLOY_API_TOKEN }}
         run: |
           set -euo pipefail
+          # Diagnostic non sensible : la longueur du secret. Le token Dokploy
+          # fait 64 caracteres ; une valeur differente = secret repo perime.
+          echo "token_len=${#TOKEN}"
           for app in FghZLWdqlC7AtZTwh3jpr 5EXdMViqWNbOaN_pASmSM; do
             code=$(curl -s -o /tmp/out -w '%{http_code}' \
               -X POST "http://13.38.180.239:3000/api/application.deploy" \
