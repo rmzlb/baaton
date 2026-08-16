@@ -39,6 +39,11 @@ import { resolveApiOrigin } from './api-origin';
 let _cachedApiKey: string | null = null;
 const API_URL = resolveApiOrigin();
 
+// Tier agentique. Doit rester aligne sur `backend/src/ai_models.rs::DEFAULT_AGENTIC`.
+// Gemini 3.7 Flash : function calling, 1M input / 65k output, thinking.
+const AGENTIC_MODEL =
+  (import.meta.env.VITE_GEMINI_CHAT_MODEL as string | undefined)?.trim() || 'gemini-3.7-flash';
+
 async function getGeminiApiKey(authToken?: string): Promise<string> {
   if (_cachedApiKey) return _cachedApiKey;
   if (API_URL && authToken) {
@@ -651,6 +656,7 @@ export async function generateAIResponse(
   const apiKey = await getGeminiApiKey(authToken);
   const google = createGoogleGenerativeAI({ apiKey });
 
+
   // ── Build tools with executor bridge ──
   const executor = async (name: string, args: Record<string, unknown>) => {
     state = transition(state, { type: 'SKILL_STARTED', name });
@@ -713,7 +719,9 @@ export async function generateAIResponse(
     // maxSteps = 5 → agentic loop (same as our old 5-round loop)
     // The SDK handles: tool call → execute → feed result → get next response
     const result = await generateText({
-      model: google('gemini-3-flash-preview'),
+      // Tier agentique aligne sur le backend (`backend/src/ai_models.rs`) :
+      // Gemini 3.7 Flash. Surcharge build-time via VITE_GEMINI_CHAT_MODEL.
+      model: google(AGENTIC_MODEL),
       system: systemPrompt,
       messages,
       tools,

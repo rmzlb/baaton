@@ -642,7 +642,7 @@ pub async fn agent_chat(
         }));
 
         let client = reqwest::Client::new();
-        let model = "gemini-2.0-flash";
+        let model = crate::ai_models::agentic();
         let mut total_tokens_in = 0i32;
         let mut total_tokens_out = 0i32;
 

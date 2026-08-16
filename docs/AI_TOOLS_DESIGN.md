@@ -1,6 +1,6 @@
 # AI Tools Design — Baaton Agent Tooling
 
-> 27 tools for the in-app agent (default model `gemini-3-flash-preview`, env `GEMINI_CHAT_MODEL` to override). See [Anthropic tool-writing guidance](https://www.anthropic.com/engineering/writing-tools-for-agents).
+> 27 tools for the in-app agent (default model `gemini-3.7-flash`, centralised in `backend/src/ai_models.rs`, env `GEMINI_CHAT_MODEL` to override). See [Anthropic tool-writing guidance](https://www.anthropic.com/engineering/writing-tools-for-agents).
 
 ## Principles (short)
 

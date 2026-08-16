@@ -19,7 +19,16 @@ Supabase Postgres with RLS; Clerk JWT carries `org_id`. Frontend `@clerk/clerk-r
 Dark-first, Inter + JetBrains Mono, Pixel Tanuki mascot.
 
 ## AI chat (in-app agent)
-Backend route `/api/v1/ai/chat` uses Gemini via `GEMINI_API_KEY`. Default model is **`gemini-3-flash-preview`** (same family as the legacy proxy in `ai.rs`). Override with **`GEMINI_CHAT_MODEL`** (e.g. `gemini-2.5-flash`, `gemini-2.0-flash`) if the preview is unavailable. Token usage is stored in `ai_usage` with `metadata.cached_prompt_tokens` when the API returns `cachedContentTokenCount` (implicit cache).
+Backend routes AI use Gemini via `GEMINI_API_KEY`. Model selection is centralised in **`backend/src/ai_models.rs`** — one edit to bump everything.
+
+| Tier | Default | Env override | Used by |
+|---|---|---|---|
+| Agentic (function calling) | **`gemini-3.7-flash`** | `GEMINI_CHAT_MODEL` | `/ai/chat` (`ai_chat/stream.rs`), `/ai/agent` (`ai_agent.rs`), proxy `ai.rs`, frontend `ai-engine.ts` (`VITE_GEMINI_CHAT_MODEL`) |
+| Utility (single-shot JSON, no tools) | **`gemini-3.5-flash-lite`** | `GEMINI_UTILITY_MODEL` | triage (`triage.rs`) |
+
+Token usage is stored in `ai_usage` with `metadata.cached_prompt_tokens` when the API returns `cachedContentTokenCount` (implicit cache).
+
+When bumping: keep `AGENTIC_MODEL` in `frontend/src/lib/ai-engine.ts` aligned with `ai_models::DEFAULT_AGENTIC`. Verify the id exists first (`GET /v1beta/models`) — Gemini ids are not guessable.
 
 ## Frontend taste — non-negotiables
 *Distilled from `taste-skill` (minimalist + redesign chapters) and our own iterations. Read these before touching any UI in `frontend/`.*

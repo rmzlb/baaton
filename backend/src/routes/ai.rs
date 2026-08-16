@@ -148,7 +148,11 @@ pub async fn chat(
         }
     };
 
-    let model = body.model.as_deref().unwrap_or("gemini-3-flash-preview");
+    let model = body
+        .model
+        .as_deref()
+        .map(|m| m.to_string())
+        .unwrap_or_else(crate::ai_models::agentic);
 
     // Convert messages to Gemini format
     let contents: Vec<GeminiContent> = body
@@ -250,7 +254,7 @@ pub async fn chat(
     .bind(&auth.user_id)
     .bind(tokens_in)
     .bind(tokens_out)
-    .bind(body.model.as_deref().unwrap_or("gemini-3-flash-preview"))
+    .bind(&model)
     .execute(&pool)
     .await;
 

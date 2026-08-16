@@ -133,8 +133,13 @@ Respond ONLY with valid JSON:
     }
 
     let client = reqwest::Client::new();
+    // Tier utilitaire (`crate::ai_models`) : classification JSON courte, pas de tools.
+    let model = crate::ai_models::utility();
     let resp = client
-        .post(format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}", api_key))
+        .post(format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            model, api_key
+        ))
         .json(&serde_json::json!({
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.3, "maxOutputTokens": 500}

@@ -319,9 +319,9 @@ pub fn build_stream(
         yield sse_chunk(&UIMessageChunk::StartStep);
 
         let client = reqwest::Client::new();
-        // Aligné avec `ai.rs` : preview Gemini 3 Flash ; surcharge via GEMINI_CHAT_MODEL (ex. gemini-2.5-flash).
-        let model = std::env::var("GEMINI_CHAT_MODEL")
-            .unwrap_or_else(|_| "gemini-3-flash-preview".to_string());
+        // Modèle agentique centralisé (`crate::ai_models`) : Gemini 3.7 Flash.
+        // Surcharge via GEMINI_CHAT_MODEL pour pin/rollback sans rebuild.
+        let model = crate::ai_models::agentic();
         let mut total_tokens_in: i32 = 0;
         let mut total_tokens_out: i32 = 0;
         let mut total_tokens_cached: i32 = 0;
