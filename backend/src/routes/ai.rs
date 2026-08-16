@@ -45,6 +45,10 @@ pub struct ChatRequest {
     pub system_instruction: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
+    /// Optional caller-supplied `generationConfig`. A caller-provided
+    /// `thinkingConfig` / `thinkingBudget` is preserved as-is.
+    #[serde(default, rename = "generationConfig")]
+    pub generation_config: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -63,6 +67,14 @@ struct GeminiRequest {
     tools: Option<Vec<Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     system_instruction: Option<GeminiContent>,
+    /// Carries `thinkingConfig` for Gemini 3.x. Without an explicit
+    /// `thinkingLevel` the model runs dynamic thinking and bills reasoning
+    /// tokens on trivial turns. See `crate::ai_models`.
+    #[serde(
+        rename = "generationConfig",
+        skip_serializing_if = "Option::is_none"
+    )]
+    generation_config: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -175,10 +187,24 @@ pub async fn chat(
         parts: vec![GeminiPart { text }],
     });
 
+    let mut generation_config = body
+        .generation_config
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({}));
+    crate::ai_models::apply_thinking(
+        &mut generation_config,
+        crate::ai_models::agentic_thinking_config(),
+    );
+    let generation_config = match generation_config.as_object() {
+        Some(o) if !o.is_empty() => Some(generation_config),
+        _ => None,
+    };
+
     let gemini_body = GeminiRequest {
         contents,
         tools: body.tools,
         system_instruction,
+        generation_config,
     };
 
     let url = format!(
@@ -241,9 +267,12 @@ pub async fn chat(
     // ── Record AI usage with token tracking (Marathon-inspired metering) ──
     let (tokens_in, tokens_out) = {
         let usage = gemini_json.pointer("/usageMetadata");
+        // `candidatesTokenCount` exclut le reasoning interne, que Gemini
+        // facture au tarif output — sommer avec `thoughtsTokenCount`.
+        let (billed_out, _thoughts) = crate::ai_models::billed_output_tokens(usage);
         (
             usage.and_then(|u| u.get("promptTokenCount")).and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-            usage.and_then(|u| u.get("candidatesTokenCount")).and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+            billed_out,
         )
     };
 

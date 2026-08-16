@@ -325,6 +325,7 @@ pub fn build_stream(
         let mut total_tokens_in: i32 = 0;
         let mut total_tokens_out: i32 = 0;
         let mut total_tokens_cached: i32 = 0;
+        let mut total_tokens_thoughts: i32 = 0;
 
         'agent_loop: for step in 0..5usize {
             tracing::info!(
@@ -335,16 +336,25 @@ pub fn build_stream(
                 contents_len = contents.len(),
                 "agent loop iteration"
             );
+            let mut generation_config = json!({
+                "temperature": 0.4,
+                "maxOutputTokens": 8000
+            });
+            // Gemini 3.x : sans `thinkingLevel` explicite le modèle part en
+            // dynamic thinking et facture du reasoning même sur des tours
+            // triviaux. Voir `crate::ai_models`.
+            crate::ai_models::apply_thinking(
+                &mut generation_config,
+                crate::ai_models::agentic_thinking_config(),
+            );
+
             let request_body = json!({
                 "contents": contents,
                 "tools": [{ "functionDeclarations": function_declarations }],
                 "systemInstruction": {
                     "parts": [{ "text": system_prompt }]
                 },
-                "generationConfig": {
-                    "temperature": 0.4,
-                    "maxOutputTokens": 8000
-                }
+                "generationConfig": generation_config
             });
 
             let url = format!(
@@ -449,10 +459,13 @@ pub fn build_stream(
                     .get("promptTokenCount")
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0) as i32;
-                total_tokens_out += usage
-                    .get("candidatesTokenCount")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0) as i32;
+                // `candidatesTokenCount` exclut le reasoning interne. Gemini
+                // facture `thoughtsTokenCount` au tarif output, donc le
+                // metering doit sommer les deux sinon on sous-facture.
+                let (billed_out, thoughts) =
+                    crate::ai_models::billed_output_tokens(Some(usage));
+                total_tokens_out += billed_out;
+                total_tokens_thoughts += thoughts;
                 // Implicit/explicit prefix cache (Gemini 2.5+ / doc API). Nom aligné sur la doc Google.
                 let cached = usage
                     .get("cachedContentTokenCount")
@@ -638,6 +651,7 @@ pub fn build_stream(
 
         let meta = json!({
             "cached_prompt_tokens": total_tokens_cached,
+            "thinking_tokens": total_tokens_thoughts,
         });
         tracing::info!(
             target: "baaton.ai.cache",
@@ -645,7 +659,8 @@ pub fn build_stream(
             total_prompt_tokens = total_tokens_in,
             total_output_tokens = total_tokens_out,
             total_cached_prompt_tokens = total_tokens_cached,
-            "ai_chat turn usage (cachedContentTokenCount sum per request steps)"
+            total_thinking_tokens = total_tokens_thoughts,
+            "ai_chat turn usage (tokens_out includes thoughtsTokenCount)"
         );
         let _ = sqlx::query(
             "INSERT INTO ai_usage (org_id, user_id, event_type, tokens_in, tokens_out, model, metadata) VALUES ($1, $2, 'ai_chat', $3, $4, $5, $6)",

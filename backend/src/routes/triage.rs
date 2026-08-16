@@ -140,10 +140,20 @@ Respond ONLY with valid JSON:
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
             model, api_key
         ))
-        .json(&serde_json::json!({
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 500}
-        }))
+        .json(&{
+            let mut generation_config =
+                serde_json::json!({"temperature": 0.3, "maxOutputTokens": 500});
+            // Classification JSON courte : `minimal` est supporté sur
+            // flash-lite et évite de payer du reasoning inutile.
+            crate::ai_models::apply_thinking(
+                &mut generation_config,
+                crate::ai_models::utility_thinking_config(),
+            );
+            serde_json::json!({
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": generation_config
+            })
+        })
         .send()
         .await
         .map_err(|e| e.to_string())?;

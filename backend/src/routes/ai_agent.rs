@@ -649,16 +649,24 @@ pub async fn agent_chat(
         // ── Agent Loop (max 5 iterations) ──────────────────────────────────────
         'agent_loop: for _step in 0..5usize {
 
+            let mut generation_config = json!({
+                "temperature": 0.4,
+                "maxOutputTokens": 8000
+            });
+            // Gemini 3.x : `thinkingLevel` explicite, sinon dynamic thinking
+            // facture du reasoning même sur des tours triviaux.
+            crate::ai_models::apply_thinking(
+                &mut generation_config,
+                crate::ai_models::agentic_thinking_config(),
+            );
+
             let request_body = json!({
                 "contents": contents,
                 "tools": [{"functionDeclarations": function_declarations}],
                 "systemInstruction": {
                     "parts": [{"text": system_prompt}]
                 },
-                "generationConfig": {
-                    "temperature": 0.4,
-                    "maxOutputTokens": 8000
-                }
+                "generationConfig": generation_config
             });
 
             let url = format!(
@@ -696,8 +704,11 @@ pub async fn agent_chat(
             if let Some(usage) = gemini_resp.pointer("/usageMetadata") {
                 total_tokens_in += usage.get("promptTokenCount")
                     .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                total_tokens_out += usage.get("candidatesTokenCount")
-                    .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                // thoughtsTokenCount est facturé au tarif output mais exclu de
+                // candidatesTokenCount — sommer les deux.
+                let (billed_out, _thoughts) =
+                    crate::ai_models::billed_output_tokens(Some(usage));
+                total_tokens_out += billed_out;
             }
 
             // Parse candidate content parts
@@ -858,7 +869,7 @@ pub async fn agent_chat(
         .bind(&user_id)
         .bind(total_tokens_in)
         .bind(total_tokens_out)
-        .bind(model)
+        .bind(&model)
         .execute(&pool)
         .await;
 
