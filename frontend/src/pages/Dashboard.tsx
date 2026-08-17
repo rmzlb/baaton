@@ -560,12 +560,12 @@ function GamificationPanel({ data, onIssueClick }: { data: DashboardSummary; onI
  * Grouped in three readable blocks: incoming load / active / outgoing.
  */
 const TABLE_STATUSES = [
-  { key: 'todo', label: 'Draft', short: 'Draft', icon: PenLine, group: 'load' as const, hint: 'En cours de rédaction — charge à venir' },
-  { key: 'backlog', label: 'Backlog', short: 'Backlog', icon: Layers, group: 'load' as const, hint: 'Charge de travail à planifier' },
-  { key: 'in_progress', label: 'In Progress', short: 'In prog.', icon: Clock, group: 'active' as const, hint: 'Travail en cours' },
-  { key: 'not_ok', label: 'Not OK', short: 'Not OK', icon: AlertTriangle, group: 'active' as const, hint: 'Rejeté / à reprendre — priorité' },
-  { key: 'in_review', label: 'In Review', short: 'Review', icon: Eye, group: 'out' as const, hint: 'En relecture / validation' },
-  { key: 'done', label: 'Done', short: 'Done', icon: CheckCircle2, group: 'out' as const, hint: 'Terminé' },
+  { key: 'todo', label: 'Draft', short: 'Draft', icon: PenLine, group: 'load' as const, hint: 'En cours de rédaction — charge à venir', dot: 'bg-slate-400/60', text: 'text-secondary' },
+  { key: 'backlog', label: 'Backlog', short: 'Backlog', icon: Layers, group: 'load' as const, hint: 'Charge de travail à planifier', dot: 'bg-slate-300', text: 'text-primary' },
+  { key: 'in_progress', label: 'In Progress', short: 'In prog.', icon: Clock, group: 'active' as const, hint: 'Travail en cours', dot: 'bg-amber-500', text: 'text-amber-500' },
+  { key: 'not_ok', label: 'Not OK', short: 'Not OK', icon: AlertTriangle, group: 'active' as const, hint: 'Rejeté / à reprendre — priorité', dot: 'bg-red-500', text: 'text-red-500' },
+  { key: 'in_review', label: 'In Review', short: 'Review', icon: Eye, group: 'out' as const, hint: 'En relecture / validation', dot: 'bg-purple-500', text: 'text-purple-400' },
+  { key: 'done', label: 'Done', short: 'Done', icon: CheckCircle2, group: 'out' as const, hint: 'Terminé', dot: 'bg-emerald-500', text: 'text-emerald-500' },
 ];
 
 const GROUP_META: Record<'load' | 'active' | 'out', { label: string; span: number }> = {
@@ -602,22 +602,15 @@ function StatusCell({ statusKey, value }: { statusKey: string; value: number }) 
 /** Stacked distribution bar — reads the whole project shape in one glance. */
 function DistributionBar({ counts, total }: { counts: Record<string, number>; total: number }) {
   if (total <= 0) return <div className="h-1.5 w-full rounded-full bg-surface-hover" />;
-  const segments = [
-    { key: 'todo', cls: 'bg-slate-400/50' },
-    { key: 'backlog', cls: 'bg-slate-300' },
-    { key: 'in_progress', cls: 'bg-amber-500' },
-    { key: 'not_ok', cls: 'bg-red-500' },
-    { key: 'in_review', cls: 'bg-purple-500' },
-    { key: 'done', cls: 'bg-emerald-500' },
-  ].filter(s => (counts[s.key] || 0) > 0);
+  const segments = TABLE_STATUSES.filter(s => (counts[s.key] || 0) > 0);
   return (
     <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-hover">
       {segments.map(s => (
         <div
           key={s.key}
-          className={s.cls}
+          className={s.dot}
           style={{ width: `${((counts[s.key] || 0) / total) * 100}%` }}
-          title={`${TABLE_STATUSES.find(x => x.key === s.key)?.label ?? s.key}: ${counts[s.key]}`}
+          title={`${s.label}: ${counts[s.key]}`}
         />
       ))}
     </div>
@@ -684,9 +677,98 @@ function ProjectTable({ orgs, onNavigate }: {
       ? <ChevronDown size={9} className="inline ml-0.5 -mt-px" />
       : <ChevronUp size={9} className="inline ml-0.5 -mt-px" />;
 
+  const MOBILE_SORTS: Array<{ key: SortKey; label: string }> = [
+    { key: 'not_ok', label: 'Not OK' },
+    { key: 'backlog', label: 'Backlog' },
+    { key: 'in_progress', label: 'In prog.' },
+    { key: 'total', label: 'Total' },
+    { key: 'name', label: 'A-Z' },
+  ];
+
   return (
     <div className="rounded-xl border border-border bg-surface">
-      <div className="overflow-x-auto">
+      {/* ── Mobile: dense list, no horizontal scroll ── */}
+      <div className="md:hidden">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar border-b border-border px-2 py-2">
+          <span className="shrink-0 pr-1 text-[9px] font-semibold uppercase tracking-wider text-muted">Tri</span>
+          {MOBILE_SORTS.map(o => {
+            const active = sortKey === o.key;
+            return (
+              <button
+                key={o.key}
+                onClick={() => toggleSort(o.key)}
+                className={cn(
+                  'shrink-0 rounded-full px-2 py-1 text-[10px] font-medium transition-colors',
+                  active ? 'bg-surface-hover text-primary' : 'text-muted',
+                )}
+              >
+                {o.label}
+                {active && (sortDesc ? <ChevronDown size={9} className="inline ml-0.5 -mt-px" /> : <ChevronUp size={9} className="inline ml-0.5 -mt-px" />)}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="divide-y divide-border/20">
+          {rows.map(r => {
+            const notOk = r.counts.not_ok || 0;
+            const chips = TABLE_STATUSES.filter(s => (r.counts[s.key] || 0) > 0);
+            return (
+              <button
+                key={r.project.id}
+                onClick={() => onNavigate(r.project, r.org.id)}
+                className={cn(
+                  'block w-full px-3 py-2.5 text-left active:bg-surface-hover/60',
+                  notOk > 0 && 'border-l-2 border-red-500 bg-red-500/[0.03]',
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 rounded bg-surface-hover px-1 py-0.5 font-mono text-[9px] text-muted">{r.project.prefix}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary">{r.project.name}</span>
+                  <span className="shrink-0 text-[10px] tabular-nums text-muted">{r.total} · {r.pct}%</span>
+                </div>
+
+                <div className="mt-1.5"><DistributionBar counts={r.counts} total={r.total} /></div>
+
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                  {chips.length === 0
+                    ? <span className="text-[10px] text-muted/40">Aucun ticket</span>
+                    : chips.map(s => (
+                      <span key={s.key} className="flex items-center gap-1 text-[10px]">
+                        <span className={cn('h-1.5 w-1.5 rounded-full', s.dot)} />
+                        <span className={cn('font-semibold tabular-nums', s.text)}>{r.counts[s.key]}</span>
+                        <span className="text-muted/70">{s.short}</span>
+                      </span>
+                    ))}
+                  {(r.created > 0 || r.closed > 0) && (
+                    <span className="ml-auto flex items-center gap-1 text-[10px] text-muted/70">
+                      30j
+                      <span className={cn('font-semibold', r.ratio >= 1 ? 'text-emerald-500' : 'text-amber-500')}>
+                        {r.ratio >= 1 ? '↑' : '↓'}{r.ratio >= 99 ? '∞' : r.ratio.toFixed(1)}
+                      </span>
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-x-3 gap-y-1 border-t border-border/40 px-3 py-2 text-[10px] text-muted">
+          <span>{rows.length} projets</span>
+          <span className="text-muted/40">·</span>
+          <span className="font-semibold text-primary tabular-nums">{totals.total}</span> tickets
+          {(totals.not_ok || 0) > 0 && (
+            <span className="ml-auto flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              <span className="font-bold text-red-500 tabular-nums">{totals.not_ok}</span> Not OK
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Desktop: full workflow table ── */}
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[860px] text-xs border-separate border-spacing-0">
           <thead>
             {/* Group band */}
@@ -827,7 +909,7 @@ function ProjectTable({ orgs, onNavigate }: {
         </table>
       </div>
       {/* Legend — the icon-only header was unreadable without it */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 px-3 py-2 text-[9px] text-muted">
+      <div className="hidden flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 px-3 py-2 text-[9px] text-muted md:flex">
         <span className="font-semibold uppercase tracking-wider">Workflow</span>
         {TABLE_STATUSES.map((s, i) => (
           <span key={s.key} className="flex items-center gap-1">
