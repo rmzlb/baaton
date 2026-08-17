@@ -7,7 +7,7 @@ import {
   CheckCircle2, Building2, ChevronRight,
   TrendingUp, Zap, Timer, Flame, Bot, User, Target,
   LayoutGrid, Table2, AlertTriangle,
-  PenLine, Layers, ChevronUp, ChevronDown,
+  PenLine, Layers, ChevronUp, ChevronDown, EyeOff, XCircle,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
@@ -556,8 +556,9 @@ function GamificationPanel({ data, onIssueClick }: { data: DashboardSummary; onI
 
 /**
  * Workflow order as used on the boards:
- * Draft → Backlog → In Progress → Not OK → In Review → Done
+ * Draft → Backlog → In Progress → Not OK → In Review → Done → Cancelled
  * Grouped in three readable blocks: incoming load / active / outgoing.
+ * Done + Cancelled are hidden by default (closed work is noise on a dashboard).
  */
 const TABLE_STATUSES = [
   { key: 'todo', label: 'Draft', short: 'Draft', icon: PenLine, group: 'load' as const, hint: 'En cours de rédaction — charge à venir', dot: 'bg-slate-400/60', text: 'text-secondary' },
@@ -566,12 +567,18 @@ const TABLE_STATUSES = [
   { key: 'not_ok', label: 'Not OK', short: 'Not OK', icon: AlertTriangle, group: 'active' as const, hint: 'Rejeté / à reprendre — priorité', dot: 'bg-red-500', text: 'text-red-500' },
   { key: 'in_review', label: 'In Review', short: 'Review', icon: Eye, group: 'out' as const, hint: 'En relecture / validation', dot: 'bg-purple-500', text: 'text-purple-400' },
   { key: 'done', label: 'Done', short: 'Done', icon: CheckCircle2, group: 'out' as const, hint: 'Terminé', dot: 'bg-emerald-500', text: 'text-emerald-500' },
+  { key: 'cancelled', label: 'Cancelled', short: 'Cancel.', icon: XCircle, group: 'out' as const, hint: 'Annulé', dot: 'bg-slate-600', text: 'text-muted' },
 ];
 
-const GROUP_META: Record<'load' | 'active' | 'out', { label: string; span: number }> = {
-  load: { label: 'Charge à venir', span: 2 },
-  active: { label: 'En cours', span: 2 },
-  out: { label: 'Sortie', span: 2 },
+type TableStatus = (typeof TABLE_STATUSES)[number];
+
+/** Closed statuses — hidden by default, revealed by the "Terminés" toggle. */
+const CLOSED_KEYS = ['done', 'cancelled'];
+
+const GROUP_META: Record<'load' | 'active' | 'out', { label: string }> = {
+  load: { label: 'Charge à venir' },
+  active: { label: 'En cours' },
+  out: { label: 'Sortie' },
 };
 
 /** Per-status cell styling. Backlog = bold, Not OK = red + pill. */
@@ -600,9 +607,10 @@ function StatusCell({ statusKey, value }: { statusKey: string; value: number }) 
 }
 
 /** Stacked distribution bar — reads the whole project shape in one glance. */
-function DistributionBar({ counts, total }: { counts: Record<string, number>; total: number }) {
+function DistributionBar({ counts, statuses }: { counts: Record<string, number>; statuses: TableStatus[] }) {
+  const total = statuses.reduce((sum, s) => sum + (counts[s.key] || 0), 0);
   if (total <= 0) return <div className="h-1.5 w-full rounded-full bg-surface-hover" />;
-  const segments = TABLE_STATUSES.filter(s => (counts[s.key] || 0) > 0);
+  const segments = statuses.filter(s => (counts[s.key] || 0) > 0);
   return (
     <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-hover">
       {segments.map(s => (
@@ -626,18 +634,43 @@ function ProjectTable({ orgs, onNavigate }: {
   const [sortKey, setSortKey] = useState<SortKey>('not_ok');
   const [sortDesc, setSortDesc] = useState(true);
 
+  // Closed work (Done + Cancelled) is hidden by default — a dashboard is about
+  // what is left to do. In Review is shown by default but can be folded away.
+  const [showClosed, setShowClosed] = useState(() => localStorage.getItem('baaton-dashboard-closed') === '1');
+  const [showReview, setShowReview] = useState(() => localStorage.getItem('baaton-dashboard-review') !== '0');
+  useEffect(() => { localStorage.setItem('baaton-dashboard-closed', showClosed ? '1' : '0'); }, [showClosed]);
+  useEffect(() => { localStorage.setItem('baaton-dashboard-review', showReview ? '1' : '0'); }, [showReview]);
+
+  const visibleStatuses = useMemo(
+    () => TABLE_STATUSES.filter(s => {
+      if (CLOSED_KEYS.includes(s.key)) return showClosed;
+      if (s.key === 'in_review') return showReview;
+      return true;
+    }),
+    [showClosed, showReview],
+  );
+
+  // A sort on a status that just got hidden would look broken — fall back.
+  useEffect(() => {
+    if (!visibleStatuses.some(s => s.key === sortKey) && TABLE_STATUSES.some(s => s.key === sortKey)) {
+      setSortKey('not_ok');
+      setSortDesc(true);
+    }
+  }, [visibleStatuses, sortKey]);
+
   const rows = useMemo(() => {
     const flat = orgs.flatMap(org =>
       org.projects.map(project => {
         const counts = project.status_counts || {};
-        const total = project.total_issues || 0;
+        const totalAll = project.total_issues || 0;
         const done = counts.done || 0;
         const created = project.created_this_month || 0;
         const closed = project.closed_this_month || 0;
-        const open = (counts.todo || 0) + (counts.backlog || 0) + (counts.in_progress || 0) + (counts.not_ok || 0);
+        // "Total" follows what is on screen, otherwise the row doesn't add up.
+        const total = visibleStatuses.reduce((sum, s) => sum + (counts[s.key] || 0), 0);
         return {
-          project, org, counts, total, done, created, closed, open,
-          pct: total > 0 ? Math.round((done / total) * 100) : 0,
+          project, org, counts, total, totalAll, done, created, closed,
+          pct: totalAll > 0 ? Math.round((done / totalAll) * 100) : 0,
           ratio: created > 0 ? closed / created : closed > 0 ? 99 : 0,
         };
       }),
@@ -650,7 +683,7 @@ function ProjectTable({ orgs, onNavigate }: {
       if (va === vb) return a.project.name.localeCompare(b.project.name);
       return (va - vb) * dir;
     });
-  }, [orgs, sortKey, sortDesc]);
+  }, [orgs, sortKey, sortDesc, visibleStatuses]);
 
   const toggleSort = useCallback((key: SortKey) => {
     setSortKey(prev => {
@@ -672,6 +705,13 @@ function ProjectTable({ orgs, onNavigate }: {
     return acc;
   }, [rows]);
 
+  const hiddenCount = useMemo(() => {
+    let n = 0;
+    if (!showClosed) n += (totals.done || 0) + (totals.cancelled || 0);
+    if (!showReview) n += totals.in_review || 0;
+    return n;
+  }, [showClosed, showReview, totals]);
+
   const SortArrow = ({ active }: { active: boolean }) =>
     !active ? null : sortDesc
       ? <ChevronDown size={9} className="inline ml-0.5 -mt-px" />
@@ -685,34 +725,80 @@ function ProjectTable({ orgs, onNavigate }: {
     { key: 'name', label: 'A-Z' },
   ];
 
+  /** Shared visibility toggles — same control on mobile and desktop. */
+  const VisibilityToggles = ({ className }: { className?: string }) => (
+    <div className={cn('flex items-center gap-1', className)}>
+      <button
+        onClick={() => setShowReview(v => !v)}
+        title={showReview ? 'Masquer les In Review' : 'Afficher les In Review'}
+        className={cn(
+          'flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium transition-colors',
+          showReview
+            ? 'border-purple-500/30 bg-purple-500/10 text-purple-400'
+            : 'border-border text-muted hover:text-secondary',
+        )}
+      >
+        {showReview ? <Eye size={10} /> : <EyeOff size={10} />}
+        Review
+        {(totals.in_review || 0) > 0 && <span className="tabular-nums opacity-70">{totals.in_review}</span>}
+      </button>
+      <button
+        onClick={() => setShowClosed(v => !v)}
+        title={showClosed ? 'Masquer Done + Cancelled' : 'Afficher Done + Cancelled'}
+        className={cn(
+          'flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium transition-colors',
+          showClosed
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
+            : 'border-border text-muted hover:text-secondary',
+        )}
+      >
+        {showClosed ? <Eye size={10} /> : <EyeOff size={10} />}
+        Terminés
+        {(totals.done || 0) + (totals.cancelled || 0) > 0 && (
+          <span className="tabular-nums opacity-70">{(totals.done || 0) + (totals.cancelled || 0)}</span>
+        )}
+      </button>
+    </div>
+  );
+
+  const visibleGroups = useMemo(
+    () => (['load', 'active', 'out'] as const)
+      .map(g => ({ g, span: visibleStatuses.filter(s => s.group === g).length }))
+      .filter(x => x.span > 0),
+    [visibleStatuses],
+  );
+
   return (
     <div className="rounded-xl border border-border bg-surface">
       {/* ── Mobile: dense list, no horizontal scroll ── */}
       <div className="md:hidden">
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar border-b border-border px-2 py-2">
-          <span className="shrink-0 pr-1 text-[9px] font-semibold uppercase tracking-wider text-muted">Tri</span>
-          {MOBILE_SORTS.map(o => {
-            const active = sortKey === o.key;
-            return (
-              <button
-                key={o.key}
-                onClick={() => toggleSort(o.key)}
-                className={cn(
-                  'shrink-0 rounded-full px-2 py-1 text-[10px] font-medium transition-colors',
-                  active ? 'bg-surface-hover text-primary' : 'text-muted',
-                )}
-              >
-                {o.label}
-                {active && (sortDesc ? <ChevronDown size={9} className="inline ml-0.5 -mt-px" /> : <ChevronUp size={9} className="inline ml-0.5 -mt-px" />)}
-              </button>
-            );
-          })}
+        <div className="border-b border-border px-2 py-2">
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+            <span className="shrink-0 pr-1 text-[9px] font-semibold uppercase tracking-wider text-muted">Tri</span>
+            {MOBILE_SORTS.map(o => {
+              const active = sortKey === o.key;
+              return (
+                <button
+                  key={o.key}
+                  onClick={() => toggleSort(o.key)}
+                  className={cn(
+                    'shrink-0 rounded-full px-2 py-1 text-[10px] font-medium transition-colors',
+                    active ? 'bg-surface-hover text-primary' : 'text-muted',
+                  )}
+                >
+                  {o.label}
+                  {active && (sortDesc ? <ChevronDown size={9} className="inline ml-0.5 -mt-px" /> : <ChevronUp size={9} className="inline ml-0.5 -mt-px" />)}
+                </button>
+              );
+            })}
+          </div>
+          <VisibilityToggles className="mt-1.5 overflow-x-auto no-scrollbar" />
         </div>
 
         <div className="divide-y divide-border/20">
           {rows.map(r => {
             const notOk = r.counts.not_ok || 0;
-            const chips = TABLE_STATUSES.filter(s => (r.counts[s.key] || 0) > 0);
+            const chips = visibleStatuses.filter(s => (r.counts[s.key] || 0) > 0);
             return (
               <button
                 key={r.project.id}
@@ -728,11 +814,11 @@ function ProjectTable({ orgs, onNavigate }: {
                   <span className="shrink-0 text-[10px] tabular-nums text-muted">{r.total} · {r.pct}%</span>
                 </div>
 
-                <div className="mt-1.5"><DistributionBar counts={r.counts} total={r.total} /></div>
+                <div className="mt-1.5"><DistributionBar counts={r.counts} statuses={visibleStatuses} /></div>
 
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
                   {chips.length === 0
-                    ? <span className="text-[10px] text-muted/40">Aucun ticket</span>
+                    ? <span className="text-[10px] text-muted/40">Rien à traiter</span>
                     : chips.map(s => (
                       <span key={s.key} className="flex items-center gap-1 text-[10px]">
                         <span className={cn('h-1.5 w-1.5 rounded-full', s.dot)} />
@@ -754,10 +840,11 @@ function ProjectTable({ orgs, onNavigate }: {
           })}
         </div>
 
-        <div className="flex items-center gap-x-3 gap-y-1 border-t border-border/40 px-3 py-2 text-[10px] text-muted">
+        <div className="flex items-center gap-x-2 border-t border-border/40 px-3 py-2 text-[10px] text-muted">
           <span>{rows.length} projets</span>
           <span className="text-muted/40">·</span>
-          <span className="font-semibold text-primary tabular-nums">{totals.total}</span> tickets
+          <span><span className="font-semibold text-primary tabular-nums">{totals.total}</span> tickets</span>
+          {hiddenCount > 0 && <span className="text-muted/50">({hiddenCount} masqués)</span>}
           {(totals.not_ok || 0) > 0 && (
             <span className="ml-auto flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
@@ -768,16 +855,23 @@ function ProjectTable({ orgs, onNavigate }: {
       </div>
 
       {/* ── Desktop: full workflow table ── */}
+      <div className="hidden items-center justify-between gap-3 border-b border-border/40 px-3 py-2 md:flex">
+        <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
+          Workflow · {rows.length} projets
+          {hiddenCount > 0 && <span className="ml-1 text-muted/50">({hiddenCount} tickets masqués)</span>}
+        </span>
+        <VisibilityToggles />
+      </div>
       <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[860px] text-xs border-separate border-spacing-0">
+        <table className="w-full text-xs border-separate border-spacing-0">
           <thead>
             {/* Group band */}
             <tr>
               <th className="sticky left-0 z-20 bg-surface border-b border-border/40 px-3 py-1.5 text-left" />
-              {(['load', 'active', 'out'] as const).map(g => (
+              {visibleGroups.map(({ g, span }) => (
                 <th
                   key={g}
-                  colSpan={GROUP_META[g].span}
+                  colSpan={span}
                   className={cn(
                     'border-b border-l border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em]',
                     g === 'load' && 'text-muted',
@@ -803,8 +897,8 @@ function ProjectTable({ orgs, onNavigate }: {
               >
                 Projet<SortArrow active={sortKey === 'name'} />
               </th>
-              {TABLE_STATUSES.map((s, i) => {
-                const isGroupStart = i === 0 || TABLE_STATUSES[i - 1].group !== s.group;
+              {visibleStatuses.map((s, i) => {
+                const isGroupStart = i === 0 || visibleStatuses[i - 1].group !== s.group;
                 const Icon = s.icon;
                 const active = sortKey === s.key;
                 return (
@@ -852,8 +946,8 @@ function ProjectTable({ orgs, onNavigate }: {
                     <span className="hidden truncate max-w-[70px] text-[9px] text-muted/60 md:inline">{r.org.name}</span>
                   </div>
                 </td>
-                {TABLE_STATUSES.map((s, i) => {
-                  const isGroupStart = i === 0 || TABLE_STATUSES[i - 1].group !== s.group;
+                {visibleStatuses.map((s, i) => {
+                  const isGroupStart = i === 0 || visibleStatuses[i - 1].group !== s.group;
                   return (
                     <td
                       key={s.key}
@@ -880,7 +974,7 @@ function ProjectTable({ orgs, onNavigate }: {
                 <td className="border-b border-l border-border/30 px-2 py-2.5 text-center font-semibold tabular-nums text-primary">{r.total}</td>
                 <td className="border-b border-border/20 px-3 py-2.5">
                   <div className="flex items-center gap-2">
-                    <DistributionBar counts={r.counts} total={r.total} />
+                    <DistributionBar counts={r.counts} statuses={visibleStatuses} />
                     <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-muted">{r.pct}%</span>
                   </div>
                 </td>
@@ -892,8 +986,8 @@ function ProjectTable({ orgs, onNavigate }: {
               <td className="sticky left-0 z-10 bg-surface-hover/95 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted backdrop-blur">
                 {rows.length} projets
               </td>
-              {TABLE_STATUSES.map((s, i) => {
-                const isGroupStart = i === 0 || TABLE_STATUSES[i - 1].group !== s.group;
+              {visibleStatuses.map((s, i) => {
+                const isGroupStart = i === 0 || visibleStatuses[i - 1].group !== s.group;
                 return (
                   <td key={s.key} className={cn('px-2 py-2 text-center text-[11px] tabular-nums', isGroupStart && 'border-l border-border/30', s.key === 'not_ok' ? 'font-bold text-red-500' : s.key === 'backlog' ? 'font-bold text-primary' : 'text-muted')}>
                     {totals[s.key] || 0}
@@ -911,12 +1005,19 @@ function ProjectTable({ orgs, onNavigate }: {
       {/* Legend — the icon-only header was unreadable without it */}
       <div className="hidden flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 px-3 py-2 text-[9px] text-muted md:flex">
         <span className="font-semibold uppercase tracking-wider">Workflow</span>
-        {TABLE_STATUSES.map((s, i) => (
-          <span key={s.key} className="flex items-center gap-1">
-            {i > 0 && <span className="text-muted/40">→</span>}
-            <span className={cn(s.key === 'not_ok' && 'font-semibold text-red-500', s.key === 'backlog' && 'font-semibold text-secondary')}>{s.label}</span>
-          </span>
-        ))}
+        {TABLE_STATUSES.map((s, i) => {
+          const hidden = !visibleStatuses.some(v => v.key === s.key);
+          return (
+            <span key={s.key} className="flex items-center gap-1">
+              {i > 0 && <span className="text-muted/40">→</span>}
+              <span className={cn(
+                hidden && 'text-muted/30 line-through',
+                !hidden && s.key === 'not_ok' && 'font-semibold text-red-500',
+                !hidden && s.key === 'backlog' && 'font-semibold text-secondary',
+              )}>{s.label}</span>
+            </span>
+          );
+        })}
         <span className="ml-auto">Clique un en-tête pour trier</span>
       </div>
     </div>
