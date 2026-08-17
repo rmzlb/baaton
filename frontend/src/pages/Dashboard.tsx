@@ -561,13 +561,13 @@ function GamificationPanel({ data, onIssueClick }: { data: DashboardSummary; onI
  * Done + Cancelled are hidden by default (closed work is noise on a dashboard).
  */
 const TABLE_STATUSES = [
-  { key: 'todo', label: 'Draft', short: 'Draft', icon: PenLine, group: 'load' as const, hint: 'En cours de rédaction — charge à venir', dot: 'bg-slate-400/60', text: 'text-secondary' },
-  { key: 'backlog', label: 'Backlog', short: 'Backlog', icon: Layers, group: 'load' as const, hint: 'Charge de travail à planifier', dot: 'bg-slate-300', text: 'text-primary' },
-  { key: 'in_progress', label: 'In Progress', short: 'In prog.', icon: Clock, group: 'active' as const, hint: 'Travail en cours', dot: 'bg-amber-500', text: 'text-amber-500' },
-  { key: 'not_ok', label: 'Not OK', short: 'Not OK', icon: AlertTriangle, group: 'active' as const, hint: 'Rejeté / à reprendre — priorité', dot: 'bg-red-500', text: 'text-red-500' },
-  { key: 'in_review', label: 'In Review', short: 'Review', icon: Eye, group: 'out' as const, hint: 'En relecture / validation', dot: 'bg-purple-500', text: 'text-purple-400' },
-  { key: 'done', label: 'Done', short: 'Done', icon: CheckCircle2, group: 'out' as const, hint: 'Terminé', dot: 'bg-emerald-500', text: 'text-emerald-500' },
-  { key: 'cancelled', label: 'Cancelled', short: 'Cancel.', icon: XCircle, group: 'out' as const, hint: 'Annulé', dot: 'bg-slate-600', text: 'text-muted' },
+  { key: 'todo', label: 'Draft', short: 'Draft', icon: PenLine, group: 'load' as const, hint: 'Brouillon — pas encore engagé', bar: 'bg-slate-500/35', text: 'text-muted' },
+  { key: 'backlog', label: 'Backlog', short: 'Backlog', icon: Layers, group: 'load' as const, hint: 'Charge de travail à planifier', bar: 'bg-sky-400', text: 'text-sky-400' },
+  { key: 'in_progress', label: 'In Progress', short: 'In prog.', icon: Clock, group: 'active' as const, hint: 'Travail en cours', bar: 'bg-amber-500', text: 'text-amber-500' },
+  { key: 'not_ok', label: 'Not OK', short: 'Not OK', icon: AlertTriangle, group: 'active' as const, hint: 'Rejeté / à reprendre — priorité', bar: 'bg-red-500', text: 'text-red-500' },
+  { key: 'in_review', label: 'In Review', short: 'Review', icon: Eye, group: 'out' as const, hint: 'En relecture / validation', bar: 'bg-purple-500', text: 'text-purple-400' },
+  { key: 'done', label: 'Done', short: 'Done', icon: CheckCircle2, group: 'out' as const, hint: 'Terminé', bar: 'bg-emerald-500', text: 'text-emerald-500' },
+  { key: 'cancelled', label: 'Cancelled', short: 'Cancel.', icon: XCircle, group: 'out' as const, hint: 'Annulé', bar: 'bg-slate-700', text: 'text-muted/70' },
 ];
 
 type TableStatus = (typeof TABLE_STATUSES)[number];
@@ -581,16 +581,28 @@ const GROUP_META: Record<'load' | 'active' | 'out', { label: string }> = {
   out: { label: 'Sortie' },
 };
 
-/** Per-status cell styling. Backlog = bold, Not OK = red + pill. */
+/**
+ * Per-status cell styling. Draft and Backlog used to be two near-identical
+ * grays, unreadable side by side — Draft is now a dim outlined number,
+ * Backlog a solid blue one.
+ */
 function StatusCell({ statusKey, value }: { statusKey: string; value: number }) {
   if (!value) return <span className="text-muted/25 select-none">·</span>;
   switch (statusKey) {
     case 'todo':
-      return <span className="text-secondary">{value}</span>;
+      return (
+        <span className="inline-flex min-w-[22px] items-center justify-center rounded-md px-1.5 py-0.5 font-normal text-muted ring-1 ring-inset ring-border">
+          {value}
+        </span>
+      );
     case 'backlog':
-      return <span className="font-bold text-primary">{value}</span>;
+      return (
+        <span className="inline-flex min-w-[22px] items-center justify-center rounded-md bg-sky-400/12 px-1.5 py-0.5 font-bold text-sky-400 ring-1 ring-inset ring-sky-400/25">
+          {value}
+        </span>
+      );
     case 'in_progress':
-      return <span className="font-medium text-amber-500">{value}</span>;
+      return <span className="font-semibold text-amber-500">{value}</span>;
     case 'not_ok':
       return (
         <span className="inline-flex min-w-[22px] items-center justify-center rounded-md bg-red-500/12 px-1.5 py-0.5 font-bold text-red-500 ring-1 ring-inset ring-red-500/25">
@@ -601,6 +613,8 @@ function StatusCell({ statusKey, value }: { statusKey: string; value: number }) 
       return <span className="font-medium text-purple-400">{value}</span>;
     case 'done':
       return <span className="font-medium text-emerald-500">{value}</span>;
+    case 'cancelled':
+      return <span className="text-muted/60 line-through">{value}</span>;
     default:
       return <span className="text-secondary">{value}</span>;
   }
@@ -616,7 +630,7 @@ function DistributionBar({ counts, statuses }: { counts: Record<string, number>;
       {segments.map(s => (
         <div
           key={s.key}
-          className={s.dot}
+          className={s.bar}
           style={{ width: `${((counts[s.key] || 0) / total) * 100}%` }}
           title={`${s.label}: ${counts[s.key]}`}
         />
@@ -821,7 +835,7 @@ function ProjectTable({ orgs, onNavigate }: {
                     ? <span className="text-[10px] text-muted/40">Rien à traiter</span>
                     : chips.map(s => (
                       <span key={s.key} className="flex items-center gap-1 text-[10px]">
-                        <span className={cn('h-1.5 w-1.5 rounded-full', s.dot)} />
+                        <s.icon size={10} className={s.text} />
                         <span className={cn('font-semibold tabular-nums', s.text)}>{r.counts[s.key]}</span>
                         <span className="text-muted/70">{s.short}</span>
                       </span>
@@ -909,7 +923,7 @@ function ProjectTable({ orgs, onNavigate }: {
                     className={cn(
                       'cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap',
                       isGroupStart && 'border-l border-border/40',
-                      s.key === 'not_ok' ? 'text-red-500' : s.key === 'backlog' ? 'text-secondary' : 'text-muted',
+                      s.key === 'not_ok' ? 'text-red-500' : s.key === 'backlog' ? 'text-sky-400' : 'text-muted',
                       active && 'text-primary',
                       'hover:text-secondary',
                     )}
@@ -1013,7 +1027,7 @@ function ProjectTable({ orgs, onNavigate }: {
               <span className={cn(
                 hidden && 'text-muted/30 line-through',
                 !hidden && s.key === 'not_ok' && 'font-semibold text-red-500',
-                !hidden && s.key === 'backlog' && 'font-semibold text-secondary',
+                !hidden && s.key === 'backlog' && 'font-semibold text-sky-400',
               )}>{s.label}</span>
             </span>
           );
