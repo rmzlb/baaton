@@ -7,6 +7,7 @@ import {
   CheckCircle2, Building2, ChevronRight,
   TrendingUp, Zap, Timer, Flame, Bot, User, Target,
   LayoutGrid, Table2, AlertTriangle,
+  PenLine, Layers, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
@@ -551,6 +552,295 @@ function GamificationPanel({ data, onIssueClick }: { data: DashboardSummary; onI
   );
 }
 
+// ─── Project Table ─────────────────────────────────────
+
+/**
+ * Workflow order as used on the boards:
+ * Draft → Backlog → In Progress → Not OK → In Review → Done
+ * Grouped in three readable blocks: incoming load / active / outgoing.
+ */
+const TABLE_STATUSES = [
+  { key: 'todo', label: 'Draft', short: 'Draft', icon: PenLine, group: 'load' as const, hint: 'En cours de rédaction — charge à venir' },
+  { key: 'backlog', label: 'Backlog', short: 'Backlog', icon: Layers, group: 'load' as const, hint: 'Charge de travail à planifier' },
+  { key: 'in_progress', label: 'In Progress', short: 'In prog.', icon: Clock, group: 'active' as const, hint: 'Travail en cours' },
+  { key: 'not_ok', label: 'Not OK', short: 'Not OK', icon: AlertTriangle, group: 'active' as const, hint: 'Rejeté / à reprendre — priorité' },
+  { key: 'in_review', label: 'In Review', short: 'Review', icon: Eye, group: 'out' as const, hint: 'En relecture / validation' },
+  { key: 'done', label: 'Done', short: 'Done', icon: CheckCircle2, group: 'out' as const, hint: 'Terminé' },
+];
+
+const GROUP_META: Record<'load' | 'active' | 'out', { label: string; span: number }> = {
+  load: { label: 'Charge à venir', span: 2 },
+  active: { label: 'En cours', span: 2 },
+  out: { label: 'Sortie', span: 2 },
+};
+
+/** Per-status cell styling. Backlog = bold, Not OK = red + pill. */
+function StatusCell({ statusKey, value }: { statusKey: string; value: number }) {
+  if (!value) return <span className="text-muted/25 select-none">·</span>;
+  switch (statusKey) {
+    case 'todo':
+      return <span className="text-secondary">{value}</span>;
+    case 'backlog':
+      return <span className="font-bold text-primary">{value}</span>;
+    case 'in_progress':
+      return <span className="font-medium text-amber-500">{value}</span>;
+    case 'not_ok':
+      return (
+        <span className="inline-flex min-w-[22px] items-center justify-center rounded-md bg-red-500/12 px-1.5 py-0.5 font-bold text-red-500 ring-1 ring-inset ring-red-500/25">
+          {value}
+        </span>
+      );
+    case 'in_review':
+      return <span className="font-medium text-purple-400">{value}</span>;
+    case 'done':
+      return <span className="font-medium text-emerald-500">{value}</span>;
+    default:
+      return <span className="text-secondary">{value}</span>;
+  }
+}
+
+/** Stacked distribution bar — reads the whole project shape in one glance. */
+function DistributionBar({ counts, total }: { counts: Record<string, number>; total: number }) {
+  if (total <= 0) return <div className="h-1.5 w-full rounded-full bg-surface-hover" />;
+  const segments = [
+    { key: 'todo', cls: 'bg-slate-400/50' },
+    { key: 'backlog', cls: 'bg-slate-300' },
+    { key: 'in_progress', cls: 'bg-amber-500' },
+    { key: 'not_ok', cls: 'bg-red-500' },
+    { key: 'in_review', cls: 'bg-purple-500' },
+    { key: 'done', cls: 'bg-emerald-500' },
+  ].filter(s => (counts[s.key] || 0) > 0);
+  return (
+    <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-hover">
+      {segments.map(s => (
+        <div
+          key={s.key}
+          className={s.cls}
+          style={{ width: `${((counts[s.key] || 0) / total) * 100}%` }}
+          title={`${TABLE_STATUSES.find(x => x.key === s.key)?.label ?? s.key}: ${counts[s.key]}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+type SortKey = 'name' | 'total' | 'pct' | 'ratio' | string;
+
+function ProjectTable({ orgs, onNavigate }: {
+  orgs: DashboardOrg[];
+  onNavigate: (project: DashboardProject, orgId: string) => void;
+}) {
+  const [sortKey, setSortKey] = useState<SortKey>('not_ok');
+  const [sortDesc, setSortDesc] = useState(true);
+
+  const rows = useMemo(() => {
+    const flat = orgs.flatMap(org =>
+      org.projects.map(project => {
+        const counts = project.status_counts || {};
+        const total = project.total_issues || 0;
+        const done = counts.done || 0;
+        const created = project.created_this_month || 0;
+        const closed = project.closed_this_month || 0;
+        const open = (counts.todo || 0) + (counts.backlog || 0) + (counts.in_progress || 0) + (counts.not_ok || 0);
+        return {
+          project, org, counts, total, done, created, closed, open,
+          pct: total > 0 ? Math.round((done / total) * 100) : 0,
+          ratio: created > 0 ? closed / created : closed > 0 ? 99 : 0,
+        };
+      }),
+    );
+    const dir = sortDesc ? -1 : 1;
+    return flat.sort((a, b) => {
+      if (sortKey === 'name') return a.project.name.localeCompare(b.project.name) * dir;
+      const va = sortKey === 'total' ? a.total : sortKey === 'pct' ? a.pct : sortKey === 'ratio' ? a.ratio : (a.counts[sortKey] || 0);
+      const vb = sortKey === 'total' ? b.total : sortKey === 'pct' ? b.pct : sortKey === 'ratio' ? b.ratio : (b.counts[sortKey] || 0);
+      if (va === vb) return a.project.name.localeCompare(b.project.name);
+      return (va - vb) * dir;
+    });
+  }, [orgs, sortKey, sortDesc]);
+
+  const toggleSort = useCallback((key: SortKey) => {
+    setSortKey(prev => {
+      if (prev === key) {
+        setSortDesc(d => !d);
+        return prev;
+      }
+      setSortDesc(key !== 'name');
+      return key;
+    });
+  }, []);
+
+  const totals = useMemo(() => {
+    const acc: Record<string, number> = { total: 0 };
+    for (const r of rows) {
+      acc.total += r.total;
+      for (const s of TABLE_STATUSES) acc[s.key] = (acc[s.key] || 0) + (r.counts[s.key] || 0);
+    }
+    return acc;
+  }, [rows]);
+
+  const SortArrow = ({ active }: { active: boolean }) =>
+    !active ? null : sortDesc
+      ? <ChevronDown size={9} className="inline ml-0.5 -mt-px" />
+      : <ChevronUp size={9} className="inline ml-0.5 -mt-px" />;
+
+  return (
+    <div className="rounded-xl border border-border bg-surface">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] text-xs border-separate border-spacing-0">
+          <thead>
+            {/* Group band */}
+            <tr>
+              <th className="sticky left-0 z-20 bg-surface border-b border-border/40 px-3 py-1.5 text-left" />
+              {(['load', 'active', 'out'] as const).map(g => (
+                <th
+                  key={g}
+                  colSpan={GROUP_META[g].span}
+                  className={cn(
+                    'border-b border-l border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em]',
+                    g === 'load' && 'text-muted',
+                    g === 'active' && 'text-amber-500/80',
+                    g === 'out' && 'text-emerald-500/80',
+                  )}
+                >
+                  {GROUP_META[g].label}
+                </th>
+              ))}
+              <th colSpan={2} className="border-b border-l border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
+                Flux 30j
+              </th>
+              <th colSpan={2} className="border-b border-l border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
+                Volume
+              </th>
+            </tr>
+            {/* Column labels — text, not icons only */}
+            <tr className="bg-surface-hover/40">
+              <th
+                onClick={() => toggleSort('name')}
+                className="sticky left-0 z-20 cursor-pointer select-none border-b border-border bg-surface-hover/95 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary backdrop-blur"
+              >
+                Projet<SortArrow active={sortKey === 'name'} />
+              </th>
+              {TABLE_STATUSES.map((s, i) => {
+                const isGroupStart = i === 0 || TABLE_STATUSES[i - 1].group !== s.group;
+                const Icon = s.icon;
+                const active = sortKey === s.key;
+                return (
+                  <th
+                    key={s.key}
+                    title={s.hint}
+                    onClick={() => toggleSort(s.key)}
+                    className={cn(
+                      'cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap',
+                      isGroupStart && 'border-l border-border/40',
+                      s.key === 'not_ok' ? 'text-red-500' : s.key === 'backlog' ? 'text-secondary' : 'text-muted',
+                      active && 'text-primary',
+                      'hover:text-secondary',
+                    )}
+                  >
+                    <Icon size={9} className="inline mr-1 -mt-px" />
+                    {s.short}
+                    <SortArrow active={active} />
+                  </th>
+                );
+              })}
+              <th title="Créées sur 30 jours" className="border-b border-l border-border/40 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-muted">In</th>
+              <th title="Ratio sorties/entrées — ≥1 = tu absorbes la charge" onClick={() => toggleSort('ratio')} className={cn('cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'ratio' ? 'text-primary' : 'text-muted')}>
+                Flow<SortArrow active={sortKey === 'ratio'} />
+              </th>
+              <th onClick={() => toggleSort('total')} className={cn('cursor-pointer select-none border-b border-l border-border/40 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'total' ? 'text-primary' : 'text-muted')}>
+                Total<SortArrow active={sortKey === 'total'} />
+              </th>
+              <th onClick={() => toggleSort('pct')} className={cn('cursor-pointer select-none border-b border-border px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'pct' ? 'text-primary' : 'text-muted')}>
+                Répartition<SortArrow active={sortKey === 'pct'} />
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr
+                key={r.project.id}
+                onClick={() => onNavigate(r.project, r.org.id)}
+                className="group cursor-pointer border-b border-border/20 hover:bg-surface-hover/60"
+              >
+                <td className="sticky left-0 z-10 border-b border-border/20 bg-surface px-3 py-2.5 transition-colors group-hover:bg-surface-hover/60">
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{r.project.prefix}</span>
+                    <span className="truncate max-w-[150px] font-medium text-primary group-hover:text-accent">{r.project.name}</span>
+                    <span className="hidden truncate max-w-[70px] text-[9px] text-muted/60 md:inline">{r.org.name}</span>
+                  </div>
+                </td>
+                {TABLE_STATUSES.map((s, i) => {
+                  const isGroupStart = i === 0 || TABLE_STATUSES[i - 1].group !== s.group;
+                  return (
+                    <td
+                      key={s.key}
+                      className={cn(
+                        'border-b border-border/20 px-2 py-2.5 text-center tabular-nums',
+                        isGroupStart && 'border-l border-border/30',
+                        s.key === 'not_ok' && (r.counts.not_ok || 0) > 0 && 'bg-red-500/[0.04]',
+                      )}
+                    >
+                      <StatusCell statusKey={s.key} value={r.counts[s.key] || 0} />
+                    </td>
+                  );
+                })}
+                <td className="border-b border-l border-border/30 px-2 py-2.5 text-center tabular-nums">
+                  {r.created > 0 ? <span className="text-blue-400">{r.created}</span> : <span className="text-muted/25">·</span>}
+                </td>
+                <td className="border-b border-border/20 px-2 py-2.5 text-center tabular-nums">
+                  {r.created === 0 && r.closed === 0
+                    ? <span className="text-muted/25">·</span>
+                    : r.ratio >= 1
+                      ? <span className="font-semibold text-emerald-500" title={`${r.closed} fermées / ${r.created} créées`}>↑{r.ratio >= 99 ? '∞' : r.ratio.toFixed(1)}</span>
+                      : <span className="font-semibold text-amber-500" title={`${r.closed} fermées / ${r.created} créées — la dette grossit`}>↓{r.ratio.toFixed(1)}</span>}
+                </td>
+                <td className="border-b border-l border-border/30 px-2 py-2.5 text-center font-semibold tabular-nums text-primary">{r.total}</td>
+                <td className="border-b border-border/20 px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <DistributionBar counts={r.counts} total={r.total} />
+                    <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-muted">{r.pct}%</span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-surface-hover/30">
+              <td className="sticky left-0 z-10 bg-surface-hover/95 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted backdrop-blur">
+                {rows.length} projets
+              </td>
+              {TABLE_STATUSES.map((s, i) => {
+                const isGroupStart = i === 0 || TABLE_STATUSES[i - 1].group !== s.group;
+                return (
+                  <td key={s.key} className={cn('px-2 py-2 text-center text-[11px] tabular-nums', isGroupStart && 'border-l border-border/30', s.key === 'not_ok' ? 'font-bold text-red-500' : s.key === 'backlog' ? 'font-bold text-primary' : 'text-muted')}>
+                    {totals[s.key] || 0}
+                  </td>
+                );
+              })}
+              <td className="border-l border-border/30 px-2 py-2" />
+              <td className="px-2 py-2" />
+              <td className="border-l border-border/30 px-2 py-2 text-center text-[11px] font-semibold tabular-nums text-primary">{totals.total}</td>
+              <td className="px-3 py-2" />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {/* Legend — the icon-only header was unreadable without it */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 px-3 py-2 text-[9px] text-muted">
+        <span className="font-semibold uppercase tracking-wider">Workflow</span>
+        {TABLE_STATUSES.map((s, i) => (
+          <span key={s.key} className="flex items-center gap-1">
+            {i > 0 && <span className="text-muted/40">→</span>}
+            <span className={cn(s.key === 'not_ok' && 'font-semibold text-red-500', s.key === 'backlog' && 'font-semibold text-secondary')}>{s.label}</span>
+          </span>
+        ))}
+        <span className="ml-auto">Clique un en-tête pour trier</span>
+      </div>
+    </div>
+  );
+}
+
 export function Dashboard() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -719,107 +1009,7 @@ export function Dashboard() {
               <p className="text-sm text-secondary">{t('dashboard.noProjects')}</p>
             </div>
           ) : projectViewMode === 'table' ? (
-            <div className="rounded-xl border border-border bg-surface overflow-x-auto">
-              <table className="w-full text-xs min-w-[700px]">
-                <thead>
-                  <tr className="border-b border-border/50 bg-surface-hover/30">
-                    <th className="text-left px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider sticky left-0 bg-surface-hover/30">Project</th>
-                    <th className="text-center px-1.5 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider">Total</th>
-                    <th colSpan={5} className="text-center px-1 py-1 text-[9px] font-semibold text-muted uppercase tracking-wider border-l border-border/30">
-                      <span className="opacity-60">Status breakdown</span>
-                    </th>
-                    <th colSpan={3} className="text-center px-1 py-1 text-[9px] font-semibold text-muted uppercase tracking-wider border-l border-border/30">
-                      <span className="opacity-60">Velocity (30d)</span>
-                    </th>
-                    <th className="text-right px-3 py-2.5 text-[10px] font-semibold text-muted uppercase tracking-wider border-l border-border/30">Done %</th>
-                  </tr>
-                  <tr className="border-b border-border/30">
-                    <th className="sticky left-0 bg-surface"></th>
-                    <th className="text-center px-1.5 py-1"></th>
-                    <th className="text-center px-1.5 py-1 border-l border-border/30" title="Backlog"><Circle size={10} className="inline text-gray-400" /></th>
-                    <th className="text-center px-1.5 py-1" title="Todo"><Circle size={10} className="inline text-blue-500" /></th>
-                    <th className="text-center px-1.5 py-1" title="In Progress"><Clock size={10} className="inline text-amber-500" /></th>
-                    <th className="text-center px-1.5 py-1" title="In Review"><Eye size={10} className="inline text-purple-500" /></th>
-                    <th className="text-center px-1.5 py-1" title="Done"><CheckCircle2 size={10} className="inline text-emerald-500" /></th>
-                    <th className="text-center px-1.5 py-1 text-[9px] text-blue-400 border-l border-border/30" title="Created last 30 days">In</th>
-                    <th className="text-center px-1.5 py-1 text-[9px] text-emerald-500" title="Resolved last 30 days (in_review + done + cancelled)">Out</th>
-                    <th className="text-center px-1.5 py-1 text-[9px] text-muted" title="Ratio Out/In — >1 = burning debt">Δ</th>
-                    <th className="text-right px-3 py-1 border-l border-border/30"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedOrgs.flatMap(org =>
-                    org.projects.map(project => {
-                      const counts = project.status_counts || {};
-                      const total = project.total_issues || 0;
-                      const done = counts.done || 0;
-                      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                      const createdMonth = project.created_this_month || 0;
-                      const closedMonth = project.closed_this_month || 0;
-                      const ratio = createdMonth > 0 ? closedMonth / createdMonth : closedMonth > 0 ? 99 : 0;
-                      return (
-                        <tr
-                          key={project.id}
-                          onClick={() => handleProjectNavigate(project, org.id)}
-                          className="border-b border-border/20 last:border-b-0 hover:bg-surface-hover/50 cursor-pointer transition-colors group"
-                        >
-                          <td className="px-3 py-2 sticky left-0 bg-surface group-hover:bg-surface-hover/50 transition-colors">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-[10px] text-muted bg-surface-hover rounded px-1.5 py-0.5 shrink-0">{project.prefix}</span>
-                              <span className="font-medium text-primary group-hover:text-accent transition-colors truncate max-w-[140px]">{project.name}</span>
-                              <span className="text-[9px] text-muted/60 truncate max-w-[80px] hidden md:inline">{org.name}</span>
-                            </div>
-                          </td>
-                          <td className="px-1.5 py-2 text-center font-semibold text-primary tabular-nums">{total}</td>
-                          <td className="px-1.5 py-2 text-center tabular-nums text-secondary border-l border-border/20">{counts.backlog || <span className="text-muted/30">0</span>}</td>
-                          <td className="px-1.5 py-2 text-center tabular-nums text-secondary">{counts.todo || <span className="text-muted/30">0</span>}</td>
-                          <td className="px-1.5 py-2 text-center tabular-nums">
-                            {(counts.in_progress || 0) > 0
-                              ? <span className="text-amber-500 font-medium">{counts.in_progress}</span>
-                              : <span className="text-muted/30">0</span>}
-                          </td>
-                          <td className="px-1.5 py-2 text-center tabular-nums">
-                            {(counts.in_review || 0) > 0
-                              ? <span className="text-purple-400">{counts.in_review}</span>
-                              : <span className="text-muted/30">0</span>}
-                          </td>
-                          <td className="px-1.5 py-2 text-center tabular-nums">
-                            {done > 0
-                              ? <span className="text-emerald-500 font-medium">{done}</span>
-                              : <span className="text-muted/30">0</span>}
-                          </td>
-                          <td className="px-1.5 py-2 text-center tabular-nums border-l border-border/20">
-                            {createdMonth > 0
-                              ? <span className="text-blue-400 font-medium">{createdMonth}</span>
-                              : <span className="text-muted/30">–</span>}
-                          </td>
-                          <td className="px-1.5 py-2 text-center tabular-nums">
-                            {closedMonth > 0
-                              ? <span className="text-emerald-500 font-medium">{closedMonth}</span>
-                              : <span className="text-muted/30">–</span>}
-                          </td>
-                          <td className="px-1.5 py-2 text-center tabular-nums">
-                            {createdMonth === 0 && closedMonth === 0
-                              ? <span className="text-muted/30">–</span>
-                              : ratio >= 1
-                                ? <span className="text-emerald-500 font-semibold" title={`${ratio.toFixed(1)}x — resolving faster than creating`}>↑{ratio.toFixed(1)}</span>
-                                : <span className="text-amber-500 font-semibold" title={`${ratio.toFixed(1)}x — creating faster than resolving`}>↓{ratio.toFixed(1)}</span>}
-                          </td>
-                          <td className="px-3 py-2 text-right border-l border-border/20">
-                            <div className="flex items-center gap-2 justify-end">
-                              <div className="w-14 h-1.5 rounded-full bg-surface-hover overflow-hidden">
-                                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-                              </div>
-                              <span className="text-[10px] tabular-nums text-muted w-7 text-right">{pct}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <ProjectTable orgs={sortedOrgs} onNavigate={handleProjectNavigate} />
           ) : (
             sortedOrgs.map(org => (
               <OrgSection
