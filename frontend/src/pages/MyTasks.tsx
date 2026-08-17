@@ -13,6 +13,7 @@ import { useIssuesStore } from '@/stores/issues';
 import { useTranslation } from '@/hooks/useTranslation';
 import { FilterSelect } from '@/components/shared/FilterSelect';
 import { timeAgo, cn } from '@/lib/utils';
+import { usePersistedState, oneOf, stringArray } from '@/lib/persistedState';
 import type { Issue, IssuePriority, IssueType } from '@/lib/types';
 
 const MY_TASKS_PROJECT_FILTER_KEY = 'my-tasks:project-filter:v1';
@@ -79,7 +80,8 @@ function catOf(i: Issue): string {
   return i.status_category || CATEGORY_OF[i.status] || 'started';
 }
 
-type Tab = 'assigned' | 'created' | 'activity';
+const TABS = ['assigned', 'created', 'activity'] as const;
+type Tab = (typeof TABS)[number];
 
 interface FocusSection {
   key: string;
@@ -184,22 +186,11 @@ export function MyTasks() {
     return localStorage.getItem('baaton-show-closed-my-tasks') === 'true';
   });
 
-  const [activeTab, setActiveTab] = useState<Tab>('assigned');
+  const [activeTab, setActiveTab] = usePersistedState<Tab>('my-tasks:tab:v1', 'assigned', oneOf(TABS));
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     new Set(FOCUS_SECTIONS.filter((s) => s.collapsedByDefault).map((s) => s.key)),
   );
-  const [projectFilter, setProjectFilter] = useState<string[]>(() => {
-    try {
-      const raw = localStorage.getItem(MY_TASKS_PROJECT_FILTER_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
-    } catch { return []; }
-  });
-
-  useEffect(() => {
-    localStorage.setItem(MY_TASKS_PROJECT_FILTER_KEY, JSON.stringify(projectFilter));
-  }, [projectFilter]);
+  const [projectFilter, setProjectFilter] = usePersistedState<string[]>(MY_TASKS_PROJECT_FILTER_KEY, [], stringArray);
 
   useEffect(() => {
     localStorage.setItem('baaton-show-closed-my-tasks', String(showClosed));

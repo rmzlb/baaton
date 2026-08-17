@@ -641,19 +641,61 @@ function DistributionBar({ counts, statuses }: { counts: Record<string, number>;
 
 type SortKey = 'name' | 'total' | 'pct' | 'ratio' | string;
 
+/**
+ * Table prefs live in localStorage — the dashboard is a daily-driver screen,
+ * re-picking sort + visibility on every visit is pure friction.
+ */
+const PREFS_KEY = 'baaton-dashboard-table-prefs';
+
+interface TablePrefs {
+  sortKey: SortKey;
+  sortDesc: boolean;
+  showClosed: boolean;
+  showReview: boolean;
+}
+
+const DEFAULT_PREFS: TablePrefs = {
+  sortKey: 'backlog',
+  sortDesc: true,
+  showClosed: false,
+  showReview: true,
+};
+
+function loadPrefs(): TablePrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return DEFAULT_PREFS;
+    const parsed = JSON.parse(raw) as Partial<TablePrefs>;
+    const sortKey = typeof parsed.sortKey === 'string' ? parsed.sortKey : DEFAULT_PREFS.sortKey;
+    // Guard against a stale key from an older column set.
+    const known = ['name', 'total', 'pct', 'ratio', ...TABLE_STATUSES.map(s => s.key)];
+    return {
+      sortKey: known.includes(sortKey) ? sortKey : DEFAULT_PREFS.sortKey,
+      sortDesc: typeof parsed.sortDesc === 'boolean' ? parsed.sortDesc : DEFAULT_PREFS.sortDesc,
+      showClosed: typeof parsed.showClosed === 'boolean' ? parsed.showClosed : DEFAULT_PREFS.showClosed,
+      showReview: typeof parsed.showReview === 'boolean' ? parsed.showReview : DEFAULT_PREFS.showReview,
+    };
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
 function ProjectTable({ orgs, onNavigate }: {
   orgs: DashboardOrg[];
   onNavigate: (project: DashboardProject, orgId: string) => void;
 }) {
-  const [sortKey, setSortKey] = useState<SortKey>('not_ok');
-  const [sortDesc, setSortDesc] = useState(true);
+  const initialPrefs = useRef(loadPrefs()).current;
+  const [sortKey, setSortKey] = useState<SortKey>(initialPrefs.sortKey);
+  const [sortDesc, setSortDesc] = useState(initialPrefs.sortDesc);
 
   // Closed work (Done + Cancelled) is hidden by default — a dashboard is about
   // what is left to do. In Review is shown by default but can be folded away.
-  const [showClosed, setShowClosed] = useState(() => localStorage.getItem('baaton-dashboard-closed') === '1');
-  const [showReview, setShowReview] = useState(() => localStorage.getItem('baaton-dashboard-review') !== '0');
-  useEffect(() => { localStorage.setItem('baaton-dashboard-closed', showClosed ? '1' : '0'); }, [showClosed]);
-  useEffect(() => { localStorage.setItem('baaton-dashboard-review', showReview ? '1' : '0'); }, [showReview]);
+  const [showClosed, setShowClosed] = useState(initialPrefs.showClosed);
+  const [showReview, setShowReview] = useState(initialPrefs.showReview);
+
+  useEffect(() => {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ sortKey, sortDesc, showClosed, showReview }));
+  }, [sortKey, sortDesc, showClosed, showReview]);
 
   const visibleStatuses = useMemo(
     () => TABLE_STATUSES.filter(s => {
@@ -667,7 +709,7 @@ function ProjectTable({ orgs, onNavigate }: {
   // A sort on a status that just got hidden would look broken — fall back.
   useEffect(() => {
     if (!visibleStatuses.some(s => s.key === sortKey) && TABLE_STATUSES.some(s => s.key === sortKey)) {
-      setSortKey('not_ok');
+      setSortKey('backlog');
       setSortDesc(true);
     }
   }, [visibleStatuses, sortKey]);
@@ -732,8 +774,8 @@ function ProjectTable({ orgs, onNavigate }: {
       : <ChevronUp size={9} className="inline ml-0.5 -mt-px" />;
 
   const MOBILE_SORTS: Array<{ key: SortKey; label: string }> = [
-    { key: 'not_ok', label: 'Not OK' },
     { key: 'backlog', label: 'Backlog' },
+    { key: 'not_ok', label: 'Not OK' },
     { key: 'in_progress', label: 'In prog.' },
     { key: 'total', label: 'Total' },
     { key: 'name', label: 'A-Z' },

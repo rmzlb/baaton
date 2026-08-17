@@ -21,6 +21,7 @@ import { FilterSelect } from '@/components/shared/FilterSelect';
 import { useCrossOrgMembers } from '@/hooks/useCrossOrgMembers';
 import { MemberResolutionProvider } from '@/contexts/MemberResolutionContext';
 import { cn } from '@/lib/utils';
+import { usePersistedState, oneOf, stringArray } from '@/lib/persistedState';
 import type { Issue, IssueStatus, ProjectStatus, ProjectTag, SavedView } from '@/lib/types';
 
 // ─── Statuses (global) ───────────────────────
@@ -91,6 +92,8 @@ const PRIORITY_CONFIG = [
 type ViewMode = 'kanban' | 'list' | 'table';
 
 const PROJECT_FILTER_STORAGE_KEY = 'all-issues:project-filter:v1';
+const SORT_MODES = ['manual', 'priority', 'created', 'updated'] as const;
+type SortMode = (typeof SORT_MODES)[number];
 
 interface CrossOrgProjectOption {
   id: string;
@@ -295,23 +298,15 @@ export function AllIssues() {
     localStorage.setItem('baaton-show-done-all-issues', String(showDone));
   }, [showDone]);
 
-  // Filters
-  const [projectFilter, setProjectFilter] = useState<string[]>(() => {
-    try {
-      const raw = localStorage.getItem(PROJECT_FILTER_STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
-    } catch {
-      return [];
-    }
-  });
-  const [statusFilter, setStatusFilter] = useState<string[]>([]);
-  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
-  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
-  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  // Filters — persisted, so a reload lands on the same working set
+  const [projectFilter, setProjectFilter] = usePersistedState<string[]>(PROJECT_FILTER_STORAGE_KEY, [], stringArray);
+  const [statusFilter, setStatusFilter] = usePersistedState<string[]>('all-issues:status-filter:v1', [], stringArray);
+  const [priorityFilter, setPriorityFilter] = usePersistedState<string[]>('all-issues:priority-filter:v1', [], stringArray);
+  const [assigneeFilter, setAssigneeFilter] = usePersistedState<string[]>('all-issues:assignee-filter:v1', [], stringArray);
+  const [tagFilter, setTagFilter] = usePersistedState<string[]>('all-issues:tag-filter:v1', [], stringArray);
+  // Search stays ephemeral on purpose — a stale query would look like a bug.
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortMode, setSortMode] = useState<'manual' | 'priority' | 'created' | 'updated'>('created');
+  const [sortMode, setSortMode] = usePersistedState<SortMode>('all-issues:sort:v1', 'created', oneOf(SORT_MODES));
   const [searchFocused, setSearchFocused] = useState(false);
 
   // Toggle helpers
@@ -384,10 +379,6 @@ export function AllIssues() {
       projects: [...group.projects].sort((a, b) => a.name.localeCompare(b.name)),
     })).sort((a, b) => a.orgName.localeCompare(b.orgName));
   }, [effectiveProjects]);
-
-  useEffect(() => {
-    localStorage.setItem(PROJECT_FILTER_STORAGE_KEY, JSON.stringify(projectFilter));
-  }, [projectFilter]);
 
   useEffect(() => {
     if (effectiveProjects.length === 0) return;
