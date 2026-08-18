@@ -509,6 +509,14 @@ pub struct Comment {
     pub approval_metadata: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Attribution (migration 068): `author_id` is who acted, these say what
+    /// kind of identity it was and which human is ultimately responsible.
+    #[sqlx(default)]
+    pub actor_type: Option<String>,
+    #[sqlx(default)]
+    pub actor_key_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub on_behalf_of: Option<String>,
 }
 
 // ─── Issue Detail (with relations) ────────────────────
@@ -579,6 +587,18 @@ pub struct ActivityEntry {
     pub new_value: Option<String>,
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
+    /// Attribution (migration 068): `user_id` is who acted, these say what kind
+    /// of identity it was, which key to revoke, and which human is responsible.
+    #[sqlx(default)]
+    pub actor_type: Option<String>,
+    #[sqlx(default)]
+    pub actor_key_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub on_behalf_of: Option<String>,
+    /// Human-readable name for `on_behalf_of`, resolved from Clerk at read time
+    /// (not stored: names change, the id is the durable reference).
+    #[sqlx(default)]
+    pub on_behalf_of_name: Option<String>,
     /// Enriched fields — populated by JOIN in list_recent / list_by_issue.
     /// Absent in simple SELECT * queries; defaults to None via #[sqlx(default)].
     #[sqlx(default)]

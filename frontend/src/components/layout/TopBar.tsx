@@ -65,7 +65,7 @@ export function TopBar() {
       */}
       <header className="safe-pt safe-pl safe-pr sticky top-0 z-20 box-content flex h-12 items-center justify-between border-b border-border bg-bg px-3 md:px-5 shrink-0" role="banner">
         {/* Left: mobile menu + breadcrumb */}
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
           <button
             onClick={openMobileSidebar}
             aria-label={t('topbar.openMenu') || 'Open menu'}
@@ -79,7 +79,7 @@ export function TopBar() {
                 {i > 0 && <ChevronRight size={12} className="text-muted shrink-0" />}
                 <span
                   className={cn(
-                    'truncate',
+                    'truncate min-w-0',
                     i === breadcrumbs.length - 1
                       ? 'text-primary font-medium'
                       : 'text-secondary',
@@ -93,7 +93,7 @@ export function TopBar() {
         </div>
 
         {/* Right: notifications + search trigger */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <NotificationBell />
           <button
             onClick={openCommandBar}

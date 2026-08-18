@@ -284,6 +284,9 @@ export interface Comment {
   approval_metadata: ApprovalMetadata | null;
   created_at: string;
   updated_at: string;
+  actor_type?: 'human' | 'api_key' | 'github' | 'system' | null;
+  actor_key_id?: string | null;
+  on_behalf_of?: string | null;
 }
 
 export interface ApiKey {
@@ -309,6 +312,14 @@ export interface ActivityEntry {
   issue_id: string | null;
   user_id: string;
   user_name: string | null;
+  /** Kind of identity that acted. Prefer this over parsing `user_id` prefixes. */
+  actor_type?: 'human' | 'api_key' | 'github' | 'system' | null;
+  /** API key that acted, when actor_type === 'api_key' (revocation target). */
+  actor_key_id?: string | null;
+  /** Clerk id of the human the key belongs to. */
+  on_behalf_of?: string | null;
+  /** Display name for `on_behalf_of`, resolved server-side. */
+  on_behalf_of_name?: string | null;
   action: string;
   field: string | null;
   old_value: string | null;

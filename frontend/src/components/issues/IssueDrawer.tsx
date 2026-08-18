@@ -2600,7 +2600,7 @@ function ImageLightbox({
       <button
         onClick={onClose}
         aria-label="Close image viewer"
-        className="absolute top-4 right-4 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
+        className="absolute z-10 top-[max(1rem,env(safe-area-inset-top))] right-[max(1rem,env(safe-area-inset-right))] rounded-full bg-black/60 p-3 min-w-[44px] min-h-[44px] flex items-center justify-center text-white hover:bg-black/80 transition-colors"
       >
         <X size={20} aria-hidden="true" />
       </button>
@@ -2612,7 +2612,7 @@ function ImageLightbox({
             onNavigate(currentIndex - 1);
           }}
           aria-label="Previous image"
-          className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-3 text-white hover:bg-black/80 transition-colors"
+          className="absolute z-10 left-[max(0.5rem,env(safe-area-inset-left))] top-1/2 -translate-y-1/2 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
         >
           ←
         </button>
@@ -2624,34 +2624,38 @@ function ImageLightbox({
             onNavigate(currentIndex + 1);
           }}
           aria-label="Next image"
-          className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-3 text-white hover:bg-black/80 transition-colors"
+          className="absolute z-10 right-[max(0.5rem,env(safe-area-inset-right))] top-1/2 -translate-y-1/2 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
         >
           →
         </button>
       )}
 
+      {/* dvh, not vh: on iOS the visual viewport shrinks with the browser UI,
+          and vh would push the image under the toolbar / bottom action bar. */}
       <img
         src={images[currentIndex].url}
         alt={images[currentIndex].name}
-        className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
+        className="max-h-[80dvh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onError={(e) => {
           e.currentTarget.src = '';
           e.currentTarget.alt = 'Image expired or unavailable';
-          e.currentTarget.className = 'max-h-[40vh] max-w-[60vw] flex items-center justify-center bg-surface rounded-lg p-8 text-muted text-sm';
+          e.currentTarget.className = 'max-h-[40dvh] max-w-[60vw] flex items-center justify-center bg-surface rounded-lg p-8 text-muted text-sm';
         }}
       />
 
+      {/* Bottom inset keeps the action bar above the iOS home indicator. */}
       <div
-        className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 rounded-xl bg-black/70 backdrop-blur-sm px-4 py-2"
+        className="absolute z-10 bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-xl bg-black/70 backdrop-blur-sm px-3 py-2"
         onClick={(e) => e.stopPropagation()}
       >
-        <span className="text-xs text-white/80 truncate max-w-[200px]">{images[currentIndex].name}</span>
-        <span className="text-xs text-white/60">{currentIndex + 1} / {images.length}</span>
+        <span className="text-xs text-white/80 truncate max-w-[110px] sm:max-w-[200px]">{images[currentIndex].name}</span>
+        <span className="shrink-0 text-xs text-white/60">{currentIndex + 1} / {images.length}</span>
         {onAnnotate && (
           <button
             onClick={() => onAnnotate(currentIndex)}
-            className="rounded-md bg-accent/90 px-2.5 py-1 text-[10px] font-medium text-black hover:bg-accent transition-colors"
+            aria-label="Annotate image"
+            className="flex min-h-[44px] shrink-0 items-center rounded-md bg-accent/90 px-3 text-[11px] font-medium text-black hover:bg-accent transition-colors"
           >
             ✏️ Annotate
           </button>
@@ -2659,7 +2663,8 @@ function ImageLightbox({
         <a
           href={images[currentIndex].url}
           download={images[currentIndex].name}
-          className="rounded-md bg-white/10 px-2 py-1 text-[10px] text-white hover:bg-white/20 transition-colors"
+          aria-label="Download image"
+          className="flex min-h-[44px] shrink-0 items-center rounded-md bg-white/10 px-3 text-[11px] text-white hover:bg-white/20 transition-colors"
         >
           ↓ Download
         </a>

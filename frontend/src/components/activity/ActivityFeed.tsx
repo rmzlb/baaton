@@ -111,13 +111,28 @@ function TimelineItem({ entry, t, onIssueClick }: { entry: ActivityEntry; t: (k:
   const dotColor = DOT_COLORS[entry.action] || 'bg-gray-400';
   const verb = actionVerb(entry.action, t);
 
-  const displayName = entry.user_name
+  // Attribution: show the responsible human first, with the acting agent in
+  // parentheses ("Ramzi (via MCP key)"). Falls back to the acting identity when
+  // no human is attached (legacy rows, GitHub webhooks, system jobs).
+  const actorType = entry.actor_type
+    ?? (entry.user_id.startsWith('apikey:')
+      ? 'api_key'
+      : entry.user_id.startsWith('github:')
+        ? 'github'
+        : 'human');
+
+  const actingName = entry.user_name
     ? entry.user_name.replace(/^@/, '')
-    : entry.user_id.startsWith('github:')
+    : actorType === 'github'
       ? entry.user_id.slice(7)
-      : entry.user_id.startsWith('apikey:')
+      : actorType === 'api_key'
         ? 'agent'
         : entry.user_id.slice(0, 12);
+
+  const humanName = entry.on_behalf_of_name?.replace(/^@/, '') || null;
+  const displayName = humanName ?? actingName;
+  // Only annotate when the two differ, so human actions stay clean.
+  const viaLabel = actorType === 'api_key' && humanName ? actingName : null;
 
   const handleIssueClick = () => {
     if (!entry.issue_display_id) return;
@@ -140,6 +155,12 @@ function TimelineItem({ entry, t, onIssueClick }: { entry: ActivityEntry; t: (k:
       <div className="flex-1 min-w-0 pb-0.5">
         <p className="text-sm text-primary leading-snug">
           <span className="font-medium">{displayName}</span>
+          {viaLabel && (
+            <span className="text-muted" title={`Via API key: ${viaLabel}`}> ({viaLabel})</span>
+          )}
+          {!viaLabel && actorType === 'api_key' && (
+            <span className="text-muted"> (API)</span>
+          )}
           {' '}{verb}{' '}
           {entry.issue_display_id && (
             <button

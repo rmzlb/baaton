@@ -163,6 +163,7 @@ async fn main() -> anyhow::Result<()> {
             67,
             include_str!("../migrations/067_restore_in_review_status.sql"),
         ),
+        (68, include_str!("../migrations/068_actor_attribution.sql")),
     ];
 
     for &(version, sql) in migrations {

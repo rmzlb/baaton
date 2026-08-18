@@ -141,18 +141,31 @@ pub async fn create(
     // DB never holds short-lived URLs.
     let body_text = crate::s3::collapse_to_markers(&body.body);
 
-    // Auto-fill author from auth context if not provided
+    // Auto-fill author from auth context if not provided.
+    // `author_id` stays the *acting* identity (`apikey:<id>` for agents): comment
+    // ownership and edit rights are keyed on it, and collapsing it to the human
+    // would make "which key posted this" unrecoverable. The human behind an API
+    // key is recorded separately in `on_behalf_of` (migration 068).
     let author_id = body.author_id.unwrap_or_else(|| auth.user_id.clone());
     let author_name = body.author_name.unwrap_or_else(|| {
         auth.display_name.clone()
             .or(auth.email.clone())
             .unwrap_or_else(|| auth.user_id.clone())
     });
+    // Classify from the identity actually stored, since callers may override
+    // `author_id` (imports, GitHub sync) and then the auth context is not the author.
+    let actor = crate::routes::activity::ActorContext::from_identity(&author_id);
+    let on_behalf_of = if actor.key_id == auth.actor_key_id {
+        auth.on_behalf_of.clone()
+    } else {
+        None
+    };
 
     let mut comment = sqlx::query_as::<_, Comment>(
         r#"
-        INSERT INTO comments (issue_id, author_id, author_name, body)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO comments (issue_id, author_id, author_name, body, actor_type, actor_key_id, on_behalf_of)
+        VALUES ($1, $2, $3, $4, $5, $6,
+                COALESCE($7, (SELECT created_by FROM api_keys WHERE id = $6)))
         RETURNING *
         "#,
     )
@@ -160,12 +173,17 @@ pub async fn create(
     .bind(&author_id)
     .bind(&author_name)
     .bind(&body_text)
+    .bind(actor.kind.as_str())
+    .bind(actor.key_id)
+    .bind(on_behalf_of.as_deref())
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
     // ── Gamification: award XP for comment (fire-and-forget) ──
-    {
+    // Humans only. An API key commenting for a human is attributed to them in
+    // the audit trail, but must not earn them XP.
+    if actor.kind.earns_gamification() {
         let pool2 = pool.clone();
         let uid = author_id.clone();
         let oid = org_id.to_string();
@@ -396,7 +414,8 @@ pub async fn update(
 
     // Edit is restricted to the author identity. API-key authors resolve to the
     // human who owns the key, so a human and their keys count as one author.
-    let caller_owner = resolve_owner_identity(&pool, &auth.user_id).await;
+    // The caller side needs no DB lookup: auth already carries `on_behalf_of`.
+    let caller_owner = auth.responsible_user_id().to_string();
     let comment_owner = resolve_owner_identity(&pool, &author_id).await;
     if comment_owner != caller_owner {
         return Err((StatusCode::FORBIDDEN, Json(json!({"error": "You can only edit your own comments"}))));
@@ -495,7 +514,7 @@ pub async fn remove(
         .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Comment not found"}))))?;
 
     if !auth.is_admin() {
-        let caller_owner = resolve_owner_identity(&pool, &auth.user_id).await;
+        let caller_owner = auth.responsible_user_id().to_string();
         let comment_owner = resolve_owner_identity(&pool, &author_id).await;
         if comment_owner != caller_owner {
             return Err((StatusCode::FORBIDDEN, Json(json!({"error": "You can only delete your own comments"}))));

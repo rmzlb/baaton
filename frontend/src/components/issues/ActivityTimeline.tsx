@@ -10,12 +10,39 @@ interface ActivityEntry {
   issue_id: string;
   user_id: string | null;
   user_name: string | null;
+  /** Kind of identity that acted (migration 068). */
+  actor_type?: 'human' | 'api_key' | 'github' | 'system' | null;
+  /** Clerk id of the human the acting key belongs to. */
+  on_behalf_of?: string | null;
+  /** Display name for `on_behalf_of`, resolved server-side. */
+  on_behalf_of_name?: string | null;
   action: string;
   field: string | null;
   old_value: string | null;
   new_value: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
+}
+
+/// Label an activity actor as "Human (via key)" when an agent acted for someone.
+function actorLabel(entry: ActivityEntry): string {
+  const actorType = entry.actor_type
+    ?? (entry.user_id?.startsWith('apikey:')
+      ? 'api_key'
+      : entry.user_id?.startsWith('github:')
+        ? 'github'
+        : 'human');
+
+  const acting = entry.user_name?.replace(/^@/, '')
+    || (actorType === 'github' ? entry.user_id?.slice(7) : null)
+    || (actorType === 'api_key' ? 'agent' : null)
+    || 'System';
+
+  const human = entry.on_behalf_of_name?.replace(/^@/, '');
+  if (actorType === 'api_key') {
+    return human ? `${human} (${acting})` : `${acting} (API)`;
+  }
+  return acting;
 }
 
 const ACTION_CONFIG: Record<string, { icon: React.ElementType; label: string; color: string }> = {
@@ -168,7 +195,7 @@ export function ActivityTimeline({ issueId }: { issueId: string }) {
               <div className="flex-1 min-w-0 pt-0.5">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[11px] font-medium text-primary">
-                    {first.user_name || 'System'}
+                    {actorLabel(first)}
                   </span>
 
                   {group.entries.map(entry => {

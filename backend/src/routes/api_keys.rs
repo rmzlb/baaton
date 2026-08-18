@@ -172,7 +172,7 @@ fn generate_api_key() -> (String, String, String) {
 }
 
 fn require_clerk_user(auth: &AuthUser) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    if auth.user_id.starts_with("apikey:") {
+    if !auth.is_human() {
         return Err((
             StatusCode::FORBIDDEN,
             Json(json!({"error": "API keys cannot manage other API keys"})),
@@ -471,22 +471,35 @@ pub async fn create(
     apply_dynamic_scope_to_row(&mut row, &manageable_org_ids);
 
     let key_name = row.name.clone();
-    let actor_name = auth
-        .display_name
-        .clone()
-        .or(auth.email.clone())
-        .unwrap_or_else(|| auth.user_id.clone());
     let log_pool = pool.clone();
-    let actor_id = auth.user_id.clone();
+    let log_auth = auth.clone();
+    let log_org_id = anchor_org_id.clone();
+    let log_key_id = key_id;
+    let log_prefix = prefix.clone();
+    let log_perms = row.permissions.clone();
     tokio::spawn(async move {
-        let _ = sqlx::query(
-            "INSERT INTO activity_log (issue_id, actor_id, actor_name, action, details) \
-             SELECT id, $1, $2, 'api_key_created', $3::jsonb FROM issues LIMIT 0",
+        // Previously this wrote to `actor_id`/`actor_name` with `LIMIT 0`, so it
+        // silently inserted nothing: those columns were dropped in migration 008
+        // and the row count was always zero. API key creation is exactly the
+        // event an audit trail must never miss, so it now goes through the
+        // standard activity logger (issue_id NULL = org-level event).
+        crate::routes::activity::log_activity_as(
+            &log_pool,
+            &log_auth,
+            &log_org_id,
+            None,
+            None,
+            "api_key_created",
+            None,
+            None,
+            None,
+            Some(json!({
+                "key_name": key_name,
+                "key_id": log_key_id.to_string(),
+                "key_prefix": log_prefix,
+                "permissions": log_perms,
+            })),
         )
-        .bind(&actor_id)
-        .bind(&actor_name)
-        .bind(json!({"key_name": key_name}).to_string())
-        .execute(&log_pool)
         .await;
     });
 

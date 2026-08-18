@@ -431,7 +431,7 @@ pub async fn get_stats(
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
     // User-level stats (skipped for api-key callers that have no personal streaks)
-    let is_api_key = auth.user_id.starts_with("apikey:");
+    let is_api_key = auth.is_api_key();
     let user_stats = if !is_api_key {
         let activity = sqlx::query_as::<_, UserActivityRow>(
             "SELECT current_streak, longest_streak, last_active_date, best_day_count, best_week_count

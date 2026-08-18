@@ -168,7 +168,11 @@ async fn fetch_clerk_profile(user_id: &str) -> Option<(Option<String>, Option<St
     Some((display_name, email))
 }
 
-async fn resolve_profile_cached(user_id: &str) -> Option<(Option<String>, Option<String>)> {
+/// Resolve a Clerk user's display name / email, memoised for `PROFILE_TTL`.
+///
+/// Public so audit views can name the human behind an API key without adding a
+/// Clerk round-trip per row (the cache is shared with the auth path).
+pub async fn resolve_profile_cached(user_id: &str) -> Option<(Option<String>, Option<String>)> {
     let cache = profile_cache();
     {
         let read = cache.read().await;
@@ -239,6 +243,56 @@ pub struct ClerkClaims {
     pub sts: Option<String>,
 }
 
+/// Nature of the identity that performed a request.
+///
+/// Kept separate from `user_id` so audit code stops string-sniffing the
+/// `apikey:` / `github:` prefixes. See migration 068_actor_attribution.sql.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActorKind {
+    /// Clerk JWT user acting directly.
+    Human,
+    /// API key acting on behalf of the human who created it.
+    ApiKey,
+    /// GitHub webhook sender (synthetic identity, no Baaton account).
+    Github,
+    /// Internal automation (recurring rules, SLA sweeps, migrations).
+    System,
+}
+
+impl ActorKind {
+    /// Stable wire/DB representation. Must match the values used by
+    /// migration 068 (`activity_log.actor_type`, `comments.actor_type`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ActorKind::Human => "human",
+            ActorKind::ApiKey => "api_key",
+            ActorKind::Github => "github",
+            ActorKind::System => "system",
+        }
+    }
+
+    /// Classify a raw identity string. Used for legacy call sites that only
+    /// have a `user_id` and no `AuthUser` in scope (webhooks, cron jobs).
+    pub fn from_identity(identity: &str) -> Self {
+        if identity.starts_with("apikey:") {
+            ActorKind::ApiKey
+        } else if identity.starts_with("github:") {
+            ActorKind::Github
+        } else if identity.is_empty() || identity == "system" {
+            ActorKind::System
+        } else {
+            ActorKind::Human
+        }
+    }
+
+    /// Whether this actor earns personal XP / streaks. Only humans do:
+    /// attribution is not the same thing as credit, so an agent acting for a
+    /// human must never inflate that human's gamification counters.
+    pub fn earns_gamification(&self) -> bool {
+        matches!(self, ActorKind::Human)
+    }
+}
+
 /// Extension added to the request by the auth middleware
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -252,6 +306,13 @@ pub struct AuthUser {
     pub scoped_org_ids: Vec<String>,
     /// API key project scoping: if non-empty, restrict access to these projects only
     pub scoped_project_ids: Vec<uuid::Uuid>,
+    /// What kind of identity is acting (human, API key, GitHub, system).
+    pub actor_kind: ActorKind,
+    /// For API keys: the key row id, so audit rows point at a revocation target.
+    pub actor_key_id: Option<uuid::Uuid>,
+    /// For API keys: the human who created the key (`api_keys.created_by`).
+    /// `None` for direct human callers, where `user_id` is already the human.
+    pub on_behalf_of: Option<String>,
 }
 
 impl AuthUser {
@@ -292,6 +353,23 @@ impl AuthUser {
             return Some(email.to_string());
         }
         None
+    }
+
+    /// True if the caller is a human Clerk user acting directly.
+    pub fn is_human(&self) -> bool {
+        self.actor_kind == ActorKind::Human
+    }
+
+    /// True if the caller is an API key.
+    pub fn is_api_key(&self) -> bool {
+        self.actor_kind == ActorKind::ApiKey
+    }
+
+    /// The human ultimately responsible for this request: the key owner for an
+    /// API key, the caller themselves otherwise. Used for accountability
+    /// queries ("everything Ramzi did, including through his agents").
+    pub fn responsible_user_id(&self) -> &str {
+        self.on_behalf_of.as_deref().unwrap_or(&self.user_id)
     }
 }
 
@@ -497,6 +575,12 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             display_name: Some(key_row.name.clone()),
             scoped_org_ids: effective_org_ids,
             scoped_project_ids: key_row.project_ids,
+            actor_kind: ActorKind::ApiKey,
+            actor_key_id: Some(key_row.id),
+            // The human who created the key stays attached to every request it
+            // makes, so audit rows can name a responsible person without
+            // losing which key acted.
+            on_behalf_of: key_row.created_by.clone(),
         };
 
         tracing::debug!(
@@ -647,6 +731,10 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         email,
         display_name,
         scoped_project_ids: vec![], // JWT users have full org access
+        actor_kind: ActorKind::Human,
+        actor_key_id: None,
+        // Direct human caller: `user_id` is already the responsible identity.
+        on_behalf_of: None,
     };
 
     tracing::debug!(
