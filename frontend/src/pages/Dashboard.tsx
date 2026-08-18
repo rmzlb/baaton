@@ -28,6 +28,7 @@ interface DashboardProject {
   created_this_month: number;
   closed_this_week: number;
   closed_this_month: number;
+  last_activity_at: string | null;
   assignees: string[];
 }
 
@@ -45,6 +46,7 @@ interface DashboardMetrics {
   issues_closed: Array<{ date: string; count: number }>;
   avg_resolution_hours: number | null;
   active_issues: number;
+  client_wait: { waiting: number; median_days: number | null; stuck: number } | null;
   period_days: number;
 }
 
@@ -726,6 +728,7 @@ function ProjectTable({ orgs, onNavigate }: {
         const total = visibleStatuses.reduce((sum, s) => sum + (counts[s.key] || 0), 0);
         return {
           project, org, counts, total, totalAll, done, created, closed,
+          lastActivity: project.last_activity_at ? Date.parse(project.last_activity_at) : 0,
           pct: totalAll > 0 ? Math.round((done / totalAll) * 100) : 0,
           ratio: created > 0 ? closed / created : closed > 0 ? 99 : 0,
         };
@@ -736,7 +739,13 @@ function ProjectTable({ orgs, onNavigate }: {
       if (sortKey === 'name') return a.project.name.localeCompare(b.project.name) * dir;
       const va = sortKey === 'total' ? a.total : sortKey === 'pct' ? a.pct : sortKey === 'ratio' ? a.ratio : (a.counts[sortKey] || 0);
       const vb = sortKey === 'total' ? b.total : sortKey === 'pct' ? b.pct : sortKey === 'ratio' ? b.ratio : (b.counts[sortKey] || 0);
-      if (va === vb) return a.project.name.localeCompare(b.project.name);
+      // Ties are common: most projects show the same small count in a given column.
+      // Alphabetical order there is noise, so fall back to most recent issue activity
+      // (independent of sort direction) and only use the name as a last resort.
+      if (va === vb) {
+        if (a.lastActivity !== b.lastActivity) return b.lastActivity - a.lastActivity;
+        return a.project.name.localeCompare(b.project.name);
+      }
       return (va - vb) * dir;
     });
   }, [orgs, sortKey, sortDesc, visibleStatuses]);
@@ -1103,14 +1112,28 @@ export function Dashboard() {
     const active = data?.metrics.active_issues ?? 0;
     const created = data?.metrics.issues_created?.reduce((sum, row) => sum + row.count, 0) ?? 0;
     const closed = data?.metrics.issues_closed?.reduce((sum, row) => sum + row.count, 0) ?? 0;
-    const avgH = data?.metrics.avg_resolution_hours;
-    const avgLabel = avgH != null ? (avgH >= 24 ? `${(avgH / 24).toFixed(1)}` : `${avgH.toFixed(1)}h`) : '—';
-    const avgSub = avgH != null ? (avgH >= 24 ? 'days' : '') : '';
+
+    // Client review queue. Replaces the old "Avg Resolution" card, which averaged a
+    // long-tailed distribution (one issue sat 190 days) and read ~3x the median, so it
+    // never matched what the board looked like. Median + a count of issues past 14 days
+    // answers the only question this card needs to answer: is the client blocking us,
+    // and on how many tickets?
+    const wait = data?.metrics.client_wait;
+    const waitValue = wait?.median_days != null ? `${wait.median_days.toFixed(0)}d` : '—';
+    const waitSub = wait
+      ? wait.stuck > 0
+        ? `${wait.stuck} over 14d · ${wait.waiting} in review`
+        : `${wait.waiting} in review`
+      : undefined;
+    // Amber past a week of typical wait, red past two: the queue is the bottleneck.
+    const waitColor =
+      wait?.median_days == null ? '#8b5cf6' : wait.median_days > 14 ? '#ef4444' : wait.median_days > 7 ? '#f59e0b' : '#22c55e';
+
     return [
       { label: 'Active Issues', value: active, color: '#3b82f6', icon: TrendingUp, sub: `+${created} last 30d` },
       { label: 'Created', value: created, color: '#f59e0b', icon: Zap, sub: 'Last 30 days' },
       { label: 'Closed', value: closed, color: '#22c55e', icon: CheckCircle2, sub: closed > created ? 'On track' : undefined },
-      { label: 'Avg Resolution', value: avgLabel, color: '#8b5cf6', icon: Timer, sub: avgSub || undefined },
+      { label: 'Waiting on Client', value: waitValue, color: waitColor, icon: Timer, sub: waitSub },
     ];
   }, [data]);
 

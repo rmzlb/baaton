@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::PgPool;
@@ -115,6 +115,15 @@ struct ProjectStatusRow {
     total_issues: i64,
 }
 
+/// Aggregate for the dashboard's client-wait card: how many issues sit in
+/// `in_review`, the median age of that queue, and how many crossed 14 days.
+#[derive(sqlx::FromRow)]
+struct ClientWaitRow {
+    waiting_count: i64,
+    median_days: Option<f64>,
+    stuck_count: i64,
+}
+
 #[derive(sqlx::FromRow)]
 struct AssigneeRow {
     project_id: Uuid,
@@ -164,6 +173,10 @@ struct ProjectTemporalRow {
     created_month: i64,
     closed_week: i64,
     closed_month: i64,
+    /// Most recent issue touch on the project. Used by the dashboard table as the
+    /// tiebreaker when several projects share the same count in the sorted column,
+    /// so equal rows fall in "most recently active first" order.
+    last_activity_at: Option<DateTime<Utc>>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -262,6 +275,7 @@ pub async fn summary(
         closed_result,
         avg_hours_result,
         active_issues_result,
+        client_wait_result,
         personal_week_result,
         personal_today_result,
         personal_v7_result,
@@ -342,7 +356,39 @@ pub async fn summary(
         // f) Active issues count
         sqlx::query_scalar::<_, i64>(
             r#"SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id
-               WHERE p.org_id = ANY($1) AND i.status_category NOT IN ('completed', 'canceled')"#
+               WHERE p.org_id = ANY($1) AND i.status_category NOT IN ('completed', 'canceled')
+                 AND i.archived = false"#
+        ).bind(&all_org_ids).fetch_one(&pool),
+
+        // f2) Client wait: how long issues have been parked in `in_review`.
+        // `in_review` means "waiting on the client", so this is the single number
+        // that explains the board: dev turnaround is hours, client review is weeks.
+        // Age runs from the last status change into the current status (activity_log),
+        // falling back to `created_at` for rows with no recorded transition.
+        // Median, not mean: the distribution has a long tail (one issue sat 190 days)
+        // and the mean reads ~3x the median, which would misstate the typical wait.
+        sqlx::query_as::<_, ClientWaitRow>(
+            r#"WITH last_change AS (
+                   SELECT DISTINCT ON (al.issue_id) al.issue_id, al.created_at AS entered_at
+                   FROM activity_log al
+                   WHERE al.action = 'status_changed' AND al.issue_id IS NOT NULL
+                     AND al.new_value IS NOT NULL
+                   ORDER BY al.issue_id, al.created_at DESC
+               ),
+               waiting AS (
+                   SELECT EXTRACT(EPOCH FROM (now() - COALESCE(lc.entered_at, i.created_at))) / 86400.0 AS age_days
+                   FROM issues i
+                   JOIN projects p ON p.id = i.project_id
+                   LEFT JOIN last_change lc ON lc.issue_id = i.id
+                   WHERE p.org_id = ANY($1)
+                     AND i.status = 'in_review'
+                     AND i.archived = false
+                     AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE)
+               )
+               SELECT COUNT(*)::bigint                                        AS waiting_count,
+                      percentile_cont(0.5) WITHIN GROUP (ORDER BY age_days)   AS median_days,
+                      COUNT(*) FILTER (WHERE age_days > 14)::bigint           AS stuck_count
+               FROM waiting"#
         ).bind(&all_org_ids).fetch_one(&pool),
 
         // g) Personal: this week
@@ -470,7 +516,8 @@ pub async fn summary(
                    COUNT(*) FILTER (WHERE i.created_at >= $2)::bigint AS created_week,
                    COUNT(*) FILTER (WHERE i.created_at >= $3)::bigint AS created_month,
                    COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $2)::bigint AS closed_week,
-                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $3)::bigint AS closed_month
+                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $3)::bigint AS closed_month,
+                   MAX(GREATEST(i.created_at, i.updated_at)) AS last_activity_at
                FROM issues i
                JOIN projects p ON p.id = i.project_id
                WHERE p.org_id = ANY($1)
@@ -486,6 +533,7 @@ pub async fn summary(
     let closed = closed_result.unwrap_or_default();
     let avg_hours = avg_hours_result.ok().flatten().flatten();
     let active_issues = active_issues_result.unwrap_or(0);
+    let client_wait = client_wait_result.ok();
     let personal_week = personal_week_result.unwrap_or(0);
     let personal_today = personal_today_result.unwrap_or(0);
     let pv7_total = personal_v7_result.unwrap_or(0);
@@ -569,6 +617,7 @@ pub async fn summary(
                         "created_this_month": project_temporal_map.get(&p.id).map(|t| t.created_month).unwrap_or(0),
                         "closed_this_week": project_temporal_map.get(&p.id).map(|t| t.closed_week).unwrap_or(0),
                         "closed_this_month": project_temporal_map.get(&p.id).map(|t| t.closed_month).unwrap_or(0),
+                        "last_activity_at": project_temporal_map.get(&p.id).and_then(|t| t.last_activity_at).map(|d| d.to_rfc3339()),
                         "assignees": proj_assignees,
                     })
                 })
@@ -626,6 +675,12 @@ pub async fn summary(
                 "issues_closed": closed.iter().map(|r| json!({"date": r.date.to_string(), "count": r.count})).collect::<Vec<_>>(),
                 "avg_resolution_hours": avg_hours.map(|h| (h * 10.0).round() / 10.0),
                 "active_issues": active_issues,
+                // Single flow number surfaced on the board: the client-review queue.
+                "client_wait": client_wait.as_ref().map(|w| json!({
+                    "waiting": w.waiting_count,
+                    "median_days": w.median_days.map(|d| (d * 10.0).round() / 10.0),
+                    "stuck": w.stuck_count,
+                })),
                 "period_days": 30,
             },
             "personal": {
