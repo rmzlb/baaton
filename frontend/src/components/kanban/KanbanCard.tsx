@@ -11,7 +11,7 @@ import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { useMemberResolutionContext } from '@/contexts/MemberResolutionContext';
 import { GitHubPrBadge } from '@/components/github/GitHubPrBadge';
 import { CopyableId } from '@/components/shared/CopyableId';
-import { evaluateIssueSla } from '@/lib/sla';
+import { evaluateIssueSla, evaluateDueDate } from '@/lib/sla';
 import type { Issue, IssuePriority, IssueType, ProjectTag, GitHubPrLink } from '@/lib/types';
 
 /* ─── Helpers ───────────────────────────────────────── */
@@ -164,13 +164,29 @@ function TypeBadge({ type }: { type: IssueType }) {
 
 function SlaBadge({ issue }: { issue: Issue }) {
   const sla = evaluateIssueSla(issue);
-  if ((issue.priority !== 'urgent' && issue.priority !== 'high') || sla.status === 'completed' || sla.status === 'ok') return null;
+  if (issue.priority !== 'urgent' && issue.priority !== 'high') return null;
+  // Paused and on-track need no badge: only surface what requires action.
+  if (sla.status !== 'breached' && sla.status !== 'at_risk') return null;
   return (
     <span className={cn(
       'inline-flex items-center rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wide shrink-0',
       sla.status === 'breached' && 'bg-red-500/15 text-red-400',
       sla.status === 'at_risk' && 'bg-amber-500/15 text-amber-400',
     )} title={`SLA ${sla.status}`}>SLA</span>
+  );
+}
+
+/** Due date is an absolute commitment: it does not pause on review. */
+function DueDateBadge({ issue }: { issue: Issue }) {
+  const due = evaluateDueDate(issue);
+  if (!due?.overdue) return null;
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wide shrink-0 bg-rose-500/15 text-rose-400"
+      title={`Due ${due.date.toLocaleDateString()}`}
+    >
+      Late
+    </span>
   );
 }
 
@@ -265,7 +281,8 @@ function TagPill({ tag, color, maxW = 'max-w-[80px]' }: { tag: string; color: st
 /* ─── Left border state ─────────────────────────────── */
 
 function getLeftBorderClass(issue: Issue): string {
-  // SLA breach (highest priority)
+  // SLA breach (highest priority). A paused clock never colours the card:
+  // the work is delivered and the delay is not ours.
   const sla = evaluateIssueSla(issue);
   if (sla.status === 'breached') return 'border-l-[3px] border-l-red-500';
   if (sla.status === 'at_risk') return 'border-l-[3px] border-l-amber-500';
@@ -344,6 +361,7 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
           <CopyableId id={issue.display_id} className="text-[10px] text-gray-400 dark:text-muted shrink-0 whitespace-nowrap" iconSize={8} />
 
           <SlaBadge issue={issue} />
+          <DueDateBadge issue={issue} />
           <StatusAge issue={issue} />
           <CustomStatusPill issue={issue} />
 
@@ -414,6 +432,7 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
         <div className="flex items-center gap-1.5 flex-wrap mb-2">
           <TypeBadge type={issue.type} />
           <SlaBadge issue={issue} />
+          <DueDateBadge issue={issue} />
           {tags.slice(0, 3).map((tag) => (
             <TagPill key={tag} tag={tag} color={getTagColor(tag)} maxW="max-w-[100px]" />
           ))}
@@ -473,6 +492,7 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
           <CopyableId id={issue.display_id} className="text-[11px] text-gray-400 dark:text-muted whitespace-nowrap" />
           {isNew(issue.created_at, issue.updated_at) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
           <SlaBadge issue={issue} />
+          <DueDateBadge issue={issue} />
           <CustomStatusPill issue={issue} />
         </div>
         <div className="flex items-center gap-1.5 shrink-0">

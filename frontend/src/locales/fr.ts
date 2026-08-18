@@ -1704,7 +1704,11 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'sla.status.ok': 'En bonne voie',
   'sla.status.at_risk': 'À risque',
   'sla.status.breached': 'Dépassé',
+  'sla.status.paused': 'En attente de validation',
   'sla.status.completed': 'Terminé',
+  'sla.paused.hint': 'Chrono en pause : livré, en attente de validation du demandeur',
+  'sla.elapsed': 'Temps consommé',
+  'sla.remaining': 'Temps restant',
   'sla.deadline': 'Échéance SLA',
 
   // ─── Agent Config ────────────────────────────

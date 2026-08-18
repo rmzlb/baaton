@@ -160,6 +160,16 @@ export interface Issue {
   estimate: number | null;
   status_changed_at: string | null;
   closed_at: string | null;
+  /** SLA clock (migration 069). The clock only runs while the ball is in our
+   *  court: it pauses on `in_review` and stops on terminal statuses.
+   *  Absolute deadline for the remaining budget; NULL while paused/stopped. */
+  sla_deadline?: string | null;
+  /** Sticky: once the budget is blown it stays true, even after completion. */
+  sla_breached?: boolean | null;
+  /** Budget consumed during all closed running segments, in ms. */
+  sla_elapsed_ms?: number | null;
+  /** Start of the current open running segment; NULL while paused/stopped. */
+  sla_clock_started_at?: string | null;
   created_at: string;
   updated_at: string;
   // Relations (optional, loaded on detail)

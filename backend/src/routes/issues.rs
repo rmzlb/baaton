@@ -31,7 +31,7 @@ use crate::models::{ApiResponse, Comment, CreateIssue, Issue, IssueDetail, Tldr,
 use crate::routes::activity::log_activity;
 use crate::routes::automations::evaluate_automations;
 use crate::routes::notifications::create_notification;
-use crate::routes::sla::apply_sla_deadline;
+use crate::routes::sla::recompute_sla;
 use crate::routes::sse::{broadcast_event, EventSender};
 use crate::routes::webhooks::dispatch_event;
 
@@ -1261,14 +1261,12 @@ pub async fn create(
         }
     }
 
-    // ── SLA deadline (fire-and-forget) ────────────────
+    // ── SLA clock: open the clock on creation (fire-and-forget) ──
     {
         let pool2 = pool.clone();
         let iid = issue.id;
-        let pid = issue.project_id;
-        let priority = issue.priority.clone();
         tokio::spawn(async move {
-            apply_sla_deadline(&pool2, iid, pid, priority.as_deref()).await;
+            recompute_sla(&pool2, iid).await;
         });
     }
 
@@ -2152,15 +2150,16 @@ pub async fn update(
         }
     }
 
-    // ── SLA deadline on priority change (fire-and-forget) ─
+    // ── SLA clock (fire-and-forget) ───────────────────
+    // Status changes matter as much as priority changes now: moving to
+    // in_review pauses the clock, moving back out resumes it with the budget
+    // already consumed.
     let priority_changed_flag = body.priority.is_some() && existing.priority != issue.priority;
-    if priority_changed_flag {
+    if priority_changed_flag || status_changed {
         let pool2 = pool.clone();
         let iid = issue.id;
-        let pid = issue.project_id;
-        let priority = issue.priority.clone();
         tokio::spawn(async move {
-            apply_sla_deadline(&pool2, iid, pid, priority.as_deref()).await;
+            recompute_sla(&pool2, iid).await;
         });
     }
 

@@ -126,6 +126,8 @@ pub fn issue_list_columns(alias: &str) -> String {
         "archived_at",
         "sla_deadline",
         "sla_breached",
+        "sla_elapsed_ms",
+        "sla_clock_started_at",
         "agent_status",
         "agent_session_id",
         "created_at",
@@ -207,6 +209,12 @@ pub struct Issue {
     pub archived_at: Option<DateTime<Utc>>,
     pub sla_deadline: Option<DateTime<Utc>>,
     pub sla_breached: Option<bool>,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub sla_elapsed_ms: i64,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub sla_clock_started_at: Option<DateTime<Utc>>,
     pub agent_status: Option<String>,
     pub agent_session_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,

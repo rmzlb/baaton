@@ -1278,13 +1278,17 @@ function MetadataSidebar({
 
       {/* SLA */}
       <SidebarField label={t('sla.label')}>
-        <div className={cn(
-          'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium',
-          sla.status === 'breached' && 'bg-red-500/15 text-red-400',
-          sla.status === 'at_risk' && 'bg-amber-500/15 text-amber-400',
-          sla.status === 'ok' && 'bg-blue-500/15 text-blue-300',
-          sla.status === 'completed' && 'bg-emerald-500/15 text-emerald-400',
-        )}>
+        <div
+          className={cn(
+            'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium',
+            sla.status === 'breached' && 'bg-red-500/15 text-red-400',
+            sla.status === 'at_risk' && 'bg-amber-500/15 text-amber-400',
+            sla.status === 'ok' && 'bg-blue-500/15 text-blue-300',
+            sla.status === 'paused' && 'bg-violet-500/15 text-violet-300',
+            sla.status === 'completed' && 'bg-emerald-500/15 text-emerald-400',
+          )}
+          title={sla.paused ? t('sla.paused.hint') : undefined}
+        >
           {t(`sla.status.${sla.status}`)} · {t(sla.policy.labelKey)}
         </div>
       </SidebarField>

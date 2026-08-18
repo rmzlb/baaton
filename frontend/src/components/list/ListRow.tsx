@@ -7,7 +7,7 @@ import { timeAgo } from '@/lib/utils';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { useMemberResolutionContext } from '@/contexts/MemberResolutionContext';
 import { CopyableId } from '@/components/shared/CopyableId';
-import { evaluateIssueSla } from '@/lib/sla';
+import { evaluateIssueSla, evaluateDueDate } from '@/lib/sla';
 import type { Issue, IssuePriority, IssueType, ProjectStatus, ProjectTag } from '@/lib/types';
 
 const typeConfig: Record<IssueType, { icon: typeof Bug; color: string; bg: string; label: string }> = {
@@ -77,6 +77,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
   const categories = issue.category || [];
   const creatorName = resolveUserName(issue.created_by_id, issue.created_by_name);
   const sla = evaluateIssueSla(issue);
+  const dueDate = evaluateDueDate(issue);
 
   return (
     <>
@@ -128,14 +129,23 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
             <PriorityIcon size={11} className={priority?.color} />
           ) : null}
           <span className="text-gray-500 dark:text-secondary text-[11px]">{isDone ? 'Done' : priority?.label || '—'}</span>
-          {(issue.priority === 'urgent' || issue.priority === 'high') && sla.status !== 'ok' && sla.status !== 'completed' && (
+          {(issue.priority === 'urgent' || issue.priority === 'high') && (sla.status === 'breached' || sla.status === 'at_risk') && (
             <span
               className={cn(
                 'rounded-full px-1.5 py-0 text-[9px] font-medium uppercase',
                 sla.status === 'breached' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400',
               )}
+              title={`SLA ${sla.status}`}
             >
               SLA
+            </span>
+          )}
+          {dueDate?.overdue && (
+            <span
+              className="rounded-full px-1.5 py-0 text-[9px] font-medium uppercase bg-rose-500/15 text-rose-400"
+              title={`Due ${dueDate.date.toLocaleDateString()}`}
+            >
+              Late
             </span>
           )}
         </span>

@@ -1704,7 +1704,11 @@ As a [user], I want to [action] so that [benefit].
   'sla.status.ok': 'On track',
   'sla.status.at_risk': 'At risk',
   'sla.status.breached': 'Breached',
+  'sla.status.paused': 'Awaiting validation',
   'sla.status.completed': 'Completed',
+  'sla.paused.hint': 'Clock paused: delivered, waiting on requester validation',
+  'sla.elapsed': 'Time used',
+  'sla.remaining': 'Time left',
   'sla.deadline': 'SLA deadline',
 
   // ─── Agent Config ────────────────────────────
