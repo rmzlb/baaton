@@ -108,6 +108,10 @@ struct ProjectStatusRow {
     in_review: i64,
     done: i64,
     cancelled: i64,
+    /// Issues whose `status` is not one of the seven core keys (legacy custom
+    /// statuses). Counted so `total_issues` always equals the sum of the
+    /// per-status buckets and the dashboard can never show a phantom total.
+    other: i64,
     total_issues: i64,
 }
 
@@ -286,9 +290,19 @@ pub async fn summary(
                    COUNT(*) FILTER (WHERE i.status = 'in_review')::bigint AS in_review,
                    COUNT(*) FILTER (WHERE i.status = 'done')::bigint AS done,
                    COUNT(*) FILTER (WHERE i.status = 'cancelled')::bigint AS cancelled,
+                   COUNT(i.id) FILTER (
+                       WHERE i.status NOT IN ('backlog','todo','in_progress','not_ok','in_review','done','cancelled')
+                   )::bigint AS other,
                    COUNT(i.id)::bigint AS total_issues
                FROM projects p
+               -- The join carries the SAME visibility predicate as the project board
+               -- (`board_by_slug`, default include_archived/include_snoozed = false).
+               -- Without it the dashboard advertised counts the board refuses to show:
+               -- one archived `backlog` issue on sextan-assist rendered as "1 Backlog"
+               -- on the dashboard and an empty Backlog column on the board.
                LEFT JOIN issues i ON i.project_id = p.id
+                   AND i.archived = false
+                   AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE)
                WHERE p.org_id = ANY($1)
                GROUP BY p.id
                ORDER BY p.created_at DESC"#
@@ -446,15 +460,21 @@ pub async fn summary(
         ).bind(&all_org_ids).bind(hm_since).fetch_all(&pool),
 
         // w) Per-project temporal metrics (created this week/month, closed this week/month)
+        // `closed` = reached a terminal category (done/cancelled). `in_review` used to be
+        // counted as closed here, which inflated throughput: an issue parked 190 days in
+        // review was reported as delivered work. Review is wait time, not output.
+        // `closed_at` is only populated on part of the historical rows, so fall back to
+        // `updated_at` for terminal issues that predate the column being filled.
         sqlx::query_as::<_, ProjectTemporalRow>(
             r#"SELECT i.project_id,
                    COUNT(*) FILTER (WHERE i.created_at >= $2)::bigint AS created_week,
                    COUNT(*) FILTER (WHERE i.created_at >= $3)::bigint AS created_month,
-                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled', 'in_review') AND i.updated_at >= $2)::bigint AS closed_week,
-                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled', 'in_review') AND i.updated_at >= $3)::bigint AS closed_month
+                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $2)::bigint AS closed_week,
+                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $3)::bigint AS closed_month
                FROM issues i
                JOIN projects p ON p.id = i.project_id
                WHERE p.org_id = ANY($1)
+                 AND i.archived = false
                GROUP BY i.project_id"#
         ).bind(&all_org_ids).bind(week_start).bind(thirty_days_ago).fetch_all(&pool),
     );
@@ -542,6 +562,7 @@ pub async fn summary(
                             "in_review": p.in_review,
                             "done": p.done,
                             "cancelled": p.cancelled,
+                            "other": p.other,
                         },
                         "total_issues": p.total_issues,
                         "created_this_week": project_temporal_map.get(&p.id).map(|t| t.created_week).unwrap_or(0),
