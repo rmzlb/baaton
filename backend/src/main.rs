@@ -164,6 +164,7 @@ async fn main() -> anyhow::Result<()> {
             include_str!("../migrations/067_restore_in_review_status.sql"),
         ),
         (68, include_str!("../migrations/068_actor_attribution.sql")),
+        (69, include_str!("../migrations/069_sla_clock.sql")),
     ];
 
     for &(version, sql) in migrations {
