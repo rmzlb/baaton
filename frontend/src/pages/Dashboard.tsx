@@ -33,6 +33,10 @@ interface DashboardProject {
   review_median_days: number | null;
   /// How many of those crossed 14 days.
   review_stuck: number;
+  /// Median days from creation to first handling, over the last 90 days.
+  lead_median_days: number | null;
+  /// Number of tickets behind `lead_median_days`.
+  lead_sample: number;
   assignees: string[];
 }
 
@@ -627,6 +631,23 @@ function StatusCell({ statusKey, value }: { statusKey: string; value: number }) 
 }
 
 /**
+ * Lead time cell — median days from ticket creation to first handling.
+ * Hours below one day, otherwise days: "0.3d" reads as noise, "7h" reads as fast.
+ * `sample` under 3 is not a median worth trusting, so it renders muted with the
+ * count in the tooltip rather than pretending to be a stable number.
+ */
+function LeadCell({ days, sample }: { days: number | null; sample: number }) {
+  if (days == null || sample === 0) return <span className="text-muted/25 select-none">·</span>;
+  const label = days < 1 ? `${Math.max(1, Math.round(days * 24))}h` : `${days.toFixed(days < 10 ? 1 : 0)}j`;
+  const weak = sample < 3;
+  const tone = weak ? 'text-muted/60' : days > 14 ? 'text-red-500' : days > 5 ? 'text-amber-500' : 'text-emerald-500';
+  const title = weak
+    ? `${label} médian sur ${sample} ticket${sample > 1 ? 's' : ''} — échantillon trop faible`
+    : `Créé → traité : ${label} médian sur ${sample} tickets (90j)`;
+  return <span className={cn('font-semibold', tone)} title={title}>{label}</span>;
+}
+
+/**
  * Review wait cell — median days the project's `in_review` queue has been sitting.
  * Thresholds match the global Waiting-on-Client card: >14d red, >7d amber, else green.
  * `null` means the queue is empty, which is not "0 days" — render a dot, not a number.
@@ -641,6 +662,24 @@ function ReviewCell({ days, stuck, count }: { days: number | null; stuck: number
   return (
     <span className={cn('font-semibold', tone)} title={title}>
       {rounded}j{stuck > 0 && <span className="ml-0.5 text-[9px] font-bold text-red-500">!</span>}
+    </span>
+  );
+}
+
+/**
+ * Dominant bucket label. The old trailing number was `done / total_issues` sitting
+ * next to a bar built from the *visible* statuses, with Done hidden by default — two
+ * different denominators in one cell, which is why it read as noise. This states the
+ * one fact the bar is for: where the project's weight actually sits.
+ */
+function DominantLabel({ counts, statuses }: { counts: Record<string, number>; statuses: TableStatus[] }) {
+  const total = statuses.reduce((sum, s) => sum + (counts[s.key] || 0), 0);
+  if (total <= 0) return <span className="text-[10px] text-muted/40">—</span>;
+  const top = statuses.reduce((best, s) => ((counts[s.key] || 0) > (counts[best.key] || 0) ? s : best), statuses[0]);
+  const share = Math.round(((counts[top.key] || 0) / total) * 100);
+  return (
+    <span className="whitespace-nowrap text-[10px] tabular-nums text-muted">
+      <span className={cn('font-semibold', top.text)}>{share}%</span> {top.short}
     </span>
   );
 }
@@ -664,7 +703,7 @@ function DistributionBar({ counts, statuses }: { counts: Record<string, number>;
   );
 }
 
-type SortKey = 'name' | 'total' | 'pct' | 'ratio' | 'review' | string;
+type SortKey = 'name' | 'total' | 'ratio' | 'review' | 'lead' | string;
 
 /**
  * Table prefs live in localStorage — the dashboard is a daily-driver screen,
@@ -693,7 +732,9 @@ function loadPrefs(): TablePrefs {
     const parsed = JSON.parse(raw) as Partial<TablePrefs>;
     const sortKey = typeof parsed.sortKey === 'string' ? parsed.sortKey : DEFAULT_PREFS.sortKey;
     // Guard against a stale key from an older column set.
-    const known = ['name', 'total', 'pct', 'ratio', 'review', ...TABLE_STATUSES.map(s => s.key)];
+    // Guard against a stale key from an older column set. 'pct' was a sortable column
+    // until the ambiguous done-ratio was dropped; map it back to the default.
+    const known = ['name', 'total', 'ratio', 'review', 'lead', ...TABLE_STATUSES.map(s => s.key)];
     return {
       sortKey: known.includes(sortKey) ? sortKey : DEFAULT_PREFS.sortKey,
       sortDesc: typeof parsed.sortDesc === 'boolean' ? parsed.sortDesc : DEFAULT_PREFS.sortDesc,
@@ -754,7 +795,8 @@ function ProjectTable({ orgs, onNavigate }: {
           lastActivity: project.last_activity_at ? Date.parse(project.last_activity_at) : 0,
           reviewDays: project.review_median_days,
           reviewStuck: project.review_stuck || 0,
-          pct: totalAll > 0 ? Math.round((done / totalAll) * 100) : 0,
+          leadDays: project.lead_median_days,
+          leadSample: project.lead_sample || 0,
           ratio: created > 0 ? closed / created : closed > 0 ? 99 : 0,
         };
       }),
@@ -764,15 +806,17 @@ function ProjectTable({ orgs, onNavigate }: {
       if (sortKey === 'name') return a.project.name.localeCompare(b.project.name) * dir;
       // Projects with an empty review queue have no wait to compare — keep them at the
       // bottom in both directions instead of letting a fake 0 win the "longest wait" sort.
-      if (sortKey === 'review') {
-        if (a.reviewDays == null && b.reviewDays == null) return a.project.name.localeCompare(b.project.name);
-        if (a.reviewDays == null) return 1;
-        if (b.reviewDays == null) return -1;
-        if (a.reviewDays === b.reviewDays) return b.lastActivity - a.lastActivity;
-        return (a.reviewDays - b.reviewDays) * dir;
+      if (sortKey === 'review' || sortKey === 'lead') {
+        const ka = sortKey === 'review' ? a.reviewDays : a.leadDays;
+        const kb = sortKey === 'review' ? b.reviewDays : b.leadDays;
+        if (ka == null && kb == null) return a.project.name.localeCompare(b.project.name);
+        if (ka == null) return 1;
+        if (kb == null) return -1;
+        if (ka === kb) return b.lastActivity - a.lastActivity;
+        return (ka - kb) * dir;
       }
-      const va = sortKey === 'total' ? a.total : sortKey === 'pct' ? a.pct : sortKey === 'ratio' ? a.ratio : (a.counts[sortKey] || 0);
-      const vb = sortKey === 'total' ? b.total : sortKey === 'pct' ? b.pct : sortKey === 'ratio' ? b.ratio : (b.counts[sortKey] || 0);
+      const va = sortKey === 'total' ? a.total : sortKey === 'ratio' ? a.ratio : (a.counts[sortKey] || 0);
+      const vb = sortKey === 'total' ? b.total : sortKey === 'ratio' ? b.ratio : (b.counts[sortKey] || 0);
       // Ties are common: most projects show the same small count in a given column.
       // Alphabetical order there is noise, so fall back to most recent issue activity
       // (independent of sort direction) and only use the name as a last resort.
@@ -821,6 +865,7 @@ function ProjectTable({ orgs, onNavigate }: {
     { key: 'not_ok', label: 'Not OK' },
     { key: 'in_progress', label: 'In prog.' },
     { key: 'review', label: 'Review' },
+    { key: 'lead', label: 'Traité' },
     { key: 'total', label: 'Total' },
     { key: 'name', label: 'A-Z' },
   ];
@@ -911,10 +956,13 @@ function ProjectTable({ orgs, onNavigate }: {
                 <div className="flex items-center gap-2">
                   <span className="shrink-0 rounded bg-surface-hover px-1 py-0.5 font-mono text-[9px] text-muted">{r.project.prefix}</span>
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary">{r.project.name}</span>
-                  <span className="shrink-0 text-[10px] tabular-nums text-muted">{r.total} · {r.pct}%</span>
+                  <span className="shrink-0 text-[10px] tabular-nums text-muted">{r.total}</span>
                 </div>
 
-                <div className="mt-1.5"><DistributionBar counts={r.counts} statuses={visibleStatuses} /></div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <DistributionBar counts={r.counts} statuses={visibleStatuses} />
+                  <DominantLabel counts={r.counts} statuses={visibleStatuses} />
+                </div>
 
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
                   {chips.length === 0
@@ -938,6 +986,12 @@ function ProjectTable({ orgs, onNavigate }: {
                     <span className={cn('flex items-center gap-1 text-[10px] text-muted/70', !(r.created > 0 || r.closed > 0) && 'ml-auto')}>
                       review
                       <ReviewCell days={r.reviewDays} stuck={r.reviewStuck} count={r.counts.in_review || 0} />
+                    </span>
+                  )}
+                  {r.leadDays != null && (
+                    <span className="flex items-center gap-1 text-[10px] text-muted/70">
+                      traité
+                      <LeadCell days={r.leadDays} sample={r.leadSample} />
                     </span>
                   )}
                 </div>
@@ -1033,11 +1087,14 @@ function ProjectTable({ orgs, onNavigate }: {
               <th title="Attente médiane en review (jours) — temps côté client, pas temps de dev" onClick={() => toggleSort('review')} className={cn('cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'review' ? 'text-primary' : 'text-muted')}>
                 Review<SortArrow active={sortKey === 'review'} />
               </th>
+              <th title="Créé → traité : durée médiane avant qu'un ticket sorte du backlog (90j)" onClick={() => toggleSort('lead')} className={cn('cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'lead' ? 'text-primary' : 'text-muted')}>
+                Traité<SortArrow active={sortKey === 'lead'} />
+              </th>
               <th onClick={() => toggleSort('total')} className={cn('cursor-pointer select-none border-b border-l border-border/40 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'total' ? 'text-primary' : 'text-muted')}>
                 Total<SortArrow active={sortKey === 'total'} />
               </th>
-              <th onClick={() => toggleSort('pct')} className={cn('cursor-pointer select-none border-b border-border px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'pct' ? 'text-primary' : 'text-muted')}>
-                Répartition<SortArrow active={sortKey === 'pct'} />
+              <th title="Où se concentre le poids du projet" className="border-b border-border px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wide text-muted">
+                Répartition
               </th>
             </tr>
           </thead>
@@ -1083,11 +1140,14 @@ function ProjectTable({ orgs, onNavigate }: {
                 <td className={cn('border-b border-border/20 px-2 py-2.5 text-center tabular-nums', r.reviewDays != null && r.reviewDays > 14 && 'bg-red-500/[0.04]')}>
                   <ReviewCell days={r.reviewDays} stuck={r.reviewStuck} count={r.counts.in_review || 0} />
                 </td>
+                <td className="border-b border-border/20 px-2 py-2.5 text-center tabular-nums">
+                  <LeadCell days={r.leadDays} sample={r.leadSample} />
+                </td>
                 <td className="border-b border-l border-border/30 px-2 py-2.5 text-center font-semibold tabular-nums text-primary">{r.total}</td>
                 <td className="border-b border-border/20 px-3 py-2.5">
                   <div className="flex items-center gap-2">
                     <DistributionBar counts={r.counts} statuses={visibleStatuses} />
-                    <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-muted">{r.pct}%</span>
+                    <DominantLabel counts={r.counts} statuses={visibleStatuses} />
                   </div>
                 </td>
               </tr>
@@ -1107,6 +1167,7 @@ function ProjectTable({ orgs, onNavigate }: {
                 );
               })}
               <td className="border-l border-border/30 px-2 py-2" />
+              <td className="px-2 py-2" />
               <td className="px-2 py-2" />
               <td className="px-2 py-2" />
               <td className="border-l border-border/30 px-2 py-2 text-center text-[11px] font-semibold tabular-nums text-primary">{totals.total}</td>

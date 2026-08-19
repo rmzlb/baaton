@@ -124,6 +124,17 @@ struct ClientWaitRow {
     stuck_count: i64,
 }
 
+/// Per-project lead time: how long a ticket takes to get handled, measured
+/// `created_at` -> first transition out of the backlog side (`in_review`, `done`
+/// or `cancelled`). Deliberately independent of `in_progress`, which is skipped
+/// on hundreds of transitions and cannot carry a duration.
+#[derive(sqlx::FromRow)]
+struct ProjectLeadRow {
+    project_id: Uuid,
+    median_days: Option<f64>,
+    sample_count: i64,
+}
+
 /// Per-project version of `ClientWaitRow`. Same definition of "waiting" (age
 /// since the last status change into `in_review`) so the table column and the
 /// global card can never disagree, just grouped by project.
@@ -275,6 +286,7 @@ pub async fn summary(
     let week_start = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
     let thirty_days_ago = today - chrono::Duration::days(30);
     let since_30d = Utc::now() - chrono::Duration::days(30);
+    let since_90d = Utc::now() - chrono::Duration::days(90);
     let hm_since = today - chrono::Duration::days(365);
 
     // 2. Run ALL queries in parallel
@@ -304,6 +316,7 @@ pub async fn summary(
         org_heatmap_result,
         project_temporal_result,
         project_review_result,
+        project_lead_result,
     ) = tokio::join!(
         // a) Projects with status counts
         sqlx::query_as::<_, ProjectStatusRow>(
@@ -565,6 +578,39 @@ pub async fn summary(
                FROM waiting
                GROUP BY project_id"#
         ).bind(&all_org_ids).fetch_all(&pool),
+
+        // y) Per-project lead time: created -> handled. "Handled" is the first recorded
+        // transition to `in_review`, `done` or `cancelled`, with `closed_at` as fallback
+        // for terminal rows that predate the activity log. This answers "how long to get
+        // a ticket treated" without touching `in_progress`, which is skipped too often to
+        // measure anything. Windowed on tickets handled in the last 90 days so the number
+        // reflects the current pace instead of being dragged by imported history.
+        sqlx::query_as::<_, ProjectLeadRow>(
+            r#"WITH delivery AS (
+                   SELECT DISTINCT ON (al.issue_id) al.issue_id, al.created_at AS at
+                   FROM activity_log al
+                   WHERE al.action = 'status_changed' AND al.issue_id IS NOT NULL
+                     AND al.new_value IN ('in_review', 'done', 'cancelled')
+                   ORDER BY al.issue_id, al.created_at ASC
+               ),
+               lead AS (
+                   SELECT i.project_id,
+                          EXTRACT(EPOCH FROM (COALESCE(d.at, i.closed_at) - i.created_at)) / 86400.0 AS days
+                   FROM issues i
+                   JOIN projects p ON p.id = i.project_id
+                   LEFT JOIN delivery d ON d.issue_id = i.id
+                   WHERE p.org_id = ANY($1)
+                     AND i.archived = false
+                     AND COALESCE(d.at, i.closed_at) IS NOT NULL
+                     AND COALESCE(d.at, i.closed_at) >= $2
+                     AND COALESCE(d.at, i.closed_at) > i.created_at
+               )
+               SELECT project_id,
+                      percentile_cont(0.5) WITHIN GROUP (ORDER BY days) AS median_days,
+                      COUNT(*)::bigint                                  AS sample_count
+               FROM lead
+               GROUP BY project_id"#
+        ).bind(&all_org_ids).bind(since_90d).fetch_all(&pool),
     );
 
     // 3. Unwrap results (with defaults on error)
@@ -593,9 +639,15 @@ pub async fn summary(
     let org_heatmap = org_heatmap_result.unwrap_or_default();
     let project_temporal = project_temporal_result.unwrap_or_default();
     let project_review = project_review_result.unwrap_or_default();
+    let project_lead = project_lead_result.unwrap_or_default();
 
     // Build project temporal map: project_id -> (created_week, created_month, closed_week)
     let project_review_map: HashMap<Uuid, &ProjectReviewRow> = project_review
+        .iter()
+        .map(|r| (r.project_id, r))
+        .collect();
+
+    let project_lead_map: HashMap<Uuid, &ProjectLeadRow> = project_lead
         .iter()
         .map(|r| (r.project_id, r))
         .collect();
@@ -667,6 +719,8 @@ pub async fn summary(
                         "last_activity_at": project_temporal_map.get(&p.id).and_then(|t| t.last_activity_at).map(|d| d.to_rfc3339()),
                         "review_median_days": project_review_map.get(&p.id).and_then(|r| r.median_days),
                         "review_stuck": project_review_map.get(&p.id).map(|r| r.stuck_count).unwrap_or(0),
+                        "lead_median_days": project_lead_map.get(&p.id).and_then(|r| r.median_days),
+                        "lead_sample": project_lead_map.get(&p.id).map(|r| r.sample_count).unwrap_or(0),
                         "assignees": proj_assignees,
                     })
                 })
