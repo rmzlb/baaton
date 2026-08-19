@@ -194,6 +194,12 @@ struct ProjectTemporalRow {
     created_month: i64,
     closed_week: i64,
     closed_month: i64,
+    /// Rolling 14-day window (one sprint). The In/Flow pair reads as "current pace",
+    /// and a 30-day ratio is too slow to react: a project that stalled last week
+    /// still looked healthy. Rolling, not calendar-aligned, so the number never
+    /// resets to a misleading 0 on a Monday.
+    created_14d: i64,
+    closed_14d: i64,
     /// Most recent issue touch on the project. Used by the dashboard table as the
     /// tiebreaker when several projects share the same count in the sorted column,
     /// so equal rows fall in "most recently active first" order.
@@ -287,6 +293,7 @@ pub async fn summary(
     let thirty_days_ago = today - chrono::Duration::days(30);
     let since_30d = Utc::now() - chrono::Duration::days(30);
     let since_90d = Utc::now() - chrono::Duration::days(90);
+    let since_14d = Utc::now() - chrono::Duration::days(14);
     let hm_since = today - chrono::Duration::days(365);
 
     // 2. Run ALL queries in parallel
@@ -541,13 +548,15 @@ pub async fn summary(
                    COUNT(*) FILTER (WHERE i.created_at >= $3)::bigint AS created_month,
                    COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $2)::bigint AS closed_week,
                    COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $3)::bigint AS closed_month,
+                   COUNT(*) FILTER (WHERE i.created_at >= $4)::bigint AS created_14d,
+                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $4)::bigint AS closed_14d,
                    MAX(GREATEST(i.created_at, i.updated_at)) AS last_activity_at
                FROM issues i
                JOIN projects p ON p.id = i.project_id
                WHERE p.org_id = ANY($1)
                  AND i.archived = false
                GROUP BY i.project_id"#
-        ).bind(&all_org_ids).bind(week_start).bind(thirty_days_ago).fetch_all(&pool),
+        ).bind(&all_org_ids).bind(week_start).bind(thirty_days_ago).bind(since_14d).fetch_all(&pool),
 
         // x) Per-project review wait. Mirrors query f2 (client wait) exactly, grouped by
         // project, so the table column and the global card use one definition of "waiting":
@@ -716,6 +725,8 @@ pub async fn summary(
                         "created_this_month": project_temporal_map.get(&p.id).map(|t| t.created_month).unwrap_or(0),
                         "closed_this_week": project_temporal_map.get(&p.id).map(|t| t.closed_week).unwrap_or(0),
                         "closed_this_month": project_temporal_map.get(&p.id).map(|t| t.closed_month).unwrap_or(0),
+                        "created_14d": project_temporal_map.get(&p.id).map(|t| t.created_14d).unwrap_or(0),
+                        "closed_14d": project_temporal_map.get(&p.id).map(|t| t.closed_14d).unwrap_or(0),
                         "last_activity_at": project_temporal_map.get(&p.id).and_then(|t| t.last_activity_at).map(|d| d.to_rfc3339()),
                         "review_median_days": project_review_map.get(&p.id).and_then(|r| r.median_days),
                         "review_stuck": project_review_map.get(&p.id).map(|r| r.stuck_count).unwrap_or(0),

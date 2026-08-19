@@ -8,6 +8,7 @@ import {
   TrendingUp, Zap, Timer, Flame, Bot, User, Target,
   LayoutGrid, Table2, AlertTriangle,
   PenLine, Layers, ChevronUp, ChevronDown, EyeOff, XCircle,
+  Inbox, Hourglass, Sigma, PieChart,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
@@ -28,6 +29,9 @@ interface DashboardProject {
   created_this_month: number;
   closed_this_week: number;
   closed_this_month: number;
+  /// Rolling 14-day window (sprint-length) — what the In/Flow pair reads from.
+  created_14d: number;
+  closed_14d: number;
   last_activity_at: string | null;
   /// Median days the project's `in_review` queue has been waiting, null when empty.
   review_median_days: number | null;
@@ -642,7 +646,7 @@ function LeadCell({ days, sample }: { days: number | null; sample: number }) {
   const weak = sample < 3;
   const tone = weak ? 'text-muted/60' : days > 14 ? 'text-red-500' : days > 5 ? 'text-amber-500' : 'text-emerald-500';
   const title = weak
-    ? `${label} médian sur ${sample} ticket${sample > 1 ? 's' : ''} — échantillon trop faible`
+    ? `Créé → traité : ${label} médian sur ${sample} ticket${sample > 1 ? 's' : ''} — échantillon trop faible`
     : `Créé → traité : ${label} médian sur ${sample} tickets (90j)`;
   return <span className={cn('font-semibold', tone)} title={title}>{label}</span>;
 }
@@ -652,45 +656,44 @@ function LeadCell({ days, sample }: { days: number | null; sample: number }) {
  * Thresholds match the global Waiting-on-Client card: >14d red, >7d amber, else green.
  * `null` means the queue is empty, which is not "0 days" — render a dot, not a number.
  */
-function ReviewCell({ days, stuck, count }: { days: number | null; stuck: number; count: number }) {
-  if (days == null) return <span className="text-muted/25 select-none">·</span>;
+function ReviewCell({ days, stuck, count, small }: { days: number | null; stuck: number; count: number; small?: boolean }) {
+  if (days == null) return <span className={cn('text-muted/25 select-none', small && 'text-[9px]')}>·</span>;
   const rounded = days < 1 ? days.toFixed(1) : days.toFixed(0);
   const tone = days > 14 ? 'text-red-500' : days > 7 ? 'text-amber-500' : 'text-emerald-500';
   const title = stuck > 0
     ? `${count} en review · médiane ${rounded}j · ${stuck} au-delà de 14j`
     : `${count} en review · médiane ${rounded}j`;
   return (
-    <span className={cn('font-semibold', tone)} title={title}>
+    <span className={cn('font-semibold', tone, small && 'text-[10px]')} title={title}>
       {rounded}j{stuck > 0 && <span className="ml-0.5 text-[9px] font-bold text-red-500">!</span>}
     </span>
   );
 }
 
 /**
- * Dominant bucket label. The old trailing number was `done / total_issues` sitting
- * next to a bar built from the *visible* statuses, with Done hidden by default — two
- * different denominators in one cell, which is why it read as noise. This states the
- * one fact the bar is for: where the project's weight actually sits.
+ * Dominant bucket, rendered as the bar's tooltip rather than a printed label.
+ * The trailing text ate a third of the column for a fact the bar already shows;
+ * the bar is the signal, the number is only needed on demand.
  */
-function DominantLabel({ counts, statuses }: { counts: Record<string, number>; statuses: TableStatus[] }) {
+function dominantSummary(counts: Record<string, number>, statuses: TableStatus[]): string {
   const total = statuses.reduce((sum, s) => sum + (counts[s.key] || 0), 0);
-  if (total <= 0) return <span className="text-[10px] text-muted/40">—</span>;
+  if (total <= 0) return 'Aucun ticket visible';
   const top = statuses.reduce((best, s) => ((counts[s.key] || 0) > (counts[best.key] || 0) ? s : best), statuses[0]);
   const share = Math.round(((counts[top.key] || 0) / total) * 100);
-  return (
-    <span className="whitespace-nowrap text-[10px] tabular-nums text-muted">
-      <span className={cn('font-semibold', top.text)}>{share}%</span> {top.short}
-    </span>
-  );
+  const parts = statuses
+    .filter(s => (counts[s.key] || 0) > 0)
+    .map(s => `${s.short} ${counts[s.key]}`)
+    .join(' · ');
+  return `${share}% ${top.short} — ${parts}`;
 }
 
 /** Stacked distribution bar — reads the whole project shape in one glance. */
 function DistributionBar({ counts, statuses }: { counts: Record<string, number>; statuses: TableStatus[] }) {
   const total = statuses.reduce((sum, s) => sum + (counts[s.key] || 0), 0);
-  if (total <= 0) return <div className="h-1.5 w-full rounded-full bg-surface-hover" />;
+  if (total <= 0) return <div className="h-1.5 w-full rounded-full bg-surface-hover" title="Aucun ticket visible" />;
   const segments = statuses.filter(s => (counts[s.key] || 0) > 0);
   return (
-    <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-hover">
+    <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-hover" title={dominantSummary(counts, statuses)}>
       {segments.map(s => (
         <div
           key={s.key}
@@ -786,8 +789,8 @@ function ProjectTable({ orgs, onNavigate }: {
         const counts = project.status_counts || {};
         const totalAll = project.total_issues || 0;
         const done = counts.done || 0;
-        const created = project.created_this_month || 0;
-        const closed = project.closed_this_month || 0;
+        const created = project.created_14d || 0;
+        const closed = project.closed_14d || 0;
         // "Total" follows what is on screen, otherwise the row doesn't add up.
         const total = visibleStatuses.reduce((sum, s) => sum + (counts[s.key] || 0), 0);
         return {
@@ -959,9 +962,8 @@ function ProjectTable({ orgs, onNavigate }: {
                   <span className="shrink-0 text-[10px] tabular-nums text-muted">{r.total}</span>
                 </div>
 
-                <div className="mt-1.5 flex items-center gap-2">
+                <div className="mt-1.5">
                   <DistributionBar counts={r.counts} statuses={visibleStatuses} />
-                  <DominantLabel counts={r.counts} statuses={visibleStatuses} />
                 </div>
 
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
@@ -976,22 +978,22 @@ function ProjectTable({ orgs, onNavigate }: {
                     ))}
                   {(r.created > 0 || r.closed > 0) && (
                     <span className="ml-auto flex items-center gap-1 text-[10px] text-muted/70">
-                      30j
+                      14j
                       <span className={cn('font-semibold', r.ratio >= 1 ? 'text-emerald-500' : 'text-amber-500')}>
                         {r.ratio >= 1 ? '↑' : '↓'}{r.ratio >= 99 ? '∞' : r.ratio.toFixed(1)}
                       </span>
                     </span>
                   )}
-                  {r.reviewDays != null && (
-                    <span className={cn('flex items-center gap-1 text-[10px] text-muted/70', !(r.created > 0 || r.closed > 0) && 'ml-auto')}>
-                      review
-                      <ReviewCell days={r.reviewDays} stuck={r.reviewStuck} count={r.counts.in_review || 0} />
-                    </span>
-                  )}
                   {r.leadDays != null && (
-                    <span className="flex items-center gap-1 text-[10px] text-muted/70">
+                    <span className={cn('flex items-center gap-1 text-[10px] text-muted/70', !(r.created > 0 || r.closed > 0) && 'ml-auto')}>
                       traité
                       <LeadCell days={r.leadDays} sample={r.leadSample} />
+                    </span>
+                  )}
+                  {r.reviewDays != null && (
+                    <span className="flex items-center gap-1 text-[10px] text-muted/70">
+                      review
+                      <ReviewCell days={r.reviewDays} stuck={r.reviewStuck} count={r.counts.in_review || 0} />
                     </span>
                   )}
                 </div>
@@ -1042,14 +1044,17 @@ function ProjectTable({ orgs, onNavigate }: {
                   {GROUP_META[g].label}
                 </th>
               ))}
-              <th colSpan={2} className="border-b border-l border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
-                Flux 30j
+              <th className="border-b border-l border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
+                Flux 14j
+              </th>
+              <th className="border-b border-l border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
+                Durées
               </th>
               <th colSpan={2} className="border-b border-l border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
                 Volume
               </th>
             </tr>
-            {/* Column labels — text, not icons only */}
+            {/* Column labels — icons only; the legend below maps icon to status. */}
             <tr className="bg-surface-hover/40">
               <th
                 onClick={() => toggleSort('name')}
@@ -1064,7 +1069,7 @@ function ProjectTable({ orgs, onNavigate }: {
                 return (
                   <th
                     key={s.key}
-                    title={s.hint}
+                    title={`${s.label} — ${s.hint}`}
                     onClick={() => toggleSort(s.key)}
                     className={cn(
                       'cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap',
@@ -1074,27 +1079,47 @@ function ProjectTable({ orgs, onNavigate }: {
                       'hover:text-secondary',
                     )}
                   >
-                    <Icon size={9} className="inline mr-1 -mt-px" />
-                    {s.short}
+                    <Icon size={12} className="inline -mt-px" />
                     <SortArrow active={active} />
                   </th>
                 );
               })}
-              <th title="Créées sur 30 jours" className="border-b border-l border-border/40 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-muted">In</th>
-              <th title="Ratio sorties/entrées — ≥1 = tu absorbes la charge" onClick={() => toggleSort('ratio')} className={cn('cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'ratio' ? 'text-primary' : 'text-muted')}>
-                Flow<SortArrow active={sortKey === 'ratio'} />
+              {/* Flux — entrées au-dessus, ratio en dessous, une seule colonne */}
+              <th
+                title="Flux sur 14 jours glissants — en haut : tickets créés. En bas : ratio fermés/créés (≥1 = tu absorbes la charge). Clique pour trier sur le ratio."
+                onClick={() => toggleSort('ratio')}
+                className={cn('cursor-pointer select-none border-b border-l border-border/40 px-2 py-2 text-center hover:text-secondary', sortKey === 'ratio' ? 'text-primary' : 'text-muted')}
+              >
+                <Inbox size={12} className="inline -mt-px" />
+                <SortArrow active={sortKey === 'ratio'} />
               </th>
-              <th title="Attente médiane en review (jours) — temps côté client, pas temps de dev" onClick={() => toggleSort('review')} className={cn('cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'review' ? 'text-primary' : 'text-muted')}>
-                Review<SortArrow active={sortKey === 'review'} />
+              {/* Durées — deux icônes triables, même ordre que les valeurs en dessous */}
+              <th className="border-b border-l border-border/40 px-2 py-2 text-center">
+                <div className="flex flex-col items-center gap-0.5">
+                  <span
+                    title="Traité : créé → première prise en charge, médiane 90j. Ton temps."
+                    onClick={() => toggleSort('lead')}
+                    className={cn('cursor-pointer select-none hover:text-secondary', sortKey === 'lead' ? 'text-primary' : 'text-muted')}
+                  >
+                    <Hourglass size={11} className="inline -mt-px" />
+                    <SortArrow active={sortKey === 'lead'} />
+                  </span>
+                  <span
+                    title="Review : attente médiane dans la file de validation. Le temps du client."
+                    onClick={() => toggleSort('review')}
+                    className={cn('cursor-pointer select-none hover:text-secondary', sortKey === 'review' ? 'text-primary' : 'text-muted/70')}
+                  >
+                    <Eye size={11} className="inline -mt-px" />
+                    <SortArrow active={sortKey === 'review'} />
+                  </span>
+                </div>
               </th>
-              <th title="Créé → traité : durée médiane avant qu'un ticket sorte du backlog (90j)" onClick={() => toggleSort('lead')} className={cn('cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'lead' ? 'text-primary' : 'text-muted')}>
-                Traité<SortArrow active={sortKey === 'lead'} />
+              <th title="Total des tickets visibles" onClick={() => toggleSort('total')} className={cn('cursor-pointer select-none border-b border-l border-border/40 px-2 py-2 text-center hover:text-secondary', sortKey === 'total' ? 'text-primary' : 'text-muted')}>
+                <Sigma size={12} className="inline -mt-px" />
+                <SortArrow active={sortKey === 'total'} />
               </th>
-              <th onClick={() => toggleSort('total')} className={cn('cursor-pointer select-none border-b border-l border-border/40 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'total' ? 'text-primary' : 'text-muted')}>
-                Total<SortArrow active={sortKey === 'total'} />
-              </th>
-              <th title="Où se concentre le poids du projet" className="border-b border-border px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wide text-muted">
-                Répartition
+              <th title="Répartition par statut — survole la barre pour le détail" className="border-b border-border px-3 py-2 text-center text-muted">
+                <PieChart size={12} className="inline -mt-px" />
               </th>
             </tr>
           </thead>
@@ -1127,28 +1152,33 @@ function ProjectTable({ orgs, onNavigate }: {
                     </td>
                   );
                 })}
-                <td className="border-b border-l border-border/30 px-2 py-2.5 text-center tabular-nums">
-                  {r.created > 0 ? <span className="text-blue-400">{r.created}</span> : <span className="text-muted/25">·</span>}
+                {/* Flux — créées au-dessus, ratio fermées/créées en dessous */}
+                <td className="border-b border-l border-border/30 px-2 py-2 text-center tabular-nums leading-tight">
+                  <div className="flex flex-col items-center">
+                    <span className="text-[11px]">
+                      {r.created > 0
+                        ? <span className="text-blue-400" title={`${r.created} créées sur 14j`}>{r.created}</span>
+                        : <span className="text-muted/25">·</span>}
+                    </span>
+                    <span className="text-[9px]">
+                      {r.created === 0 && r.closed === 0
+                        ? <span className="text-muted/25">·</span>
+                        : r.ratio >= 1
+                          ? <span className="font-semibold text-emerald-500" title={`${r.closed} fermées / ${r.created} créées sur 14j`}>↑{r.ratio >= 99 ? '∞' : r.ratio.toFixed(1)}</span>
+                          : <span className="font-semibold text-amber-500" title={`${r.closed} fermées / ${r.created} créées sur 14j — la dette grossit`}>↓{r.ratio.toFixed(1)}</span>}
+                    </span>
+                  </div>
                 </td>
-                <td className="border-b border-border/20 px-2 py-2.5 text-center tabular-nums">
-                  {r.created === 0 && r.closed === 0
-                    ? <span className="text-muted/25">·</span>
-                    : r.ratio >= 1
-                      ? <span className="font-semibold text-emerald-500" title={`${r.closed} fermées / ${r.created} créées`}>↑{r.ratio >= 99 ? '∞' : r.ratio.toFixed(1)}</span>
-                      : <span className="font-semibold text-amber-500" title={`${r.closed} fermées / ${r.created} créées — la dette grossit`}>↓{r.ratio.toFixed(1)}</span>}
-                </td>
-                <td className={cn('border-b border-border/20 px-2 py-2.5 text-center tabular-nums', r.reviewDays != null && r.reviewDays > 14 && 'bg-red-500/[0.04]')}>
-                  <ReviewCell days={r.reviewDays} stuck={r.reviewStuck} count={r.counts.in_review || 0} />
-                </td>
-                <td className="border-b border-border/20 px-2 py-2.5 text-center tabular-nums">
-                  <LeadCell days={r.leadDays} sample={r.leadSample} />
+                {/* Durées — traité au-dessus (ton temps), review en dessous (le client) */}
+                <td className={cn('border-b border-l border-border/30 px-2 py-2 text-center tabular-nums leading-tight', r.reviewDays != null && r.reviewDays > 14 && 'bg-red-500/[0.04]')}>
+                  <div className="flex flex-col items-center">
+                    <span className="text-[11px]"><LeadCell days={r.leadDays} sample={r.leadSample} /></span>
+                    <span className="text-[9px]"><ReviewCell days={r.reviewDays} stuck={r.reviewStuck} count={r.counts.in_review || 0} small /></span>
+                  </div>
                 </td>
                 <td className="border-b border-l border-border/30 px-2 py-2.5 text-center font-semibold tabular-nums text-primary">{r.total}</td>
                 <td className="border-b border-border/20 px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <DistributionBar counts={r.counts} statuses={visibleStatuses} />
-                    <DominantLabel counts={r.counts} statuses={visibleStatuses} />
-                  </div>
+                  <DistributionBar counts={r.counts} statuses={visibleStatuses} />
                 </td>
               </tr>
             ))}
@@ -1167,32 +1197,39 @@ function ProjectTable({ orgs, onNavigate }: {
                 );
               })}
               <td className="border-l border-border/30 px-2 py-2" />
-              <td className="px-2 py-2" />
-              <td className="px-2 py-2" />
-              <td className="px-2 py-2" />
+              <td className="border-l border-border/30 px-2 py-2" />
               <td className="border-l border-border/30 px-2 py-2 text-center text-[11px] font-semibold tabular-nums text-primary">{totals.total}</td>
               <td className="px-3 py-2" />
             </tr>
           </tfoot>
         </table>
       </div>
-      {/* Legend — the icon-only header was unreadable without it */}
+      {/* Legend — the header is icons only, so this is the icon-to-status map. */}
       <div className="hidden flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 px-3 py-2 text-[9px] text-muted md:flex">
         <span className="font-semibold uppercase tracking-wider">Workflow</span>
         {TABLE_STATUSES.map((s, i) => {
           const hidden = !visibleStatuses.some(v => v.key === s.key);
+          const Icon = s.icon;
           return (
             <span key={s.key} className="flex items-center gap-1">
               {i > 0 && <span className="text-muted/40">→</span>}
               <span className={cn(
+                'flex items-center gap-0.5',
                 hidden && 'text-muted/30 line-through',
                 !hidden && s.key === 'not_ok' && 'font-semibold text-red-500',
                 !hidden && s.key === 'backlog' && 'font-semibold text-sky-400',
-              )}>{s.label}</span>
+              )}>
+                <Icon size={9} />
+                {s.label}
+              </span>
             </span>
           );
         })}
-        <span className="ml-auto">Clique un en-tête pour trier</span>
+        <span className="ml-auto flex items-center gap-x-2.5">
+          <span className="flex items-center gap-0.5"><Inbox size={9} /> créées 14j / ratio</span>
+          <span className="flex items-center gap-0.5"><Hourglass size={9} /> traité</span>
+          <span className="flex items-center gap-0.5"><Eye size={9} /> review</span>
+        </span>
       </div>
     </div>
   );
