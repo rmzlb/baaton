@@ -124,6 +124,16 @@ struct ClientWaitRow {
     stuck_count: i64,
 }
 
+/// Per-project version of `ClientWaitRow`. Same definition of "waiting" (age
+/// since the last status change into `in_review`) so the table column and the
+/// global card can never disagree, just grouped by project.
+#[derive(sqlx::FromRow)]
+struct ProjectReviewRow {
+    project_id: Uuid,
+    median_days: Option<f64>,
+    stuck_count: i64,
+}
+
 #[derive(sqlx::FromRow)]
 struct AssigneeRow {
     project_id: Uuid,
@@ -293,6 +303,7 @@ pub async fn summary(
         personal_heatmap_result,
         org_heatmap_result,
         project_temporal_result,
+        project_review_result,
     ) = tokio::join!(
         // a) Projects with status counts
         sqlx::query_as::<_, ProjectStatusRow>(
@@ -524,6 +535,36 @@ pub async fn summary(
                  AND i.archived = false
                GROUP BY i.project_id"#
         ).bind(&all_org_ids).bind(week_start).bind(thirty_days_ago).fetch_all(&pool),
+
+        // x) Per-project review wait. Mirrors query f2 (client wait) exactly, grouped by
+        // project, so the table column and the global card use one definition of "waiting":
+        // days since the last status change that put the issue in its current status.
+        // Median again, not mean, for the same long-tail reason.
+        sqlx::query_as::<_, ProjectReviewRow>(
+            r#"WITH last_change AS (
+                   SELECT DISTINCT ON (al.issue_id) al.issue_id, al.created_at AS entered_at
+                   FROM activity_log al
+                   WHERE al.action = 'status_changed' AND al.issue_id IS NOT NULL
+                     AND al.new_value IS NOT NULL
+                   ORDER BY al.issue_id, al.created_at DESC
+               ),
+               waiting AS (
+                   SELECT i.project_id,
+                          EXTRACT(EPOCH FROM (now() - COALESCE(lc.entered_at, i.created_at))) / 86400.0 AS age_days
+                   FROM issues i
+                   JOIN projects p ON p.id = i.project_id
+                   LEFT JOIN last_change lc ON lc.issue_id = i.id
+                   WHERE p.org_id = ANY($1)
+                     AND i.status = 'in_review'
+                     AND i.archived = false
+                     AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE)
+               )
+               SELECT project_id,
+                      percentile_cont(0.5) WITHIN GROUP (ORDER BY age_days) AS median_days,
+                      COUNT(*) FILTER (WHERE age_days > 14)::bigint        AS stuck_count
+               FROM waiting
+               GROUP BY project_id"#
+        ).bind(&all_org_ids).fetch_all(&pool),
     );
 
     // 3. Unwrap results (with defaults on error)
@@ -551,8 +592,14 @@ pub async fn summary(
     let personal_heatmap = personal_heatmap_result.unwrap_or_default();
     let org_heatmap = org_heatmap_result.unwrap_or_default();
     let project_temporal = project_temporal_result.unwrap_or_default();
+    let project_review = project_review_result.unwrap_or_default();
 
     // Build project temporal map: project_id -> (created_week, created_month, closed_week)
+    let project_review_map: HashMap<Uuid, &ProjectReviewRow> = project_review
+        .iter()
+        .map(|r| (r.project_id, r))
+        .collect();
+
     let project_temporal_map: HashMap<Uuid, &ProjectTemporalRow> = project_temporal
         .iter()
         .map(|r| (r.project_id, r))
@@ -618,6 +665,8 @@ pub async fn summary(
                         "closed_this_week": project_temporal_map.get(&p.id).map(|t| t.closed_week).unwrap_or(0),
                         "closed_this_month": project_temporal_map.get(&p.id).map(|t| t.closed_month).unwrap_or(0),
                         "last_activity_at": project_temporal_map.get(&p.id).and_then(|t| t.last_activity_at).map(|d| d.to_rfc3339()),
+                        "review_median_days": project_review_map.get(&p.id).and_then(|r| r.median_days),
+                        "review_stuck": project_review_map.get(&p.id).map(|r| r.stuck_count).unwrap_or(0),
                         "assignees": proj_assignees,
                     })
                 })

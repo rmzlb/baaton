@@ -29,6 +29,10 @@ interface DashboardProject {
   closed_this_week: number;
   closed_this_month: number;
   last_activity_at: string | null;
+  /// Median days the project's `in_review` queue has been waiting, null when empty.
+  review_median_days: number | null;
+  /// How many of those crossed 14 days.
+  review_stuck: number;
   assignees: string[];
 }
 
@@ -622,6 +626,25 @@ function StatusCell({ statusKey, value }: { statusKey: string; value: number }) 
   }
 }
 
+/**
+ * Review wait cell — median days the project's `in_review` queue has been sitting.
+ * Thresholds match the global Waiting-on-Client card: >14d red, >7d amber, else green.
+ * `null` means the queue is empty, which is not "0 days" — render a dot, not a number.
+ */
+function ReviewCell({ days, stuck, count }: { days: number | null; stuck: number; count: number }) {
+  if (days == null) return <span className="text-muted/25 select-none">·</span>;
+  const rounded = days < 1 ? days.toFixed(1) : days.toFixed(0);
+  const tone = days > 14 ? 'text-red-500' : days > 7 ? 'text-amber-500' : 'text-emerald-500';
+  const title = stuck > 0
+    ? `${count} en review · médiane ${rounded}j · ${stuck} au-delà de 14j`
+    : `${count} en review · médiane ${rounded}j`;
+  return (
+    <span className={cn('font-semibold', tone)} title={title}>
+      {rounded}j{stuck > 0 && <span className="ml-0.5 text-[9px] font-bold text-red-500">!</span>}
+    </span>
+  );
+}
+
 /** Stacked distribution bar — reads the whole project shape in one glance. */
 function DistributionBar({ counts, statuses }: { counts: Record<string, number>; statuses: TableStatus[] }) {
   const total = statuses.reduce((sum, s) => sum + (counts[s.key] || 0), 0);
@@ -641,7 +664,7 @@ function DistributionBar({ counts, statuses }: { counts: Record<string, number>;
   );
 }
 
-type SortKey = 'name' | 'total' | 'pct' | 'ratio' | string;
+type SortKey = 'name' | 'total' | 'pct' | 'ratio' | 'review' | string;
 
 /**
  * Table prefs live in localStorage — the dashboard is a daily-driver screen,
@@ -670,7 +693,7 @@ function loadPrefs(): TablePrefs {
     const parsed = JSON.parse(raw) as Partial<TablePrefs>;
     const sortKey = typeof parsed.sortKey === 'string' ? parsed.sortKey : DEFAULT_PREFS.sortKey;
     // Guard against a stale key from an older column set.
-    const known = ['name', 'total', 'pct', 'ratio', ...TABLE_STATUSES.map(s => s.key)];
+    const known = ['name', 'total', 'pct', 'ratio', 'review', ...TABLE_STATUSES.map(s => s.key)];
     return {
       sortKey: known.includes(sortKey) ? sortKey : DEFAULT_PREFS.sortKey,
       sortDesc: typeof parsed.sortDesc === 'boolean' ? parsed.sortDesc : DEFAULT_PREFS.sortDesc,
@@ -729,6 +752,8 @@ function ProjectTable({ orgs, onNavigate }: {
         return {
           project, org, counts, total, totalAll, done, created, closed,
           lastActivity: project.last_activity_at ? Date.parse(project.last_activity_at) : 0,
+          reviewDays: project.review_median_days,
+          reviewStuck: project.review_stuck || 0,
           pct: totalAll > 0 ? Math.round((done / totalAll) * 100) : 0,
           ratio: created > 0 ? closed / created : closed > 0 ? 99 : 0,
         };
@@ -737,6 +762,15 @@ function ProjectTable({ orgs, onNavigate }: {
     const dir = sortDesc ? -1 : 1;
     return flat.sort((a, b) => {
       if (sortKey === 'name') return a.project.name.localeCompare(b.project.name) * dir;
+      // Projects with an empty review queue have no wait to compare — keep them at the
+      // bottom in both directions instead of letting a fake 0 win the "longest wait" sort.
+      if (sortKey === 'review') {
+        if (a.reviewDays == null && b.reviewDays == null) return a.project.name.localeCompare(b.project.name);
+        if (a.reviewDays == null) return 1;
+        if (b.reviewDays == null) return -1;
+        if (a.reviewDays === b.reviewDays) return b.lastActivity - a.lastActivity;
+        return (a.reviewDays - b.reviewDays) * dir;
+      }
       const va = sortKey === 'total' ? a.total : sortKey === 'pct' ? a.pct : sortKey === 'ratio' ? a.ratio : (a.counts[sortKey] || 0);
       const vb = sortKey === 'total' ? b.total : sortKey === 'pct' ? b.pct : sortKey === 'ratio' ? b.ratio : (b.counts[sortKey] || 0);
       // Ties are common: most projects show the same small count in a given column.
@@ -786,6 +820,7 @@ function ProjectTable({ orgs, onNavigate }: {
     { key: 'backlog', label: 'Backlog' },
     { key: 'not_ok', label: 'Not OK' },
     { key: 'in_progress', label: 'In prog.' },
+    { key: 'review', label: 'Review' },
     { key: 'total', label: 'Total' },
     { key: 'name', label: 'A-Z' },
   ];
@@ -899,6 +934,12 @@ function ProjectTable({ orgs, onNavigate }: {
                       </span>
                     </span>
                   )}
+                  {r.reviewDays != null && (
+                    <span className={cn('flex items-center gap-1 text-[10px] text-muted/70', !(r.created > 0 || r.closed > 0) && 'ml-auto')}>
+                      review
+                      <ReviewCell days={r.reviewDays} stuck={r.reviewStuck} count={r.counts.in_review || 0} />
+                    </span>
+                  )}
                 </div>
               </button>
             );
@@ -989,6 +1030,9 @@ function ProjectTable({ orgs, onNavigate }: {
               <th title="Ratio sorties/entrées — ≥1 = tu absorbes la charge" onClick={() => toggleSort('ratio')} className={cn('cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'ratio' ? 'text-primary' : 'text-muted')}>
                 Flow<SortArrow active={sortKey === 'ratio'} />
               </th>
+              <th title="Attente médiane en review (jours) — temps côté client, pas temps de dev" onClick={() => toggleSort('review')} className={cn('cursor-pointer select-none border-b border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'review' ? 'text-primary' : 'text-muted')}>
+                Review<SortArrow active={sortKey === 'review'} />
+              </th>
               <th onClick={() => toggleSort('total')} className={cn('cursor-pointer select-none border-b border-l border-border/40 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide hover:text-secondary', sortKey === 'total' ? 'text-primary' : 'text-muted')}>
                 Total<SortArrow active={sortKey === 'total'} />
               </th>
@@ -1036,6 +1080,9 @@ function ProjectTable({ orgs, onNavigate }: {
                       ? <span className="font-semibold text-emerald-500" title={`${r.closed} fermées / ${r.created} créées`}>↑{r.ratio >= 99 ? '∞' : r.ratio.toFixed(1)}</span>
                       : <span className="font-semibold text-amber-500" title={`${r.closed} fermées / ${r.created} créées — la dette grossit`}>↓{r.ratio.toFixed(1)}</span>}
                 </td>
+                <td className={cn('border-b border-border/20 px-2 py-2.5 text-center tabular-nums', r.reviewDays != null && r.reviewDays > 14 && 'bg-red-500/[0.04]')}>
+                  <ReviewCell days={r.reviewDays} stuck={r.reviewStuck} count={r.counts.in_review || 0} />
+                </td>
                 <td className="border-b border-l border-border/30 px-2 py-2.5 text-center font-semibold tabular-nums text-primary">{r.total}</td>
                 <td className="border-b border-border/20 px-3 py-2.5">
                   <div className="flex items-center gap-2">
@@ -1060,6 +1107,7 @@ function ProjectTable({ orgs, onNavigate }: {
                 );
               })}
               <td className="border-l border-border/30 px-2 py-2" />
+              <td className="px-2 py-2" />
               <td className="px-2 py-2" />
               <td className="border-l border-border/30 px-2 py-2 text-center text-[11px] font-semibold tabular-nums text-primary">{totals.total}</td>
               <td className="px-3 py-2" />
