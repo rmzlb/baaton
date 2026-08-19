@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, State},
+    extract::{Extension, Query, State},
     http::StatusCode,
     Json,
 };
@@ -124,25 +124,32 @@ struct ClientWaitRow {
     stuck_count: i64,
 }
 
-/// Per-project lead time: how long a ticket takes to get handled, measured
-/// `created_at` -> first transition out of the backlog side (`in_review`, `done`
-/// or `cancelled`). Deliberately independent of `in_progress`, which is skipped
-/// on hundreds of transitions and cannot carry a duration.
+/// Per-project flow metrics, aligned on the Kanban Guide (2025.5) definitions.
+///
+/// Two metrics, deliberately different in nature and *not* interchangeable:
+/// - **Cycle time** (lagging): finished items only, so it needs a time window.
+/// - **Work item age** (leading): live unfinished items, measured to `now()`, so a
+///   window makes no sense — an item started 200 days ago is 200 days old whatever
+///   window you pick. Windowing it would silently hide the worst offenders.
+///
+/// Percentiles, not means: cycle-time distributions in knowledge work are long-tailed
+/// (one issue here sat 190 days), so a mean reads ~3x the typical case. p85 is the
+/// headline because it is the Service Level Expectation — "85% of tickets land within
+/// X days" — and p50 rides along as the typical case.
 #[derive(sqlx::FromRow)]
-struct ProjectLeadRow {
+struct ProjectFlowRow {
     project_id: Uuid,
-    median_days: Option<f64>,
-    sample_count: i64,
-}
-
-/// Per-project version of `ClientWaitRow`. Same definition of "waiting" (age
-/// since the last status change into `in_review`) so the table column and the
-/// global card can never disagree, just grouped by project.
-#[derive(sqlx::FromRow)]
-struct ProjectReviewRow {
-    project_id: Uuid,
-    median_days: Option<f64>,
-    stuck_count: i64,
+    /// Cycle time p50 / p85 in days, over the selected window.
+    cycle_p50: Option<f64>,
+    cycle_p85: Option<f64>,
+    cycle_sample: i64,
+    /// Age of the live review queue, p50 / p85 in days.
+    age_p50: Option<f64>,
+    age_p85: Option<f64>,
+    age_sample: i64,
+    /// Live items already older than this project's own cycle-time p85, i.e. past the
+    /// SLE they were expected to meet. Self-calibrating: no hardcoded "14 days".
+    at_risk: i64,
 }
 
 #[derive(sqlx::FromRow)]
@@ -194,12 +201,11 @@ struct ProjectTemporalRow {
     created_month: i64,
     closed_week: i64,
     closed_month: i64,
-    /// Rolling 14-day window (one sprint). The In/Flow pair reads as "current pace",
-    /// and a 30-day ratio is too slow to react: a project that stalled last week
-    /// still looked healthy. Rolling, not calendar-aligned, so the number never
-    /// resets to a misleading 0 on a Monday.
-    created_14d: i64,
-    closed_14d: i64,
+    /// Counts over the single dashboard window (see `resolve_window`). Every windowed
+    /// metric on the screen shares this window so the flow ratio and the cycle time
+    /// cannot describe two different periods while sitting side by side.
+    created_window: i64,
+    closed_window: i64,
     /// Most recent issue touch on the project. Used by the dashboard table as the
     /// tiebreaker when several projects share the same count in the sorted column,
     /// so equal rows fall in "most recently active first" order.
@@ -245,10 +251,29 @@ struct ActivityRow {
 
 // ─── GET /dashboard/summary ───────────────────────────
 
+/// Rolling window for every windowed metric on the dashboard, in days.
+/// One knob for the whole screen: mixing a 14-day flow ratio with a 90-day cycle
+/// time made two columns look comparable when they measured different periods.
+#[derive(Deserialize)]
+pub struct SummaryParams {
+    window: Option<i64>,
+}
+
+/// Allowed windows. 14 = sprint, 30 = month, 90 = quarter. Anything else falls back
+/// to the default so a hand-edited query string cannot produce a meaningless window.
+fn resolve_window(requested: Option<i64>) -> i64 {
+    match requested {
+        Some(14) => 14,
+        Some(90) => 90,
+        _ => 30,
+    }
+}
+
 pub async fn summary(
     Extension(auth): Extension<AuthUser>,
     Extension(_s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
+    Query(params): Query<SummaryParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     // TODO(s3): rewrite description here — current response surfaces only issue titles,
     // project descriptions, and activity metadata, none of which carry markdown bodies
@@ -292,9 +317,12 @@ pub async fn summary(
     let week_start = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
     let thirty_days_ago = today - chrono::Duration::days(30);
     let since_30d = Utc::now() - chrono::Duration::days(30);
-    let since_90d = Utc::now() - chrono::Duration::days(90);
-    let since_14d = Utc::now() - chrono::Duration::days(14);
     let hm_since = today - chrono::Duration::days(365);
+    // Single window driving every windowed metric: created, closed, ratio, cycle time.
+    // Work item age is deliberately NOT windowed (see ProjectFlowRow).
+    let window_days = resolve_window(params.window);
+    let window_start = Utc::now() - chrono::Duration::days(window_days);
+    let window_start_date = today - chrono::Duration::days(window_days);
 
     // 2. Run ALL queries in parallel
     let (
@@ -322,8 +350,7 @@ pub async fn summary(
         personal_heatmap_result,
         org_heatmap_result,
         project_temporal_result,
-        project_review_result,
-        project_lead_result,
+        project_flow_result,
     ) = tokio::join!(
         // a) Projects with status counts
         sqlx::query_as::<_, ProjectStatusRow>(
@@ -548,31 +575,68 @@ pub async fn summary(
                    COUNT(*) FILTER (WHERE i.created_at >= $3)::bigint AS created_month,
                    COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $2)::bigint AS closed_week,
                    COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $3)::bigint AS closed_month,
-                   COUNT(*) FILTER (WHERE i.created_at >= $4)::bigint AS created_14d,
-                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $4)::bigint AS closed_14d,
+                   COUNT(*) FILTER (WHERE i.created_at >= $4)::bigint AS created_window,
+                   COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled') AND COALESCE(i.closed_at, i.updated_at) >= $4)::bigint AS closed_window,
                    MAX(GREATEST(i.created_at, i.updated_at)) AS last_activity_at
                FROM issues i
                JOIN projects p ON p.id = i.project_id
                WHERE p.org_id = ANY($1)
                  AND i.archived = false
                GROUP BY i.project_id"#
-        ).bind(&all_org_ids).bind(week_start).bind(thirty_days_ago).bind(since_14d).fetch_all(&pool),
+        ).bind(&all_org_ids).bind(week_start).bind(thirty_days_ago).bind(window_start_date).fetch_all(&pool),
 
-        // x) Per-project review wait. Mirrors query f2 (client wait) exactly, grouped by
-        // project, so the table column and the global card use one definition of "waiting":
-        // days since the last status change that put the issue in its current status.
-        // Median again, not mean, for the same long-tail reason.
-        sqlx::query_as::<_, ProjectReviewRow>(
-            r#"WITH last_change AS (
+        // x) Per-project flow metrics, Kanban Guide (2025.5) definitions.
+        //
+        // Cycle time (lagging): finished items only, windowed. "Finished" = first
+        // transition to a terminal-or-review status, `closed_at` as fallback for rows
+        // predating the activity log. Reported as p50 + p85: p85 is the Service Level
+        // Expectation ("85% of tickets land within X days"), the number Vacanti's flow
+        // work uses instead of a mean, because these distributions are long-tailed and
+        // a mean reads ~3x the typical case.
+        //
+        // Work item age (leading): live `in_review` items, measured to now(). NOT
+        // windowed on purpose — an item started 200 days ago is 200 days old under any
+        // window, and filtering it out would hide exactly the items that need action.
+        //
+        // at_risk compares each live item against this project's own cycle p85, so the
+        // threshold self-calibrates per project instead of a hardcoded 14 days.
+        sqlx::query_as::<_, ProjectFlowRow>(
+            r#"WITH finished AS (
+                   SELECT DISTINCT ON (al.issue_id) al.issue_id, al.created_at AS at
+                   FROM activity_log al
+                   WHERE al.action = 'status_changed' AND al.issue_id IS NOT NULL
+                     AND al.new_value IN ('in_review', 'done', 'cancelled')
+                   ORDER BY al.issue_id, al.created_at ASC
+               ),
+               cycle AS (
+                   SELECT i.project_id,
+                          EXTRACT(EPOCH FROM (COALESCE(f.at, i.closed_at) - i.created_at)) / 86400.0 AS days
+                   FROM issues i
+                   JOIN projects p ON p.id = i.project_id
+                   LEFT JOIN finished f ON f.issue_id = i.id
+                   WHERE p.org_id = ANY($1)
+                     AND i.archived = false
+                     AND COALESCE(f.at, i.closed_at) IS NOT NULL
+                     AND COALESCE(f.at, i.closed_at) >= $2
+                     AND COALESCE(f.at, i.closed_at) > i.created_at
+               ),
+               cycle_agg AS (
+                   SELECT project_id,
+                          percentile_cont(0.5)  WITHIN GROUP (ORDER BY days) AS cycle_p50,
+                          percentile_cont(0.85) WITHIN GROUP (ORDER BY days) AS cycle_p85,
+                          COUNT(*)::bigint                                   AS cycle_sample
+                   FROM cycle GROUP BY project_id
+               ),
+               last_change AS (
                    SELECT DISTINCT ON (al.issue_id) al.issue_id, al.created_at AS entered_at
                    FROM activity_log al
                    WHERE al.action = 'status_changed' AND al.issue_id IS NOT NULL
                      AND al.new_value IS NOT NULL
                    ORDER BY al.issue_id, al.created_at DESC
                ),
-               waiting AS (
+               live AS (
                    SELECT i.project_id,
-                          EXTRACT(EPOCH FROM (now() - COALESCE(lc.entered_at, i.created_at))) / 86400.0 AS age_days
+                          EXTRACT(EPOCH FROM (now() - COALESCE(lc.entered_at, i.created_at))) / 86400.0 AS days
                    FROM issues i
                    JOIN projects p ON p.id = i.project_id
                    LEFT JOIN last_change lc ON lc.issue_id = i.id
@@ -580,46 +644,31 @@ pub async fn summary(
                      AND i.status = 'in_review'
                      AND i.archived = false
                      AND (i.snoozed_until IS NULL OR i.snoozed_until <= CURRENT_DATE)
-               )
-               SELECT project_id,
-                      percentile_cont(0.5) WITHIN GROUP (ORDER BY age_days) AS median_days,
-                      COUNT(*) FILTER (WHERE age_days > 14)::bigint        AS stuck_count
-               FROM waiting
-               GROUP BY project_id"#
-        ).bind(&all_org_ids).fetch_all(&pool),
-
-        // y) Per-project lead time: created -> handled. "Handled" is the first recorded
-        // transition to `in_review`, `done` or `cancelled`, with `closed_at` as fallback
-        // for terminal rows that predate the activity log. This answers "how long to get
-        // a ticket treated" without touching `in_progress`, which is skipped too often to
-        // measure anything. Windowed on tickets handled in the last 90 days so the number
-        // reflects the current pace instead of being dragged by imported history.
-        sqlx::query_as::<_, ProjectLeadRow>(
-            r#"WITH delivery AS (
-                   SELECT DISTINCT ON (al.issue_id) al.issue_id, al.created_at AS at
-                   FROM activity_log al
-                   WHERE al.action = 'status_changed' AND al.issue_id IS NOT NULL
-                     AND al.new_value IN ('in_review', 'done', 'cancelled')
-                   ORDER BY al.issue_id, al.created_at ASC
                ),
-               lead AS (
-                   SELECT i.project_id,
-                          EXTRACT(EPOCH FROM (COALESCE(d.at, i.closed_at) - i.created_at)) / 86400.0 AS days
-                   FROM issues i
-                   JOIN projects p ON p.id = i.project_id
-                   LEFT JOIN delivery d ON d.issue_id = i.id
-                   WHERE p.org_id = ANY($1)
-                     AND i.archived = false
-                     AND COALESCE(d.at, i.closed_at) IS NOT NULL
-                     AND COALESCE(d.at, i.closed_at) >= $2
-                     AND COALESCE(d.at, i.closed_at) > i.created_at
+               age_agg AS (
+                   SELECT project_id,
+                          percentile_cont(0.5)  WITHIN GROUP (ORDER BY days) AS age_p50,
+                          percentile_cont(0.85) WITHIN GROUP (ORDER BY days) AS age_p85,
+                          COUNT(*)::bigint                                   AS age_sample
+                   FROM live GROUP BY project_id
+               ),
+               risk AS (
+                   SELECT l.project_id, COUNT(*)::bigint AS at_risk
+                   FROM live l
+                   JOIN cycle_agg c ON c.project_id = l.project_id
+                   WHERE c.cycle_p85 IS NOT NULL AND l.days > c.cycle_p85
+                   GROUP BY l.project_id
                )
-               SELECT project_id,
-                      percentile_cont(0.5) WITHIN GROUP (ORDER BY days) AS median_days,
-                      COUNT(*)::bigint                                  AS sample_count
-               FROM lead
-               GROUP BY project_id"#
-        ).bind(&all_org_ids).bind(since_90d).fetch_all(&pool),
+               SELECT COALESCE(c.project_id, a.project_id)      AS project_id,
+                      c.cycle_p50, c.cycle_p85,
+                      COALESCE(c.cycle_sample, 0)               AS cycle_sample,
+                      a.age_p50, a.age_p85,
+                      COALESCE(a.age_sample, 0)                 AS age_sample,
+                      COALESCE(r.at_risk, 0)                    AS at_risk
+               FROM cycle_agg c
+               FULL OUTER JOIN age_agg a ON a.project_id = c.project_id
+               LEFT JOIN risk r ON r.project_id = COALESCE(c.project_id, a.project_id)"#
+        ).bind(&all_org_ids).bind(window_start).fetch_all(&pool),
     );
 
     // 3. Unwrap results (with defaults on error)
@@ -647,19 +696,14 @@ pub async fn summary(
     let personal_heatmap = personal_heatmap_result.unwrap_or_default();
     let org_heatmap = org_heatmap_result.unwrap_or_default();
     let project_temporal = project_temporal_result.unwrap_or_default();
-    let project_review = project_review_result.unwrap_or_default();
-    let project_lead = project_lead_result.unwrap_or_default();
+    let project_flow = project_flow_result.unwrap_or_default();
+
+    let project_flow_map: HashMap<Uuid, &ProjectFlowRow> = project_flow
+        .iter()
+        .map(|r| (r.project_id, r))
+        .collect();
 
     // Build project temporal map: project_id -> (created_week, created_month, closed_week)
-    let project_review_map: HashMap<Uuid, &ProjectReviewRow> = project_review
-        .iter()
-        .map(|r| (r.project_id, r))
-        .collect();
-
-    let project_lead_map: HashMap<Uuid, &ProjectLeadRow> = project_lead
-        .iter()
-        .map(|r| (r.project_id, r))
-        .collect();
 
     let project_temporal_map: HashMap<Uuid, &ProjectTemporalRow> = project_temporal
         .iter()
@@ -725,13 +769,16 @@ pub async fn summary(
                         "created_this_month": project_temporal_map.get(&p.id).map(|t| t.created_month).unwrap_or(0),
                         "closed_this_week": project_temporal_map.get(&p.id).map(|t| t.closed_week).unwrap_or(0),
                         "closed_this_month": project_temporal_map.get(&p.id).map(|t| t.closed_month).unwrap_or(0),
-                        "created_14d": project_temporal_map.get(&p.id).map(|t| t.created_14d).unwrap_or(0),
-                        "closed_14d": project_temporal_map.get(&p.id).map(|t| t.closed_14d).unwrap_or(0),
+                        "created_window": project_temporal_map.get(&p.id).map(|t| t.created_window).unwrap_or(0),
+                        "closed_window": project_temporal_map.get(&p.id).map(|t| t.closed_window).unwrap_or(0),
                         "last_activity_at": project_temporal_map.get(&p.id).and_then(|t| t.last_activity_at).map(|d| d.to_rfc3339()),
-                        "review_median_days": project_review_map.get(&p.id).and_then(|r| r.median_days),
-                        "review_stuck": project_review_map.get(&p.id).map(|r| r.stuck_count).unwrap_or(0),
-                        "lead_median_days": project_lead_map.get(&p.id).and_then(|r| r.median_days),
-                        "lead_sample": project_lead_map.get(&p.id).map(|r| r.sample_count).unwrap_or(0),
+                        "cycle_p50": project_flow_map.get(&p.id).and_then(|r| r.cycle_p50),
+                        "cycle_p85": project_flow_map.get(&p.id).and_then(|r| r.cycle_p85),
+                        "cycle_sample": project_flow_map.get(&p.id).map(|r| r.cycle_sample).unwrap_or(0),
+                        "age_p50": project_flow_map.get(&p.id).and_then(|r| r.age_p50),
+                        "age_p85": project_flow_map.get(&p.id).and_then(|r| r.age_p85),
+                        "age_sample": project_flow_map.get(&p.id).map(|r| r.age_sample).unwrap_or(0),
+                        "at_risk": project_flow_map.get(&p.id).map(|r| r.at_risk).unwrap_or(0),
                         "assignees": proj_assignees,
                     })
                 })

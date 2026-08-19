@@ -29,18 +29,22 @@ interface DashboardProject {
   created_this_month: number;
   closed_this_week: number;
   closed_this_month: number;
-  /// Rolling 14-day window (sprint-length) — what the In/Flow pair reads from.
-  created_14d: number;
-  closed_14d: number;
+  /// Counts over the single dashboard window — same window as cycle time, so the
+  /// flow ratio and the durations always describe the same period.
+  created_window: number;
+  closed_window: number;
   last_activity_at: string | null;
-  /// Median days the project's `in_review` queue has been waiting, null when empty.
-  review_median_days: number | null;
-  /// How many of those crossed 14 days.
-  review_stuck: number;
-  /// Median days from creation to first handling, over the last 90 days.
-  lead_median_days: number | null;
-  /// Number of tickets behind `lead_median_days`.
-  lead_sample: number;
+  /// Cycle time (lagging, windowed): creation → first handling, in days.
+  /// p85 is the Service Level Expectation, p50 the typical case.
+  cycle_p50: number | null;
+  cycle_p85: number | null;
+  cycle_sample: number;
+  /// Work item age (leading, NOT windowed): how long live review items have waited.
+  age_p50: number | null;
+  age_p85: number | null;
+  age_sample: number;
+  /// Live items already past this project's own cycle p85 — breaching their SLE.
+  at_risk: number;
   assignees: string[];
 }
 
@@ -640,32 +644,48 @@ function StatusCell({ statusKey, value }: { statusKey: string; value: number }) 
  * `sample` under 3 is not a median worth trusting, so it renders muted with the
  * count in the tooltip rather than pretending to be a stable number.
  */
-function LeadCell({ days, sample }: { days: number | null; sample: number }) {
-  if (days == null || sample === 0) return <span className="text-muted/25 select-none">·</span>;
-  const label = days < 1 ? `${Math.max(1, Math.round(days * 24))}h` : `${days.toFixed(days < 10 ? 1 : 0)}j`;
-  const weak = sample < 3;
-  const tone = weak ? 'text-muted/60' : days > 14 ? 'text-red-500' : days > 5 ? 'text-amber-500' : 'text-emerald-500';
-  const title = weak
-    ? `Créé → traité : ${label} médian sur ${sample} ticket${sample > 1 ? 's' : ''} — échantillon trop faible`
-    : `Créé → traité : ${label} médian sur ${sample} tickets (90j)`;
-  return <span className={cn('font-semibold', tone)} title={title}>{label}</span>;
+/** Duration formatter — hours under a day, days above. "0.3j" reads as noise. */
+function fmtDays(days: number | null): string {
+  if (days == null) return '—';
+  if (days < 1) return `${Math.max(1, Math.round(days * 24))}h`;
+  return `${days.toFixed(days < 10 ? 1 : 0)}j`;
 }
 
 /**
- * Review wait cell — median days the project's `in_review` queue has been sitting.
- * Thresholds match the global Waiting-on-Client card: >14d red, >7d amber, else green.
- * `null` means the queue is empty, which is not "0 days" — render a dot, not a number.
+ * Cycle time cell (lagging metric, windowed). Shows p85, the Service Level
+ * Expectation: "85% of tickets land within this". That is the number you can promise
+ * a client, and percentiles beat means on long-tailed distributions — the mean here
+ * read ~3x the typical case. p50 sits in the tooltip as the typical case.
  */
-function ReviewCell({ days, stuck, count, small }: { days: number | null; stuck: number; count: number; small?: boolean }) {
-  if (days == null) return <span className={cn('text-muted/25 select-none', small && 'text-[9px]')}>·</span>;
-  const rounded = days < 1 ? days.toFixed(1) : days.toFixed(0);
-  const tone = days > 14 ? 'text-red-500' : days > 7 ? 'text-amber-500' : 'text-emerald-500';
-  const title = stuck > 0
-    ? `${count} en review · médiane ${rounded}j · ${stuck} au-delà de 14j`
-    : `${count} en review · médiane ${rounded}j`;
+function CycleCell({ p50, p85, sample, window }: { p50: number | null; p85: number | null; sample: number; window: number }) {
+  if (p85 == null || sample === 0) return <span className="text-muted/25 select-none">·</span>;
+  // Under 5 finished items a percentile is arithmetic, not a signal.
+  const weak = sample < 5;
+  const title = weak
+    ? `Cycle time : ${fmtDays(p85)} à p85 sur seulement ${sample} ticket${sample > 1 ? 's' : ''} (${window}j) — échantillon trop faible pour un SLE`
+    : `Cycle time (créé → traité) · ${sample} tickets sur ${window}j\n85% passent en ${fmtDays(p85)} ou moins (SLE)\nTypique (p50) : ${fmtDays(p50)}`;
   return (
-    <span className={cn('font-semibold', tone, small && 'text-[10px]')} title={title}>
-      {rounded}j{stuck > 0 && <span className="ml-0.5 text-[9px] font-bold text-red-500">!</span>}
+    <span className={cn('font-semibold', weak ? 'text-muted/60' : 'text-secondary')} title={title}>
+      {fmtDays(p85)}
+    </span>
+  );
+}
+
+/**
+ * Work item age cell (leading metric, deliberately NOT windowed). Live review queue.
+ * Colour is driven by the project's own cycle p85, not a hardcoded day count: a
+ * 3-day-SLE project and a 30-day-SLE project are both healthy while they hold their
+ * own pace, and a fixed threshold would flag the slow-by-nature one forever.
+ */
+function AgeCell({ p85, sample, atRisk, sle }: { p85: number | null; sample: number; atRisk: number; sle: number | null }) {
+  if (p85 == null || sample === 0) return <span className="select-none text-[9px] text-muted/25">·</span>;
+  const tone = atRisk > 0 ? 'text-red-500' : sle != null && p85 > sle ? 'text-amber-500' : 'text-emerald-500';
+  const title = atRisk > 0
+    ? `Work item age · ${sample} en review\n85% attendent depuis ${fmtDays(p85)} ou moins\n${atRisk} au-delà du SLE du projet (${fmtDays(sle)}) — à relancer`
+    : `Work item age · ${sample} en review\n85% attendent depuis ${fmtDays(p85)} ou moins\nAucun au-delà du SLE${sle != null ? ` (${fmtDays(sle)})` : ''}`;
+  return (
+    <span className={cn('text-[10px] font-semibold', tone)} title={title}>
+      {fmtDays(p85)}{atRisk > 0 && <span className="ml-0.5 text-[9px] font-bold">!{atRisk}</span>}
     </span>
   );
 }
@@ -706,7 +726,7 @@ function DistributionBar({ counts, statuses }: { counts: Record<string, number>;
   );
 }
 
-type SortKey = 'name' | 'total' | 'ratio' | 'review' | 'lead' | string;
+type SortKey = 'name' | 'total' | 'ratio' | 'cycle' | 'age' | string;
 
 /**
  * Table prefs live in localStorage — the dashboard is a daily-driver screen,
@@ -737,7 +757,7 @@ function loadPrefs(): TablePrefs {
     // Guard against a stale key from an older column set.
     // Guard against a stale key from an older column set. 'pct' was a sortable column
     // until the ambiguous done-ratio was dropped; map it back to the default.
-    const known = ['name', 'total', 'ratio', 'review', 'lead', ...TABLE_STATUSES.map(s => s.key)];
+    const known = ['name', 'total', 'ratio', 'cycle', 'age', ...TABLE_STATUSES.map(s => s.key)];
     return {
       sortKey: known.includes(sortKey) ? sortKey : DEFAULT_PREFS.sortKey,
       sortDesc: typeof parsed.sortDesc === 'boolean' ? parsed.sortDesc : DEFAULT_PREFS.sortDesc,
@@ -749,9 +769,11 @@ function loadPrefs(): TablePrefs {
   }
 }
 
-function ProjectTable({ orgs, onNavigate }: {
+function ProjectTable({ orgs, onNavigate, windowDays, onWindowChange }: {
   orgs: DashboardOrg[];
   onNavigate: (project: DashboardProject, orgId: string) => void;
+  windowDays: number;
+  onWindowChange: (days: number) => void;
 }) {
   const initialPrefs = useRef(loadPrefs()).current;
   const [sortKey, setSortKey] = useState<SortKey>(initialPrefs.sortKey);
@@ -789,17 +811,19 @@ function ProjectTable({ orgs, onNavigate }: {
         const counts = project.status_counts || {};
         const totalAll = project.total_issues || 0;
         const done = counts.done || 0;
-        const created = project.created_14d || 0;
-        const closed = project.closed_14d || 0;
+        const created = project.created_window || 0;
+        const closed = project.closed_window || 0;
         // "Total" follows what is on screen, otherwise the row doesn't add up.
         const total = visibleStatuses.reduce((sum, s) => sum + (counts[s.key] || 0), 0);
         return {
           project, org, counts, total, totalAll, done, created, closed,
           lastActivity: project.last_activity_at ? Date.parse(project.last_activity_at) : 0,
-          reviewDays: project.review_median_days,
-          reviewStuck: project.review_stuck || 0,
-          leadDays: project.lead_median_days,
-          leadSample: project.lead_sample || 0,
+          cycleP50: project.cycle_p50,
+          cycleP85: project.cycle_p85,
+          cycleSample: project.cycle_sample || 0,
+          ageP85: project.age_p85,
+          ageSample: project.age_sample || 0,
+          atRisk: project.at_risk || 0,
           ratio: created > 0 ? closed / created : closed > 0 ? 99 : 0,
         };
       }),
@@ -807,11 +831,12 @@ function ProjectTable({ orgs, onNavigate }: {
     const dir = sortDesc ? -1 : 1;
     return flat.sort((a, b) => {
       if (sortKey === 'name') return a.project.name.localeCompare(b.project.name) * dir;
-      // Projects with an empty review queue have no wait to compare — keep them at the
-      // bottom in both directions instead of letting a fake 0 win the "longest wait" sort.
-      if (sortKey === 'review' || sortKey === 'lead') {
-        const ka = sortKey === 'review' ? a.reviewDays : a.leadDays;
-        const kb = sortKey === 'review' ? b.reviewDays : b.leadDays;
+      // No finished tickets / no live queue means there is nothing to compare — keep
+      // those rows at the bottom in both directions instead of letting a fake 0 win
+      // the "slowest first" sort.
+      if (sortKey === 'cycle' || sortKey === 'age') {
+        const ka = sortKey === 'cycle' ? a.cycleP85 : a.ageP85;
+        const kb = sortKey === 'cycle' ? b.cycleP85 : b.ageP85;
         if (ka == null && kb == null) return a.project.name.localeCompare(b.project.name);
         if (ka == null) return 1;
         if (kb == null) return -1;
@@ -867,8 +892,8 @@ function ProjectTable({ orgs, onNavigate }: {
     { key: 'backlog', label: 'Backlog' },
     { key: 'not_ok', label: 'Not OK' },
     { key: 'in_progress', label: 'In prog.' },
-    { key: 'review', label: 'Review' },
-    { key: 'lead', label: 'Traité' },
+    { key: 'cycle', label: 'Cycle' },
+    { key: 'age', label: 'Âge' },
     { key: 'total', label: 'Total' },
     { key: 'name', label: 'A-Z' },
   ];
@@ -978,22 +1003,22 @@ function ProjectTable({ orgs, onNavigate }: {
                     ))}
                   {(r.created > 0 || r.closed > 0) && (
                     <span className="ml-auto flex items-center gap-1 text-[10px] text-muted/70">
-                      14j
+                      {windowDays}j
                       <span className={cn('font-semibold', r.ratio >= 1 ? 'text-emerald-500' : 'text-amber-500')}>
                         {r.ratio >= 1 ? '↑' : '↓'}{r.ratio >= 99 ? '∞' : r.ratio.toFixed(1)}
                       </span>
                     </span>
                   )}
-                  {r.leadDays != null && (
+                  {r.cycleP85 != null && (
                     <span className={cn('flex items-center gap-1 text-[10px] text-muted/70', !(r.created > 0 || r.closed > 0) && 'ml-auto')}>
-                      traité
-                      <LeadCell days={r.leadDays} sample={r.leadSample} />
+                      cycle
+                      <CycleCell p50={r.cycleP50} p85={r.cycleP85} sample={r.cycleSample} window={windowDays} />
                     </span>
                   )}
-                  {r.reviewDays != null && (
+                  {r.ageP85 != null && (
                     <span className="flex items-center gap-1 text-[10px] text-muted/70">
-                      review
-                      <ReviewCell days={r.reviewDays} stuck={r.reviewStuck} count={r.counts.in_review || 0} />
+                      âge
+                      <AgeCell p85={r.ageP85} sample={r.ageSample} atRisk={r.atRisk} sle={r.cycleP85} />
                     </span>
                   )}
                 </div>
@@ -1022,7 +1047,24 @@ function ProjectTable({ orgs, onNavigate }: {
           Workflow · {rows.length} projets
           {hiddenCount > 0 && <span className="ml-1 text-muted/50">({hiddenCount} tickets masqués)</span>}
         </span>
-        <VisibilityToggles />
+        <div className="flex items-center gap-2">
+          {/* One window for every windowed metric on the screen. */}
+          <div className="flex items-center rounded-lg border border-border/50 p-0.5" title="Fenêtre glissante appliquée au flux ET au cycle time. L'âge des tickets en review n'est jamais fenêtré.">
+            {WINDOW_OPTIONS.map(d => (
+              <button
+                key={d}
+                onClick={() => onWindowChange(d)}
+                className={cn(
+                  'rounded px-1.5 py-0.5 text-[9px] font-semibold tabular-nums transition-colors',
+                  windowDays === d ? 'bg-surface-hover text-primary' : 'text-muted hover:text-secondary',
+                )}
+              >
+                {d}j
+              </button>
+            ))}
+          </div>
+          <VisibilityToggles />
+        </div>
       </div>
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-xs border-separate border-spacing-0">
@@ -1045,7 +1087,7 @@ function ProjectTable({ orgs, onNavigate }: {
                 </th>
               ))}
               <th className="border-b border-l border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
-                Flux 14j
+                Flux {windowDays}j
               </th>
               <th className="border-b border-l border-border/40 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
                 Durées
@@ -1084,33 +1126,33 @@ function ProjectTable({ orgs, onNavigate }: {
                   </th>
                 );
               })}
-              {/* Flux — entrées au-dessus, ratio en dessous, une seule colonne */}
+              {/* Flux — créées au-dessus, ratio en dessous, une seule colonne */}
               <th
-                title="Flux sur 14 jours glissants — en haut : tickets créés. En bas : ratio fermés/créés (≥1 = tu absorbes la charge). Clique pour trier sur le ratio."
+                title={`Flux sur ${windowDays} jours glissants — en haut : tickets créés. En bas : ratio fermés/créés (≥1 = tu absorbes la charge). Clique pour trier sur le ratio.`}
                 onClick={() => toggleSort('ratio')}
                 className={cn('cursor-pointer select-none border-b border-l border-border/40 px-2 py-2 text-center hover:text-secondary', sortKey === 'ratio' ? 'text-primary' : 'text-muted')}
               >
                 <Inbox size={12} className="inline -mt-px" />
                 <SortArrow active={sortKey === 'ratio'} />
               </th>
-              {/* Durées — deux icônes triables, même ordre que les valeurs en dessous */}
+              {/* Durées — cycle time au-dessus (SLE), work item age en dessous (file vivante) */}
               <th className="border-b border-l border-border/40 px-2 py-2 text-center">
                 <div className="flex flex-col items-center gap-0.5">
                   <span
-                    title="Traité : créé → première prise en charge, médiane 90j. Ton temps."
-                    onClick={() => toggleSort('lead')}
-                    className={cn('cursor-pointer select-none hover:text-secondary', sortKey === 'lead' ? 'text-primary' : 'text-muted')}
+                    title={`Cycle time — 85% des tickets traités en X ou moins (SLE), sur ${windowDays}j. Ce que tu peux promettre.`}
+                    onClick={() => toggleSort('cycle')}
+                    className={cn('cursor-pointer select-none hover:text-secondary', sortKey === 'cycle' ? 'text-primary' : 'text-muted')}
                   >
                     <Hourglass size={11} className="inline -mt-px" />
-                    <SortArrow active={sortKey === 'lead'} />
+                    <SortArrow active={sortKey === 'cycle'} />
                   </span>
                   <span
-                    title="Review : attente médiane dans la file de validation. Le temps du client."
-                    onClick={() => toggleSort('review')}
-                    className={cn('cursor-pointer select-none hover:text-secondary', sortKey === 'review' ? 'text-primary' : 'text-muted/70')}
+                    title="Work item age — attente des tickets encore en review, mesurée à maintenant. Jamais fenêtrée : un ticket de 200j reste un ticket de 200j."
+                    onClick={() => toggleSort('age')}
+                    className={cn('cursor-pointer select-none hover:text-secondary', sortKey === 'age' ? 'text-primary' : 'text-muted/70')}
                   >
                     <Eye size={11} className="inline -mt-px" />
-                    <SortArrow active={sortKey === 'review'} />
+                    <SortArrow active={sortKey === 'age'} />
                   </span>
                 </div>
               </th>
@@ -1157,23 +1199,23 @@ function ProjectTable({ orgs, onNavigate }: {
                   <div className="flex flex-col items-center">
                     <span className="text-[11px]">
                       {r.created > 0
-                        ? <span className="text-blue-400" title={`${r.created} créées sur 14j`}>{r.created}</span>
+                        ? <span className="text-blue-400" title={`${r.created} créées sur ${windowDays}j`}>{r.created}</span>
                         : <span className="text-muted/25">·</span>}
                     </span>
                     <span className="text-[9px]">
                       {r.created === 0 && r.closed === 0
                         ? <span className="text-muted/25">·</span>
                         : r.ratio >= 1
-                          ? <span className="font-semibold text-emerald-500" title={`${r.closed} fermées / ${r.created} créées sur 14j`}>↑{r.ratio >= 99 ? '∞' : r.ratio.toFixed(1)}</span>
-                          : <span className="font-semibold text-amber-500" title={`${r.closed} fermées / ${r.created} créées sur 14j — la dette grossit`}>↓{r.ratio.toFixed(1)}</span>}
+                          ? <span className="font-semibold text-emerald-500" title={`${r.closed} fermées / ${r.created} créées sur ${windowDays}j`}>↑{r.ratio >= 99 ? '∞' : r.ratio.toFixed(1)}</span>
+                          : <span className="font-semibold text-amber-500" title={`${r.closed} fermées / ${r.created} créées sur ${windowDays}j — la dette grossit`}>↓{r.ratio.toFixed(1)}</span>}
                     </span>
                   </div>
                 </td>
-                {/* Durées — traité au-dessus (ton temps), review en dessous (le client) */}
-                <td className={cn('border-b border-l border-border/30 px-2 py-2 text-center tabular-nums leading-tight', r.reviewDays != null && r.reviewDays > 14 && 'bg-red-500/[0.04]')}>
+                {/* Durées — cycle time (SLE) au-dessus, work item age de la file vivante en dessous */}
+                <td className={cn('border-b border-l border-border/30 px-2 py-2 text-center tabular-nums leading-tight', r.atRisk > 0 && 'bg-red-500/[0.04]')}>
                   <div className="flex flex-col items-center">
-                    <span className="text-[11px]"><LeadCell days={r.leadDays} sample={r.leadSample} /></span>
-                    <span className="text-[9px]"><ReviewCell days={r.reviewDays} stuck={r.reviewStuck} count={r.counts.in_review || 0} small /></span>
+                    <span className="text-[11px]"><CycleCell p50={r.cycleP50} p85={r.cycleP85} sample={r.cycleSample} window={windowDays} /></span>
+                    <AgeCell p85={r.ageP85} sample={r.ageSample} atRisk={r.atRisk} sle={r.cycleP85} />
                   </div>
                 </td>
                 <td className="border-b border-l border-border/30 px-2 py-2.5 text-center font-semibold tabular-nums text-primary">{r.total}</td>
@@ -1226,14 +1268,18 @@ function ProjectTable({ orgs, onNavigate }: {
           );
         })}
         <span className="ml-auto flex items-center gap-x-2.5">
-          <span className="flex items-center gap-0.5"><Inbox size={9} /> créées 14j / ratio</span>
-          <span className="flex items-center gap-0.5"><Hourglass size={9} /> traité</span>
-          <span className="flex items-center gap-0.5"><Eye size={9} /> review</span>
+          <span className="flex items-center gap-0.5"><Inbox size={9} /> créées {windowDays}j / ratio</span>
+          <span className="flex items-center gap-0.5"><Hourglass size={9} /> cycle p85 (SLE)</span>
+          <span className="flex items-center gap-0.5"><Eye size={9} /> âge file review</span>
         </span>
       </div>
     </div>
   );
 }
+
+/** Allowed dashboard windows, in days. 14 = sprint, 30 = month, 90 = quarter. */
+const WINDOW_OPTIONS = [14, 30, 90];
+const WINDOW_KEY = 'baaton-dashboard-window';
 
 export function Dashboard() {
   const { t } = useTranslation();
@@ -1243,11 +1289,21 @@ export function Dashboard() {
   const apiClient = useApi();
   const memberships = userMemberships?.data ?? [];
 
-  // Stable query key — backend is cross-org, no need to re-fetch on org switch
+  // One window for the whole screen. Every windowed metric (created, closed, ratio,
+  // cycle time) reads from it, so two columns can never describe different periods.
+  const [windowDays, setWindowDays] = useState<number>(() => {
+    const saved = Number(localStorage.getItem(WINDOW_KEY));
+    return WINDOW_OPTIONS.includes(saved) ? saved : 30;
+  });
+  useEffect(() => {
+    localStorage.setItem(WINDOW_KEY, String(windowDays));
+  }, [windowDays]);
+
+  // Window is part of the key: changing it must refetch, not reuse stale numbers.
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-summary'],
+    queryKey: ['dashboard-summary', windowDays],
     queryFn: async () => {
-      const res = await apiClient.get<DashboardSummary>('/dashboard/summary');
+      const res = await apiClient.get<DashboardSummary>(`/dashboard/summary?window=${windowDays}`);
       return res;
     },
     enabled: memberships.length > 0,
@@ -1417,7 +1473,7 @@ export function Dashboard() {
               <p className="text-sm text-secondary">{t('dashboard.noProjects')}</p>
             </div>
           ) : projectViewMode === 'table' ? (
-            <ProjectTable orgs={sortedOrgs} onNavigate={handleProjectNavigate} />
+            <ProjectTable orgs={sortedOrgs} onNavigate={handleProjectNavigate} windowDays={windowDays} onWindowChange={setWindowDays} />
           ) : (
             sortedOrgs.map(org => (
               <OrgSection
