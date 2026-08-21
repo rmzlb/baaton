@@ -525,6 +525,12 @@ pub struct Comment {
     pub actor_key_id: Option<Uuid>,
     #[sqlx(default)]
     pub on_behalf_of: Option<String>,
+    /// Declared (migration 070): free-text requester this comment was filed for.
+    /// UNVERIFIED — display and reporting only, never authorization.
+    #[sqlx(default)]
+    pub on_behalf_of_name: Option<String>,
+    #[sqlx(default)]
+    pub on_behalf_of_email: Option<String>,
 }
 
 // ─── Issue Detail (with relations) ────────────────────

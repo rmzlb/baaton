@@ -13,11 +13,22 @@ use crate::routes::webhooks::dispatch_event;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateComment {
-    /// Optional: auto-filled from API key name or Clerk user if omitted
+    /// Optional: auto-filled from API key name or Clerk user if omitted.
+    ///
+    /// Rejected when it names a *different* principal than the caller: this is
+    /// the identity comment ownership and edit rights are keyed on, so letting
+    /// any key claim `user_<clerk_id>` was impersonation with write rights, not
+    /// display metadata. Use `on_behalf_of_name` / `on_behalf_of_email` to
+    /// record an external requester.
     pub author_id: Option<String>,
     /// Optional: auto-filled from API key name or Clerk display_name if omitted
     pub author_name: Option<String>,
     pub body: String,
+    /// Free-text name of the person this comment is posted for. Never used for
+    /// authorization — display and reporting only, and shown as unverified.
+    pub on_behalf_of_name: Option<String>,
+    /// Free-text email of that person. Not tied to a Baaton account.
+    pub on_behalf_of_email: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,26 +157,55 @@ pub async fn create(
     // ownership and edit rights are keyed on it, and collapsing it to the human
     // would make "which key posted this" unrecoverable. The human behind an API
     // key is recorded separately in `on_behalf_of` (migration 068).
+    //
+    // An override may only *restate* the caller's own identity. Accepting an
+    // arbitrary value let any API key post as `user_<clerk_id>` and inherit that
+    // human's edit/delete rights (`resolve_owner_identity` keys on `author_id`).
+    // External requesters go in `on_behalf_of_name` / `on_behalf_of_email`,
+    // which carry no rights.
+    if let Some(requested) = body.author_id.as_deref() {
+        if requested != auth.user_id {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "error": "author_id cannot name a different principal than the caller",
+                    "hint": "Omit author_id. To credit an external person, use on_behalf_of_name / on_behalf_of_email.",
+                    "caller": auth.user_id,
+                })),
+            ));
+        }
+    }
+
     let author_id = body.author_id.unwrap_or_else(|| auth.user_id.clone());
     let author_name = body.author_name.unwrap_or_else(|| {
         auth.display_name.clone()
             .or(auth.email.clone())
             .unwrap_or_else(|| auth.user_id.clone())
     });
-    // Classify from the identity actually stored, since callers may override
-    // `author_id` (imports, GitHub sync) and then the auth context is not the author.
-    let actor = crate::routes::activity::ActorContext::from_identity(&author_id);
-    let on_behalf_of = if actor.key_id == auth.actor_key_id {
-        auth.on_behalf_of.clone()
-    } else {
-        None
-    };
+    let actor = crate::routes::activity::ActorContext::from_auth(&auth);
+    let on_behalf_of = auth.on_behalf_of.clone();
+
+    // Declared requester identity: display/reporting only, never authorization.
+    let declared_name = body
+        .on_behalf_of_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && s.len() <= 200)
+        .map(str::to_string);
+    let declared_email = body
+        .on_behalf_of_email
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && s.len() <= 320)
+        .map(str::to_string);
 
     let mut comment = sqlx::query_as::<_, Comment>(
         r#"
-        INSERT INTO comments (issue_id, author_id, author_name, body, actor_type, actor_key_id, on_behalf_of)
+        INSERT INTO comments (issue_id, author_id, author_name, body, actor_type, actor_key_id, on_behalf_of,
+                              on_behalf_of_name, on_behalf_of_email)
         VALUES ($1, $2, $3, $4, $5, $6,
-                COALESCE($7, (SELECT created_by FROM api_keys WHERE id = $6)))
+                COALESCE($7, (SELECT created_by FROM api_keys WHERE id = $6)),
+                $8, $9)
         RETURNING *
         "#,
     )
@@ -176,6 +216,8 @@ pub async fn create(
     .bind(actor.kind.as_str())
     .bind(actor.key_id)
     .bind(on_behalf_of.as_deref())
+    .bind(declared_name.as_deref())
+    .bind(declared_email.as_deref())
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;

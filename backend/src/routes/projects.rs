@@ -682,8 +682,21 @@ pub async fn board_by_slug(
         .fetch_all(&pool),
     );
 
-    let issues = issues.unwrap_or_default();
-    let tags = tags.unwrap_or_default();
+    // A failing issues query must NOT degrade into an empty board: the UI would
+    // render "no issues" and hide a real outage (see migration 069, where two
+    // missing columns silently emptied every board). Tags are cosmetic, so they
+    // stay best-effort.
+    let issues = issues.map_err(|e| {
+        tracing::error!(error = %e, slug = %slug, "board_by_slug issues query failed");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Failed to load issues"})),
+        )
+    })?;
+    let tags = tags.unwrap_or_else(|e| {
+        tracing::error!(error = %e, slug = %slug, "board_by_slug tags query failed");
+        vec![]
+    });
     let elapsed = start.elapsed();
 
     tracing::info!(

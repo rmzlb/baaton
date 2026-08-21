@@ -165,6 +165,7 @@ async fn main() -> anyhow::Result<()> {
         ),
         (68, include_str!("../migrations/068_actor_attribution.sql")),
         (69, include_str!("../migrations/069_sla_clock.sql")),
+        (70, include_str!("../migrations/070_declared_requester.sql")),
     ];
 
     for &(version, sql) in migrations {
