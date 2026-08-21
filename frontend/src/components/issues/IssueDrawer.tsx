@@ -2491,9 +2491,9 @@ function AttachmentViewer({
       aria-modal="true"
       aria-label={`Attachment viewer: ${attachment.name}`}
     >
-      {/* Toolbar */}
+      {/* Toolbar — pushed below the notch/Dynamic Island in standalone PWA. */}
       <div
-        className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3 rounded-xl bg-black/70 backdrop-blur-sm px-4 py-2"
+        className="absolute top-[max(0.75rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-10 flex max-w-[calc(100vw-6rem)] items-center gap-3 rounded-xl bg-black/70 backdrop-blur-sm px-4 py-2"
         onClick={(e) => e.stopPropagation()}
       >
         <span className="text-xs text-white/90 truncate max-w-[240px]">{attachment.name}</span>
@@ -2518,16 +2518,19 @@ function AttachmentViewer({
         )}
       </div>
 
+      {/* The close target must clear the notch and be thumb-sized (44px): at
+          `top-4 right-4` it slid under the Dynamic Island in standalone PWA,
+          which is why going back from a preview was hard to tap. */}
       <button
         onClick={onClose}
         aria-label="Close viewer"
-        className="absolute top-4 right-4 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
+        className="absolute top-[max(1rem,env(safe-area-inset-top))] right-[max(1rem,env(safe-area-inset-right))] z-20 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
       >
         <X size={20} aria-hidden="true" />
       </button>
 
       <div
-        className="w-full h-full max-w-5xl max-h-[86vh] mt-10 rounded-lg overflow-hidden bg-white shadow-2xl flex items-center justify-center"
+        className="w-full h-full max-w-5xl max-h-[86dvh] mt-[max(3.5rem,calc(env(safe-area-inset-top)+3.5rem))] rounded-lg overflow-hidden bg-white shadow-2xl flex items-center justify-center"
         onClick={(e) => e.stopPropagation()}
       >
         {kind === 'image' ? (

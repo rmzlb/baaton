@@ -162,6 +162,7 @@ const fr = {
   'projectBoard.loadingBoard': 'Chargement du board…',
   'projectBoard.kanbanView': 'Vue Kanban',
   'projectBoard.listView': 'Vue liste',
+  'projectBoard.moreActions': 'Plus d\'actions',
   'projectBoard.projectNotFound': 'Le projet "{{slug}}" n\'existe pas ou vous n\'y avez pas accès.',
   'projectBoard.failedLoad': 'Échec du chargement du projet',
   'projectBoard.view': 'vue {{mode}}',
@@ -331,6 +332,7 @@ const fr = {
   'kanban.updated': 'Mise à jour',
   'kanban.clearAll': 'Tout effacer',
   'kanban.noIssues': 'Aucune issue trouvée',
+  'kanban.loadMore': 'Afficher {{count}} de plus ({{remaining}} restantes)',
   'kanban.addIssue': 'Ajouter une issue',
 
   // ─── ListView ───────────────────────────────

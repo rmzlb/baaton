@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Draggable, type DroppableProvided } from '@hello-pangea/dnd';
 import { Plus } from 'lucide-react';
 import { KanbanCard } from './KanbanCard';
@@ -80,6 +80,13 @@ const CARD_GAPS = {
   spacious: 'space-y-3',
 } as const;
 
+// A column is mounted with every card in a `Draggable`. At 150+ cards the
+// board holds ~1000 DOM nodes, and the horizontal snap container has to
+// re-measure them on every scroll frame — which is what made mobile scrolling
+// feel heavy. dnd rules out windowing here (@hello-pangea needs its own
+// virtual API), so we render a page at a time and let the user ask for more.
+const CARDS_PER_PAGE = 40;
+
 export function KanbanColumn({
   status,
   issues,
@@ -95,6 +102,7 @@ export function KanbanColumn({
   const { t } = useTranslation();
   const density = useUIStore((s) => s.density);
   const [activeSubFilter, setActiveSubFilter] = useState('all');
+  const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
 
   // Sub-status filter chips
   const subStatuses = useMemo(() => getSubStatuses(status.key), [status.key]);
@@ -112,6 +120,18 @@ export function KanbanColumn({
     if (!subStatuses || activeSubFilter === 'all') return issues;
     return issues.filter((issue) => deriveSubStatus(issue, status.key) === activeSubFilter);
   }, [issues, subStatuses, activeSubFilter, status.key]);
+
+  // Switching sub-filter is a new list: don't carry over an expanded page.
+  const selectSubFilter = useCallback((key: string) => {
+    setActiveSubFilter(key);
+    setVisibleCount(CARDS_PER_PAGE);
+  }, []);
+
+  const renderedIssues = useMemo(
+    () => (filteredIssues.length > visibleCount ? filteredIssues.slice(0, visibleCount) : filteredIssues),
+    [filteredIssues, visibleCount],
+  );
+  const hiddenCount = filteredIssues.length - renderedIssues.length;
 
   return (
     <div role="group" aria-label={`${status.label} — ${issues.length} issues`} className={cn('flex h-full flex-col shrink-0 snap-center', COLUMN_WIDTHS[density])}>
@@ -160,7 +180,7 @@ export function KanbanColumn({
             return (
               <button
                 key={sub.key}
-                onClick={() => setActiveSubFilter(sub.key)}
+                onClick={() => selectSubFilter(sub.key)}
                 className={cn(
                   'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors',
                   isActive
@@ -192,7 +212,7 @@ export function KanbanColumn({
           isDraggingOver ? 'bg-surface' : '',
         )}
       >
-        {filteredIssues.map((issue, index) => (
+        {renderedIssues.map((issue, index) => (
           <Draggable key={issue.id} draggableId={issue.id} index={index}>
             {(dragProvided, dragSnapshot) => (
               <KanbanCard
@@ -210,6 +230,15 @@ export function KanbanColumn({
           </Draggable>
         ))}
         {provided.placeholder}
+
+        {hiddenCount > 0 && (
+          <button
+            onClick={() => setVisibleCount((c) => c + CARDS_PER_PAGE)}
+            className="w-full rounded-lg border border-dashed border-border py-2 text-xs font-medium text-secondary hover:border-accent hover:text-primary hover:bg-surface transition-colors"
+          >
+            {t('kanban.loadMore', { count: Math.min(hiddenCount, CARDS_PER_PAGE), remaining: hiddenCount })}
+          </button>
+        )}
 
         {/* Empty state */}
         {filteredIssues.length === 0 && !isDraggingOver && (

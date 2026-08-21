@@ -21,7 +21,7 @@ import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useTranslation } from '@/hooks/useTranslation';
-import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2, Settings, Star, GitFork, Circle, CheckCircle2, RefreshCw, ExternalLink, X, Download, Upload, Brain } from 'lucide-react';
+import { Plus, Kanban, List, Rows3, Rows4, StretchHorizontal, Link2, Settings, Star, GitFork, Circle, CheckCircle2, RefreshCw, ExternalLink, X, Download, Upload, Brain, MoreHorizontal } from 'lucide-react';
 const Github = GitFork;
 import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { cn } from '@/lib/utils';
@@ -75,6 +75,9 @@ export function ProjectBoard() {
   const [showProjectSettings, setShowProjectSettings] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  // Mobile: the secondary header actions live behind a `⋯` menu. Nine buttons
+  // in a `shrink-0` row ate ~40% of a 390px viewport before the first card.
+  const [showMobileActions, setShowMobileActions] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const issueParam = searchParams.get('issue');
   const [showDone, setShowDone] = useState(() => {
@@ -323,7 +326,7 @@ export function ProjectBoard() {
           <button
             onClick={toggleDoneVisibility}
             className={cn(
-              'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[36px]',
+              'hidden md:flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[36px]',
               showDone
                 ? 'border-green-500/30 bg-green-500/10 text-green-400'
                 : 'border-border bg-surface text-secondary hover:bg-surface-hover hover:text-primary',
@@ -362,7 +365,7 @@ export function ProjectBoard() {
 
           <Link
             to={`/projects/${slug}/context`}
-            className="rounded-lg border border-border bg-surface p-1.5 text-secondary hover:bg-surface-hover hover:text-accent transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+            className="hidden md:flex rounded-lg border border-border bg-surface p-1.5 text-secondary hover:bg-surface-hover hover:text-accent transition-colors min-h-[36px] min-w-[36px] items-center justify-center"
             title="Project Context"
           >
             <Brain size={16} />
@@ -370,7 +373,7 @@ export function ProjectBoard() {
 
           <button
             onClick={() => setShowProjectSettings(true)}
-            className="rounded-lg border border-border bg-surface p-1.5 text-secondary hover:bg-surface-hover hover:text-primary transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+            className="hidden md:flex rounded-lg border border-border bg-surface p-1.5 text-secondary hover:bg-surface-hover hover:text-primary transition-colors min-h-[36px] min-w-[36px] items-center justify-center"
             title={t('settings.title')}
           >
             <Settings size={16} />
@@ -380,7 +383,7 @@ export function ProjectBoard() {
           <button
             onClick={handleExport}
             disabled={exportLoading}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors min-h-[36px] disabled:opacity-50"
+            className="hidden md:flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors min-h-[36px] disabled:opacity-50"
             title={t('importExport.export')}
           >
             <Download size={14} />
@@ -390,7 +393,7 @@ export function ProjectBoard() {
           {/* Import */}
           <button
             onClick={() => setShowImport(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors min-h-[36px]"
+            className="hidden md:flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors min-h-[36px]"
             title={t('importExport.import')}
           >
             <Upload size={14} />
@@ -399,11 +402,65 @@ export function ProjectBoard() {
 
           <button
             onClick={() => setShowPublicLink(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 md:px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors min-h-[36px]"
+            className="hidden md:flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 md:px-3 py-1.5 text-xs font-medium text-secondary hover:bg-surface-hover transition-colors min-h-[36px]"
           >
             <Link2 size={14} />
             <span className="hidden sm:inline">Public link</span>
           </button>
+
+          {/* Mobile overflow: everything hidden above lives here. */}
+          <div className="relative md:hidden">
+            <button
+              onClick={() => setShowMobileActions((v) => !v)}
+              aria-label={t('projectBoard.moreActions')}
+              aria-expanded={showMobileActions}
+              className="flex rounded-lg border border-border bg-surface p-1.5 text-secondary hover:bg-surface-hover hover:text-primary transition-colors min-h-[36px] min-w-[36px] items-center justify-center"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            {showMobileActions && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowMobileActions(false)} aria-hidden="true" />
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-xl"
+                >
+                  <MobileAction
+                    icon={<CheckCircle2 size={14} className={showDone ? 'text-green-400' : undefined} />}
+                    label={showDone ? 'Closed loaded' : 'Closed hidden'}
+                    onClick={() => { toggleDoneVisibility(); setShowMobileActions(false); }}
+                  />
+                  <MobileAction
+                    icon={<Brain size={14} />}
+                    label="Project Context"
+                    to={`/projects/${slug}/context`}
+                    onClick={() => setShowMobileActions(false)}
+                  />
+                  <MobileAction
+                    icon={<Settings size={14} />}
+                    label={t('settings.title')}
+                    onClick={() => { setShowProjectSettings(true); setShowMobileActions(false); }}
+                  />
+                  <MobileAction
+                    icon={<Download size={14} />}
+                    label={t('importExport.export')}
+                    disabled={exportLoading}
+                    onClick={() => { handleExport(); setShowMobileActions(false); }}
+                  />
+                  <MobileAction
+                    icon={<Upload size={14} />}
+                    label={t('importExport.import')}
+                    onClick={() => { setShowImport(true); setShowMobileActions(false); }}
+                  />
+                  <MobileAction
+                    icon={<Link2 size={14} />}
+                    label="Public link"
+                    onClick={() => { setShowPublicLink(true); setShowMobileActions(false); }}
+                  />
+                </div>
+              </>
+            )}
+          </div>
 
           <button
             data-tour="create-issue"
@@ -498,6 +555,37 @@ const DENSITY_CONFIG: { key: BoardDensity; icon: typeof Rows3; titleKey: string 
   { key: 'default', icon: Rows3, titleKey: 'projectBoard.defaultDensity' },
   { key: 'spacious', icon: StretchHorizontal, titleKey: 'projectBoard.spaciousDensity' },
 ];
+
+function MobileAction({
+  icon,
+  label,
+  onClick,
+  to,
+  disabled,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick?: () => void;
+  to?: string;
+  disabled?: boolean;
+}) {
+  const cls =
+    'flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-xs font-medium text-secondary hover:bg-surface-hover hover:text-primary transition-colors disabled:opacity-50';
+  if (to) {
+    return (
+      <Link to={to} onClick={onClick} className={cls} role="menuitem">
+        <span className="shrink-0">{icon}</span>
+        {label}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} className={cls} role="menuitem">
+      <span className="shrink-0">{icon}</span>
+      {label}
+    </button>
+  );
+}
 
 function DensityToggle() {
   const { t } = useTranslation();

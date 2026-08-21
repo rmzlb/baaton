@@ -73,22 +73,40 @@ export function TopBar() {
           >
             <Menu size={18} aria-hidden="true" />
           </button>
-          <nav aria-label={t('topbar.breadcrumb') || 'Breadcrumb'} className="flex items-center gap-1 text-sm min-w-0">
-            {breadcrumbs.map((crumb, i) => (
-              <span key={i} className="flex items-center gap-1 min-w-0">
-                {i > 0 && <ChevronRight size={12} className="text-muted shrink-0" />}
+          {/*
+            `min-w-0` alone is not enough: each crumb was its own flex item, so
+            the browser shrank them all to their minimum *character* width and
+            the labels wrapped one letter per line on narrow screens. Fixes:
+            - `flex-nowrap` + `whitespace-nowrap` so text never breaks mid-word;
+            - only the last crumb may shrink (`min-w-0` + `truncate`), the\n              ancestors keep their intrinsic width or hide entirely;
+            - ancestors are hidden below `sm`, where there is no room anyway.
+          */}
+          <nav
+            aria-label={t('topbar.breadcrumb') || 'Breadcrumb'}
+            className="flex flex-nowrap items-center gap-1 text-sm min-w-0 overflow-hidden"
+          >
+            {breadcrumbs.map((crumb, i) => {
+              const isLast = i === breadcrumbs.length - 1;
+              return (
                 <span
+                  key={i}
                   className={cn(
-                    'truncate min-w-0',
-                    i === breadcrumbs.length - 1
-                      ? 'text-primary font-medium'
-                      : 'text-secondary',
+                    'flex flex-nowrap items-center gap-1',
+                    isLast ? 'min-w-0' : 'shrink-0 hidden sm:flex',
                   )}
                 >
-                  {crumb}
+                  {i > 0 && <ChevronRight size={12} className="text-muted shrink-0 hidden sm:block" />}
+                  <span
+                    className={cn(
+                      'whitespace-nowrap',
+                      isLast ? 'truncate min-w-0 text-primary font-medium' : 'text-secondary',
+                    )}
+                  >
+                    {crumb}
+                  </span>
                 </span>
-              </span>
-            ))}
+              );
+            })}
           </nav>
         </div>
 

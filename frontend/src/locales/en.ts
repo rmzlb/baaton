@@ -162,6 +162,7 @@ const en = {
   'projectBoard.loadingBoard': 'Loading board…',
   'projectBoard.kanbanView': 'Kanban view',
   'projectBoard.listView': 'List view',
+  'projectBoard.moreActions': 'More actions',
   'projectBoard.projectNotFound': 'Project "{{slug}}" may not exist or you don\'t have access.',
   'projectBoard.failedLoad': 'Failed to load project',
   'projectBoard.view': '{{mode}} view',
@@ -331,6 +332,7 @@ const en = {
   'kanban.updated': 'Updated',
   'kanban.clearAll': 'Clear all',
   'kanban.noIssues': 'No issues found',
+  'kanban.loadMore': 'Show {{count}} more ({{remaining}} left)',
   'kanban.addIssue': 'Add issue',
 
   // ─── ListView ───────────────────────────────
