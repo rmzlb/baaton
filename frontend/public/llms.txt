@@ -59,7 +59,11 @@ verifying will change the bytes and the check will fail.
 Authorization: Bearer baa_yo…here
 ```
 Keys are issued per organization, with optional project-level scoping so a key can be
-restricted to specific projects.
+restricted to specific projects. Permission scopes (`issues:read`, `issues:write`,
+`projects:read`, ...) are enforced per route: a key that lacks the required scope gets
+`403 {"error": "Insufficient permissions. Required: <scope>"}`. `write` implies `read` on
+the same resource; it never implies `delete`. Keys created before enforcement shipped are
+grandfathered and log denials instead of blocking, until an admin closes them.
 
 ## Response Format
 All responses: `{ "data": ... }`. Errors: `{ "error": "message", "field": "...", "accepted_values": [...] }`.

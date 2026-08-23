@@ -389,9 +389,45 @@ describe('positioning: the count helpers are honest', () => {
     expect(countEndpoints()).toBe(Number(shell));
   });
 
-  it('still reports permissions as unenforced (delete this test when ticket #1 lands)', () => {
-    // Intentional tripwire: when enforcement lands, this fails and you may re-add the
-    // least-privilege claim to the public copy. See POSITIONING.md §9 ticket #1.
-    expect(permissionsAreEnforced()).toBe(false);
+  it('the published 403 contract is the one the code actually emits', () => {
+    // `llms-full.txt` documented `"Insufficient permissions. Required: <scope>"`
+    // long before anything could emit it: scopes were validated at key creation
+    // and never checked at request time, so that 403 was unreachable fiction.
+    // Enforcement landed in ticket #1, so the contract is now real and this test
+    // keeps the two from drifting apart again.
+    const documented = /Insufficient permissions\. Required: /;
+    expect(
+      documented.test(llmsFull),
+      'llms-full.txt must keep documenting the 403 permission-denied contract'
+    ).toBe(true);
+
+    const middleware = read('backend/src/middleware/mod.rs');
+    expect(
+      documented.test(middleware),
+      'the 403 body in middleware/mod.rs no longer matches the string published in llms-full.txt'
+    ).toBe(true);
+  });
+
+  it('permission enforcement is wired, so least-privilege copy is now allowed', () => {
+    // Replaces the tripwire that deliberately failed once enforcement landed.
+    // Reverting enforcement without revisiting the public copy now fails here.
+    expect(permissionsAreEnforced()).toBe(true);
+  });
+
+  it('least-privilege copy stays honest about the legacy grandfather', () => {
+    // Migration 071 defaults `legacy_full_access` to false for new keys but
+    // grandfathers every pre-existing key, so scopes are advisory on old keys
+    // until each is closed. Public copy may claim least privilege, but must not
+    // claim it is already true of every key in existence.
+    const migration = read('backend/migrations/071_enforce_api_key_scopes.sql');
+    expect(migration).toMatch(/legacy_full_access/);
+
+    const overclaim = /all (?:existing )?keys are (?:now )?(?:scoped|enforced)|every key is (?:now )?(?:scoped|enforced)|toutes les clés sont/i;
+    for (const [label, content] of publicCopy) {
+      expect(
+        content.match(overclaim),
+        `${label} claims every key is already scope-enforced, but migration 071 grandfathers pre-existing keys`
+      ).toBeNull();
+    }
   });
 });

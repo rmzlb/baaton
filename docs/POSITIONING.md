@@ -89,13 +89,12 @@ Uniquement ce qui est mesurable dans le code, testé, ou vérifiable par un tier
 
 Les chiffres de prod sont datés en tant que **snapshot**, jamais présentés comme permanents.
 
-### Claims INTERDITS (audit du 23/08/2026)
-Chacun a été vérifié dans le code et jugé faux ou non tenu :
+### Claims INTERDITS (audit du 23/08/2026)Chacun a été vérifié dans le code et jugé faux ou non tenu :
 
 | Claim banni | Pourquoi |
 |---|---|
 | « human approval gates », « nothing ships without approval » | `require_approval` est stocké dans `agent_configs` et **n'est lu par aucune route**. Les transitions restent permissives. |
-| « 29 permission scopes », « give an agent exactly what it needs » | Les scopes sont validés à la création de clé puis **jamais vérifiés à l'exécution**. `AuthUser` n'a même pas de champ `permissions`, et le middleware porte `#[allow(dead_code)]` dessus. Promettre du least privilege serait faux **et** dangereux. |
+| ~~« 29 permission scopes », « give an agent exactly what it needs »~~ **DÉBLOQUÉ le 23/08/2026** (commit `a7344cc`) | Était interdit parce que les scopes étaient validés à la création de clé puis **jamais vérifiés à l'exécution** : `AuthUser` n'avait pas de champ `permissions` et le middleware portait `#[allow(dead_code)]` dessus. Corrigé par le ticket #1. **Caveat obligatoire** : la migration 071 grandfather les clés existantes (`legacy_full_access = true`), donc le copy peut promettre du least privilege sur les **nouvelles** clés, mais ne doit pas prétendre que toutes les clés existantes sont déjà scopées. Garde-fou : `positioning.test.ts` → `least-privilege copy stays honest about the legacy grandfather`. |
 | « same thread, three readers » | Pas de fil unifié client-visible ; commentaires / TLDR / agent runs sont séparés. |
 | « `_hints` on every response » | 23 occurrences sur 198 endpoints. Dire « core agent endpoints » à la place. |
 | « email intake » présenté comme produit fini | C'est un **endpoint webhook** qui exige un provider email en amont. |
@@ -151,9 +150,13 @@ de croire que la crypto est du théâtre. `llms.txt` et le README respectent cet
 test le verrouille.
 
 ## 9. Tickets backend ouverts par cet audit (ordre de priorité)
-1. **Enforcement des permissions** — ajouter `permissions` à `AuthUser` + vérification par
-   route/méthode. Aujourd'hui toute clé API a de fait `admin:full`. **Faille de least
-   privilege réelle, prioritaire sur le reste.**
+1. ~~**Enforcement des permissions**~~ — **FAIT le 23/08/2026**, commit `a7344cc`. `permissions` +
+   `legacy_full_access` ajoutés à `AuthUser`, mapping route→scope dans `backend/src/permissions.rs`,
+   vérification sur le chemin API-key uniquement (les humains Clerk portent `admin:full`, leur
+   autorité vient de `org_role`). Migration 071 grandfather les clés existantes pour ne pas casser
+   les intégrations en prod. **Reste à faire côté ops** : auditer les logs
+   `api_key_scope_denied_legacy` après deploy, puis passer `legacy_full_access = false` clé par clé.
+   Tant que ce n'est pas fait, le copy ne doit pas prétendre que **toutes** les clés sont scopées.
 2. **Approval bloquante** — refuser les transitions terminales quand `require_approval = true`.
    Tant que ce n'est pas fait, aucun copy ne parle d'approbation.
 3. **JCS pour le receipt** — canonicalisation RFC 8785 + doc de vérification tierce

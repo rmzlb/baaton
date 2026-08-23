@@ -636,8 +636,14 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
                     return (
                         StatusCode::FORBIDDEN,
                         [("content-type", "application/json")],
+                        // Shape is fixed by the published contract in
+                        // `frontend/public/llms-full.txt` ("Permission Denied (403)"),
+                        // which agents were told to parse long before anything
+                        // could actually emit it. `required_permission` is added
+                        // as a machine-readable field so agents do not have to
+                        // regex the prose, but the `error` string stays verbatim.
                         format!(
-                            r#"{{"error":"API key is missing the required permission scope","required_scope":"{needed}"}}"#
+                            r#"{{"error":"Insufficient permissions. Required: {needed}","required_permission":"{needed}"}}"#
                         ),
                     )
                         .into_response();

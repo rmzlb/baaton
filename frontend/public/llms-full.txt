@@ -559,6 +559,20 @@ Detailed AI usage: messages, tokens in/out, by type, daily breakdown, estimated 
 
 API keys require Clerk JWT authentication (not API key auth). Keys cannot manage other keys.
 
+Permission scopes are enforced per route. A key issued with `["issues:read","issues:write"]`
+can file and update issues but cannot delete them, cannot touch billing, and cannot create
+keys. Rules:
+
+- `<resource>:write` implies `<resource>:read` on the same resource.
+- `<resource>:write` never implies `<resource>:delete`. Destructive verbs are granted
+  explicitly, so a scoped agent key can work a board without being able to erase it.
+- `admin:full` satisfies every scope.
+- Missing scope returns `403 {"error": "Insufficient permissions. Required: <scope>"}`.
+
+Keys created before enforcement shipped are grandfathered: their declared scopes are
+advisory and over-scope requests are logged rather than blocked, so existing integrations
+keep working while their real scope usage is measured. New keys are enforced from creation.
+
 ### GET /api-keys
 List org API keys.
 
@@ -777,7 +791,7 @@ Fix: Ensure your Clerk JWT includes an active organization. API keys are always 
 
 ### Permission Denied (403)
 ```json
-{"error": "Insufficient permissions. Required: issues:write"}
+{"error": "Insufficient permissions. Required: issues:write", "required_permission": "issues:write"}
 ```
 Fix: Update your API key permissions via the web UI or `PATCH /api-keys/{id}`.
 
