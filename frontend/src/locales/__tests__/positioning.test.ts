@@ -249,6 +249,44 @@ describe('positioning: the proof we lead with is real', () => {
     expect(llmsFull).toMatch(/exact bytes/i);
   });
 
+  it('documents verification receipt-first, because a fresh org has an empty JWKS', () => {
+    // get_or_create_org_key is only called from build_receipt; build_jwks is read-only and
+    // returns {"keys": []} until the org has published a run. Measured on 3 production
+    // orgs: HTTP 200, zero keys. So the copy must never tell a prospect to fetch the JWKS
+    // first, or they hit an empty keyset and conclude the crypto is theatre.
+    const receipts = read('backend/src/receipts.rs');
+    const jwksIsReadOnly = !/pub async fn build_jwks[\s\S]*?\n}/
+      .exec(receipts)?.[0]
+      .includes('INSERT INTO org_signing_keys');
+    expect(jwksIsReadOnly, 'build_jwks no longer read-only: revisit the documented order').toBe(
+      true
+    );
+
+    for (const [label, content] of [
+      ['llms.txt', llms],
+      ['README.md', readme],
+    ] as const) {
+      const receiptIdx = content.indexOf('/receipt.json');
+      const jwksIdx = content.indexOf('jwks.json');
+      expect(receiptIdx, `${label} must document the receipt endpoint`).toBeGreaterThan(-1);
+      expect(jwksIdx, `${label} must document the JWKS endpoint`).toBeGreaterThan(-1);
+      expect(
+        receiptIdx,
+        `${label} tells the reader to fetch the JWKS before a receipt; a fresh org returns an empty keyset`
+      ).toBeLessThan(jwksIdx);
+    }
+  });
+
+  it('never promises a populated JWKS as the entry point', () => {
+    const forbidden = /fetch (?:our|the) jwks and (?:see|find)|jwks (?:always )?(?:lists|contains) (?:our|the) key/i;
+    for (const [label, content] of publicCopy) {
+      expect(
+        content.match(forbidden),
+        `${label} promises a populated JWKS; keys only exist after the org's first published run`
+      ).toBeNull();
+    }
+  });
+
   it('the hero leads with the proof, in both languages', () => {
     const heroEn = ['landing.heroLine1', 'landing.heroLine2', 'landing.heroSub']
       .map((k) => String(en[k as keyof typeof en] ?? ''))
@@ -272,6 +310,11 @@ describe('positioning: surfaces match docs/POSITIONING.md', () => {
     for (const marker of ['require_approval', 'least privilege', '_hints', 'email intake']) {
       expect(positioning.toLowerCase()).toContain(marker.toLowerCase());
     }
+  });
+
+  it('POSITIONING.md records the empty-JWKS caveat', () => {
+    expect(positioning).toMatch(/get_or_create_org_key/);
+    expect(positioning.toLowerCase()).toContain('build_jwks');
   });
 
   it('llms.txt leads with the job, not the mechanics', () => {

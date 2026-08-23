@@ -83,7 +83,7 @@ Uniquement ce qui est mesurable dans le code, testé, ou vérifiable par un tier
 |---|---|---|
 | Endpoints HTTP | **198** | `grep -rhoE '\b(get\|post\|patch\|put\|delete)\(' backend/src/routes/mod.rs backend/src/main.rs \| wc -l` |
 | Signature des receipts | **Ed25519 / EdDSA** | `backend/src/receipts.rs`, `cargo test --bins receipts` (4 tests) |
-| JWKS public | **live, HTTP 200** | `curl https://api.baaton.dev/api/v1/public/orgs/<org_id>/jwks.json` |
+| JWKS public | **routé, HTTP 200** ; peuplé après le 1er run publié de l'org | `curl https://api.baaton.dev/api/v1/public/orgs/<org_id>/jwks.json` |
 | Projets sur le board de prod | **17** (snapshot 2026-08-23) | `GET /projects` |
 | Issues sur le board de prod | **541** (snapshot 2026-08-23) | somme de `GET /projects/{id}/issues` |
 
@@ -123,6 +123,10 @@ Jamais : *revolutionary*, *seamlessly*, *cutting-edge*, *holistic*, *leverage*,
 même jour. Une divergence de plus de 24 h est un bug, pas une dette.
 
 ## 8. Le caveat honnête sur la vérification
+
+Deux limites réelles, toutes deux vérifiées le 23/08/2026. Le copy doit les respecter.
+
+**a) La signature porte sur les octets servis, pas sur du JSON canonique.**
 `receipts.rs:217` fait `serde_json::to_vec(&body)`. La variable s'appelle `canonical`
 mais ce **n'est pas** de la canonicalisation JSON (RFC 8785 / JCS) : c'est l'ordre de
 déclaration du struct Rust. Conséquence : un tiers qui parse le receipt puis le
@@ -132,6 +136,19 @@ re-sérialise (`json.dumps`, `JSON.stringify`) avant de vérifier verra la signa
 Donc le copy dit **« verify against the exact bytes served »**, pas « verify anywhere ».
 C'est vrai, c'est vérifiable, et ça évite une promesse d'interop qu'on ne tient pas encore.
 Fix = ticket backend #3.
+
+**b) Le JWKS d'une org est vide jusqu'à son premier receipt.**
+La keypair est créée à la demande par `get_or_create_org_key`, appelée uniquement depuis
+`build_receipt`. `build_jwks` est en lecture seule et renvoie `{"keys": []}` si l'org n'a
+pas encore de ligne dans `org_signing_keys`. Mesuré : 3 orgs de prod testées → HTTP 200,
+`keys: []`, parce qu'aucun run n'y a encore été publié.
+
+Ce comportement est correct (pas de clé générée pour une org qui n'en a pas besoin), mais
+il interdit une formulation : **ne jamais écrire « fetch our JWKS and see the key »** comme
+première étape. L'ordre documenté est donc **receipt d'abord, JWKS ensuite** — c'est
+l'ordre naturel de vérification, et il évite à un prospect de tomber sur un keyset vide et
+de croire que la crypto est du théâtre. `llms.txt` et le README respectent cet ordre, et un
+test le verrouille.
 
 ## 9. Tickets backend ouverts par cet audit (ordre de priorité)
 1. **Enforcement des permissions** — ajouter `permissions` à `AuthUser` + vérification par

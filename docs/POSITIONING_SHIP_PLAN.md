@@ -69,6 +69,7 @@ Vérifications exécutées :
 - `cargo test --bins receipts` → **4/4** dont `tampered_payload_fails_verification`
 - clé persistée par org (table `org_signing_keys`, pas de régénération)
 - `curl https://api.baaton.dev/api/v1/public/orgs/<id>/jwks.json` → **HTTP 200 en prod**
+  (keyset vide tant que l'org n'a pas publié de run — la keypair est créée à la demande)
 - conforme au protocole [agent-receipts](https://agentreceipts.ai)
 
 Ça n'apparaissait nulle part dans le copy : une ligne dans `llms.txt`, un paragraphe de
@@ -135,7 +136,7 @@ faille. Fix = ticket #1.
 - `npm run test` → **192/192** (12 fichiers), dont 29 pour le garde-fou
 - `npm run build` → OK. Seuls warnings : taille de chunks, préexistants
 - `cargo test --bins receipts` → **4/4**
-- `curl` JWKS prod → **200**
+- `curl` JWKS prod → **200**, keyset vide sur les orgs sans run publié (comportement attendu, cf. ci-dessous)
 - Sabotage testé : réintroduction de « 93 total » → 2 tests cassent → restauré → vert
 - Le garde-fou a attrapé pendant l'écriture : un `seamlessly` réel dans
   `docs.integrations.github.desc`, `Scopes de permission` oublié dans `fr.ts`, `60ms` ×3
@@ -167,4 +168,48 @@ git checkout public/llms.txt
 2. **Approval bloquante** — refuser les transitions terminales si `require_approval = true`.
 3. **JCS pour le receipt** — RFC 8785 + doc de vérification tierce (Python, JS).
 
-Aucun copy ne reparle d'approbation ou de least privilege avant #1 et #2.
+## Re-audit du 2026-08-23 18h35 UTC (après push)
+
+rmzlb a demandé un re-audit du travail pushé. Tout revérifié à froid, un défaut trouvé.
+
+### Ce qui tient
+| Vérification | Résultat |
+|---|---|
+| Claims bannis sur README / llms.txt / llms-full.txt | 0 résidu |
+| Claims bannis dans les clés `landing.*` EN + FR | 0 résidu |
+| Claims en dur dans `Landing.tsx` hors i18n | 0 |
+| Parité des clés `landing.*` EN ↔ FR | complète, 0 manquante |
+| Endpoints : code vs 4 surfaces | 198 partout |
+| `cargo test --bins receipts` | 4/4 |
+| `npm run test` | 192/192 (12 fichiers) |
+| `npm run build` | OK, warnings de chunks préexistants |
+| `git status` / local vs `origin/main` | propre, synchro sur `aa0714c` |
+
+Seule occurrence de `30s` restante : `"Users report timeout after 30s"` dans un exemple de
+payload d'issue de `llms-full.txt`. C'est une description d'issue fictive, pas un claim de
+performance. Conservée volontairement.
+
+### Le défaut trouvé — et c'était le mien
+Le JWILS de prod répond bien HTTP 200, mais renvoie `{"keys": []}`. Testé sur 3 orgs de
+production : 200 / 0 clé. Cause lue dans le code :
+
+- `get_or_create_org_key` crée la keypair à la demande, et n'est appelée que depuis
+  `build_receipt` (`receipts.rs:168`)
+- `build_jwks` est **read-only** : `SELECT ... FROM org_signing_keys`, et renvoie
+  `keys: []` quand la ligne n'existe pas
+
+Donc une org sans run publié n'a pas encore de clé. Le comportement du code est **correct**
+(pas de génération de clé inutile), mais mon rapport précédent disait « JWKS live en prod »
+sans cette nuance, ce qui laissait croire qu'un prospect verrait une clé en fetchant
+n'importe quel JWKS. Il verrait un keyset vide et conclurait que la crypto est du théâtre.
+
+**Corrigé :** `POSITIONING.md` §5 et §8b documentent la nuance, l'ordre de vérification
+**receipt d'abord, JWKS ensuite** est verrouillé par un test, et un test vérifie que le copy
+n'invite jamais à fetcher le JWKS en première étape. `llms.txt` et le README respectaient
+déjà cet ordre par chance — maintenant c'est garanti.
+
+### Ce que le re-audit ne peut pas certifier
+Le rendu visuel de la landing déployée. Le build passe et les clés i18n sont vérifiées par
+tests, mais je n'ai pas ouvert `baaton.dev` après deploy : l'IP du VPS est bloquée par
+Cloudflare sur plusieurs domaines et le browser tool est contraint par une politique SSRF.
+À vérifier à l'œil par rmzlb après le déploiement Dokploy.
