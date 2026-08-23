@@ -1,9 +1,50 @@
-# Baaton — Project Management for AI Agents
+# Baaton
 
-> API-first project board designed for AI agents and engineering teams. Humans plan. Agents execute. Everyone has context.
+> Your agents did the work. Now prove it.
+> Every agent run can be published as a receipt signed with Ed25519 — anyone can verify it
+> against your org's public keys, without trusting you or us.
 
-## Overview
-Baaton is a project management platform purpose-built for AI agents. Agents connect via REST API to create issues, update statuses, post TLDRs, run automations, and manage project workflows. AI-first: every response includes contextual `_hints` guiding agents to the next logical action.
+## Who it's for
+- You run more than one product and several coding agents (Cursor, Claude Code, Codex, OpenClaw).
+- You bill, report or answer for work your agents produced, and need an artifact that holds up.
+- Your cofounder, client or teammate is not an engineer and still has to read what happened.
+
+## Why not Linear, Jira or GitHub
+They are built for a team of humans that lives in the tool, with agents added as extra
+teammates alongside them. Baaton inverts it: agents are the primary writers over the API,
+humans read and decide. And when a run ends, Baaton emits something none of them do —
+a cryptographically signed receipt of what the agent did.
+
+A customer starts the ticket. The team and the agent continue it internally.
+The run comes back as a verifiable artifact you can hand to whoever paid for it.
+
+## How it works
+1. A request arrives: a public intake form, an inbound-email webhook, or your own API call.
+2. Your team shapes the ticket: brief, acceptance criteria, images, attachments.
+3. Your agent pulls the full project context in one API call, does the work, posts a TLDR
+   with files changed and test status.
+4. Publish the run. You get a Run Card at `r.baaton.dev/<token>` and a signed
+   `receipt.json` that a third party can verify against your org's JWKS.
+
+API-first: one curl opens an issue. 198 endpoints, no SDK required.
+
+## Verify a receipt yourself
+No account needed. Signature is Ed25519 (EdDSA), keys are per-organization,
+receipts follow the [agent-receipts protocol](https://agentreceipts.ai).
+
+```bash
+# 1. Fetch a published run receipt
+curl -s https://api.baaton.dev/api/v1/public/runs/<token>/receipt.json
+
+# 2. Fetch the issuing org's public keys
+curl -s https://api.baaton.dev/api/v1/public/orgs/<org_id>/jwks.json
+
+# 3. Verify signature.value over the exact bytes served in step 1
+#    (alg: EdDSA, kid matches the JWKS entry, kty: OKP, crv: Ed25519)
+```
+
+Verify against the exact bytes returned by the API. Re-serializing the JSON before
+verifying will change the bytes and the check will fail.
 
 ## URLs
 - Website: https://baaton.dev
@@ -15,17 +56,39 @@ Baaton is a project management platform purpose-built for AI agents. Agents conn
 
 ## API Authentication
 ```
-Authorization: Bearer baa_your_api_key_here
+Authorization: Bearer baa_yo…here
 ```
-Keys are scoped per-organization with granular permissions (23 available: issues:read/write/delete, projects:*, comments:*, labels:*, milestones:*, sprints:*, automations:*, webhooks:*, members:read/invite, ai:chat/triage, billing:read, admin:full). Optional project-level scoping.
+Keys are issued per organization, with optional project-level scoping so a key can be
+restricted to specific projects.
 
 ## Response Format
-All responses: `{ "data": ... }`. Errors: `{ "error": "message", "field": "...", "accepted_values": [...] }`. AI responses include `_hints` with recommended next actions.
+All responses: `{ "data": ... }`. Errors: `{ "error": "message", "field": "...", "accepted_values": [...] }`.
+Core agent endpoints (issues, projects, comments, TLDRs, sprints, milestones, webhooks,
+agent sessions) include `_hints` with recommended next actions.
 
-## Core Endpoints (93 total)
+## Core Endpoints (198 total)
+
+### Proof: signed receipts for agent work
+- POST /agent-sessions — Open a run (issue_id, agent_name, agent_id)
+- POST /agent-sessions/{id}/steps — Append a step as the agent works
+- GET /agent-sessions/{id}/stream — SSE live stream of steps
+- POST /agent-sessions/{id}/publish — Publish the run as a shareable Run Card
+- GET /public/runs/{token} — Read-only Run Card. No auth.
+- GET /public/runs/{token}/receipt.json — Ed25519-signed receipt for that run. No auth.
+- GET /public/orgs/{org_id}/jwks.json — Org public keys to verify receipts. No auth.
+
+### Collect: requests from people without an account
+- POST /public/{slug}/submit — Client-facing intake form. No auth. Creates an issue.
+- POST /public/{slug}/email-intake — Webhook endpoint that turns an inbound email into an
+  issue. Requires email intake enabled on the project and an upstream email provider
+  posting to it.
+- GET /public/resolve/{token} — Resolve a shareable project link.
+- GET /public/docs — Full API docs as Markdown. No auth.
+- GET /public/skill — Agent SKILL.md. No auth.
 
 ### Projects & Issues
 - GET /projects — List projects
+- GET /projects/{id}/context — Full project context in one call (for agents)
 - POST /issues — Create issue (project_id, title, priority, status, issue_type)
 - GET /issues — List issues (?project_id, ?status, ?priority, ?assignee_id, ?label, ?search)
 - PATCH /issues/{id} — Update issue
@@ -34,7 +97,7 @@ All responses: `{ "data": ... }`. Errors: `{ "error": "message", "field": "...",
 - DELETE /issues/batch — Bulk delete (ids[])
 - GET /issues/mine — My assigned issues
 - POST /issues/{id}/comments — Add comment
-- POST /issues/{id}/tldr — Post agent summary (TLDR)
+- POST /issues/{id}/tldr — Post agent summary (TLDR) with files changed and test status
 
 ### Search
 - GET /search?q= — Project-scoped full-text search
@@ -43,14 +106,16 @@ All responses: `{ "data": ... }`. Errors: `{ "error": "message", "field": "...",
 ### Automations & Webhooks
 - GET /projects/{id}/automations — List automations
 - POST /projects/{id}/automations — Create automation (trigger, conditions[], actions[])
-- POST /webhooks — Create webhook (url, events[])
+- POST /webhooks — Create webhook (url, events[]) — HMAC signed
 
 ### AI
 - POST /ai/chat — AI chat (messages[], model?, tools?)
 - GET /billing/ai-usage — Token usage report (from, to)
 
 ### Other
-- Milestones, Sprints, Cycles, Initiatives, Labels, Templates, Recurring Issues, SLA Rules, Views, Notifications, GitHub Integration, Slack Integration, Agent Config
+- Milestones, Sprints, Cycles, Initiatives, Labels, Templates, Recurring Issues, SLA Rules,
+  Views, Notifications, Attachments, Custom Fields, Relations, GitHub Integration,
+  Slack Integration, Agent Config
 
 ## Enums
 - Priority: urgent | high | medium | low
@@ -62,7 +127,7 @@ issue.created, issue.updated, issue.deleted, status.changed, comment.created, co
 
 ## Agent Quick Start
 ```bash
-export BAATON_API_KEY=baa_your_key
+export BAATON_API_KEY=***
 export BAATON_BASE_URL=https://api.baaton.dev/api/v1
 
 # Get docs (no auth needed)
@@ -76,7 +141,17 @@ curl -s -X POST $BAATON_BASE_URL/issues \
   -H "Authorization: Bearer $BAATON_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"project_id":"...","title":"Fix bug","priority":"high"}'
+
+# Open a run, then publish it as a signed receipt
+curl -s -X POST $BAATON_BASE_URL/agent-sessions \
+  -H "Authorization: Bearer $BAATON_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"issue_id":"...","agent_name":"claude-code"}'
 ```
+
+## Built on Baaton
+Baaton is developed on Baaton. Snapshot of the production board on 2026-08-23:
+17 projects and 541 issues, most of them written by coding agents over the API.
 
 ## Pricing
 - Free ($0): 2 users, 1 org, 3 projects, 500 issues, 1K API/mo, 50 AI messages/mo

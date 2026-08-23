@@ -386,6 +386,27 @@ export function Landing() {
         </div>
       </section>
 
+      {/* ── Use Cases (job before mechanics: who this is for, right after the demo) ──── */}
+      <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="mb-12 sm:mb-16 max-w-3xl">
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.useCases.badge')}</p>
+            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.useCases.title1')}<br />{t('landing.useCases.title2')}</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {useCasesConfig.map((uc) => (
+              <div key={uc.titleKey} className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-white dark:bg-neutral-900/20 hover:shadow-xl transition-all group">
+                <div className={`w-12 h-12 rounded-lg ${uc.bg} flex items-center justify-center mb-6`}>
+                  <uc.icon className={`w-6 h-6 ${uc.color}`} strokeWidth={1.5} />
+                </div>
+                <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t(uc.titleKey)}</h3>
+                <p className="text-base text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t(uc.descKey)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── Features ───────────────────────────── */}
       <section id="features" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#080808] transition-colors relative z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -490,27 +511,6 @@ export function Landing() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Use Cases ──────────────────────────── */}
-      <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="mb-12 sm:mb-16 max-w-3xl">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.useCases.badge')}</p>
-            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.useCases.title1')}<br />{t('landing.useCases.title2')}</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {useCasesConfig.map((uc) => (
-              <div key={uc.titleKey} className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-white dark:bg-neutral-900/20 hover:shadow-xl transition-all group">
-                <div className={`w-12 h-12 rounded-lg ${uc.bg} flex items-center justify-center mb-6`}>
-                  <uc.icon className={`w-6 h-6 ${uc.color}`} strokeWidth={1.5} />
-                </div>
-                <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t(uc.titleKey)}</h3>
-                <p className="text-base text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t(uc.descKey)}</p>
-              </div>
-            ))}
           </div>
         </div>
       </section>

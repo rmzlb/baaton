@@ -1,11 +1,21 @@
-# Baaton — Complete API Reference for AI Agents
+# Baaton — Complete API Reference
 
-> Project management for AI agents and engineering teams. API-first. Every endpoint. Every field. Every enum.
+> Your agents did the work. Now prove it.
+> Every agent run can be published as a receipt signed with Ed25519 — anyone can verify it
+> against your org's public keys, without trusting you or us.
+> This file is the full reference: every endpoint, every field, every enum.
 
+**Positioning (short):** agents are the primary writers over the API, humans read and
+decide, and every run can end as a cryptographically verifiable artifact.
+**Scale:** 198 endpoints.
 **Base URL:** `https://api.baaton.dev/api/v1`
 **Auth:** `Authorization: Bearer baa_your_api_key_here`
 **Response format:** `{ "data": ... }` — errors: `{ "error": "...", "field": "...", "accepted_values": [...] }`
-**AI responses include `_hints`:** contextual next-action suggestions for agents.
+**Core agent endpoints include `_hints`:** contextual next-action suggestions on issues,
+projects, comments, TLDRs, sprints, milestones, webhooks and agent sessions.
+**Verify a receipt:** `GET /public/runs/{token}/receipt.json` +
+`GET /public/orgs/{org_id}/jwks.json`. Verify the signature over the exact bytes served;
+re-serializing the JSON changes the bytes and the check will fail.
 
 ---
 

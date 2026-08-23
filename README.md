@@ -3,10 +3,10 @@
 </p>
 
 <h1 align="center">Baaton</h1>
-<p align="center"><strong>The project board agents actually use.</strong></p>
+<p align="center"><strong>Signed receipts for AI agent work.</strong></p>
 <p align="center">
   API-first orchestration for AI coding agents.<br/>
-  133 REST endpoints · 60ms p50 · Zero SDK needed.
+  198 REST endpoints · Ed25519-signed run receipts · Zero SDK needed.
 </p>
 
 <p align="center">
@@ -62,7 +62,7 @@ AI agents can write code. They can't plan, triage, or report.
 
 Linear, Jira, GitHub Issues — all built for humans clicking buttons. Your agent can't use them without scraping UIs or fighting GraphQL schemas.
 
-**Baaton is different.** Every feature is an API endpoint. Agents create issues, update statuses, post summaries, and hand off to humans — in 60ms, with one `curl`.
+**Baaton is different.** Every feature is an API endpoint. Agents create issues, update statuses, post summaries, and publish a signed receipt of the run — with one `curl`.
 
 ## 30-Second Demo
 
@@ -106,8 +106,8 @@ curl -X POST https://api.baaton.dev/api/v1/issues/BAT-42/tldr \
 | Agent gets guided next steps | ✅ `_hints` | ❌ | ❌ | ❌ |
 | Agent reads project context | ✅ `/context` | ❌ | ❌ | ❌ |
 | Agent posts work summary | ✅ TLDRs | ❌ | ❌ | ❌ |
-| Human reviews agent work | ✅ Board + approvals | ❌ | ❌ | ⚠️ PRs only |
-| Response time | 60ms | ~200ms | ~500ms | ~150ms |
+| Human reviews agent work | ✅ Board + TLDRs | ❌ | ❌ | ⚠️ PRs only |
+| Signed, verifiable run receipt | ✅ Ed25519 | ❌ | ❌ | ❌ |
 | Self-hostable | ✅ | ❌ | ❌ | ❌ |
 
 ## Key Design Decisions
@@ -168,7 +168,7 @@ Your agent already speaks HTTP. A REST API with good docs beats 51 MCP tools.
 
 ## API Surface
 
-133 routes covering:
+198 routes covering:
 
 - **Issues** — CRUD, bulk ops, search, filters, relations, recurring
 - **Projects** — context, statuses, templates, auto-assign
@@ -189,7 +189,7 @@ Full reference: [`curl https://api.baaton.dev/api/v1/public/docs`](https://api.b
 1. Sign up at [app.baaton.dev](https://app.baaton.dev)
 2. Create a project → Generate an API key
 3. Give your agent: `BAATON_URL=https://api.baaton.dev/api/v1` + `BAATON_API_KEY=baa_...`
-4. Done. First useful call in 60ms.
+4. Done. First useful call is one `curl` away.
 
 ### Self-host
 
@@ -248,24 +248,32 @@ The `baaton-pm` skill is available:
 
 Add the SKILL.md to your agent's instructions or use the MCP bridge (coming soon).
 
-## Performance
+## Verify a receipt
 
-Measured on production (`r7g.large`, eu-west-3):
+Every published Run Card has a signed JSON receipt. Anyone can check it, no account needed:
 
-| Endpoint | p50 | p99 |
-|----------|-----|-----|
-| `GET /projects` | 61ms | 140ms |
-| `GET /issues?limit=20` | 92ms | 145ms |
-| `POST /issues` | 78ms | 130ms |
-| `GET /search?q=...` | 74ms | 120ms |
+```bash
+# 1. Fetch the receipt
+curl -s https://api.baaton.dev/api/v1/public/runs/<token>/receipt.json
+
+# 2. Fetch the issuing org's public keys
+curl -s https://api.baaton.dev/api/v1/public/orgs/<org_id>/jwks.json
+
+# 3. Verify signature.value over the exact bytes returned in step 1
+#    alg: EdDSA · kty: OKP · crv: Ed25519
+```
+
+Verify against the exact bytes served. The signature covers the serialized payload as
+returned by the API, so re-serializing the JSON before verifying will change the bytes
+and the check will fail. Canonicalization (RFC 8785) is on the roadmap.
 
 ## Roadmap
 
-- [x] Full REST API (133 endpoints)
+- [x] Full REST API (198 endpoints)
 - [x] GitHub bidirectional sync
 - [x] Webhooks with HMAC signing
 - [x] Agent TLDRs and context
-- [x] `_hints` in every response
+- [x] `_hints` in core agent responses
 - [x] Gamification (XP, streaks)
 - [ ] OpenAPI 3.1 spec (auto-generated)
 - [ ] `@baaton/mcp` bridge for MCP-native agents
