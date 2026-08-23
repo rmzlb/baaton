@@ -14,6 +14,7 @@ mod github;
 mod middleware;
 mod models;
 mod novu;
+mod permissions;
 mod receipts;
 mod routes;
 mod s3;
@@ -166,6 +167,10 @@ async fn main() -> anyhow::Result<()> {
         (68, include_str!("../migrations/068_actor_attribution.sql")),
         (69, include_str!("../migrations/069_sla_clock.sql")),
         (70, include_str!("../migrations/070_declared_requester.sql")),
+        (
+            71,
+            include_str!("../migrations/071_enforce_api_key_scopes.sql"),
+        ),
     ];
 
     for &(version, sql) in migrations {

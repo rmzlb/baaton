@@ -313,6 +313,17 @@ pub struct AuthUser {
     /// For API keys: the human who created the key (`api_keys.created_by`).
     /// `None` for direct human callers, where `user_id` is already the human.
     pub on_behalf_of: Option<String>,
+    /// Permission scopes granted to this caller.
+    ///
+    /// For API keys: the raw `api_keys.permissions` array. For Clerk humans:
+    /// `["admin:full"]`, because human authority is governed by `org_role` and
+    /// superadmin checks, not by key scopes. Scope checks therefore never lock a
+    /// human out of their own org.
+    pub permissions: Vec<String>,
+    /// True when this API key predates scope enforcement (migration 071).
+    /// Denials are logged instead of blocked so the real scope gap is measurable
+    /// before any key is narrowed. Always `false` for humans and new keys.
+    pub legacy_full_access: bool,
 }
 
 impl AuthUser {
@@ -370,6 +381,14 @@ impl AuthUser {
     /// queries ("everything Ramzi did, including through his agents").
     pub fn responsible_user_id(&self) -> &str {
         self.on_behalf_of.as_deref().unwrap_or(&self.user_id)
+    }
+
+    /// True when this caller holds a scope satisfying `needed`.
+    ///
+    /// Humans carry `admin:full`, so this is always true for them; their limits
+    /// come from `org_role` and superadmin checks instead.
+    pub fn has_permission(&self, needed: &str) -> bool {
+        crate::permissions::scopes_allow(&self.permissions, needed)
     }
 }
 
@@ -483,8 +502,8 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             created_by: Option<String>,
             name: String,
             org_scope_mode: String,
-            #[allow(dead_code)]
             permissions: Vec<String>,
+            legacy_full_access: bool,
             expires_at: Option<chrono::DateTime<chrono::Utc>>,
             project_ids: Vec<uuid::Uuid>,
             scoped_org_ids: Vec<String>,
@@ -497,6 +516,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
                 k.name, \
                 k.org_scope_mode, \
                 k.permissions, \
+                COALESCE(k.legacy_full_access, false) as legacy_full_access, \
                 k.expires_at, \
                 COALESCE(k.project_ids, '{}') as project_ids, \
                 COALESCE((SELECT array_agg(s.org_id ORDER BY s.org_id) FROM api_key_org_scopes s WHERE s.api_key_id = k.id), ARRAY[k.org_id]) as scoped_org_ids \
@@ -581,7 +601,49 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             // makes, so audit rows can name a responsible person without
             // losing which key acted.
             on_behalf_of: key_row.created_by.clone(),
+            permissions: key_row.permissions.clone(),
+            legacy_full_access: key_row.legacy_full_access,
         };
+
+        // ── Scope enforcement ────────────────────────
+        // Before migration 071 these scopes were validated at key creation and
+        // then ignored, so every key was effectively `admin:full`. Keys issued
+        // before the migration are grandfathered and only logged, because a
+        // security fix that breaks live integrations gets reverted, and a
+        // reverted fix protects nobody.
+        if let crate::permissions::Requirement::Scope(needed) =
+            crate::permissions::required_permission(req.method(), &path)
+        {
+            if !auth_user.has_permission(needed) {
+                if auth_user.legacy_full_access {
+                    tracing::warn!(
+                        api_key_id = %key_row.id,
+                        api_key_name = %key_row.name,
+                        method = %req.method(),
+                        path = %path,
+                        required_scope = %needed,
+                        granted = ?auth_user.permissions,
+                        "api_key_scope_denied_legacy: allowed only because this key predates scope enforcement"
+                    );
+                } else {
+                    tracing::info!(
+                        api_key_id = %key_row.id,
+                        method = %req.method(),
+                        path = %path,
+                        required_scope = %needed,
+                        "api_key_scope_denied"
+                    );
+                    return (
+                        StatusCode::FORBIDDEN,
+                        [("content-type", "application/json")],
+                        format!(
+                            r#"{{"error":"API key is missing the required permission scope","required_scope":"{needed}"}}"#
+                        ),
+                    )
+                        .into_response();
+                }
+            }
+        }
 
         tracing::debug!(
             api_key_id = %key_row.id,
@@ -735,6 +797,9 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         actor_key_id: None,
         // Direct human caller: `user_id` is already the responsible identity.
         on_behalf_of: None,
+        // Humans are governed by `org_role` / superadmin checks, not key scopes.
+        permissions: vec![crate::permissions::ADMIN_FULL.to_string()],
+        legacy_full_access: false,
     };
 
     tracing::debug!(
