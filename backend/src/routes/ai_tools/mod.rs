@@ -3240,7 +3240,7 @@ fn stub_add_comment(args: &Value) -> ToolResult {
         for_model: format!(
             "Added comment to issue {}: \"{}\"",
             issue_id,
-            &content[..content.len().min(100)]
+            crate::text::take_chars(content, 100)
         ),
         component_hint: None,
         summary: format!("Commented on issue {}", issue_id),
@@ -4193,7 +4193,7 @@ async fn add_comment_real(
     .await
     .map_err(|e| format!("Failed to add comment: {}", e))?;
 
-    let preview = if body.len() > 100 { &body[..100] } else { body };
+    let preview = crate::text::take_chars(body, 100);
 
     Ok(ToolResult {
         data: json!({

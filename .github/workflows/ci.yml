@@ -31,9 +31,23 @@ jobs:
       # échouaient avec "no library targets found" / "no test target matches"
       # et les 61 tests réels (dans le binaire) ne tournaient jamais.
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
+
+      # `#![deny(clippy::string_slice)]` in `src/main.rs` is the guard that
+      # keeps byte-indexed `&s[..n]` out of the codebase. Byte slicing panics
+      # whenever the index lands inside a multibyte scalar, which took down
+      # tokio workers in prod on French issue titles (2026-08-24). The lint is
+      # only worth anything if CI enforces it, so run clippy before the tests.
+      # Not `-D warnings`: the crate still carries pre-existing style warnings,
+      # and the crate-level `deny` already fails the build on its own.
+      - name: Backend lint (deny byte-indexed string slices)
+        working-directory: backend
+        run: cargo clippy --all-targets
+
       - name: Backend tests
         working-directory: backend
         run: cargo test --bins

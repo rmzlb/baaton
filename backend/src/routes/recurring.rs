@@ -59,11 +59,7 @@ fn next_run_from_rrule(rrule: &str, from: DateTime<Utc>) -> DateTime<Utc> {
         .split(';')
         .find_map(|part| {
             let part = part.trim();
-            if part.starts_with("INTERVAL=") {
-                part["INTERVAL=".len()..].parse().ok()
-            } else {
-                None
-            }
+            part.strip_prefix("INTERVAL=").and_then(|v| v.parse().ok())
         })
         .unwrap_or(1)
         .max(1);
@@ -72,11 +68,7 @@ fn next_run_from_rrule(rrule: &str, from: DateTime<Utc>) -> DateTime<Utc> {
         .split(';')
         .find_map(|part| {
             let part = part.trim();
-            if part.starts_with("FREQ=") {
-                Some(part["FREQ=".len()..].to_string())
-            } else {
-                None
-            }
+            part.strip_prefix("FREQ=").map(|v| v.to_string())
         })
         .unwrap_or_else(|| "WEEKLY".to_string());
 

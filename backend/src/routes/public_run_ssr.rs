@@ -266,22 +266,7 @@ fn esc(s: &str) -> String {
 /// C2: Truncate `s` to at most `max_chars` Unicode scalars, appending `…` if truncated.
 /// Uses char boundaries so this never panics on multibyte input (e.g. French summaries
 /// with accents whose byte length exceeds `max_chars`).
-fn truncate_chars(s: &str, max_chars: usize) -> String {
-    let mut count = 0usize;
-    let mut end = s.len();
-    for (i, _) in s.char_indices() {
-        if count == max_chars {
-            end = i;
-            break;
-        }
-        count += 1;
-    }
-    if end == s.len() {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..end])
-    }
-}
+use crate::text::truncate_chars;
 
 fn format_duration_secs(s: i64) -> String {
     if s < 60 {

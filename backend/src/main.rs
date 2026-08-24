@@ -1,3 +1,12 @@
+//! Baaton API.
+//!
+//! `clippy::string_slice` is denied crate-wide: `&s[..n]` panics when `n` lands
+//! inside a multibyte UTF-8 scalar, and effectively every string here can carry
+//! accents or emoji. Use `crate::text::{take_chars, truncate_chars,
+//! truncate_ascii_ellipsis}` instead. Provably-safe slices (ASCII-only hex, a
+//! byte offset just proven by `find`) carry a local `#[allow]` plus a reason.
+#![deny(clippy::string_slice)]
+
 use axum::{middleware as axum_mw, routing::get, Router};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -18,6 +27,7 @@ mod permissions;
 mod receipts;
 mod routes;
 mod s3;
+mod text;
 
 use middleware::{fetch_jwks_keys, jwks_refresh_task, JwksKeys};
 

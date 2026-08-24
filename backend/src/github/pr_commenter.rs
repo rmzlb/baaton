@@ -245,24 +245,7 @@ fn format_duration_secs(s: i64) -> String {
     }
 }
 
-/// C2: Truncate `s` to at most `max_chars` Unicode scalars, appending `…` if truncated.
-/// Char-boundary safe (won't panic on multibyte input).
-fn truncate_chars(s: &str, max_chars: usize) -> String {
-    let mut count = 0usize;
-    let mut end = s.len();
-    for (i, _) in s.char_indices() {
-        if count == max_chars {
-            end = i;
-            break;
-        }
-        count += 1;
-    }
-    if end == s.len() {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..end])
-    }
-}
+use crate::text::truncate_chars;
 
 #[cfg(test)]
 mod tests {

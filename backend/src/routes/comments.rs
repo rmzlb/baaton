@@ -255,8 +255,8 @@ pub async fn create(
                 _ => return,
             };
 
-            let preview = if comment_body.len() > 120 {
-                format!("{}...", &comment_body[..120])
+            let preview = if comment_body.chars().count() > 120 {
+                crate::text::truncate_ascii_ellipsis(&comment_body, 120)
             } else {
                 comment_body.clone()
             };
@@ -316,8 +316,8 @@ pub async fn create(
         let pool2 = pool.clone();
         let uid = author_id.clone();
         let uname_opt = Some(author_name.clone());
-        let comment_preview = if body.body.len() > 120 {
-            format!("{}...", &body.body[..120])
+        let comment_preview = if body.body.chars().count() > 120 {
+            crate::text::truncate_ascii_ellipsis(&body.body, 120)
         } else {
             body.body.clone()
         };
@@ -343,8 +343,8 @@ pub async fn create(
         let pool2 = pool.clone();
         let oid = org_id.to_string();
         let commenter = author_id.clone();
-        let preview = if body.body.len() > 80 {
-            format!("{}...", &body.body[..80])
+        let preview = if body.body.chars().count() > 80 {
+            crate::text::truncate_ascii_ellipsis(&body.body, 80)
         } else {
             body.body.clone()
         };
@@ -494,8 +494,8 @@ pub async fn update(
         let pool2 = pool.clone();
         let uid = auth.user_id.clone();
         let uname_opt = auth.created_by_label();
-        let comment_preview = if body.body.len() > 120 {
-            format!("{}...", &body.body[..120])
+        let comment_preview = if body.body.chars().count() > 120 {
+            crate::text::truncate_ascii_ellipsis(&body.body, 120)
         } else {
             body.body.clone()
         };

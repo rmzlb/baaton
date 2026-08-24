@@ -124,10 +124,9 @@ pub async fn upload(
         ));
     }
 
-    let raw_b64 = if let Some(idx) = body.data.find("base64,") {
-        &body.data[idx + "base64,".len()..]
-    } else {
-        body.data.as_str()
+    let raw_b64 = match body.data.split_once("base64,") {
+        Some((_, b64)) => b64,
+        None => body.data.as_str(),
     };
 
     let bytes = general_purpose::STANDARD

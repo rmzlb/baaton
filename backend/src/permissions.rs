@@ -442,6 +442,10 @@ mod tests {
     }
 
     /// Every (method, path) the router actually exposes, parsed from source.
+    #[allow(
+        clippy::string_slice,
+        reason = "test-only parser over our own ASCII source; indices come from str::find or ASCII literal lengths"
+    )]
     fn router_endpoints() -> Vec<(Method, String)> {
         let src = format!("{}{}", include_str!("routes/mod.rs"), include_str!("main.rs"));
         let mut out = Vec::new();

@@ -17,10 +17,10 @@ fn sse_done() -> Result<Event, Infallible> {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() > max {
+    if s.chars().count() > max {
         format!(
             "{}\n\n[truncated at {} chars — full data in UI]",
-            &s[..max],
+            crate::text::take_chars(s, max),
             max
         )
     } else {
@@ -557,10 +557,19 @@ pub fn build_stream(
                             target: "baaton.ai.agent",
                             user_id = %user_id,
                             tool = %tool_name,
-                            "client-interactive tool — breaking loop for user approval"
+                            "client-interactive tool — will stop after this response for user approval"
                         );
+                        // Do NOT break here. Gemini can return several calls in
+                        // one response (parallel function calling), and the
+                        // client-interactive one is not necessarily last.
+                        // Breaking mid-loop silently dropped the remaining
+                        // calls: the frontend only ever saw the first proposal,
+                        // so its history no longer matched what the model
+                        // believed it had asked for, and the model re-proposed
+                        // on the next turn (the duplicate "Approuvé" cards).
+                        // Surface every call, then leave the loop below.
                         hit_client_interactive = true;
-                        break;
+                        continue;
                     }
 
                     tracing::info!(

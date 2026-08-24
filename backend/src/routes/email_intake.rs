@@ -58,8 +58,8 @@ pub async fn intake(
         .unwrap_or_else(|| {
             let text = body.body.as_deref().unwrap_or("No content");
             let first_line = text.lines().next().unwrap_or("Email issue");
-            if first_line.len() > 100 {
-                format!("{}...", &first_line[..97])
+            if first_line.chars().count() > 100 {
+                crate::text::truncate_ascii_ellipsis(first_line, 97)
             } else {
                 first_line.to_string()
             }

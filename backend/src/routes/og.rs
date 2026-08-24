@@ -242,25 +242,16 @@ fn truncate_token(t: &str) -> String {
 
 /// Truncate `s` to at most `max_chars` characters (Unicode scalars), appending `…` if truncated.
 /// Uses char boundaries so this never panics on multibyte input.
-fn truncate_chars(s: &str, max_chars: usize) -> String {
-    let mut count = 0usize;
-    let mut end = s.len();
-    for (i, _) in s.char_indices() {
-        if count == max_chars {
-            end = i;
-            break;
-        }
-        count += 1;
-    }
-    if end == s.len() {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..end])
-    }
-}
+use crate::text::truncate_chars;
 
 /// Word-wrap a string into two lines around `max_chars` for line 1, rest on line 2.
-/// Char-boundary safe.
+///
+/// Char-boundary safe: `cut_idx` comes from `char_indices()` and `break_at` from
+/// `rfind(' ')`, both of which can only yield real boundaries.
+#[allow(
+    clippy::string_slice,
+    reason = "indices originate from char_indices()/rfind(), so they are always char boundaries"
+)]
 fn split_for_two_lines(s: &str, max_chars: usize) -> (String, String) {
     // Locate the byte index right after the `max_chars`-th char.
     let cut_idx = s

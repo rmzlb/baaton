@@ -190,6 +190,10 @@ fn collapse_json_inner(value: &mut serde_json::Value, collapsed: &mut usize) {
 ///
 /// Best-effort: if presigning fails for a specific key, we leave the marker
 /// in place rather than failing the whole response.
+#[allow(
+    clippy::string_slice,
+    reason = "all offsets come from regex Match::start/end, which are char boundaries"
+)]
 pub async fn rewrite_markdown(markdown: &str, s3: &S3State) -> String {
     // Fast path: no marker, no work.
     if !markdown.contains(S3_URL_SCHEME) {

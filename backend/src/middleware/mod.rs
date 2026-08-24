@@ -455,8 +455,8 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
     let query_token: Option<String> = if auth_header.is_none() {
         req.uri().query().and_then(|q| {
             q.split('&')
-                .find(|p| p.starts_with("token="))
-                .map(|p| p[6..].to_string())
+                .find_map(|p| p.strip_prefix("token="))
+                .map(|t| t.to_string())
         })
     } else {
         None
@@ -464,9 +464,9 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
 
     // Owned string to extend lifetime
     let bearer_owned: Option<String> = auth_header
-        .as_ref()
-        .filter(|h| h.starts_with("Bearer "))
-        .map(|h| h[7..].to_string());
+        .as_deref()
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .map(|t| t.to_string());
 
     let token: &str = if let Some(ref t) = bearer_owned {
         t

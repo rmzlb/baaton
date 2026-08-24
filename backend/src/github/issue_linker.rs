@@ -140,13 +140,60 @@ pub fn generate_branch_name(display_id: &str, title: &str) -> String {
         .collect::<Vec<_>>()
         .join("-");
 
-    // Truncate to reasonable length
-    let slug = if slug.len() > 50 {
-        &slug[..50]
-    } else {
-        &slug
-    };
+    // Truncate to a reasonable length. Char-boundary safe: byte slicing here
+    // panicked in prod on a French title where `ê` straddled bytes 49..51.
+    let slug = crate::text::take_chars(&slug, 50);
     let slug = slug.trim_end_matches('-');
 
     format!("{}-{}", display_id.to_lowercase(), slug)
+}
+
+#[cfg(test)]
+mod branch_name_tests {
+    use super::generate_branch_name;
+
+    #[test]
+    fn ascii_title_slugifies() {
+        assert_eq!(
+            generate_branch_name("BAA-42", "Fix login bug"),
+            "baa-42-fix-login-bug"
+        );
+    }
+
+    /// Prod regression, 2026-08-24: this exact title panicked the tokio worker
+    /// 20 times in one morning. Byte 50 of the slug fell inside `ê` (49..51).
+    #[test]
+    fn accented_title_at_the_cut_does_not_panic() {
+        let name = generate_branch_name(
+            "CRA-361",
+            "Retrait temporaire du visualisateur sur la page tête de lit",
+        );
+        assert!(name.starts_with("cra-361-"));
+        assert!(!name.ends_with('-'));
+    }
+
+    #[test]
+    fn no_title_length_can_panic() {
+        // Brute force every cut position across a mixed-width title.
+        let base = "aé日🦞bê-ç_日本🦞xyzàùî";
+        let long = base.repeat(8);
+        for n in 0..long.chars().count() {
+            let title: String = long.chars().take(n).collect();
+            let _ = generate_branch_name("BAA-1", &title);
+        }
+    }
+
+    #[test]
+    fn multibyte_only_title_is_truncated_by_chars() {
+        let name = generate_branch_name("BAA-7", &"é".repeat(200));
+        // 50 chars of slug, not 50 bytes.
+        let slug = name.strip_prefix("baa-7-").unwrap();
+        assert_eq!(slug.chars().count(), 50);
+    }
+
+    #[test]
+    fn empty_and_symbol_only_titles_are_handled() {
+        assert_eq!(generate_branch_name("BAA-9", ""), "baa-9-");
+        assert_eq!(generate_branch_name("BAA-9", "!!! ???"), "baa-9-");
+    }
 }

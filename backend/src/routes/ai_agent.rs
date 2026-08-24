@@ -807,10 +807,10 @@ pub async fn agent_chat(
                             // subsequent turn. The frontend still shows full data via
                             // the React component; the model only needs a digest.
                             const MAX_MODEL_CHARS: usize = 4000;
-                            let digest = if tool_result.for_model.len() > MAX_MODEL_CHARS {
+                            let digest = if tool_result.for_model.chars().count() > MAX_MODEL_CHARS {
                                 format!(
                                     "{}\n\n[truncated at {} chars — full data available in the UI component]",
-                                    &tool_result.for_model[..MAX_MODEL_CHARS],
+                                    crate::text::take_chars(&tool_result.for_model, MAX_MODEL_CHARS),
                                     MAX_MODEL_CHARS
                                 )
                             } else {

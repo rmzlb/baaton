@@ -94,9 +94,19 @@ pub async fn chat_handler(
         }
     };
 
-    // Cap history length
+    // Cap history length. The window must open on a user message: slicing in
+    // the middle of a tool exchange leaves an assistant `functionCall` with no
+    // preceding user turn, which Gemini rejects with a 400. `convert` also
+    // normalizes this, but trimming here keeps the prompt prefix stable for
+    // Gemini's implicit cache.
     let messages = if body.messages.len() > MAX_HISTORY_MESSAGES {
-        body.messages[body.messages.len() - MAX_HISTORY_MESSAGES..].to_vec()
+        let start = body.messages.len() - MAX_HISTORY_MESSAGES;
+        let start = body.messages[start..]
+            .iter()
+            .position(|m| m.role == "user")
+            .map(|offset| start + offset)
+            .unwrap_or(start);
+        body.messages[start..].to_vec()
     } else {
         body.messages
     };

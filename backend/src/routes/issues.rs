@@ -90,6 +90,10 @@ fn internal_err(e: impl std::fmt::Display) -> (StatusCode, Json<serde_json::Valu
 /// pasted/dropped images in the HTML description so they can keep their exact
 /// position in the text. Non-image data URIs are still stripped to avoid embedding
 /// arbitrary files/scripts in descriptions.
+#[allow(
+    clippy::string_slice,
+    reason = "all indices come from str::find or from the ASCII-only \"data:\" prefix length, so they land on char boundaries"
+)]
 fn sanitize_description(desc: &str) -> String {
     // Regex-free approach: find data: URIs and replace them
     let mut result = String::with_capacity(desc.len());
@@ -1881,7 +1885,7 @@ pub async fn update(
                         display_id,
                         if is_done { "shipped" } else { "cancelled" },
                         title,
-                        &summary[..summary.len().min(500)]
+                        crate::text::take_chars(summary, 500)
                     )
                 } else {
                     format!(

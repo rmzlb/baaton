@@ -161,6 +161,10 @@ fn is_all_dynamic_scope(mode: &str) -> bool {
     mode == ORG_SCOPE_MODE_ALL_DYNAMIC
 }
 
+#[allow(
+    clippy::string_slice,
+    reason = "hex::encode output is pure ASCII, so byte index 8 is always a char boundary"
+)]
 fn generate_api_key() -> (String, String, String) {
     use rand::Rng;
     let random: [u8; 32] = rand::rng().random();
