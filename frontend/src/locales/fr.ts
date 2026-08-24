@@ -91,6 +91,7 @@ const fr = {
   'apiKeys.permGroup.billing': 'Facturation',
   'apiKeys.permGroup.context': 'Contexte',
   'apiKeys.permGroup.templates': 'Modèles',
+  'apiKeys.permGroup.apiKeys': 'Clés API',
   'apiKeys.permGroup.admin': 'Admin',
   // Individual permissions
   'apiKeys.perm.issues:read': 'Lire',
@@ -121,6 +122,8 @@ const fr = {
   'apiKeys.perm.context:write': 'Écrire',
   'apiKeys.perm.templates:read': 'Lire',
   'apiKeys.perm.templates:write': 'Écrire',
+  'apiKeys.perm.api-keys:read': 'Lister',
+  'apiKeys.perm.api-keys:write': 'Gérer',
   'apiKeys.perm.admin:full': 'Accès complet (superclé)',
   // Misc
   'apiKeys.neverExpires': 'Jamais',

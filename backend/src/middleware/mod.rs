@@ -615,7 +615,14 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
             crate::permissions::required_permission(req.method(), &path)
         {
             if !auth_user.has_permission(needed) {
-                if auth_user.legacy_full_access {
+                // The grandfather clause never covers key management. Every key
+                // predating migration 071 carries `legacy_full_access`, and
+                // `api-keys:*` was hard-blocked for keys until now, so no key
+                // can have a legitimate legacy dependency on it. Letting the
+                // bypass through here would hand credential minting to all of
+                // them at once.
+                if auth_user.legacy_full_access && !crate::permissions::is_key_management_scope(needed)
+                {
                     tracing::warn!(
                         api_key_id = %key_row.id,
                         api_key_name = %key_row.name,

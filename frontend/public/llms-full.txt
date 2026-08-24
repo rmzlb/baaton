@@ -55,7 +55,7 @@ curl -s -X POST $BAATON/issues/ISSUE_ID/tldr -H "Authorization: Bearer $KEY" \
 - **Webhook Events:** `issue.created` | `issue.updated` | `issue.deleted` | `status.changed` | `comment.created` | `comment.deleted`
 - **Automation Triggers:** `status_changed` | `priority_changed` | `label_added` | `issue_created` | `comment_added` | `assignee_changed` | `due_date_passed`
 - **Automation Actions:** `set_status` | `set_priority` | `add_label` | `assign_user` | `send_webhook` | `add_comment` | `run_agent`
-- **Permissions:** `issues:read` | `issues:write` | `issues:delete` | `projects:read` | `projects:write` | `projects:delete` | `comments:read` | `comments:write` | `comments:delete` | `labels:read` | `labels:write` | `milestones:read` | `milestones:write` | `sprints:read` | `sprints:write` | `automations:read` | `automations:write` | `webhooks:read` | `webhooks:write` | `members:read` | `members:invite` | `ai:chat` | `ai:triage` | `billing:read` | `admin:full`
+- **Permissions:** `issues:read` | `issues:write` | `issues:delete` | `projects:read` | `projects:write` | `projects:delete` | `comments:read` | `comments:write` | `comments:delete` | `labels:read` | `labels:write` | `milestones:read` | `milestones:write` | `sprints:read` | `sprints:write` | `automations:read` | `automations:write` | `webhooks:read` | `webhooks:write` | `members:read` | `members:invite` | `context:read` | `context:write` | `templates:read` | `templates:write` | `ai:chat` | `ai:triage` | `billing:read` | `api-keys:read` | `api-keys:write` | `admin:full`
 
 ---
 
@@ -572,15 +572,30 @@ keys. Rules:
 Keys created before enforcement shipped are grandfathered: their declared scopes are
 advisory and over-scope requests are logged rather than blocked, so existing integrations
 keep working while their real scope usage is measured. New keys are enforced from creation.
+The grandfather clause does **not** cover `api-keys:*` — key management is always enforced.
+
+## Managing keys with a key
+
+`api-keys:read` lists keys; `api-keys:write` creates, updates, regenerates and revokes
+them. Two rules bound this:
+
+- **Non-escalation.** You can never grant a scope you do not hold yourself. A key with
+  `api-keys:write` + `issues:read` can issue read-only issue keys and nothing else;
+  requesting more returns `403 {"error": "Cannot grant permissions you do not hold: ..."}`.
+  This applies to `PATCH` as well as `POST`, so widening an existing key is blocked too.
+- **Humans need admin.** With a Clerk JWT, key management requires the org `admin` or
+  `owner` role. A plain member gets `403`.
+
+`admin:full` holders may grant any scope, including `admin:full` itself.
 
 ### GET /api-keys
-List org API keys.
+List org API keys. Requires `api-keys:read` (or a Clerk JWT with an admin role).
 
 ### POST /api-keys
-Create key.
+Create key. Requires `api-keys:write` (or a Clerk JWT with an admin role).
 
 ```bash
-# Requires Clerk JWT, not API key
+# Clerk JWT, or an API key holding api-keys:write
 curl -s -X POST $BAATON/api-keys -H "Authorization: Bearer CLERK_JWT" \
   -H "Content-Type: application/json" \
   -d '{"name":"CI Agent","permissions":["issues:read","issues:write","comments:write"],"expires_at":"2027-01-01"}'
@@ -589,13 +604,14 @@ curl -s -X POST $BAATON/api-keys -H "Authorization: Bearer CLERK_JWT" \
 Returns the plaintext key once. Store it immediately.
 
 ### PATCH /api-keys/{id}
-Update key (name, permissions, project_ids, expires_at).
+Update key (name, permissions, project_ids, expires_at). Requires `api-keys:write`.
+Non-escalation applies: you cannot widen a key beyond your own scopes.
 
 ### POST /api-keys/{id}/regenerate
-Regenerate key. Old key is immediately revoked.
+Regenerate key. Old key is immediately revoked. Requires `api-keys:write`.
 
 ### DELETE /api-keys/{id}
-Revoke key.
+Revoke key. Requires `api-keys:write`.
 
 ---
 

@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
+use crate::permissions::ADMIN_FULL;
 use crate::routes::issues::fetch_user_org_ids;
 
 const VALID_PERMISSIONS: &[&str] = &[
@@ -42,6 +43,8 @@ const VALID_PERMISSIONS: &[&str] = &[
     "ai:chat",
     "ai:triage",
     "billing:read",
+    "api-keys:read",
+    "api-keys:write",
     "admin:full",
 ];
 
@@ -175,14 +178,87 @@ fn generate_api_key() -> (String, String, String) {
     (full_key, prefix, hash)
 }
 
-fn require_clerk_user(auth: &AuthUser) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    if !auth.is_human() {
+/// Reject callers that may not manage API keys at all.
+///
+/// Humans are governed by `org_role`: managing credentials is an org-admin act,
+/// so a plain member cannot mint keys even though their session carries
+/// `admin:full` internally (that value exists so scope checks never lock a human
+/// out of ordinary routes — see `AuthUser::permissions`).
+///
+/// API keys reach this point only when the middleware already matched
+/// `api-keys:read` / `api-keys:write`, so no extra scope check is needed here;
+/// what still has to be enforced is non-escalation, below.
+fn require_key_manager(auth: &AuthUser) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if auth.is_human() && !auth.is_admin() {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(json!({"error": "API keys cannot manage other API keys"})),
+            Json(json!({"error": "Only organization admins can manage API keys"})),
         ));
     }
     Ok(())
+}
+
+/// Scopes the caller is allowed to hand out.
+///
+/// Org admins may grant anything in the vocabulary. An API key may only grant
+/// what it already holds — with `admin:full` expanded, since a wildcard holder
+/// can reach every route anyway and refusing to let it name the scopes
+/// explicitly would be theatre.
+fn grantable_scopes(auth: &AuthUser) -> Vec<&'static str> {
+    if auth.is_human() || auth.permissions.iter().any(|p| p == ADMIN_FULL) {
+        return VALID_PERMISSIONS.to_vec();
+    }
+    VALID_PERMISSIONS
+        .iter()
+        .copied()
+        .filter(|valid| {
+            auth.permissions
+                .iter()
+                .any(|granted| crate::permissions::scope_satisfies(granted, valid))
+        })
+        .collect()
+}
+
+/// Refuse to mint or widen a key beyond the caller's own authority.
+///
+/// This is the rule that makes `api-keys:write` safe to delegate. Without it a
+/// scoped key could create an `admin:full` key and escalate in one call, which
+/// would make every other scope check pointless. It runs on **update** as well
+/// as create, otherwise the same escalation works in two steps: mint a narrow
+/// key, then widen it.
+///
+/// `admin:full` is included in the check rather than special-cased: a caller
+/// that lacks it simply never has it among `grantable_scopes`.
+fn enforce_no_escalation(
+    auth: &AuthUser,
+    requested: &[String],
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    let grantable = grantable_scopes(auth);
+    let refused: Vec<&str> = requested
+        .iter()
+        .map(String::as_str)
+        .filter(|scope| !grantable.contains(scope))
+        .collect();
+
+    if refused.is_empty() {
+        return Ok(());
+    }
+
+    tracing::warn!(
+        actor = %auth.user_id,
+        refused = ?refused,
+        granted = ?auth.permissions,
+        "api_keys.escalation_refused"
+    );
+    Err((
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": format!(
+                "Cannot grant permissions you do not hold: {}",
+                refused.join(", ")
+            )
+        })),
+    ))
 }
 
 fn unique_org_ids(org_ids: &[String]) -> Vec<String> {
@@ -196,6 +272,16 @@ fn unique_org_ids(org_ids: &[String]) -> Vec<String> {
 }
 
 async fn fetch_manageable_org_ids(auth: &AuthUser) -> Vec<String> {
+    // API keys have no Clerk membership to look up (`user_id` is
+    // `apikey:<uuid>`), so their reach is the org scope resolved at
+    // authentication time. Falling through to `fetch_user_org_ids` here would
+    // log an error and silently narrow the key to a single org.
+    if !auth.is_human() {
+        if !auth.scoped_org_ids.is_empty() {
+            return auth.scoped_org_ids.clone();
+        }
+        return auth.org_id.iter().cloned().collect();
+    }
     match fetch_user_org_ids(&auth.user_id).await {
         Ok(ids) if !ids.is_empty() => ids,
         Ok(_) => auth.org_id.iter().cloned().collect(),
@@ -358,7 +444,7 @@ pub async fn list(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Vec<ApiKeyRow>>>, (StatusCode, Json<serde_json::Value>)> {
-    require_clerk_user(&auth)?;
+    require_key_manager(&auth)?;
 
     let manageable_org_ids = fetch_manageable_org_ids(&auth).await;
     let sql = format!(
@@ -391,7 +477,7 @@ pub async fn create(
     State(pool): State<PgPool>,
     Json(body): Json<CreateApiKeyRequest>,
 ) -> Result<Json<ApiResponse<ApiKeyWithSecret>>, (StatusCode, Json<serde_json::Value>)> {
-    require_clerk_user(&auth)?;
+    require_key_manager(&auth)?;
 
     if body.name.trim().is_empty() || body.name.len() > 200 {
         return Err((
@@ -402,6 +488,7 @@ pub async fn create(
 
     validate_permissions(&body.permissions)
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
+    enforce_no_escalation(&auth, &body.permissions)?;
 
     validate_org_scope_mode(&body.org_scope_mode)
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
@@ -528,7 +615,7 @@ pub async fn update(
     Path(key_id): Path<Uuid>,
     Json(body): Json<UpdateApiKeyRequest>,
 ) -> Result<Json<ApiResponse<ApiKeyRow>>, (StatusCode, Json<serde_json::Value>)> {
-    require_clerk_user(&auth)?;
+    require_key_manager(&auth)?;
 
     if let Some(ref name) = body.name {
         if name.trim().is_empty() || name.len() > 200 {
@@ -542,6 +629,7 @@ pub async fn update(
     if let Some(ref perms) = body.permissions {
         validate_permissions(perms)
             .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
+        enforce_no_escalation(&auth, perms)?;
     }
 
     if let Some(ref org_scope_mode) = body.org_scope_mode {
@@ -672,7 +760,7 @@ pub async fn regenerate(
     State(pool): State<PgPool>,
     Path(key_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ApiKeyWithSecret>>, (StatusCode, Json<serde_json::Value>)> {
-    require_clerk_user(&auth)?;
+    require_key_manager(&auth)?;
 
     let manageable_org_ids = fetch_manageable_org_ids(&auth).await;
     let (full_key, prefix, hash) = generate_api_key();
@@ -725,7 +813,7 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(key_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    require_clerk_user(&auth)?;
+    require_key_manager(&auth)?;
 
     let manageable_org_ids = fetch_manageable_org_ids(&auth).await;
 
@@ -756,4 +844,185 @@ pub async fn remove(
     );
 
     Ok(Json(ApiResponse::new(())))
+}
+
+#[cfg(test)]
+mod key_management_tests {
+    use super::*;
+    use crate::middleware::ActorKind;
+
+    fn auth(kind: ActorKind, org_role: Option<&str>, perms: &[&str]) -> AuthUser {
+        AuthUser {
+            user_id: match kind {
+                ActorKind::ApiKey => "apikey:5f8dc5e2-e05f-43be-9100-72b7d7b61198".to_string(),
+                _ => "user_3C6wp4YNAtiN9kxXQKY9BoifjI8".to_string(),
+            },
+            org_id: Some("org_1".to_string()),
+            org_slug: Some("acme".to_string()),
+            org_role: org_role.map(|r| r.to_string()),
+            email: None,
+            display_name: None,
+            scoped_org_ids: vec!["org_1".to_string()],
+            scoped_project_ids: vec![],
+            actor_kind: kind,
+            actor_key_id: None,
+            on_behalf_of: None,
+            permissions: perms.iter().map(|p| p.to_string()).collect(),
+            legacy_full_access: false,
+        }
+    }
+
+    fn org_admin() -> AuthUser {
+        auth(ActorKind::Human, Some("org:admin"), &[ADMIN_FULL])
+    }
+    fn member() -> AuthUser {
+        auth(ActorKind::Human, Some("org:member"), &[ADMIN_FULL])
+    }
+    fn key(perms: &[&str]) -> AuthUser {
+        auth(ActorKind::ApiKey, None, perms)
+    }
+    fn perms(list: &[&str]) -> Vec<String> {
+        list.iter().map(|p| p.to_string()).collect()
+    }
+
+    // ── Who may manage keys at all ───────────────────────────────────────
+
+    #[test]
+    fn org_admin_may_manage_keys() {
+        assert!(require_key_manager(&org_admin()).is_ok());
+    }
+
+    #[test]
+    fn plain_member_may_not_manage_keys() {
+        // A member's session carries `admin:full` internally so ordinary scope
+        // checks never lock them out; authority here comes from `org_role`.
+        let err = require_key_manager(&member()).unwrap_err();
+        assert_eq!(err.0, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn owner_role_may_manage_keys() {
+        let owner = auth(ActorKind::Human, Some("org:owner"), &[ADMIN_FULL]);
+        assert!(require_key_manager(&owner).is_ok());
+    }
+
+    #[test]
+    fn key_with_management_scope_may_manage_keys() {
+        // The middleware already matched `api-keys:*` before reaching here.
+        assert!(require_key_manager(&key(&["api-keys:write"])).is_ok());
+    }
+
+    // ── Non-escalation: the rule that makes delegation safe ──────────────
+
+    #[test]
+    fn admin_may_grant_anything_including_admin_full() {
+        assert!(enforce_no_escalation(&org_admin(), &perms(&[ADMIN_FULL])).is_ok());
+        assert!(enforce_no_escalation(&org_admin(), &perms(VALID_PERMISSIONS)).is_ok());
+    }
+
+    #[test]
+    fn scoped_key_cannot_mint_admin_full() {
+        // The core escalation: one call to full org control.
+        let caller = key(&["api-keys:write", "issues:read"]);
+        let err = enforce_no_escalation(&caller, &perms(&[ADMIN_FULL])).unwrap_err();
+        assert_eq!(err.0, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn scoped_key_cannot_grant_scopes_it_lacks() {
+        let caller = key(&["api-keys:write", "issues:read", "issues:write"]);
+        for forbidden in [
+            "issues:delete",
+            "billing:read",
+            "members:invite",
+            "webhooks:write",
+            "projects:delete",
+        ] {
+            let err = enforce_no_escalation(&caller, &perms(&[forbidden])).unwrap_err();
+            assert_eq!(err.0, StatusCode::FORBIDDEN, "{forbidden} must be refused");
+        }
+    }
+
+    #[test]
+    fn scoped_key_may_grant_a_subset_of_itself() {
+        let caller = key(&["api-keys:write", "issues:read", "issues:write", "projects:read"]);
+        assert!(enforce_no_escalation(&caller, &perms(&["issues:read"])).is_ok());
+        assert!(
+            enforce_no_escalation(&caller, &perms(&["issues:read", "projects:read"])).is_ok()
+        );
+    }
+
+    #[test]
+    fn scoped_key_may_grant_exactly_itself_but_no_more() {
+        let held = ["api-keys:write", "issues:read", "issues:write"];
+        let caller = key(&held);
+        assert!(enforce_no_escalation(&caller, &perms(&held)).is_ok());
+        let mut widened = perms(&held);
+        widened.push("issues:delete".to_string());
+        assert!(enforce_no_escalation(&caller, &widened).is_err());
+    }
+
+    #[test]
+    fn write_implies_read_when_granting() {
+        // `issues:write` holder may issue a read-only key: strictly narrower.
+        let caller = key(&["api-keys:write", "issues:write"]);
+        assert!(enforce_no_escalation(&caller, &perms(&["issues:read"])).is_ok());
+    }
+
+    #[test]
+    fn read_does_not_imply_write_when_granting() {
+        let caller = key(&["api-keys:write", "issues:read"]);
+        assert!(enforce_no_escalation(&caller, &perms(&["issues:write"])).is_err());
+    }
+
+    #[test]
+    fn key_holding_admin_full_may_grant_anything() {
+        // A wildcard holder already reaches every route; refusing to let it name
+        // scopes explicitly would be theatre, not security.
+        let caller = key(&[ADMIN_FULL]);
+        assert!(enforce_no_escalation(&caller, &perms(VALID_PERMISSIONS)).is_ok());
+    }
+
+    #[test]
+    fn key_cannot_hand_out_key_management_it_lacks() {
+        // Holding `api-keys:read` must not let a key mint `api-keys:write`.
+        let caller = key(&["api-keys:read", "issues:read"]);
+        assert!(enforce_no_escalation(&caller, &perms(&["api-keys:write"])).is_err());
+    }
+
+    #[test]
+    fn error_message_names_the_refused_scopes() {
+        let caller = key(&["api-keys:write", "issues:read"]);
+        let err = enforce_no_escalation(&caller, &perms(&["billing:read", "issues:delete"]))
+            .unwrap_err();
+        let body = err.1 .0.to_string();
+        assert!(body.contains("billing:read"), "got {body}");
+        assert!(body.contains("issues:delete"), "got {body}");
+    }
+
+    #[test]
+    fn empty_grant_is_allowed() {
+        assert!(enforce_no_escalation(&key(&["api-keys:write"]), &[]).is_ok());
+    }
+
+    #[test]
+    fn every_scope_in_the_vocabulary_is_refused_to_a_bare_manager() {
+        // Exhaustive: a key whose ONLY power is managing keys can grant nothing
+        // except the read side of what it holds.
+        let caller = key(&["api-keys:write"]);
+        for scope in VALID_PERMISSIONS {
+            let allowed = enforce_no_escalation(&caller, &perms(&[scope])).is_ok();
+            let expected = *scope == "api-keys:write" || *scope == "api-keys:read";
+            assert_eq!(allowed, expected, "scope {scope} mis-handled");
+        }
+    }
+
+    #[test]
+    fn grantable_set_never_exceeds_the_vocabulary() {
+        for caller in [org_admin(), key(&[ADMIN_FULL]), key(&["issues:write"])] {
+            for scope in grantable_scopes(&caller) {
+                assert!(VALID_PERMISSIONS.contains(&scope), "{scope} is not a valid permission");
+            }
+        }
+    }
 }

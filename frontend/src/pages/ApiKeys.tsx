@@ -14,7 +14,9 @@ import type { ApiKey } from '@/lib/types';
 
 // ─── Permission definitions ─────────────────────────────────────────────────
 
-const PERMISSION_GROUPS = [
+// Exported for `__tests__/api-key-permissions.test.ts`, which checks this list
+// against the backend's `VALID_PERMISSIONS` and both locales.
+export const PERMISSION_GROUPS = [
   {
     key: 'issues',
     perms: ['issues:read', 'issues:write', 'issues:delete'],
@@ -79,6 +81,14 @@ const PERMISSION_GROUPS = [
     key: 'billing',
     perms: ['billing:read'],
     color: 'bg-lime-500/15 text-lime-600 border-lime-500/25',
+  },
+  {
+    // Authority over other keys. Red like `admin`: granting this lets the key
+    // mint credentials, bounded by the backend's non-escalation rule (a key can
+    // never grant a scope it does not itself hold).
+    key: 'apiKeys',
+    perms: ['api-keys:read', 'api-keys:write'],
+    color: 'bg-rose-500/15 text-rose-600 border-rose-500/25',
   },
   {
     key: 'admin',

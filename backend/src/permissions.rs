@@ -46,6 +46,28 @@ pub enum Requirement {
 /// Wildcard scope: satisfies every requirement.
 pub const ADMIN_FULL: &str = "admin:full";
 
+/// Scopes that grant authority over other API keys.
+///
+/// These are the only scopes that let their holder mint or widen credentials,
+/// so they are treated as an authority transfer rather than ordinary access:
+///
+/// - the legacy grandfather bypass in `middleware` must not cover them (every
+///   key predating migration 071 has `legacy_full_access = true`, so covering
+///   them would silently hand key management to all 17 existing keys), and
+/// - handing one out requires already holding it — see
+///   `routes::api_keys::enforce_no_escalation`.
+///
+/// `admin:full` is deliberately absent: it already gates unrelated routes
+/// (GitHub install, org settings, integrations) that legacy keys legitimately
+/// use today, and narrowing those here would break live integrations. It is
+/// handled as a grantable scope in `api_keys` instead.
+pub const KEY_MANAGEMENT_SCOPES: &[&str] = &["api-keys:read", "api-keys:write"];
+
+/// True when `scope` grants authority over other API keys.
+pub fn is_key_management_scope(scope: &str) -> bool {
+    KEY_MANAGEMENT_SCOPES.contains(&scope)
+}
+
 /// True when `granted` satisfies `needed`.
 ///
 /// `admin:full` satisfies everything. `<resource>:write` satisfies
@@ -268,9 +290,10 @@ pub fn required_permission(method: &Method, path: &str) -> Requirement {
 
         // ── Money and key management ─────────────────────────────────────
         "billing" => Requirement::Scope("billing:read"),
-        // Belt and braces: `require_clerk_user` already rejects keys here, but a
-        // key must never be able to widen its own scopes.
-        "api-keys" => Requirement::Scope(ADMIN_FULL),
+        // Key management is scoped like any other resource (the Cloudflare
+        // "API Tokens Read/Edit" model). The handlers add what a route table
+        // cannot express: no caller may grant a scope it does not itself hold.
+        "api-keys" => rw(method, "api-keys:read", "api-keys:write"),
         "admin" => Requirement::Scope(ADMIN_FULL),
 
         // ── Per-user state, no scope axis ────────────────────────────────
@@ -325,11 +348,7 @@ mod tests {
 
     #[test]
     fn default_key_can_do_its_job_and_nothing_more() {
-        // Mirrors `api_keys::default_permissions()`.
-        let default: Vec<String> = ["issues:read", "issues:write", "projects:read"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let default = default_permissions();
 
         // Allowed: the documented agent loop.
         for (m, p) in [
@@ -354,6 +373,7 @@ mod tests {
             (Method::DELETE, "/api/v1/projects/abc"),
             (Method::DELETE, "/api/v1/issues/batch"),
             (Method::GET, "/api/v1/billing"),
+            (Method::GET, "/api/v1/api-keys"),
             (Method::POST, "/api/v1/api-keys"),
             (Method::GET, "/api/v1/admin/overview"),
             (Method::PATCH, "/api/v1/orgs/o1/settings"),
@@ -407,7 +427,6 @@ mod tests {
             (Method::POST, "/api/v1/github/disconnect"),
             (Method::PATCH, "/api/v1/orgs/o1/settings"),
             (Method::PATCH, "/api/v1/admin/orgs/o1/plan"),
-            (Method::POST, "/api/v1/api-keys"),
             (Method::PATCH, "/api/v1/agent-config"),
             (Method::DELETE, "/api/v1/integrations/slack/s1"),
         ] {
@@ -415,11 +434,39 @@ mod tests {
         }
     }
 
+    // ── Key management scopes (Cloudflare "API Tokens Read/Edit" model) ──────
+
     #[test]
-    fn every_mapped_scope_is_a_valid_permission() {
-        // Guards against inventing a scope here that no key can ever hold.
-        let api_keys_src = include_str!("routes/api_keys.rs");
-        let valid: Vec<&str> = api_keys_src
+    fn key_management_maps_to_its_own_scopes() {
+        assert_eq!(scope(Method::GET, "/api/v1/api-keys"), "api-keys:read");
+        assert_eq!(scope(Method::POST, "/api/v1/api-keys"), "api-keys:write");
+        assert_eq!(scope(Method::PATCH, "/api/v1/api-keys/k1"), "api-keys:write");
+        assert_eq!(
+            scope(Method::POST, "/api/v1/api-keys/k1/regenerate"),
+            "api-keys:write"
+        );
+        // No `api-keys:delete` in the vocabulary: revocation is a write.
+        assert_eq!(
+            scope(Method::DELETE, "/api/v1/api-keys/k1"),
+            "api-keys:write"
+        );
+    }
+
+    #[test]
+    fn key_management_scopes_are_recognised_as_privileged() {
+        assert!(is_key_management_scope("api-keys:read"));
+        assert!(is_key_management_scope("api-keys:write"));
+        // `admin:full` is intentionally NOT in this set: legacy keys rely on it
+        // for GitHub/org routes, and blocking those would break integrations.
+        assert!(!is_key_management_scope(ADMIN_FULL));
+        assert!(!is_key_management_scope("issues:write"));
+    }
+
+    /// The scope vocabulary, parsed from the single source of truth in
+    /// `routes::api_keys`. Parsed rather than duplicated so a scope added there
+    /// is covered here automatically.
+    fn valid_permissions() -> Vec<&'static str> {
+        include_str!("routes/api_keys.rs")
             .split("VALID_PERMISSIONS: &[&str] = &[")
             .nth(1)
             .expect("VALID_PERMISSIONS literal not found")
@@ -428,7 +475,74 @@ mod tests {
             .unwrap()
             .split('"')
             .filter(|s| s.contains(':'))
+            .collect()
+    }
+
+    /// Mirrors `api_keys::default_permissions()`.
+    fn default_permissions() -> Vec<String> {
+        ["issues:read", "issues:write", "projects:read"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn key_management_is_not_reachable_by_ordinary_scopes() {
+        // A broadly-scoped agent key still cannot touch key management.
+        let broad: Vec<String> = valid_permissions()
+            .iter()
+            .filter(|p| !p.starts_with("api-keys:") && **p != ADMIN_FULL)
+            .map(|p| p.to_string())
             .collect();
+        assert!(broad.len() > 20, "expected a broad key, got {broad:?}");
+        for (m, p) in [
+            (Method::GET, "/api/v1/api-keys"),
+            (Method::POST, "/api/v1/api-keys"),
+            (Method::PATCH, "/api/v1/api-keys/k1"),
+            (Method::DELETE, "/api/v1/api-keys/k1"),
+        ] {
+            let needed = scope(m.clone(), p);
+            assert!(
+                !scopes_allow(&broad, &needed),
+                "a key without api-keys:* must not reach {m} {p}"
+            );
+        }
+    }
+
+    #[test]
+    fn api_keys_read_does_not_imply_write() {
+        let read_only = vec!["api-keys:read".to_string()];
+        assert!(scopes_allow(&read_only, "api-keys:read"));
+        assert!(!scopes_allow(&read_only, "api-keys:write"));
+    }
+
+    #[test]
+    fn api_keys_write_implies_read() {
+        let write = vec!["api-keys:write".to_string()];
+        assert!(scopes_allow(&write, "api-keys:read"));
+    }
+
+    #[test]
+    fn default_key_cannot_manage_keys() {
+        let default = default_permissions();
+        for needed in ["api-keys:read", "api-keys:write"] {
+            assert!(!scopes_allow(&default, needed));
+        }
+    }
+
+    #[test]
+    fn admin_full_still_reaches_key_management() {
+        // The wildcard must keep working: it is what human sessions carry.
+        let admin = vec![ADMIN_FULL.to_string()];
+        for needed in ["api-keys:read", "api-keys:write"] {
+            assert!(scopes_allow(&admin, needed));
+        }
+    }
+
+    #[test]
+    fn every_mapped_scope_is_a_valid_permission() {
+        // Guards against inventing a scope here that no key can ever hold.
+        let valid = valid_permissions();
         assert!(valid.len() > 20, "parsed too few scopes: {valid:?}");
 
         for (method, path) in router_endpoints() {
