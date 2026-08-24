@@ -91,12 +91,28 @@ pub fn scopes_allow(granted: &[String], needed: &str) -> bool {
 ///
 /// Strips the `/api/v1` mount prefix (the API router is nested there in
 /// `main.rs`) and drops empty segments so `//issues` and `/issues/` behave.
+///
+/// The strip is boundary-aware: a naive `strip_prefix("/api")` also eats the
+/// prefix of `/api-keys`, leaving `-keys`, which matches no arm and silently
+/// falls through to `admin:full`. Only strip when the prefix ends at a segment
+/// boundary. Both forms reach here in practice — the proxy forwards
+/// `/api-keys` while direct calls use `/api/v1/api-keys` — so both are tested.
 fn segments(path: &str) -> Vec<&str> {
-    let trimmed = path
-        .strip_prefix("/api/v1")
-        .or_else(|| path.strip_prefix("/api"))
+    let trimmed = strip_mount(path, "/api/v1")
+        .or_else(|| strip_mount(path, "/api"))
         .unwrap_or(path);
     trimmed.split('/').filter(|s| !s.is_empty()).collect()
+}
+
+/// `strip_prefix`, but only when the prefix ends the string or is followed by
+/// `/`, so `/api` never matches inside `/api-keys`.
+fn strip_mount<'a>(path: &'a str, mount: &str) -> Option<&'a str> {
+    let rest = path.strip_prefix(mount)?;
+    if rest.is_empty() || rest.starts_with('/') {
+        Some(rest)
+    } else {
+        None
+    }
 }
 
 /// Read for GET/HEAD, write for POST/PATCH/PUT, delete for DELETE.
@@ -450,6 +466,45 @@ mod tests {
             scope(Method::DELETE, "/api/v1/api-keys/k1"),
             "api-keys:write"
         );
+    }
+
+    #[test]
+    fn the_mount_prefix_is_stripped_at_segment_boundaries_only() {
+        // Regression: `strip_prefix("/api")` also matched the `/api` inside
+        // `/api-keys`, leaving `-keys`, which matched no arm and fell through to
+        // `admin:full`. Prod hit this because the proxy forwards the short form,
+        // while every test used `/api/v1/...` and passed.
+        for path in ["/api-keys", "/api/api-keys", "/api/v1/api-keys"] {
+            assert_eq!(
+                scope(Method::GET, path),
+                "api-keys:read",
+                "{path} must resolve to key management, not the admin fallback"
+            );
+        }
+        assert_eq!(scope(Method::DELETE, "/api-keys/k1"), "api-keys:write");
+    }
+
+    #[test]
+    fn every_resource_resolves_the_same_with_and_without_the_mount_prefix() {
+        // The proxy may forward either form; the decision must not depend on it.
+        for path in [
+            "api-keys",
+            "issues",
+            "projects",
+            "comments",
+            "billing",
+            "admin",
+            "webhooks",
+            "members",
+        ] {
+            for method in [Method::GET, Method::POST, Method::DELETE] {
+                assert_eq!(
+                    required_permission(&method, &format!("/{path}")),
+                    required_permission(&method, &format!("/api/v1/{path}")),
+                    "{method} /{path} differs with and without the mount prefix"
+                );
+            }
+        }
     }
 
     #[test]
