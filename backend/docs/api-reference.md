@@ -4,7 +4,9 @@
 
 **Base URL:** `https://api.baaton.dev/api/v1`
 **Auth:** `Authorization: Bearer baa_your_api_key_here`
-**Response format:** `{ "data": ... }` — errors: `{ "error": "...", "field": "...", "accepted_values": [...] }`
+**Content type:** `application/json` on every write. `multipart/form-data` is not accepted anywhere, including file uploads.
+**Response format:** `{ "data": ... }`
+**Errors:** `{ "error": { "code", "message", "remediation", "status", "caller_fault", "docs_url" } }` — see [Error Format](#error-format).
 **AI responses include `_hints`:** contextual next-action suggestions for agents.
 
 ---
@@ -801,14 +803,96 @@ List sub-issues of a parent.
 
 ## Attachments
 
-### GET /issues/{id}/attachments
-List attachments.
+File attachments are a **two-step flow**. This endpoint stores *metadata only* —
+it never accepts file bytes. Sending base64 here returns `400`.
+
+```
+1. POST /uploads                     → store the bytes, get a durable marker
+2. POST /issues/{id}/attachments     → link that marker to the issue
+```
+
+### POST /uploads
+Upload the bytes. JSON only — `multipart/form-data` returns `415` everywhere in
+this API.
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `data` | string | ✅ | Base64. Raw (`iVBORw0...`) or data URI (`data:image/png;base64,...`) |
+| `content_type` | string | ✅ | Must be in the allowed list below |
+| `filename` | string | — | Display name only; the storage key is a UUID |
+
+```bash
+curl -s -X POST $BAATON/uploads -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"data":"'"$(base64 -w0 shot.png)"'","content_type":"image/png","filename":"shot.png"}'
+```
+
+Response:
+```json
+{"data": {
+  "url": "https://baaton-uploads.s3.eu-west-3.amazonaws.com/org_xxx/uuid.png?X-Amz-...",
+  "marker": "s3://baaton-uploads/org_xxx/uuid.png",
+  "filename": "shot.png",
+  "size": 20418
+}}
+```
+
+**Use `marker`, not `url`, for anything you persist.** `url` is presigned and
+expires; `marker` is permanent and is re-signed into a fresh URL on every read.
+A stored expired URL looks to users like the file was deleted.
+
+**Allowed `content_type`:** `image/webp`, `image/jpeg`, `image/png`, `image/gif`,
+`application/pdf`, `text/plain`, `text/csv`, `text/markdown`, `application/json`,
+`application/msword`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`,
+`application/vnd.ms-excel`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
+`application/vnd.ms-powerpoint`, `application/vnd.openxmlformats-officedocument.presentationml.presentation`,
+`application/zip`.
+
+**Limits:** 10MB decoded per file, 20MB request body (base64 is ~33% larger than
+the bytes it encodes). Returns `503` if object storage is not configured on the
+instance.
 
 ### POST /issues/{id}/attachments
-Add: `{ "url": "https://...", "name": "screenshot.png", "size": 1024, "mime_type": "image/png" }`
+Link an uploaded object to an issue. Unknown fields are **rejected**, not ignored.
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `filename` | string | ✅ | Display name in the issue drawer |
+| `content_type` | string | — | MIME type |
+| `size_bytes` | integer | — | From the `size` returned by `/uploads` |
+| `storage_url` | string | — | The `marker` from `/uploads`. Omit and the attachment has nothing to download |
+
+```bash
+curl -s -X POST $BAATON/issues/$ISSUE_ID/attachments -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"shot.png","content_type":"image/png","size_bytes":20418,"storage_url":"s3://baaton-uploads/org_xxx/uuid.png"}'
+```
+
+Sending `data`, `file`, `content`, `base64`, `bytes` or `body` here returns `400`
+with the `/uploads` flow spelled out. That is deliberate: silently dropping the
+field would create an attachment row pointing at nothing.
+
+### GET /issues/{id}/attachments
+List attachments. `storage_url` comes back as a freshly presigned HTTPS URL,
+ready to fetch — you do not resolve markers yourself.
 
 ### DELETE /issues/{id}/attachments/{att_id}
-Remove attachment.
+Remove the metadata row. The S3 object is not deleted.
+
+### Showing an attachment inline
+
+Registered attachments appear in the issue's attachment list but are **not**
+rendered in the body. To display one, embed the marker as Markdown in the
+description or a comment — markers are re-signed on read there too:
+
+```bash
+curl -s -X PATCH $BAATON/issues/$ISSUE_ID -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"description":"Proof:\n\n![shot](s3://baaton-uploads/org_xxx/uuid.png)"}'
+```
+
+For an image you only want inline and do not need tracked as a file, `POST /uploads`
+then embedding the marker is enough — the attachment row is optional.
 
 ---
 
@@ -1132,43 +1216,118 @@ Paginated admin action log.
 
 ---
 
+## Error Format
+
+Every non-2xx response from `/api/v1` uses one shape. There is no second shape to
+branch on — including for failures that never reach endpoint logic (unknown path,
+wrong method, wrong `Content-Type`, malformed JSON, oversized body).
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Issue not found",
+    "remediation": "No such resource is visible to this caller. Either the id is wrong or it lives outside this key's org/project scope. Re-resolve the id via a list endpoint instead of retrying.",
+    "status": 404,
+    "caller_fault": true,
+    "docs_url": "https://api.baaton.dev/api/v1/public/docs"
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `code` | Stable machine-readable class. Branch on this, not on `message` |
+| `message` | Raw underlying error, verbatim and unabridged — kept debuggable on purpose |
+| `remediation` | What to actually do about it |
+| `status` | Mirrors the HTTP status, for clients that lose it |
+| `caller_fault` | **The one to check first.** `true` → fix your request. `false` → server-side defect, retrying will not help, escalate |
+| `docs_url` | Where the contract lives |
+
+**Codes:** `BAD_REQUEST`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`,
+`METHOD_NOT_ALLOWED`, `CONFLICT`, `PAYLOAD_TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE`,
+`VALIDATION_ERROR`, `RATE_LIMITED`, `CLIENT_ERROR`, `SERVICE_UNAVAILABLE`,
+`DATABASE_ERROR`, `INTERNAL_ERROR`, `SERVER_ERROR`.
+
+### Why `caller_fault` exists
+
+Without it, a caller cannot tell a bad request from a broken server, and the
+message alone is often misleading. A real example: a malformed `POST` to
+`/issues/{id}/attachments` once returned
+`{"error": "error returned from database: column \"org_id\" does not exist"}`.
+That reads as "their database is broken" — and it was, but the request was *also*
+wrong. Two independent bugs behind one opaque string, with nothing to separate
+them. `code: DATABASE_ERROR` + `caller_fault: false` now says "stop, this is not
+yours to fix" without guessing from prose.
+
+Some endpoints add fields alongside `error` (`accepted_values`, `field`,
+`upgrade_url`). Those are additive; the six fields above are always present.
+
+---
+
 ## Common Errors & Troubleshooting
+
+Examples below show the `error` object only.
 
 ### Authentication Failed (401)
 ```json
-{"error": "Unauthorized"}
+{"code": "UNAUTHENTICATED", "message": "Unauthorized", "caller_fault": true}
 ```
 Check: Is your API key valid? Does the header use `Bearer` prefix? Is the key revoked or expired?
 
 ### Invalid Enum Value (400)
 ```json
-{"error": "Invalid status 'open'. Accepted values: backlog, todo, in_progress, not_ok, in_review, done, cancelled", "accepted_values": ["backlog","todo","in_progress","in_review","done","cancelled"], "field": "status"}
+{"code": "BAD_REQUEST", "message": "Invalid status 'open'. Accepted values: backlog, todo, in_progress, not_ok, in_review, done, cancelled", "caller_fault": true}
 ```
 Fix: Use the exact values from `accepted_values`. Statuses are per-project — fetch them via `GET /projects`.
 
+### Wrong Content-Type (415)
+```json
+{"code": "UNSUPPORTED_MEDIA_TYPE", "message": "Expected request with `Content-Type: application/json`", "caller_fault": true}
+```
+Fix: This API is JSON-only. `multipart/form-data` is not accepted anywhere — for files, base64-encode and use `POST /uploads`.
+
+### File Bytes Sent to the Wrong Endpoint (400)
+```json
+{"code": "BAD_REQUEST", "message": "This endpoint registers attachment metadata only and does not accept file bytes (received `data`). Upload the bytes first: POST /uploads ...", "caller_fault": true}
+```
+Fix: See [Attachments](#attachments) — it is a two-step flow.
+
 ### Plan Limit Exceeded (402)
 ```json
-{"error": "Issue limit reached (500). Upgrade to Pro for unlimited issues.", "upgrade_url": "/billing"}
+{"code": "CLIENT_ERROR", "message": "Issue limit reached (500). Upgrade to Pro for unlimited issues.", "caller_fault": true}
 ```
 Fix: Upgrade plan or delete unused issues.
 
 ### AI Quota Exceeded (429)
 ```json
-{"error": "AI quota exceeded (50/50 this month)", "upgrade_url": "/billing"}
+{"code": "RATE_LIMITED", "message": "AI quota exceeded (50/50 this month)", "caller_fault": true}
 ```
 Fix: Wait for next month, upgrade to Pro (2000/mo), or use BYOK (Pro feature).
 
 ### Organization Required (400)
 ```json
-{"error": "Organization required"}
+{"code": "BAD_REQUEST", "message": "Organization required", "caller_fault": true}
 ```
 Fix: Ensure your Clerk JWT includes an active organization. API keys are always org-scoped.
 
 ### Permission Denied (403)
 ```json
-{"error": "Insufficient permissions. Required: issues:write"}
+{"code": "FORBIDDEN", "message": "Insufficient permissions. Required: issues:write", "caller_fault": true}
 ```
 Fix: Update your API key permissions via the web UI or `PATCH /api-keys/{id}`.
+
+### Uploads Disabled (503)
+```json
+{"code": "SERVICE_UNAVAILABLE", "message": "Uploads disabled (S3 not configured)", "caller_fault": false}
+```
+Not your request. Object storage is not configured on this instance. Escalate.
+
+### Server-Side Defect (500)
+```json
+{"code": "DATABASE_ERROR", "message": "error returned from database: ...", "caller_fault": false}
+```
+`caller_fault: false` — do not retry and do not mutate the payload hoping it helps. Report the endpoint plus the request body.
 
 ---
 

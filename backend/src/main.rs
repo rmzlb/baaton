@@ -322,6 +322,13 @@ async fn main() -> anyhow::Result<()> {
         .layer(axum::Extension(sse_tx))
         .layer(axum::Extension(pool.clone()))
         .layer(axum_mw::from_fn(middleware::security::security_headers))
+        // Error normalization. Deliberately the outermost app layer so it also
+        // catches failures that never reach route code: axum extractor
+        // rejections (bad `Content-Type`, malformed JSON), 404s on unknown
+        // paths, 405s, and body-limit rejections. Those used to return
+        // `text/plain` bodies, so a caller parsing JSON hit a parse error on top
+        // of the real error. See `middleware::error_envelope`.
+        .layer(axum_mw::from_fn(middleware::error_envelope::error_envelope))
         .layer(cors)
         // The Notion-style issue description can contain compressed inline images
         // (base64 data:image/*) so create/update requests need the same ceiling as

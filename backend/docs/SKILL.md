@@ -22,7 +22,13 @@ export BAATON_URL=https://api.baaton.dev/api/v1
 ```
 
 Auth: `Authorization: Bearer $BAATON_API_KEY`
-Response format: `{ "data": ... }` — errors: `{ "error": "...", "accepted_values": [...] }`
+Response format: `{ "data": ... }`
+Errors: `{ "error": { "code", "message", "remediation", "status", "caller_fault", "docs_url" } }`
+
+**Check `error.caller_fault` before reacting to any failure.** `true` → your request is
+wrong, fix it per `remediation`. `false` → server-side defect: retrying and mutating
+the payload will not help, report it and move on. Branch on `code`, never on the
+prose in `message`.
 
 ## CRITICAL — Agent Rules
 
@@ -50,6 +56,9 @@ Response format: `{ "data": ... }` — errors: `{ "error": "...", "accepted_valu
 | Edit comment | PATCH | `/issues/{issue_id}/comments/{comment_id}` (own comments only) |
 | Delete comment | DELETE | `/issues/{issue_id}/comments/{comment_id}` (own; admins delete any) |
 | Post TLDR | POST | `/issues/{id}/tldr` |
+| **Upload a file (step 1)** | **POST** | **`/uploads`** with `{ data: <base64>, content_type, filename }` |
+| **Attach it to an issue (step 2)** | **POST** | **`/issues/{id}/attachments`** with `{ filename, content_type, size_bytes, storage_url: <marker> }` |
+| List attachments | GET | `/issues/{id}/attachments` |
 | Triage issue | POST | `/issues/{id}/triage` |
 | List untriaged | GET | `/triage` |
 | Batch triage | POST | `/triage/batch` with `{ issue_ids: [] }` |
@@ -170,6 +179,37 @@ For advanced filtering, use `?filter=` with JSON:
 curl -s "$BAATON_URL/issues?filter=%7B%22priority%22%3A%7B%22in%22%3A%5B%22urgent%22%2C%22high%22%5D%7D%7D" \
   -H "Authorization: Bearer $BAATON_API_KEY"
 ```
+
+## Attaching Files & Screenshots
+
+JSON only. `multipart/form-data` returns `415` everywhere in this API. Two steps,
+both required:
+
+```bash
+# 1. Upload the bytes — returns a durable marker
+MARKER=$(curl -s -X POST $BAATON_URL/uploads -H "Authorization: Bearer $BAATON_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"data":"'"$(base64 -w0 shot.png)"'","content_type":"image/png","filename":"shot.png"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["marker"])')
+
+# 2. Link it to the issue
+curl -s -X POST $BAATON_URL/issues/$ISSUE_ID/attachments -H "Authorization: Bearer $BAATON_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"filename\":\"shot.png\",\"content_type\":\"image/png\",\"storage_url\":\"$MARKER\"}"
+```
+
+Rules that save a debugging round-trip:
+
+1. **`/issues/{id}/attachments` never accepts bytes.** Sending `data` (or `file`,
+   `content`, `base64`, `bytes`, `body`) returns `400` naming the right endpoint.
+2. **Persist `marker`, not `url`.** `/uploads` returns both; `url` is presigned and
+   expires. Markers are re-signed into fresh URLs on every read. A stored expired
+   URL looks to users like the file was deleted.
+3. **Allowed types:** png, jpeg, webp, gif, pdf, txt, csv, md, json, doc(x),
+   xls(x), ppt(x), zip. 10MB decoded max.
+4. **Attachments are listed, not rendered.** To show an image in the body, embed
+   the marker as Markdown: `![shot](s3://baaton-uploads/<key>)` in `description`
+   or a comment. For inline-only images, skip step 2 entirely.
 
 ## Best Practices
 

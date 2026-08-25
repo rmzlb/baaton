@@ -1,3 +1,4 @@
+pub mod error_envelope;
 pub mod plan_guard;
 pub mod rate_limit;
 pub mod security;

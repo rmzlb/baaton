@@ -11,11 +11,20 @@ type RequestOptions = {
   isPublic?: boolean;
 };
 
+/// A failed API call.
+///
+/// The backend normalizes every `/api/v1` error into
+/// `{ error: { code, message, remediation, status, caller_fault, docs_url } }`
+/// (see `backend/src/middleware/error_envelope.rs`). `remediation` and
+/// `callerFault` are carried through so UI and agent callers can distinguish
+/// "fix the request" from "the server is broken" without parsing prose.
 export class ApiError extends Error {
   constructor(
     public status: number,
     public code: string,
     message: string,
+    public remediation?: string,
+    public callerFault?: boolean,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -79,22 +88,27 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    // Backend errors come in two shapes:
-    //   { "error": "plain message" }              (most routes)
-    //   { "error": { code, message } }            (structured)
+    // Canonical shape (all routes, since the error_envelope layer):
+    //   { "error": { code, message, remediation, status, caller_fault, docs_url } }
+    // The plain-string branch is kept for older deployments and for any response
+    // that bypasses the layer.
     const rawError = json.error;
     let code = 'UNKNOWN';
     let message = 'An error occurred';
+    let remediation: string | undefined;
+    let callerFault: boolean | undefined;
     if (typeof rawError === 'string') {
       message = rawError;
     } else if (rawError && typeof rawError === 'object') {
-      const errorBody = rawError as Record<string, string>;
-      code = errorBody.code || code;
-      message = errorBody.message || message;
+      const errorBody = rawError as Record<string, unknown>;
+      if (typeof errorBody.code === 'string') code = errorBody.code;
+      if (typeof errorBody.message === 'string') message = errorBody.message;
+      if (typeof errorBody.remediation === 'string') remediation = errorBody.remediation;
+      if (typeof errorBody.caller_fault === 'boolean') callerFault = errorBody.caller_fault;
     } else if (typeof json.message === 'string') {
       message = json.message;
     }
-    throw new ApiError(res.status, code, message);
+    throw new ApiError(res.status, code, message, remediation, callerFault);
   }
 
   return json.data as T;
