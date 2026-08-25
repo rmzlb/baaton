@@ -17,7 +17,7 @@ import {
   User, Tag, Bookmark, AlertTriangle,
 } from 'lucide-react';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
-import { FilterSelect } from '@/components/shared/FilterSelect';
+import { ProjectTabRail } from '@/components/shared/ProjectTabRail';
 import { useCrossOrgMembers } from '@/hooks/useCrossOrgMembers';
 import { MemberResolutionProvider } from '@/contexts/MemberResolutionContext';
 import { cn } from '@/lib/utils';
@@ -101,7 +101,6 @@ interface CrossOrgProjectOption {
   slug: string;
   prefix: string;
   orgId: string;
-  orgName: string;
 }
 
 interface DashboardProjectIndexResponse {
@@ -344,7 +343,6 @@ export function AllIssues() {
         slug: project.slug,
         prefix: project.prefix,
         orgId: org.id,
-        orgName: org.name,
       })),
     );
     if (fromIndex.length > 0) return fromIndex;
@@ -357,7 +355,6 @@ export function AllIssues() {
       map.set(issue.project_id, {
         id: issue.project_id,
         orgId: issue.org_id || 'unknown',
-        orgName: issue.org_id || 'Unknown org',
         name: prefix,
         slug: prefix.toLowerCase(),
         prefix,
@@ -367,18 +364,7 @@ export function AllIssues() {
     return Array.from(map.values());
   }, [projectIndex?.orgs, allIssuesRaw]);
 
-  const projectGroups = useMemo(() => {
-    const groups = new Map<string, { orgId: string; orgName: string; projects: CrossOrgProjectOption[] }>();
-    for (const project of effectiveProjects) {
-      const existing = groups.get(project.orgId) ?? { orgId: project.orgId, orgName: project.orgName, projects: [] };
-      existing.projects.push(project);
-      groups.set(project.orgId, existing);
-    }
-    return Array.from(groups.values()).map(group => ({
-      ...group,
-      projects: [...group.projects].sort((a, b) => a.name.localeCompare(b.name)),
-    })).sort((a, b) => a.orgName.localeCompare(b.orgName));
-  }, [effectiveProjects]);
+
 
   useEffect(() => {
     if (effectiveProjects.length === 0) return;
@@ -526,14 +512,21 @@ export function AllIssues() {
     return counts;
   }, [allIssuesRaw]);
 
-  const selectedProjectLabel = useMemo(() => {
-    if (projectFilter.length === 0) return t('allIssues.filters.allProjects');
-    if (projectFilter.length === 1) {
-      const project = effectiveProjects.find((p) => p.id === projectFilter[0]);
-      return project ? `${project.orgName} / ${project.prefix}` : `1 ${t('allIssues.filters.projectSingular')}`;
-    }
-    return `${projectFilter.length} ${t('allIssues.filters.projectPlural')}`;
-  }, [effectiveProjects, projectFilter, t]);
+  // Tab order is by open-issue volume, not alphabetical. On this account one
+  // project holds over half the issues while a third of projects are dormant,
+  // so alphabetical order pushes the only tabs that matter off-screen.
+  const projectTabs = useMemo(
+    () =>
+      effectiveProjects
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          prefix: p.prefix,
+          count: issueCountByProject[p.id] || 0,
+        }))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    [effectiveProjects, issueCountByProject],
+  );
 
   const issueCountByStatus = useMemo(() => {
     const source = projectFilter.length > 0
@@ -845,38 +838,15 @@ export function AllIssues() {
           {/* Separator */}
           <div className="h-5 w-px bg-border shrink-0 hidden sm:block" />
 
-          {/* Cross-org project filter */}
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <FilterSelect
-              label={selectedProjectLabel}
-              selectedValues={projectFilter}
-              onChange={setProjectFilter}
-              allLabel={t('allIssues.filters.allProjects')}
-              allCount={allIssuesRaw.length}
-              emptyLabel={t('allIssues.filters.noProjects')}
-              groupSelectLabel={t('allIssues.filters.selectOrg')}
-              groupClearLabel={t('allIssues.filters.clearOrg')}
-              groups={projectGroups.map((group) => ({
-                key: group.orgId,
-                label: group.orgName,
-                options: group.projects.map((project) => ({
-                  value: project.id,
-                  label: project.name,
-                  prefix: project.prefix,
-                  count: issueCountByProject[project.id] || 0,
-                })),
-              }))}
-            />
-
-            {projectFilter.length > 0 && (
-              <button
-                onClick={() => setProjectFilter([])}
-                className="rounded-full border border-border px-2 py-1 text-[10px] text-secondary hover:text-primary"
-              >
-                Reset
-              </button>
-            )}
-          </div>
+          {/* Project switcher — flat tab rail, one click per project */}
+          <ProjectTabRail
+            projects={projectTabs}
+            selectedIds={projectFilter}
+            onChange={setProjectFilter}
+            allLabel={t('allIssues.filters.allProjects')}
+            allCount={allIssuesRaw.length}
+            emptyLabel={t('allIssues.filters.noProjects')}
+          />
 
           {/* Sort dropdown — right aligned */}
           <div className="shrink-0 ml-auto">
