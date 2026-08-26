@@ -15,6 +15,7 @@ use axum::{
     http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
 };
+use badgelib::{Badge, Color};
 use sqlx::PgPool;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -79,52 +80,13 @@ fn render_inactive_badge() -> String {
     badge_svg("agent runs", "not tracked", "#666666")
 }
 
-/// Hand-rolled badge in the shields.io two-pill aesthetic.
 fn badge_svg(label: &str, value: &str, value_color: &str) -> String {
-    // Approximate text width: ~7px per char at 11px font-size, +16px padding.
-    let label_w = (label.chars().count() as i32 * 7 + 16).max(60);
-    let value_w = (value.chars().count() as i32 * 7 + 16).max(60);
-    let total_w = label_w + value_w;
-    let height = 22;
-
-    format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{total}" height="{height}" viewBox="0 0 {total} {height}" role="img" aria-label="{label_esc}: {value_esc}">
-  <title>{label_esc}: {value_esc}</title>
-  <linearGradient id="s" x2="0" y2="100%">
-    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
-    <stop offset="1" stop-opacity=".1"/>
-  </linearGradient>
-  <clipPath id="r"><rect width="{total}" height="{height}" rx="3" fill="#fff"/></clipPath>
-  <g clip-path="url(#r)">
-    <rect width="{label_w}" height="{height}" fill="#1a1a1a"/>
-    <rect x="{label_w}" width="{value_w}" height="{height}" fill="{value_color}"/>
-    <rect width="{total}" height="{height}" fill="url(#s)"/>
-  </g>
-  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
-    <text x="{label_x}" y="15" fill="#000" fill-opacity=".3">{label_esc}</text>
-    <text x="{label_x}" y="14">{label_esc}</text>
-    <text x="{value_x}" y="15" fill="#000" fill-opacity=".3">{value_esc}</text>
-    <text x="{value_x}" y="14">{value_esc}</text>
-  </g>
-</svg>"##,
-        total = total_w,
-        height = height,
-        label_w = label_w,
-        value_w = value_w,
-        label_x = label_w / 2,
-        value_x = label_w + value_w / 2,
-        label_esc = xml_esc(label),
-        value_esc = xml_esc(value),
-        value_color = value_color,
-    )
-}
-
-fn xml_esc(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
+    Badge::new()
+        .label(label)
+        .value(value)
+        .label_color(Color::Hex("1a1a1a".into()))
+        .value_color(Color::Hex(value_color.trim_start_matches('#').into()))
+        .to_svg()
 }
 
 #[cfg(test)]
@@ -152,9 +114,10 @@ mod tests {
     }
 
     #[test]
-    fn xml_escape_handles_entities() {
-        assert_eq!(xml_esc("<script>"), "&lt;script&gt;");
-        assert_eq!(xml_esc("a&b"), "a&amp;b");
+    fn badge_escapes_xml_entities() {
+        let svg = badge_svg("<script>", "a&b", "#000");
+        assert!(svg.contains("&lt;script&gt;"));
+        assert!(svg.contains("a&amp;b"));
     }
 
     #[test]
@@ -168,7 +131,7 @@ mod tests {
                 .split('"')
                 .next()
                 .unwrap()
-                .parse::<i32>()
+                .parse::<f32>()
                 .unwrap()
         };
         assert!(extract_width(&long) > extract_width(&short));
