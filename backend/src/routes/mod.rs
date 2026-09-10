@@ -7,6 +7,7 @@ mod projects;
 pub(crate) mod issues;
 mod comments;
 mod approvals;
+pub(crate) mod issue_scope;
 mod tldrs;
 mod tags;
 mod invites;

@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, CreateTldr, Tldr};
+use crate::routes::issue_scope::{self, IssueAccess};
 
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
@@ -16,29 +17,33 @@ pub async fn create(
     Path(issue_id): Path<Uuid>,
     Json(body): Json<CreateTldr>,
 ) -> Result<Json<ApiResponse<Tldr>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
+    if auth.org_id.is_none() && auth.scoped_org_ids.is_empty() {
+        return Err((
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "Organization required"})),
-        )
-    })?;
-
-    // Verify issue belongs to org
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
-    )
-    .bind(issue_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "Issue not found"})),
         ));
     }
+
+    // Resolve the org that owns the issue instead of assuming the key's home
+    // org: a multi-org key writes comments and status on this issue, so it must
+    // be able to post the machine summary too (BAA-31).
+    let scope = match issue_scope::resolve(&pool, &auth, issue_id).await {
+        Ok(IssueAccess::Allowed(scope)) => scope,
+        Ok(IssueAccess::NotFound) | Ok(IssueAccess::Forbidden) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Issue not found"})),
+            ));
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "tldr issue scope lookup failed");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Database error"})),
+            ));
+        }
+    };
+    let org_id = scope.org_id.as_str();
 
     let decisions_made = body.decisions_made.clone().unwrap_or_default();
     let edge_cases = body.edge_cases.clone().unwrap_or_default();
@@ -72,12 +77,8 @@ pub async fn create(
         let oid = org_id.to_string();
         let iid = issue_id;
         let aname = body.agent_name.clone();
-        // Get project_id for activity log
-        let pid: Option<Uuid> = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
-            .bind(iid)
-            .fetch_optional(&pool)
-            .await
-            .unwrap_or(None);
+        // The owning project, already resolved with the org above.
+        let pid: Option<Uuid> = Some(scope.project_id);
 
         // If context_updates present, append to project_contexts.learnings and store atomic memories.
         if !context_updates.is_empty() {
