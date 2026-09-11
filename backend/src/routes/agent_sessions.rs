@@ -985,8 +985,9 @@ pub async fn stream_steps(
     State(pool): State<PgPool>,
     Path(session_id): Path<Uuid>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, Json<serde_json::Value>)> {
+    // Scope-checked read only; this handler streams steps and never files
+    // anything under an org, so the owning org is not needed past the check.
     let session = require_session(&pool, &auth, session_id).await?;
-    let org_id = session.org_id.clone();
 
     let pool = pool.clone();
     let sid = session_id;

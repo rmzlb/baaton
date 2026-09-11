@@ -162,12 +162,11 @@ pub fn required_permission(method: &Method, path: &str) -> Requirement {
     };
 
     // ── Unauthenticated surfaces ─────────────────────────────────────────
-    // Kept in sync with the early-return list in `auth_middleware`.
-    match head {
-        "health" | "public" | "r" => return Requirement::Public,
-        "webhooks" if segs.get(1) == Some(&"github") => return Requirement::Public,
-        "invite" => return Requirement::Public, // accept-invite by code
-        _ => {}
+    // Single source of truth: the middleware decides what runs without auth,
+    // and this module must agree exactly. `unauthenticated_surfaces_agree`
+    // asserts the two never drift.
+    if crate::middleware::is_unauthenticated_path(path) {
+        return Requirement::Public;
     }
 
     match head {
@@ -331,6 +330,80 @@ mod tests {
             Requirement::Scope(s) => s.to_string(),
             other => panic!("expected a scope for {p}, got {other:?}"),
         }
+    }
+
+    /// The middleware and this module must agree on what runs without auth.
+    ///
+    /// They used to keep two hand-maintained lists. Drift there is invisible in
+    /// review and decides whether auth runs at all, so the two are now one
+    /// function and this test pins the surface itself.
+    #[test]
+    fn unauthenticated_surfaces_agree() {
+        use crate::middleware::is_unauthenticated_path;
+
+        for path in [
+            "/health",
+            "/api/v1/public/docs",
+            "/api/v1/public/runs/abc123",
+            "/api/v1/webhooks/github",
+            "/api/v1/invite/CODE",
+            "/invite/CODE",
+            "/r/tok",
+            "/i/tok",
+            "/p/tok",
+        ] {
+            assert!(is_unauthenticated_path(path), "{path} must stay public");
+            assert_eq!(
+                required_permission(&Method::GET, path),
+                Requirement::Public,
+                "{path} must map to Public"
+            );
+        }
+    }
+
+    /// Regression: `contains("/webhooks/")` exempted the org-scoped webhook CRUD
+    /// from auth entirely, not just the GitHub receiver. Reproduced live: an
+    /// unauthenticated GET/PATCH/DELETE on `/api/v1/webhooks/{id}` reached the
+    /// handler.
+    #[test]
+    fn webhook_crud_is_not_public() {
+        use crate::middleware::is_unauthenticated_path;
+
+        let id = "/api/v1/webhooks/99999999-0000-0000-0000-000000000009";
+        assert!(!is_unauthenticated_path(id));
+        assert!(!is_unauthenticated_path("/api/v1/webhooks"));
+        // Only the receiver stays open.
+        assert!(is_unauthenticated_path("/api/v1/webhooks/github"));
+
+        for m in [Method::GET, Method::PATCH, Method::DELETE] {
+            assert_ne!(
+                required_permission(&m, id),
+                Requirement::Public,
+                "{m} on a webhook by id must require auth"
+            );
+        }
+    }
+
+    /// Regression: `contains("/public/")` matched a user-chosen project slug, so
+    /// any org that named a project `public` served
+    /// `/projects/by-slug/public/board` without auth.
+    #[test]
+    fn a_project_slug_named_public_is_not_public() {
+        use crate::middleware::is_unauthenticated_path;
+
+        for path in [
+            "/api/v1/projects/by-slug/public/board",
+            "/api/v1/projects/public/issues",
+            "/api/v1/issues/public/comments",
+        ] {
+            assert!(
+                !is_unauthenticated_path(path),
+                "{path} must require auth: `public` is user-controlled here"
+            );
+        }
+
+        // The real public surface still works: it is a prefix, not a substring.
+        assert!(is_unauthenticated_path("/api/v1/public/docs"));
     }
 
     #[test]
@@ -684,7 +757,10 @@ mod tests {
             "initiatives", "triage", "uploads", "memory", "agent-config", "webhooks",
             "agent-sessions", "ai", "github", "integrations", "orgs", "invites",
             "gamification", "billing", "api-keys", "admin", "notifications", "health",
-            "public", "r", "invite",
+            // Top-level public SSR surfaces: run cards (`r`) and shared
+            // issue/project links (`i`, `p`). Single-letter on purpose, they are
+            // pasted into chat clients.
+            "public", "r", "i", "p", "invite",
         ];
 
         let mut unmapped: Vec<String> = Vec::new();

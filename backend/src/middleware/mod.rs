@@ -434,15 +434,65 @@ fn verify_jwt(
     Ok(claims)
 }
 
+/// True when a path is served without any authentication.
+///
+/// Matched on whole path *segments*, never with `contains`. Substring matching
+/// here decides whether auth runs at all, so any user-controlled segment that
+/// happens to spell a magic word silently disables it. Two real bypasses this
+/// closes, both reproduced against a live server:
+///
+/// * `contains("/webhooks/")` exempted `/api/v1/webhooks/{id}` — the org-scoped
+///   webhook CRUD (GET/PATCH/DELETE), not just the unauthenticated GitHub
+///   receiver at `/webhooks/github`.
+/// * `contains("/public/")` exempted `/api/v1/projects/by-slug/public/board` for
+///   any org that named a project slug `public`.
+///
+/// Neither leaked data, because those handlers extract `AuthUser` and axum
+/// answered 500 when it was absent. That is a crash saving us, not a control:
+/// the day a handler treats a missing `AuthUser` as "anonymous" it becomes a
+/// real hole. Fail closed on the middleware side instead.
+///
+/// `permissions::required_permission` keeps its own copy of this list and
+/// `unauthenticated_surfaces_agree` asserts the two never drift.
+pub fn is_unauthenticated_path(path: &str) -> bool {
+    // Both mounts occur in practice: the API router is nested at `/api/v1`,
+    // while the proxy also forwards bare paths.
+    let rest = strip_mount(path, "/api/v1")
+        .or_else(|| strip_mount(path, "/api"))
+        .unwrap_or(path);
+    let segs: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+
+    match segs.as_slice() {
+        ["health"] => true,
+        // Public run/share SSR at the top level: /r/{token}, /i/{token}, /p/{token}.
+        ["r" | "i" | "p", _] => true,
+        // Invite acceptance by code.
+        ["invite", ..] => true,
+        // Only the GitHub receiver is open. Everything else under `webhooks`
+        // is org-scoped CRUD and must stay authenticated.
+        ["webhooks", "github", ..] => true,
+        // The public surface is a real prefix: the first segment must be it,
+        // so a project slug named `public` can never reach this arm.
+        ["public", ..] => true,
+        _ => false,
+    }
+}
+
+/// `strip_prefix`, but only when the prefix ends the string or is followed by
+/// `/`, so `/api` never matches inside `/api-keys`.
+fn strip_mount<'a>(path: &'a str, mount: &str) -> Option<&'a str> {
+    let rest = path.strip_prefix(mount)?;
+    if rest.is_empty() || rest.starts_with('/') {
+        Some(rest)
+    } else {
+        None
+    }
+}
+
 /// Auth middleware — verifies Clerk JWT signature via JWKS and extracts AuthUser
 pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
     let path = req.uri().path().to_string();
-    if path.contains("/public/")
-        || path == "/health"
-        || path.contains("/webhooks/")
-        || path.starts_with("/api/v1/invite/")
-        || path.starts_with("/invite/")
-    {
+    if is_unauthenticated_path(&path) {
         return next.run(req).await;
     }
 
