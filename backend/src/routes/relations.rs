@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, IssueRelation};
 use crate::routes::activity::log_activity;
+use crate::routes::issue_scope;
 
 // ─── Request / Response types ─────────────────────────
 
@@ -48,9 +49,6 @@ pub async fn create(
     Path(issue_id): Path<Uuid>,
     Json(body): Json<CreateRelation>,
 ) -> Result<Json<ApiResponse<IssueRelation>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
     if !VALID_RELATION_TYPES.contains(&body.relation_type.as_str()) {
         return Err((StatusCode::BAD_REQUEST, Json(json!({
             "error": format!("Invalid relation_type '{}'. Accepted: {}", body.relation_type, VALID_RELATION_TYPES.join(", ")),
@@ -63,32 +61,23 @@ pub async fn create(
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Cannot relate an issue to itself"}))));
     }
 
-    // Verify source issue belongs to org; capture its project_id
-    let source_project_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT i.project_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2"
-    )
-    .bind(issue_id)
-    .bind(org_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    // Resolve the org owning each side from the issue itself, so a multi-org key
+    // may relate issues it is entitled to (BAA-31). Both sides are checked, and
+    // a relation must stay inside one org: linking across tenants would leak the
+    // existence of one org's issues into the other's graph.
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Source issue").await?;
+    let target_scope =
+        issue_scope::require(&pool, &auth, body.target_issue_id, "Target issue").await?;
 
-    let project_id = source_project_id
-        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Source issue not found"}))))?;
-
-    // Verify target issue exists in org
-    let target_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
-    )
-    .bind(body.target_issue_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !target_exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Target issue not found"}))));
+    if target_scope.org_id != scope.org_id {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Cannot relate issues from two different organizations"})),
+        ));
     }
+
+    let org_id = scope.org_id.as_str();
+    let project_id = scope.project_id;
 
     let mut tx = pool.begin().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -194,21 +183,7 @@ pub async fn list(
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<RelationsGrouped>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
-    )
-    .bind(issue_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
-    }
+    issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
 
     let all = sqlx::query_as::<_, IssueRelation>(
         "SELECT * FROM issue_relations WHERE source_issue_id = $1 ORDER BY created_at ASC"
@@ -245,21 +220,7 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path((issue_id, relation_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
-    )
-    .bind(issue_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
-    }
+    issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
 
     // Fetch the relation to find the inverse
     let relation: Option<IssueRelation> = sqlx::query_as(
@@ -343,22 +304,7 @@ pub async fn dependency_graph(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<DependencyGraph>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // Verify project belongs to org
-    let project_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !project_exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
-    }
+    issue_scope::require_project(&pool, &auth, project_id).await?;
 
     // Fetch all issues in the project
     let issues = sqlx::query_as::<_, (Uuid, String, String, String, Option<String>)>(

@@ -19,7 +19,44 @@ use crate::models::{
     CreateAgentSession, CreateAgentStep, Tldr, UpdateAgentSession,
 };
 use crate::routes::activity::log_activity;
+use crate::routes::issue_scope;
 use crate::routes::sse::{EventSender, broadcast_event};
+
+/// Fetch an agent session by id, checked against the caller's scope.
+///
+/// The session row carries its own `org_id`/`project_id`, so the owning tenant
+/// is read from the row rather than assumed to be the caller's home org: a
+/// multi-org key is entitled to every org in its scope (BAA-31). An id outside
+/// the scope answers 404 like a missing one, so it stays unconfirmed.
+async fn require_session(
+    pool: &PgPool,
+    auth: &AuthUser,
+    session_id: Uuid,
+) -> Result<AgentSession, (StatusCode, Json<serde_json::Value>)> {
+    let session = sqlx::query_as::<_, AgentSession>("SELECT * FROM agent_sessions WHERE id = $1")
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, %session_id, "agent session scope lookup failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Database error"})),
+            )
+        })?;
+
+    match session {
+        Some(session)
+            if issue_scope::is_entitled(auth, &session.org_id, session.project_id) =>
+        {
+            Ok(session)
+        }
+        _ => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Agent session not found"})),
+        )),
+    }
+}
 
 const VALID_STATUSES: &[&str] = &["pending", "active", "awaiting_input", "completed", "error"];
 const VALID_STEP_TYPES: &[&str] = &["info", "action", "thought", "error", "tool_call", "tool_result"];
@@ -249,18 +286,7 @@ pub async fn get_one(
     State(pool): State<PgPool>,
     Path(session_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<AgentSessionDetail>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    let session = sqlx::query_as::<_, AgentSession>(
-        "SELECT * FROM agent_sessions WHERE id = $1 AND org_id = $2"
-    )
-    .bind(session_id)
-    .bind(org_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Agent session not found"}))))?;
+    let session = require_session(&pool, &auth, session_id).await?;
 
     let steps = sqlx::query_as::<_, AgentStep>(
         "SELECT * FROM agent_steps WHERE session_id = $1 ORDER BY created_at ASC"
@@ -357,19 +383,11 @@ pub async fn update(
     Path(session_id): Path<Uuid>,
     Json(body): Json<UpdateAgentSession>,
 ) -> Result<Json<ApiResponse<AgentSession>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // Fetch existing
-    let existing = sqlx::query_as::<_, AgentSession>(
-        "SELECT * FROM agent_sessions WHERE id = $1 AND org_id = $2"
-    )
-    .bind(session_id)
-    .bind(org_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Agent session not found"}))))?;
+    // The session's own org, not the caller's home org (BAA-31). Every statement
+    // below keeps filtering on it, so a scoped caller cannot widen its reach.
+    let existing = require_session(&pool, &auth, session_id).await?;
+    let org_id = existing.org_id.clone();
+    let org_id = org_id.as_str();
 
     // Validate status transition
     if let Some(ref new_status) = body.status {
@@ -542,8 +560,13 @@ pub async fn publish(
     State(pool): State<PgPool>,
     Path(session_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<AgentSession>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    // Resolve the session first: the org-level publish guardrail below must be
+    // read on the org that *owns* the run, otherwise a multi-org caller whose
+    // home org allows public runs could publish a run belonging to an org that
+    // disabled them.
+    let existing = require_session(&pool, &auth, session_id).await?;
+    let org_id = existing.org_id.clone();
+    let org_id = org_id.as_str();
 
     // Org-level guardrail (BAA / SA-A): public agent runs must be explicitly enabled per org.
     let org_enabled: bool = sqlx::query_scalar(
@@ -565,17 +588,7 @@ pub async fn publish(
         ));
     }
 
-    let existing = sqlx::query_as::<_, AgentSession>(
-        "SELECT * FROM agent_sessions WHERE id = $1 AND org_id = $2"
-    )
-    .bind(session_id)
-    .bind(org_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Agent session not found"}))))?;
-
-    let token = existing.public_token.unwrap_or_else(new_public_token);
+    let token = existing.public_token.clone().unwrap_or_else(new_public_token);
 
     let session = sqlx::query_as::<_, AgentSession>(
         r#"
@@ -633,8 +646,9 @@ pub async fn unpublish(
     State(pool): State<PgPool>,
     Path(session_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<AgentSession>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let existing = require_session(&pool, &auth, session_id).await?;
+    let org_id = existing.org_id.clone();
+    let org_id = org_id.as_str();
 
     // C1: must also NULL public_token to satisfy the
     // CHECK (is_public=FALSE → public_token IS NULL) constraint added in migration 055.
@@ -672,19 +686,9 @@ pub async fn create_step(
     Path(session_id): Path<Uuid>,
     Json(body): Json<CreateAgentStep>,
 ) -> Result<Json<ApiResponse<AgentStep>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // Verify session belongs to org and is active
-    let session = sqlx::query_as::<_, AgentSession>(
-        "SELECT * FROM agent_sessions WHERE id = $1 AND org_id = $2"
-    )
-    .bind(session_id)
-    .bind(org_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Agent session not found"}))))?;
+    let session = require_session(&pool, &auth, session_id).await?;
+    let org_id = session.org_id.clone();
+    let org_id = org_id.as_str();
 
     if session.status == "completed" || session.status == "error" {
         return Err((StatusCode::BAD_REQUEST, Json(json!({
@@ -752,22 +756,7 @@ pub async fn list_steps(
     Path(session_id): Path<Uuid>,
     Query(params): Query<StepsParams>,
 ) -> Result<Json<ApiResponse<Vec<AgentStep>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // Verify access
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE id = $1 AND org_id = $2)"
-    )
-    .bind(session_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Agent session not found"}))));
-    }
+    require_session(&pool, &auth, session_id).await?;
 
     let limit = params.limit.unwrap_or(100);
 
@@ -996,20 +985,8 @@ pub async fn stream_steps(
     State(pool): State<PgPool>,
     Path(session_id): Path<Uuid>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?
-        .to_string();
-
-    // Verify access
-    let session = sqlx::query_as::<_, AgentSession>(
-        "SELECT * FROM agent_sessions WHERE id = $1 AND org_id = $2"
-    )
-    .bind(session_id)
-    .bind(&org_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Agent session not found"}))))?;
+    let session = require_session(&pool, &auth, session_id).await?;
+    let org_id = session.org_id.clone();
 
     let pool = pool.clone();
     let sid = session_id;

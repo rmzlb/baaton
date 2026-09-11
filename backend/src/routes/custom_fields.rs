@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
+use crate::routes::issue_scope;
 
 // ─── Models ───────────────────────────────────────────
 
@@ -91,79 +92,40 @@ fn internal(msg: &str) -> (StatusCode, Json<serde_json::Value>) {
     (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": msg})))
 }
 
-/// Verify a project belongs to the user's org. Returns org_id.
-async fn check_project_org(
+/// Resolve the org owning a custom field, checked against the caller's scope.
+///
+/// The field's own `org_id` column is the owner, and `custom_field_definitions`
+/// is created under the project's org, so the project is what decides
+/// entitlement. Returning the resolved org means every following statement
+/// filters on the owning tenant rather than the caller's home org (BAA-31).
+async fn require_field_org(
     pool: &PgPool,
-    project_id: Uuid,
-    org_id: &str,
-) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)",
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("check_project_org error: {e}");
-        internal("Database error")
-    })?;
-
-    if !exists {
-        return Err(not_found("Project not found"));
-    }
-    Ok(())
-}
-
-/// Resolve which project a custom field belongs to, and verify org access.
-async fn check_field_org(
-    pool: &PgPool,
+    auth: &AuthUser,
     field_id: Uuid,
-    org_id: &str,
-) -> Result<Uuid, (StatusCode, Json<serde_json::Value>)> {
-    let project_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT project_id FROM custom_field_definitions WHERE id = $1 AND org_id = $2",
+) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
+    let row: Option<(String, Uuid)> = sqlx::query_as(
+        "SELECT org_id, project_id FROM custom_field_definitions WHERE id = $1",
     )
     .bind(field_id)
-    .bind(org_id)
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        tracing::error!("check_field_org error: {e}");
+        tracing::error!("require_field_org error: {e}");
         internal("Database error")
     })?;
 
-    project_id.ok_or_else(|| not_found("Custom field not found"))
-}
-
-/// Resolve which project an issue belongs to, and verify org access.
-async fn check_issue_org(
-    pool: &PgPool,
-    issue_id: Uuid,
-    org_id: &str,
-) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    let exists: bool = sqlx::query_scalar(
-        r#"
-        SELECT EXISTS(
-            SELECT 1 FROM issues i
-            JOIN projects p ON p.id = i.project_id
-            WHERE i.id = $1 AND p.org_id = $2
-        )
-        "#,
-    )
-    .bind(issue_id)
-    .bind(org_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("check_issue_org error: {e}");
-        internal("Database error")
-    })?;
-
-    if !exists {
-        return Err(not_found("Issue not found"));
+    match row {
+        Some((org_id, project_id))
+            if issue_scope::require_project(pool, auth, project_id)
+                .await
+                .is_ok() =>
+        {
+            Ok(org_id)
+        }
+        // Missing and out-of-scope collapse to the same answer, so an id from
+        // another tenant is not confirmed to exist.
+        _ => Err(not_found("Custom field not found")),
     }
-    Ok(())
 }
 
 // ─── Handlers ─────────────────────────────────────────
@@ -174,9 +136,8 @@ pub async fn list(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
 ) -> ApiResult<Vec<CustomFieldDefinition>> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| bad_req("Organization required"))?;
-
-    check_project_org(&pool, project_id, org_id).await?;
+    let org_id = issue_scope::require_project(&pool, &auth, project_id).await?;
+    let org_id = org_id.as_str();
 
     let fields = sqlx::query_as::<_, CustomFieldDefinition>(
         r#"
@@ -205,9 +166,8 @@ pub async fn create(
     Path(project_id): Path<Uuid>,
     Json(body): Json<CreateFieldDef>,
 ) -> ApiResult<CustomFieldDefinition> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| bad_req("Organization required"))?;
-
-    check_project_org(&pool, project_id, org_id).await?;
+    let org_id = issue_scope::require_project(&pool, &auth, project_id).await?;
+    let org_id = org_id.as_str();
 
     let valid_types = ["text", "number", "date", "select", "multi_select", "url", "checkbox"];
     if !valid_types.contains(&body.field_type.as_str()) {
@@ -255,9 +215,8 @@ pub async fn update(
     Path(field_id): Path<Uuid>,
     Json(body): Json<UpdateFieldDef>,
 ) -> ApiResult<CustomFieldDefinition> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| bad_req("Organization required"))?;
-
-    check_field_org(&pool, field_id, org_id).await?;
+    let org_id = require_field_org(&pool, &auth, field_id).await?;
+    let org_id = org_id.as_str();
 
     let field = sqlx::query_as::<_, CustomFieldDefinition>(
         r#"
@@ -295,9 +254,8 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(field_id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| bad_req("Organization required"))?;
-
-    check_field_org(&pool, field_id, org_id).await?;
+    let org_id = require_field_org(&pool, &auth, field_id).await?;
+    let org_id = org_id.as_str();
 
     sqlx::query("DELETE FROM custom_field_definitions WHERE id = $1 AND org_id = $2")
         .bind(field_id)
@@ -318,9 +276,8 @@ pub async fn get_values(
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
 ) -> ApiResult<Vec<CustomFieldValue>> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| bad_req("Organization required"))?;
-
-    check_issue_org(&pool, issue_id, org_id).await?;
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
+    let org_id = scope.org_id.as_str();
 
     let values = sqlx::query_as::<_, CustomFieldValue>(
         r#"
@@ -352,9 +309,8 @@ pub async fn set_values(
     Path(issue_id): Path<Uuid>,
     Json(body): Json<SetFieldValues>,
 ) -> ApiResult<Vec<CustomFieldValue>> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| bad_req("Organization required"))?;
-
-    check_issue_org(&pool, issue_id, org_id).await?;
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
+    let org_id = scope.org_id.as_str();
 
     // Verify all field_ids belong to the same org
     let field_ids: Vec<Uuid> = body.values.iter().map(|v| v.field_id).collect();

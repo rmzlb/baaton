@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment};
 use crate::routes::activity::log_activity;
+use crate::routes::issue_scope;
 use crate::routes::webhooks::dispatch_event;
 
 #[derive(Debug, Deserialize)]
@@ -24,21 +25,6 @@ pub struct ApprovalResponse {
     pub comment: Option<String>,
 }
 
-/// Verify issue belongs to caller's org. Returns true if it exists.
-async fn verify_issue_org(pool: &PgPool, issue_id: Uuid, org_id: &str) -> Result<bool, (StatusCode, Json<serde_json::Value>)> {
-    sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
-    )
-    .bind(issue_id)
-    .bind(org_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "verify_issue_org query failed");
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"})))
-    })
-}
-
 /// POST /issues/{id}/approval-request
 pub async fn create_approval_request(
     Extension(auth): Extension<AuthUser>,
@@ -46,12 +32,11 @@ pub async fn create_approval_request(
     Path(issue_id): Path<Uuid>,
     Json(body): Json<CreateApprovalRequest>,
 ) -> Result<Json<ApiResponse<Comment>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    if !verify_issue_org(&pool, issue_id, org_id).await? {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
-    }
+    // The org that owns the issue, not the caller's home org: a multi-org key is
+    // entitled to every org in its scope (BAA-31), and the activity row and
+    // webhook below must be filed under the owning tenant.
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
+    let org_id = scope.org_id.as_str();
 
     if body.action.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Action is required"}))));
@@ -95,13 +80,9 @@ pub async fn create_approval_request(
         let uname_opt = Some(author_name.clone());
         let oid = org_id.to_string();
         let action_name = body.action.clone();
+        // Already resolved with the org above.
+        let pid = Some(scope.project_id);
         tokio::spawn(async move {
-            let pid: Option<Uuid> = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
-                .bind(issue_id)
-                .fetch_optional(&pool2)
-                .await
-                .ok()
-                .flatten();
             log_activity(
                 &pool2, &oid, pid, Some(issue_id), &uid, uname_opt.as_deref(),
                 "approval_requested", None, None, None,
@@ -123,12 +104,11 @@ pub async fn create_approval_response(
     Path(issue_id): Path<Uuid>,
     Json(body): Json<ApprovalResponse>,
 ) -> Result<Json<ApiResponse<Comment>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    if !verify_issue_org(&pool, issue_id, org_id).await? {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
-    }
+    // The org that owns the issue, not the caller's home org: a multi-org key is
+    // entitled to every org in its scope (BAA-31), and the activity row and
+    // webhook below must be filed under the owning tenant.
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
+    let org_id = scope.org_id.as_str();
 
     // Validate decision
     let valid_decisions = ["approved", "rejected", "request_changes"];
@@ -198,13 +178,9 @@ pub async fn create_approval_response(
         let uname_opt = Some(responder_name.clone());
         let oid = org_id.to_string();
         let decision = body.decision.clone();
+        // Already resolved with the org above.
+        let pid = Some(scope.project_id);
         tokio::spawn(async move {
-            let pid: Option<Uuid> = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
-                .bind(issue_id)
-                .fetch_optional(&pool2)
-                .await
-                .ok()
-                .flatten();
             log_activity(
                 &pool2, &oid, pid, Some(issue_id), &uid, uname_opt.as_deref(),
                 "approval_decision", None, None, Some(&decision),
