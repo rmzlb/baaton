@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Comment};
 use crate::routes::activity::log_activity;
+use crate::routes::issue_scope;
 use crate::routes::notifications::create_notification;
 use crate::routes::sse::{EventSender, broadcast_event};
 use crate::routes::webhooks::dispatch_event;
@@ -36,20 +37,6 @@ pub struct UpdateComment {
     pub body: String,
 }
 
-/// Verify issue belongs to caller's org. Returns true if it exists.
-async fn verify_issue_org(pool: &PgPool, issue_id: Uuid, org_id: &str) -> Result<bool, (StatusCode, Json<serde_json::Value>)> {
-    sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
-    )
-    .bind(issue_id)
-    .bind(org_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "verify_issue_org query failed");
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"})))
-    })
-}
 
 /// Resolve any caller/author identity to its underlying human owner.
 ///
@@ -75,23 +62,6 @@ async fn resolve_owner_identity(pool: &PgPool, identity: &str) -> String {
     identity.to_string()
 }
 
-/// Check issue belongs to ANY of the user's scoped orgs (for all_dynamic keys)
-async fn verify_issue_org_any(pool: &PgPool, issue_id: Uuid, org_ids: &[String]) -> Result<bool, (StatusCode, Json<serde_json::Value>)> {
-    if org_ids.is_empty() {
-        return Ok(false);
-    }
-    sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2))"
-    )
-    .bind(issue_id)
-    .bind(org_ids)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "verify_issue_org_any query failed");
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"})))
-    })
-}
 
 pub async fn list_by_issue(
     Extension(auth): Extension<AuthUser>,
@@ -99,12 +69,10 @@ pub async fn list_by_issue(
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Vec<Comment>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    if !verify_issue_org(&pool, issue_id, org_id).await? && !verify_issue_org_any(&pool, issue_id, &auth.scoped_org_ids).await? {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
-    }
+    // Org *and* project scope, resolved from the issue. The previous pair of
+    // `verify_issue_org` / `verify_issue_org_any` checks only compared orgs, so
+    // a key restricted to one project could comment on any issue of the org.
+    issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
 
     let mut comments = sqlx::query_as::<_, Comment>(
         "SELECT * FROM comments WHERE issue_id = $1 ORDER BY created_at ASC",
@@ -134,12 +102,11 @@ pub async fn create(
     Path(issue_id): Path<Uuid>,
     Json(body): Json<CreateComment>,
 ) -> Result<Json<ApiResponse<Comment>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    if !verify_issue_org(&pool, issue_id, org_id).await? && !verify_issue_org_any(&pool, issue_id, &auth.scoped_org_ids).await? {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
-    }
+    // Org *and* project scope, resolved from the issue. The previous pair of
+    // `verify_issue_org` / `verify_issue_org_any` checks only compared orgs, so
+    // a key restricted to one project could comment on any issue of the org.
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
+    let org_id = scope.org_id.as_str();
 
     if body.body.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Comment body cannot be empty"}))));
@@ -427,12 +394,11 @@ pub async fn update(
     Path((issue_id, comment_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateComment>,
 ) -> Result<Json<ApiResponse<Comment>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    if !verify_issue_org(&pool, issue_id, org_id).await? && !verify_issue_org_any(&pool, issue_id, &auth.scoped_org_ids).await? {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
-    }
+    // Org *and* project scope, resolved from the issue. The previous pair of
+    // `verify_issue_org` / `verify_issue_org_any` checks only compared orgs, so
+    // a key restricted to one project could comment on any issue of the org.
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
+    let org_id = scope.org_id.as_str();
 
     if body.body.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Comment body cannot be empty"}))));
@@ -534,12 +500,11 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path((issue_id, comment_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    if !verify_issue_org(&pool, issue_id, org_id).await? && !verify_issue_org_any(&pool, issue_id, &auth.scoped_org_ids).await? {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))));
-    }
+    // Org *and* project scope, resolved from the issue. The previous pair of
+    // `verify_issue_org` / `verify_issue_org_any` checks only compared orgs, so
+    // a key restricted to one project could comment on any issue of the org.
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
+    let org_id = scope.org_id.as_str();
 
     // Permission model: admins may delete any comment; everyone else may only
     // delete their own (ownership tied to author_id == caller identity).

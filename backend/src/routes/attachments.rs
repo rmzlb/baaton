@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{ActionHint, ApiResponse};
+use crate::routes::issue_scope;
 use crate::s3::S3State;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -71,22 +72,16 @@ pub async fn list(
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Vec<Attachment>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // API keys may be scoped to multiple orgs (all_dynamic); honor the full scope
-    // instead of just the key's home org so cross-org reads match get_one.
-    let org_ids: Vec<String> = if auth.is_api_key() && !auth.scoped_org_ids.is_empty() {
-        auth.scoped_org_ids.clone()
-    } else {
-        vec![org_id.to_string()]
-    };
+    // Org *and* project scope, resolved from the issue itself. The previous
+    // `org_id = ANY(scoped_org_ids)` filter ignored `scoped_project_ids`, so a
+    // key restricted to one project could read attachments of any issue in the org.
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
 
     let mut attachments = sqlx::query_as::<_, Attachment>(
-        "SELECT * FROM attachments WHERE issue_id = $1 AND org_id = ANY($2) ORDER BY created_at ASC"
+        "SELECT * FROM attachments WHERE issue_id = $1 AND org_id = $2 ORDER BY created_at ASC"
     )
     .bind(issue_id)
-    .bind(&org_ids)
+    .bind(&scope.org_id)
     .fetch_all(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -144,40 +139,11 @@ pub async fn create(
         )
     })?;
 
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // Resolve the issue's project, scoped to the caller's org.
-    //
-    // This query used to read `... FROM issues WHERE id = $1 AND org_id = $2`.
-    // `issues` has no `org_id` column — tenancy lives on `projects` — so every
-    // call to this endpoint failed with a raw Postgres error
-    // (`column "org_id" does not exist`) and the table stayed empty from the day
-    // it shipped. Every other route already scopes through the join below.
-    //
-    // API keys can hold a multi-org scope (`all_dynamic`), so honor the full
-    // scope here the same way `list` and `issues::get_one` do, otherwise
-    // registering an attachment would fail on issues the caller can read.
-    let org_ids: Vec<String> = if auth.is_api_key() && !auth.scoped_org_ids.is_empty() {
-        auth.scoped_org_ids.clone()
-    } else {
-        vec![org_id.to_string()]
-    };
-
-    let issue_row: (Uuid, String) = sqlx::query_as(
-        "SELECT i.project_id, p.org_id \
-           FROM issues i \
-           JOIN projects p ON p.id = i.project_id \
-          WHERE i.id = $1 AND p.org_id = ANY($2)",
-    )
-    .bind(issue_id)
-    .bind(&org_ids)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
-
-    let (project_id, issue_org_id) = issue_row;
+    // Resolve the issue's owning org and project, then check the caller against
+    // both. This hand-rolled lookup only compared orgs, so `scoped_project_ids`
+    // was ignored and a project-scoped key could attach to any issue of the org.
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
+    let (project_id, issue_org_id) = (scope.project_id, scope.org_id);
 
     // Never persist a presigned URL: they expire, and `GET` would then hand the
     // client a dead link that reads as "the file was removed". `collapse_to_markers`
@@ -236,21 +202,14 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path((issue_id, att_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    // Same scope as list/create, project axis included: a key that may not read
+    // the issue must not be able to delete its attachments either.
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
 
-    // Same multi-org scope as list/create: a key that could create the row must
-    // be able to delete it.
-    let org_ids: Vec<String> = if auth.is_api_key() && !auth.scoped_org_ids.is_empty() {
-        auth.scoped_org_ids.clone()
-    } else {
-        vec![org_id.to_string()]
-    };
-
-    let result = sqlx::query("DELETE FROM attachments WHERE id = $1 AND issue_id = $2 AND org_id = ANY($3)")
+    let result = sqlx::query("DELETE FROM attachments WHERE id = $1 AND issue_id = $2 AND org_id = $3")
         .bind(att_id)
         .bind(issue_id)
-        .bind(&org_ids)
+        .bind(&scope.org_id)
         .execute(&pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
