@@ -181,6 +181,7 @@ async fn main() -> anyhow::Result<()> {
             71,
             include_str!("../migrations/071_enforce_api_key_scopes.sql"),
         ),
+        (72, include_str!("../migrations/072_share_links.sql")),
     ];
 
     for &(version, sql) in migrations {
@@ -262,6 +263,7 @@ async fn main() -> anyhow::Result<()> {
     // Novu notifications (None if NOVU_SECRET_KEY unset)
     let novu_client = novu::NovuClient::from_env();
 
+
     // CORS — restrict origins in production, permissive in dev
     let cors = {
         let allowed_origins = std::env::var("CORS_ORIGINS").unwrap_or_default();
@@ -305,11 +307,25 @@ async fn main() -> anyhow::Result<()> {
         .nest_service("/uploads", ServeDir::new(&upload_dir))
         // Public Run Card SSR — short shareable URL for crawlers + humans.
         // Mounted at top level (NOT under /api/v1) so r.baaton.dev/:token works.
+        //
+        // `/i/` and `/p/` do the same job for shared issues and projects. They
+        // must be server-rendered for the same reason as `/r/`: Telegram,
+        // Slack, WhatsApp and Discord crawlers do not run JavaScript, so an SPA
+        // route unfurls with the marketing meta tags of index.html no matter
+        // which ticket it points at.
         .merge(
             Router::new()
                 .route(
                     "/r/{token}",
                     get(routes::public_run_ssr::render),
+                )
+                .route(
+                    "/i/{token}",
+                    get(routes::public_share_ssr::render_issue),
+                )
+                .route(
+                    "/p/{token}",
+                    get(routes::public_share_ssr::render_project),
                 )
                 .with_state(pool.clone()),
         )

@@ -39,8 +39,11 @@ pub mod uploads;
 pub mod agent_config;
 pub mod agent_sessions;
 pub mod og;
+pub mod og_share;
 pub mod badge;
+pub mod share;
 pub mod public_run_ssr;
+pub mod public_share_ssr;
 pub mod slack;
 pub(crate) mod admin;
 mod orgs;
@@ -83,6 +86,20 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/issues/{id}", get(issues::get_one).patch(issues::update).delete(issues::remove))
         .route("/issues/{id}/position", patch(issues::update_position))
         .route("/issues/{id}/archive", post(issues::archive))
+        // Share links. GET reports current state, POST mints (idempotent),
+        // DELETE revokes by dropping the token so the old URL dies.
+        .route(
+            "/issues/{id}/share",
+            get(share::get_issue_share)
+                .post(share::share_issue)
+                .delete(share::unshare_issue),
+        )
+        .route(
+            "/projects/{id}/share",
+            get(share::get_project_share)
+                .post(share::share_project)
+                .delete(share::unshare_project),
+        )
         .route("/issues/{id}/unarchive", post(issues::unarchive))
         .route("/issues/{id}/comments", get(comments::list_by_issue).post(comments::create))
         .route("/issues/{issue_id}/comments/{comment_id}", patch(comments::update).delete(comments::remove))
@@ -225,6 +242,13 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // OG image for public runs (SVG, 1200×630, cached 1h). Lives under /public/
         // so the existing auth-middleware exemption (`path.contains("/public/")`) covers it.
         .route("/public/og/run/{token}", get(og::render_run_svg))
+        // Link-preview cards for shared issues/projects. Same `/public/` prefix
+        // so the auth exemption above covers them; a crawler carries no token.
+        .route("/public/og/issue/{token}", get(og_share::render_issue_svg))
+        .route("/public/og/project/{token}", get(og_share::render_project_svg))
+        // Read-only JSON for a shared object, so an agent can consume a link
+        // that a human pasted at it without needing org credentials.
+        .route("/public/issues/{token}", get(share::get_public_issue))
         // README badge for a tracked GitHub repo (public, cached 5 min).
         // The `{repo}` segment may include a `.svg` suffix (handler strips it).
         .route("/public/badge/repo/{owner}/{repo}", get(badge::render))
