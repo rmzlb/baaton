@@ -22,6 +22,7 @@ mod filter;
 mod github;
 mod middleware;
 mod models;
+mod notifyd;
 mod novu;
 mod permissions;
 mod receipts;
@@ -263,6 +264,9 @@ async fn main() -> anyhow::Result<()> {
     // Novu notifications (None if NOVU_SECRET_KEY unset)
     let novu_client = novu::NovuClient::from_env();
 
+    // Chat notifications for the room (None if NOTIFYD_URL/KEY/CHAT unset)
+    let notifyd_client = notifyd::NotifydClient::from_env();
+
 
     // CORS — restrict origins in production, permissive in dev
     let cors = {
@@ -335,6 +339,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .layer(axum::Extension(s3_state))
         .layer(axum::Extension(novu_client))
+        .layer(axum::Extension(notifyd_client))
         .layer(axum::Extension(sse_tx))
         .layer(axum::Extension(pool.clone()))
         .layer(axum_mw::from_fn(middleware::security::security_headers))

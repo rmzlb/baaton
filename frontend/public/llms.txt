@@ -26,7 +26,7 @@ The run comes back as a verifiable artifact you can hand to whoever paid for it.
 4. Publish the run. You get a Run Card at `r.baaton.dev/<token>` and a signed
    `receipt.json` that a third party can verify against your org's JWKS.
 
-API-first: one curl opens an issue. 198 endpoints, no SDK required.
+API-first: one curl opens an issue. 209 endpoints, no SDK required.
 
 ## Verify a receipt yourself
 No account needed. Signature is Ed25519 (EdDSA), keys are per-organization,
@@ -70,7 +70,7 @@ All responses: `{ "data": ... }`. Errors: `{ "error": "message", "field": "...",
 Core agent endpoints (issues, projects, comments, TLDRs, sprints, milestones, webhooks,
 agent sessions) include `_hints` with recommended next actions.
 
-## Core Endpoints (198 total)
+## Core Endpoints (209 total)
 
 ### Proof: signed receipts for agent work
 - POST /agent-sessions — Open a run (issue_id, agent_name, agent_id)
