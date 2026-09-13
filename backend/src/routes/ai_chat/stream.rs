@@ -55,6 +55,7 @@ Lecture :
 - Titres : phrase claire, sans préfixe projet ni étiquette type [BUG] dans le titre.
 - Citer les **display_id** (HLM-42). Pour les champs techniques, utiliser les UUID fournis par les outils quand nécessaire.
 - **propose_issue** : description Markdown structurée selon le type (bug : contexte + reproduction + attendu/actuel ; feature : besoin + solution + critères d'acceptation ; improvement : bénéfice ; question : question + contexte). Enrichir avec le contexte projet ci-dessous ; ne pas laisser vide.
+- **Type obligatoire, jamais par défaut** : `bug` = quelque chose qui existe est cassé (erreur, crash, régression, « ne marche plus ») ; `feature` = capacité qui n'existe pas encore ; `improvement` = ça marche mais doit être meilleur (refacto, perf, nettoyage, polish UX, migration) ; `question` = une décision ou une investigation est nécessaire avant de coder. Si un message mêle un truc cassé et un souhait, c'est un `bug`. L'utilisateur peut corriger sur la carte, donc propose ta meilleure lecture au lieu de retomber sur `feature`.
 
 ## Gate d'info — AVANT propose_issue
 - Avant `propose_issue`, vérifie : (1) le besoin tient en 1 phrase claire, (2) pour un bug ou une demande UI/front, la page/route/URL concernée. Si l'user décrit un écran sans le nommer, l'URL manque.

@@ -59,12 +59,20 @@ const PRIORITY_OPTIONS: { key: IssuePriority; label: string; color: string; icon
   { key: 'low', label: 'Low', color: '#6b7280', icon: ArrowDown },
 ];
 
-const TYPE_CONFIG: Record<IssueType, { icon: typeof Bug; color: string; label: string }> = {
-  bug: { icon: Bug, color: 'text-red-400', label: 'Bug' },
-  feature: { icon: Sparkles, color: 'text-emerald-400', label: 'Feature' },
-  improvement: { icon: Zap, color: 'text-blue-400', label: 'Improvement' },
-  question: { icon: HelpCircle, color: 'text-purple-400', label: 'Question' },
+const TYPE_CONFIG: Record<IssueType, { icon: typeof Bug; color: string; label: string; dot: string }> = {
+  bug: { icon: Bug, color: 'text-red-400', label: 'Bug', dot: '#f87171' },
+  feature: { icon: Sparkles, color: 'text-emerald-400', label: 'Feature', dot: '#34d399' },
+  improvement: { icon: Zap, color: 'text-blue-400', label: 'Improvement', dot: '#60a5fa' },
+  question: { icon: HelpCircle, color: 'text-purple-400', label: 'Question', dot: '#c084fc' },
 };
+
+// Same shape the status/priority dropdowns consume, so the type field reuses
+// DropdownSelect instead of introducing a second select pattern in this sidebar.
+const TYPE_OPTIONS = (Object.keys(TYPE_CONFIG) as IssueType[]).map((key) => ({
+  key,
+  label: TYPE_CONFIG[key].label,
+  color: TYPE_CONFIG[key].dot,
+}));
 
 /* ── Props ─────────────────────────────────────── */
 
@@ -1261,14 +1269,26 @@ function MetadataSidebar({
         />
       </SidebarField>
 
-      {/* Type */}
+      {/* Type — editable for the same reason status and priority are: the
+          classification is a first guess (often the assistant's) and gets
+          corrected once someone reads the ticket. A read-only badge forced a
+          delete-and-recreate. */}
       <SidebarField label={t('issueDrawer.type')}>
-        <span className="flex items-center gap-1.5 px-1.5 py-0.5">
-          <TypeIcon size={12} className={typeColor} />
-          <span className="text-xs text-primary">
-            {TYPE_CONFIG[issue.type]?.label || issue.type}
-          </span>
-        </span>
+        <DropdownSelect
+          value={issue.type}
+          options={TYPE_OPTIONS}
+          onChange={(v) => {
+            if (v !== issue.type) onFieldUpdate('type', v);
+          }}
+          renderSelected={() => (
+            <span className="flex items-center gap-1.5">
+              <TypeIcon size={12} className={typeColor} />
+              <span className="text-xs text-primary">
+                {TYPE_CONFIG[issue.type]?.label || issue.type}
+              </span>
+            </span>
+          )}
+        />
       </SidebarField>
 
       {/* Source */}

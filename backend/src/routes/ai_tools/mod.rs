@@ -31,6 +31,54 @@ fn tool(name: &str, description: &str, parameters: Value) -> ToolDefinition {
     }
 }
 
+// ─── Issue type inference ───────────────────────────────────────────────────
+
+/// Last-resort classifier for `issues.type` when the model omitted it.
+///
+/// `type` is declared required on `propose_issue`, so a well-behaved model always
+/// sends it. This exists for the case it does not: the previous fallback was a
+/// flat `unwrap_or("feature")`, which is why every ticket created from the chat
+/// showed up as a feature — including crash reports. Guessing from the words the
+/// user actually wrote is wrong less often than always answering "feature", and
+/// the value stays editable afterwards in the proposal card and in the drawer.
+///
+/// Deliberately keyword-based and bilingual (FR/EN): the chat is used in both
+/// languages, and a second LLM round-trip to label a ticket is not worth the
+/// latency. Order matters — a bug report often also says "il faudrait", so the
+/// bug signal is tested first.
+pub fn infer_issue_type(title: &str, description: Option<&str>) -> &'static str {
+    let text = format!("{} {}", title, description.unwrap_or_default()).to_lowercase();
+    let has = |needles: &[&str]| needles.iter().any(|n| text.contains(n));
+
+    if has(&[
+        "bug", "crash", "erreur", "error", "exception", "panic", "fail", "échoue", "echoue",
+        "cassé", "casse pas", "broken", "ne marche pas", "marche plus", "ne fonctionne pas",
+        "fonctionne plus", "doesn't work", "does not work", "not working", "régression",
+        "regression", "500", "404", "timeout", "stack trace", "traceback",
+    ]) {
+        return "bug";
+    }
+
+    if has(&[
+        "?", "question", "pourquoi", "comment on", "comment est-ce", "est-ce que", "faut-il",
+        "clarifier", "clarify", "investiguer", "investigate", "savoir si", "should we",
+        "how do we", "why does",
+    ]) {
+        return "question";
+    }
+
+    if has(&[
+        "améliorer", "ameliorer", "amélioration", "improve", "improvement", "refactor",
+        "refacto", "optimiser", "optimize", "optimisation", "performance", "perf ", "nettoyer",
+        "cleanup", "clean up", "simplifier", "simplify", "migrer", "migrate", "renommer",
+        "rename", "dette technique", "tech debt", "polish", "accélérer", "accelerer",
+    ]) {
+        return "improvement";
+    }
+
+    "feature"
+}
+
 // ─── Client-Interactive Tool Detection ──────────────────────────────────────
 
 /// Tools that require user approval via the UI.
@@ -99,12 +147,12 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     "project_id": {"type": "STRING", "description": "Project UUID or prefix (e.g. 'HLM'). Required. Resolves prefixes and partial names automatically."},
                     "title": {"type": "STRING", "description": "Short plain-text title. No brackets, prefixes, or type tags. Good: 'Fix auth token refresh'. Bad: '[HLM][BUG] Fix auth'."},
                     "description": {"type": "STRING", "description": "Detailed description in Markdown. Use structured templates: bug reports should include Steps to Reproduce, Expected vs Actual; features should include User Story and Acceptance Criteria."},
-                    "type": {"type": "STRING", "enum": ["bug", "feature", "improvement", "question"], "description": "Issue classification. Infer from context: error/crash → bug, new capability → feature, refactor/optimize → improvement, unclear requirement → question."},
+                    "type": {"type": "STRING", "enum": ["bug", "feature", "improvement", "question"], "description": "Issue classification. Always decide, never default. bug = something existing is broken, errors, crashes, regressions, 'ne marche plus'. feature = a capability that does not exist yet. improvement = something works but should be better: refactor, performance, cleanup, UX polish, migration. question = a decision or an investigation is needed before work can start. When a report mixes a broken behaviour with a wish, the broken behaviour wins: it is a bug."},
                     "priority": {"type": "STRING", "enum": ["urgent", "high", "medium", "low"], "description": "Urgency level. urgent = production-breaking, high = blocking work, medium = normal, low = nice-to-have."},
                     "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Free-form labels for grouping, e.g. ['auth', 'mobile', 'security']. Infer from description context."},
                     "category": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Technical domains. Allowed values: FRONT, BACK, API, DB, INFRA, UX, DEVOPS. Example: ['BACK', 'API'] for a backend API issue."}
                 },
-                "required": ["project_id", "title"]
+                "required": ["project_id", "title", "type"]
             }),
         ),
         // ── 3. create_issue ──────────────────────────────────────────────
@@ -129,7 +177,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     "type": {
                         "type": "STRING",
                         "enum": ["bug", "feature", "improvement", "question"],
-                        "description": "Issue classification from the approved proposal."
+                        "description": "Issue classification from the approved proposal. Copy it verbatim: the user may have corrected it on the card."
                     },
                     "priority": {
                         "type": "STRING",
@@ -1765,11 +1813,17 @@ async fn exec_propose_issue(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    // No blanket "feature" default here: that is what made every chat-created
+    // ticket look like a feature request. `type` is required on the tool, so this
+    // only runs when the model ignored the schema.
     let issue_type = args
         .get("type")
         .and_then(|v| v.as_str())
-        .unwrap_or("feature")
-        .to_string();
+        .filter(|t| !t.trim().is_empty())
+        .map(|t| t.to_string())
+        .unwrap_or_else(|| {
+            infer_issue_type(&title, Some(description.as_str())).to_string()
+        });
     let priority = args
         .get("priority")
         .and_then(|v| v.as_str())
@@ -3711,10 +3765,14 @@ async fn create_issue_real(
     let title = args.get("title").and_then(|v| v.as_str())
         .ok_or_else(|| "create_issue requires 'title'. Provide a short plain-text title (no brackets, no prefix). Good: 'Fix auth token refresh'. Bad: '[HLM][BUG] Fix auth'.".to_string())?;
     let description = args.get("description").and_then(|v| v.as_str());
-    let issue_type = args
+    // Same reasoning as in propose_issue: infer rather than assume "feature".
+    let inferred_type = args
         .get("type")
         .and_then(|v| v.as_str())
-        .unwrap_or("feature");
+        .filter(|t| !t.trim().is_empty())
+        .map(|t| t.to_string())
+        .unwrap_or_else(|| infer_issue_type(title, description).to_string());
+    let issue_type = inferred_type.as_str();
     let priority = args.get("priority").and_then(|v| v.as_str());
     let category: Vec<String> = args
         .get("category")
@@ -5646,5 +5704,59 @@ async fn ai_manage_recurring(
         }
 
         _ => Err(format!("Unknown action '{}' for manage_recurring", action)),
+    }
+}
+
+#[cfg(test)]
+mod issue_type_tests {
+    use super::infer_issue_type;
+
+    /// The reported symptom: a chat-created crash report landed as a feature.
+    #[test]
+    fn a_broken_thing_is_a_bug_in_both_languages() {
+        assert_eq!(infer_issue_type("Le bouton d'export ne marche pas", None), "bug");
+        assert_eq!(infer_issue_type("Export button is broken", None), "bug");
+        assert_eq!(
+            infer_issue_type("Export", Some("500 sur /api/v1/issues depuis ce matin")),
+            "bug"
+        );
+    }
+
+    /// A bug report almost always contains a wish too ("il faudrait que ça marche").
+    /// The breakage has to win, otherwise every regression becomes a feature again.
+    #[test]
+    fn breakage_beats_a_wish_in_the_same_text() {
+        assert_eq!(
+            infer_issue_type(
+                "Ajouter un retry",
+                Some("l'upload échoue une fois sur trois, il faudrait un retry")
+            ),
+            "bug"
+        );
+    }
+
+    #[test]
+    fn a_new_capability_stays_a_feature() {
+        assert_eq!(infer_issue_type("Export CSV des issues", None), "feature");
+        assert_eq!(infer_issue_type("Add a dark mode", None), "feature");
+    }
+
+    #[test]
+    fn making_something_better_is_an_improvement() {
+        assert_eq!(infer_issue_type("Optimiser le chargement du board", None), "improvement");
+        assert_eq!(infer_issue_type("Refactor the auth middleware", None), "improvement");
+    }
+
+    #[test]
+    fn an_open_decision_is_a_question() {
+        assert_eq!(infer_issue_type("Faut-il garder Novu ?", None), "question");
+        assert_eq!(infer_issue_type("Why does the JWKS return an empty keyset?", None), "question");
+    }
+
+    /// Nothing recognizable must not crash or pick something exotic.
+    #[test]
+    fn no_signal_falls_back_to_feature() {
+        assert_eq!(infer_issue_type("", None), "feature");
+        assert_eq!(infer_issue_type("SQX-304", Some("")), "feature");
     }
 }
