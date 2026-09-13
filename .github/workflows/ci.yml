@@ -1,6 +1,23 @@
 name: CI
 
-# Un seul fichier : on teste, et on ne déploie que si les tests passent.
+# Ce workflow teste, et rien d'autre. Le déploiement appartient à Dokploy :
+# les deux applications (`api`, `frontend`) sont en `sourceType: github`,
+# `autoDeploy: true`, `triggerType: push` sur `main`, donc la GitHub App
+# Dokploy déclenche déjà un build à chaque push.
+#
+# Il y avait ici un job `deploy` qui rappelait `application.deploy` sur les
+# mêmes deux app IDs : deux builds pour un commit sur belotte (r7g.large, qui
+# compile Rust en release), et un secret `DOKPLOY_API_TOKEN` dans le repo pour
+# refaire ce que le webhook faisait déjà. Supprimé.
+#
+# Conséquence assumée : un test rouge n'empêche pas le déploiement, il ne
+# l'empêchait déjà pas (le 2026-09-13, `main` était rouge sur 7 tests de copy
+# et les deux applications se sont déployées quand même). Ce fichier est un
+# signal, pas une barrière. La barrière, si elle est voulue un jour, se pose
+# côté Dokploy : builder l'image en CI, la pousser sur un registre, et laisser
+# Dokploy déployer ce tag — c'est l'approche que recommande sa doc
+# (`/docs/core/applications/going-production`), qui évite en plus de compiler
+# sur le serveur applicatif.
 on:
   push:
     branches: [main]
@@ -67,30 +84,3 @@ jobs:
       - name: Frontend build
         working-directory: frontend
         run: npm run build
-
-  deploy:
-    name: Deploy
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy frontend + backend
-        env:
-          TOKEN: ${{ secrets.DOKPLOY_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          # Diagnostic non sensible : la longueur du secret. Le token Dokploy
-          # fait 64 caracteres ; une valeur differente = secret repo perime.
-          echo "token_len=${#TOKEN}"
-          for app in FghZLWdqlC7AtZTwh3jpr 5EXdMViqWNbOaN_pASmSM; do
-            code=$(curl -s -o /tmp/out -w '%{http_code}' \
-              -X POST "http://13.38.180.239:3000/api/application.deploy" \
-              -H "x-api-key: $TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{\"applicationId\":\"$app\"}")
-            echo "$app -> HTTP $code"
-            cat /tmp/out; echo
-            # L'ancien workflow faisait un curl nu : Dokploy pouvait répondre
-            # 401/500 et le job restait vert. On échoue explicitement.
-            [ "$code" = "200" ] || exit 1
-          done
