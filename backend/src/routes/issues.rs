@@ -903,6 +903,7 @@ pub async fn list_by_project(
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
     Extension(novu): Extension<Option<crate::novu::NovuClient>>,
+    Extension(notifyd): Extension<Option<crate::notifyd::NotifydClient>>,
     Extension(sse_tx): Extension<EventSender>,
     Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
@@ -920,7 +921,6 @@ pub async fn create(
                 Json(json!({"error": "Project not found"})),
             )
         })?;
-
     if !auth.has_org_access(&org_id) {
         return Err((
             StatusCode::FORBIDDEN,
@@ -1293,6 +1293,37 @@ pub async fn create(
         serde_json::to_value(&issue).unwrap_or_default(),
     )
     .await;
+
+    // ── Chat notification for the room (fire-and-forget) ──
+    // Distinct from Novu above: Novu notifies the assignee on their channels,
+    // this tells the team's chat topic that a ticket exists at all. Without it
+    // an issue created by an agent stays invisible until somebody opens the
+    // board, which is exactly what was reported for SQX-304.
+    if let Some(ref notifyd) = notifyd {
+        let pool2 = pool.clone();
+        let notifyd = notifyd.clone();
+        let display_id = issue.display_id.clone();
+        let title = issue.title.clone();
+        let actor = auth.display_name.clone();
+        let issue_id = issue.id;
+        let project_id = issue.project_id;
+        tokio::spawn(async move {
+            let project_name: Option<String> =
+                sqlx::query_scalar("SELECT name FROM projects WHERE id = $1")
+                    .bind(project_id)
+                    .fetch_optional(&pool2)
+                    .await
+                    .ok()
+                    .flatten();
+            notifyd.issue_created(crate::notifyd::IssueNotice {
+                display_id,
+                title,
+                project_name,
+                actor,
+                issue_id,
+            });
+        });
+    }
 
     // ── SSE broadcast ────────────────────────────────
     broadcast_event(
