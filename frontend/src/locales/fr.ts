@@ -2059,7 +2059,8 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'integrations.telegram.channel.title': 'Ton compte',
   'integrations.telegram.channel.desc': 'Relie ton compte Telegram pour que Baaton sache où envoyer tes notifications.',
   'integrations.telegram.subs.title': 'Projets & événements',
-  'integrations.telegram.subs.desc': 'Choisis pour quels projets tu veux des notifications.',
+  'integrations.telegram.subs.desc': 'Sélectionne les projets à suivre et configure les événements.',
+  'integrations.telegram.channel.needsBot': 'Un bot doit être configuré en étape 1 avant de pouvoir relier ton compte.',
   'integrations.telegram.subs.needsChannel': 'Connecte d\'abord ton compte Telegram (étape 2 ci-dessus).',
 
   // ─── Run Cards publiques ───────────────────────────
@@ -2126,13 +2127,21 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   // Telegram
   'notifPrefs.channels.telegram.label': 'Telegram',
   'notifPrefs.channels.telegram.connectBtn': 'Connecter via le bot Telegram',
+  'notifPrefs.channels.telegram.connectDm': 'Connecter via DM',
+  'notifPrefs.channels.telegram.connectGroup': 'Groupe / topic',
   'notifPrefs.channels.telegram.deepLinkDesc': 'Clique sur le lien ci-dessous, puis appuie sur Démarrer dans l’app Telegram pour vérifier ton compte.',
+  'notifPrefs.channels.telegram.groupLinkDesc': 'Ajoute le bot à ton groupe ou topic, puis clique sur le lien ci-dessous pour finaliser la liaison.',
   'notifPrefs.channels.telegram.deepLinkOpen': 'Ouvrir le bot Telegram',
   'notifPrefs.channels.telegram.deepLinkExpiry': 'Lien expire à',
+  'notifPrefs.channels.telegram.groupCommand': 'Colle dans le groupe :',
+  'notifPrefs.channels.telegram.tryAnother': 'Essayer une autre méthode',
   'notifPrefs.channels.telegram.botUnavailable': 'Bot Telegram non configuré sur ce serveur.',
   'notifPrefs.channels.telegram.manualTitle': 'Saisir le chat ID manuellement',
   'notifPrefs.channels.telegram.manualDesc': 'Envoie un message à @userinfobot pour trouver ton chat ID numérique.',
   'notifPrefs.channels.telegram.manualPlaceholder': 'ex. 123456789',
+  'notifPrefs.channels.telegram.threadIdPlaceholder': 'Thread ID (optionnel, pour les topics)',
+  'notifPrefs.channels.reconnect': 'Reconnecter pour vérifier',
+  'notifPrefs.channels.reconnectDesc': 'Relie ton compte pour vérifier et rétablir les notifications.',
   // Slack
   'notifPrefs.channels.slack.label': 'Slack',
   'notifPrefs.channels.slack.placeholder': 'URL webhook ou ID de canal',
@@ -2155,13 +2164,18 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'notifPrefs.subscriptions.commentsDesc': 'Notifier quand quelqu’un poste un commentaire',
   'notifPrefs.subscriptions.issueCreated': 'Nouvelles issues',
   'notifPrefs.subscriptions.issueCreatedDesc': 'Notifier quand une issue est créée',
-  // Héritage / personnalisation
-  'notifPrefs.subscriptions.inheritLabel': 'Suit le projet',
   'notifPrefs.subscriptions.inheritedFrom': 'Réglage projet :',
   'notifPrefs.subscriptions.inheritedOn': 'Activé',
   'notifPrefs.subscriptions.inheritedOff': 'Désactivé',
-  'notifPrefs.subscriptions.customize': 'Personnaliser',
   'notifPrefs.subscriptions.resetToProject': 'Réinitialiser vers le projet',
+  'notifPrefs.subscriptions.resetComments': 'Réinitialiser les commentaires vers le réglage projet',
+  'notifPrefs.subscriptions.resetIssues': 'Réinitialiser les nouvelles issues vers le réglage projet',
+  'notifPrefs.subscriptions.addProject': 'Suivre des projets…',
+  'notifPrefs.subscriptions.search': 'Rechercher des projets…',
+  'notifPrefs.subscriptions.noResults': 'Aucun projet ne correspond.',
+  'notifPrefs.subscriptions.selectedCount': '{{count}} projet(s) suivi(s)',
+  'notifPrefs.subscriptions.noneSelected': 'Aucun projet suivi pour l’instant. Sélectionne-en un ci-dessus.',
+  'notifPrefs.subscriptions.removeProject': 'Ne plus suivre ce projet',
 
   // ─── Paramètres projet — runs publics par défaut ───
   'settings.project.publicByDefault.title': "Runs d'agent publics par défaut",

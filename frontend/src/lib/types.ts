@@ -35,17 +35,27 @@ export interface UserNotificationChannel {
   address_masked: string;
   verified: boolean;
   created_at: string;
+  /** Telegram-specific: thread id when destination is a topic inside a group */
+  telegram_thread_id: number | null;
+  /** Telegram-specific: bot username that linked this channel */
+  telegram_bot_username: string | null;
 }
 
 export interface TelegramBotInfo {
   bot_username: string;
   owned: boolean;
   webhook_registered: boolean;
+  /** 'personal' = registered by this user, 'instance' = shared Baaton instance bot */
+  source: 'personal' | 'instance';
+  /** Whether the backend allows linking new destinations via this bot */
+  can_link: boolean;
 }
 
 export interface TelegramLinkResult {
   deep_link: string;
   expires_at: string;
+  /** /start command to paste in a group/topic after adding the bot */
+  command?: string;
 }
 
 export interface ProjectSubscriptionDefaults {
@@ -65,6 +75,8 @@ export interface ProjectSubscription {
   project_name: string;
   project_slug: string;
   org_id: string;
+  /** Human-readable org name, provided by backend */
+  org_name: string;
   enabled: boolean;
   notify_statuses: string[] | null;
   notify_comments: boolean | null;

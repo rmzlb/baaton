@@ -1,36 +1,41 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOrganizationList } from '@clerk/clerk-react';
 import {
-  Bell, CheckCircle2, AlertTriangle, Loader2, Trash2,
-  Link2, ExternalLink, ChevronDown, ChevronUp, Settings2,
-  RotateCcw,
+  Bell, CheckCircle2, AlertTriangle, Trash2,
+  Link2, ExternalLink, ChevronDown, ChevronUp,
+  RotateCcw, Search, X, Plus, RefreshCw,
 } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { ApiError } from '@/lib/api';
+import { Skeleton } from '@/components/shared/Skeleton';
 import type {
   UserNotificationChannel,
   ProjectSubscription,
   NotificationChannel,
 } from '@/lib/types';
 
-// ─── Local ToggleSwitch (same pattern as Automations.tsx) ─────────────────────
+// ─── Toggle switch ────────────────────────────────────────────────────────────
 
 function ToggleSwitch({
   checked,
   onChange,
   disabled = false,
+  'aria-label': ariaLabel,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
+  'aria-label'?: string;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
@@ -50,14 +55,7 @@ function ToggleSwitch({
   );
 }
 
-// ─── Channels Section ─────────────────────────────────────────────────────────
-
-const SUPPORTED_CHANNELS: { key: NotificationChannel; labelKey: string; placeholderKey: string }[] = [
-  { key: 'telegram', labelKey: 'notifPrefs.channels.telegram.label', placeholderKey: 'notifPrefs.channels.telegram.manualPlaceholder' },
-  { key: 'slack', labelKey: 'notifPrefs.channels.slack.label', placeholderKey: 'notifPrefs.channels.slack.placeholder' },
-  { key: 'discord', labelKey: 'notifPrefs.channels.discord.label', placeholderKey: 'notifPrefs.channels.discord.placeholder' },
-  { key: 'email', labelKey: 'notifPrefs.channels.email.label', placeholderKey: 'notifPrefs.channels.email.placeholder' },
-];
+// ─── Channel icon ─────────────────────────────────────────────────────────────
 
 function ChannelIcon({ channel }: { channel: NotificationChannel }) {
   const emojis: Record<NotificationChannel, string> = {
@@ -69,23 +67,31 @@ function ChannelIcon({ channel }: { channel: NotificationChannel }) {
   return <span className="text-base leading-none">{emojis[channel]}</span>;
 }
 
+// ─── Telegram connect panel ───────────────────────────────────────────────────
+
 function TelegramConnectPanel({ onSaved }: { onSaved: () => void }) {
   const { t } = useTranslation();
   const apiClient = useApi();
+  const [mode, setMode] = useState<'dm' | 'group' | 'manual'>('dm');
   const [deepLink, setDeepLink] = useState<string | null>(null);
+  const [command, setCommand] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [botError, setBotError] = useState(false);
-  const [showManual, setShowManual] = useState(false);
   const [manualAddress, setManualAddress] = useState('');
+  const [manualThread, setManualThread] = useState('');
   const [manualError, setManualError] = useState('');
   const [savingManual, setSavingManual] = useState(false);
+  const [showManual, setShowManual] = useState(false);
 
   const linkMutation = useMutation({
-    mutationFn: () => apiClient.notificationPrefs.getTelegramLink(),
-    onSuccess: (data) => {
+    mutationFn: (kind: 'private' | 'group') =>
+      apiClient.notificationPrefs.getTelegramLink({ kind }),
+    onSuccess: (data, kind) => {
       setDeepLink(data.deep_link);
       setExpiresAt(data.expires_at);
+      setCommand(data.command ?? null);
       setBotError(false);
+      setMode(kind === 'group' ? 'group' : 'dm');
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 503) {
@@ -99,48 +105,65 @@ function TelegramConnectPanel({ onSaved }: { onSaved: () => void }) {
     setSavingManual(true);
     setManualError('');
     try {
-      await apiClient.notificationPrefs.setChannel('telegram', manualAddress.trim());
+      const threadId = manualThread.trim() ? parseInt(manualThread.trim(), 10) : undefined;
+      await apiClient.notificationPrefs.setChannel('telegram', manualAddress.trim(), threadId);
       onSaved();
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
-        setManualError(t('notifPrefs.channels.invalidAddress'));
+        setManualError(t('notifPrefs.channels.invalidAddress', { defaultValue: 'Invalid address format.' }));
       } else {
-        setManualError(t('notifPrefs.channels.saveError'));
+        setManualError(t('notifPrefs.channels.saveError', { defaultValue: 'Could not save. Try again.' }));
       }
     } finally {
       setSavingManual(false);
     }
   };
 
+  const handleDmLink = () => linkMutation.mutate('private');
+  const handleGroupLink = () => linkMutation.mutate('group');
+
   return (
     <div className="mt-3 space-y-3">
-      {/* Option A: bot deep link */}
-      {!deepLink && !botError && (
-        <button
-          type="button"
-          onClick={() => linkMutation.mutate()}
-          disabled={linkMutation.isPending}
-          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-black hover:bg-accent/90 disabled:opacity-50 transition-colors"
-        >
-          {linkMutation.isPending ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Link2 size={14} />
-          )}
-          {t('notifPrefs.channels.telegram.connectBtn')}
-        </button>
-      )}
-
       {botError && (
         <div className="flex items-center gap-2 text-xs text-red-400">
           <AlertTriangle size={13} />
-          {t('notifPrefs.channels.telegram.botUnavailable')}
+          {t('notifPrefs.channels.telegram.botUnavailable', { defaultValue: 'Telegram bot not configured on this server.' })}
         </div>
       )}
 
+      {/* Mode selector buttons */}
+      {!deepLink && !botError && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleDmLink}
+            disabled={linkMutation.isPending}
+            className="flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-black hover:bg-accent/90 disabled:opacity-50 transition-colors"
+            aria-label={t('notifPrefs.channels.telegram.connectDm', { defaultValue: 'Connect via DM' })}
+          >
+            <Link2 size={13} />
+            {t('notifPrefs.channels.telegram.connectDm', { defaultValue: 'Connect via DM' })}
+          </button>
+          <button
+            type="button"
+            onClick={handleGroupLink}
+            disabled={linkMutation.isPending}
+            className="flex items-center gap-2 rounded-lg border border-border bg-surface-hover px-3 py-1.5 text-sm font-medium text-primary hover:border-accent disabled:opacity-50 transition-colors"
+            aria-label={t('notifPrefs.channels.telegram.connectGroup', { defaultValue: 'Connect to a group / topic' })}
+          >
+            {t('notifPrefs.channels.telegram.connectGroup', { defaultValue: 'Group / topic' })}
+          </button>
+        </div>
+      )}
+
+      {/* Deep link result */}
       {deepLink && (
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2">
-          <p className="text-xs text-secondary">{t('notifPrefs.channels.telegram.deepLinkDesc')}</p>
+          <p className="text-xs text-secondary">
+            {mode === 'group'
+              ? t('notifPrefs.channels.telegram.groupLinkDesc', { defaultValue: 'Add the bot to your group or topic, then click the link below.' })
+              : t('notifPrefs.channels.telegram.deepLinkDesc', { defaultValue: 'Click the link below, then press Start in the Telegram app.' })}
+          </p>
           <a
             href={deepLink}
             target="_blank"
@@ -148,36 +171,51 @@ function TelegramConnectPanel({ onSaved }: { onSaved: () => void }) {
             className="flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
           >
             <ExternalLink size={13} />
-            {t('notifPrefs.channels.telegram.deepLinkOpen')}
+            {t('notifPrefs.channels.telegram.deepLinkOpen', { defaultValue: 'Open Telegram bot' })}
           </a>
+          {command && (
+            <div className="rounded bg-surface-hover px-2 py-1.5 text-[11px] font-mono text-secondary">
+              <span className="text-muted mr-1">{t('notifPrefs.channels.telegram.groupCommand', { defaultValue: 'Paste in group:' })}</span>
+              {command}
+            </div>
+          )}
           {expiresAt && (
             <p className="text-[11px] text-muted">
-              {t('notifPrefs.channels.telegram.deepLinkExpiry')}{' '}
+              {t('notifPrefs.channels.telegram.deepLinkExpiry', { defaultValue: 'Link expires at' })}{' '}
               {new Date(expiresAt).toLocaleTimeString()}
             </p>
           )}
+          <button
+            type="button"
+            onClick={() => { setDeepLink(null); setCommand(null); }}
+            className="text-[11px] text-muted hover:text-secondary transition-colors"
+          >
+            {t('notifPrefs.channels.telegram.tryAnother', { defaultValue: 'Try another method' })}
+          </button>
         </div>
       )}
 
-      {/* Option B: manual chat_id */}
+      {/* Manual entry (progressive disclosure) */}
       <button
         type="button"
         onClick={() => setShowManual(!showManual)}
         className="flex items-center gap-1 text-xs text-muted hover:text-secondary transition-colors"
       >
         {showManual ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        {t('notifPrefs.channels.telegram.manualTitle')}
+        {t('notifPrefs.channels.telegram.manualTitle', { defaultValue: 'Enter chat ID manually' })}
       </button>
 
       {showManual && (
         <div className="space-y-2 pl-3 border-l-2 border-border">
-          <p className="text-xs text-muted">{t('notifPrefs.channels.telegram.manualDesc')}</p>
+          <p className="text-xs text-muted">
+            {t('notifPrefs.channels.telegram.manualDesc', { defaultValue: 'Send a message to @userinfobot to find your numeric chat ID.' })}
+          </p>
           <div className="flex gap-2">
             <input
               type="text"
               value={manualAddress}
               onChange={(e) => setManualAddress(e.target.value)}
-              placeholder={t('notifPrefs.channels.telegram.manualPlaceholder')}
+              placeholder={t('notifPrefs.channels.telegram.manualPlaceholder', { defaultValue: 'e.g. 123456789' })}
               className="flex-1 rounded-lg border border-border bg-bg px-3 py-2 text-sm text-primary placeholder-muted outline-none focus:border-accent transition-colors"
             />
             <button
@@ -185,18 +223,27 @@ function TelegramConnectPanel({ onSaved }: { onSaved: () => void }) {
               onClick={handleSaveManual}
               disabled={savingManual || !manualAddress.trim()}
               className="rounded-lg bg-surface-hover border border-border px-3 py-2 text-sm font-medium text-primary hover:border-accent disabled:opacity-50 transition-colors"
+              aria-label={t('notifPrefs.channels.save', { defaultValue: 'Save' })}
             >
-              {savingManual ? <Loader2 size={14} className="animate-spin" /> : t('notifPrefs.channels.save')}
+              {t('notifPrefs.channels.save', { defaultValue: 'Save' })}
             </button>
           </div>
-          {manualError && (
-            <p className="text-xs text-red-400">{manualError}</p>
-          )}
+          {/* Optional thread ID for topic */}
+          <input
+            type="text"
+            value={manualThread}
+            onChange={(e) => setManualThread(e.target.value)}
+            placeholder={t('notifPrefs.channels.telegram.threadIdPlaceholder', { defaultValue: 'Thread ID (optional, for topics)' })}
+            className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-primary placeholder-muted outline-none focus:border-accent transition-colors"
+          />
+          {manualError && <p className="text-xs text-red-400">{manualError}</p>}
         </div>
       )}
     </div>
   );
 }
+
+// ─── Generic connect panel ────────────────────────────────────────────────────
 
 function GenericConnectPanel({
   channel,
@@ -222,9 +269,9 @@ function GenericConnectPanel({
       onSaved();
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
-        setError(t('notifPrefs.channels.invalidAddress'));
+        setError(t('notifPrefs.channels.invalidAddress', { defaultValue: 'Invalid address format.' }));
       } else {
-        setError(t('notifPrefs.channels.saveError'));
+        setError(t('notifPrefs.channels.saveError', { defaultValue: 'Could not save. Try again.' }));
       }
     } finally {
       setSaving(false);
@@ -232,26 +279,36 @@ function GenericConnectPanel({
   };
 
   return (
-    <div className="mt-3 flex gap-2">
+    <div className="mt-3 flex gap-2 flex-wrap">
       <input
         type="text"
         value={address}
         onChange={(e) => setAddress(e.target.value)}
-        placeholder={t(placeholderKey as any)}
-        className="flex-1 rounded-lg border border-border bg-bg px-3 py-2 text-sm text-primary placeholder-muted outline-none focus:border-accent transition-colors"
+        placeholder={t(placeholderKey as any, { defaultValue: '' })}
+        className="flex-1 min-w-0 rounded-lg border border-border bg-bg px-3 py-2 text-sm text-primary placeholder-muted outline-none focus:border-accent transition-colors"
       />
       <button
         type="button"
         onClick={handleSave}
         disabled={saving || !address.trim()}
         className="rounded-lg bg-surface-hover border border-border px-3 py-2 text-sm font-medium text-primary hover:border-accent disabled:opacity-50 transition-colors"
+        aria-label={t('notifPrefs.channels.save', { defaultValue: 'Save' })}
       >
-        {saving ? <Loader2 size={14} className="animate-spin" /> : t('notifPrefs.channels.save')}
+        {t('notifPrefs.channels.save', { defaultValue: 'Save' })}
       </button>
-      {error && <p className="text-xs text-red-400 self-center">{error}</p>}
+      {error && <p className="w-full text-xs text-red-400">{error}</p>}
     </div>
   );
 }
+
+// ─── Channel row ──────────────────────────────────────────────────────────────
+
+const SUPPORTED_CHANNELS: { key: NotificationChannel; labelKey: string; placeholderKey: string }[] = [
+  { key: 'telegram', labelKey: 'notifPrefs.channels.telegram.label', placeholderKey: 'notifPrefs.channels.telegram.manualPlaceholder' },
+  { key: 'slack', labelKey: 'notifPrefs.channels.slack.label', placeholderKey: 'notifPrefs.channels.slack.placeholder' },
+  { key: 'discord', labelKey: 'notifPrefs.channels.discord.label', placeholderKey: 'notifPrefs.channels.discord.placeholder' },
+  { key: 'email', labelKey: 'notifPrefs.channels.email.label', placeholderKey: 'notifPrefs.channels.email.placeholder' },
+];
 
 export function ChannelRow({
   config,
@@ -268,7 +325,7 @@ export function ChannelRow({
   const [showConnect, setShowConnect] = useState(false);
 
   const handleRemove = async () => {
-    if (!confirm(t('notifPrefs.channels.removeConfirm'))) return;
+    if (!confirm(t('notifPrefs.channels.removeConfirm', { defaultValue: 'Remove this channel?' }))) return;
     setRemoving(true);
     try {
       await apiClient.notificationPrefs.removeChannel(config.key);
@@ -278,36 +335,51 @@ export function ChannelRow({
     }
   };
 
+  // Unverified: allow reconnect without forcing delete
+  const handleReconnect = () => {
+    setShowConnect(true);
+  };
+
   return (
     <div className="rounded-lg border border-border bg-bg p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <ChannelIcon channel={config.key} />
-          <span className="text-sm font-medium text-primary">{t(config.labelKey as any)}</span>
+          <span className="text-sm font-medium text-primary">
+            {t(config.labelKey as any, { defaultValue: config.key })}
+          </span>
         </div>
+
         {existing ? (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
             {existing.verified ? (
               <span className="flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-[11px] font-medium text-green-400">
                 <CheckCircle2 size={10} />
-                {t('notifPrefs.channels.verified')}
+                {t('notifPrefs.channels.verified', { defaultValue: 'Verified' })}
               </span>
             ) : (
-              <span
-                title={t('notifPrefs.channels.unverifiedHint')}
-                className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400 cursor-help"
-              >
-                <AlertTriangle size={10} />
-                {t('notifPrefs.channels.unverified')}
-              </span>
+              <>
+                <button
+                  type="button"
+                  onClick={handleReconnect}
+                  title={t('notifPrefs.channels.unverifiedHint', { defaultValue: 'Not verified — reconnect to verify.' })}
+                  className="flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-400 hover:bg-amber-500/20 transition-colors cursor-pointer"
+                  aria-label={t('notifPrefs.channels.reconnect', { defaultValue: 'Reconnect to verify' })}
+                >
+                  <AlertTriangle size={10} />
+                  {t('notifPrefs.channels.unverified', { defaultValue: 'Unverified' })}
+                  <RefreshCw size={9} className="ml-0.5" />
+                </button>
+              </>
             )}
             <button
               type="button"
               onClick={handleRemove}
               disabled={removing}
+              aria-label={t('notifPrefs.channels.remove', { defaultValue: 'Remove channel' })}
               className="rounded-md p-1.5 text-muted hover:text-red-400 hover:bg-red-500/10 transition-all"
             >
-              {removing ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              <Trash2 size={13} />
             </button>
           </div>
         ) : (
@@ -316,7 +388,9 @@ export function ChannelRow({
             onClick={() => setShowConnect(!showConnect)}
             className="text-xs text-accent hover:underline shrink-0"
           >
-            {showConnect ? t('notifPrefs.channels.cancel') : t('notifPrefs.channels.connect')}
+            {showConnect
+              ? t('notifPrefs.channels.cancel', { defaultValue: 'Cancel' })
+              : t('notifPrefs.channels.connect', { defaultValue: 'Connect' })}
           </button>
         )}
       </div>
@@ -325,6 +399,25 @@ export function ChannelRow({
         <p className="mt-1.5 text-xs text-muted font-mono">{existing.address_masked}</p>
       )}
 
+      {/* Reconnect panel for unverified */}
+      {existing && !existing.verified && showConnect && (
+        <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+          <p className="text-xs text-amber-400 mb-2">
+            {t('notifPrefs.channels.reconnectDesc', { defaultValue: 'Re-link your account to verify and restore notifications.' })}
+          </p>
+          {config.key === 'telegram' ? (
+            <TelegramConnectPanel onSaved={() => { setShowConnect(false); onRefresh(); }} />
+          ) : (
+            <GenericConnectPanel
+              channel={config.key}
+              placeholderKey={config.placeholderKey}
+              onSaved={() => { setShowConnect(false); onRefresh(); }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Connect panel for new connection */}
       {!existing && showConnect && (
         config.key === 'telegram' ? (
           <TelegramConnectPanel onSaved={() => { setShowConnect(false); onRefresh(); }} />
@@ -340,21 +433,32 @@ export function ChannelRow({
   );
 }
 
+// ─── Channels section ─────────────────────────────────────────────────────────
+
+function ChannelsSkeleton() {
+  return (
+    <div className="space-y-2">
+      {[0, 1, 2, 3].map((i) => (
+        <Skeleton key={i} className="h-14 rounded-lg" />
+      ))}
+    </div>
+  );
+}
+
 function ChannelsSection() {
   const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
+  const cacheKey = [...apiClient.notificationPrefs.cacheScope, 'channels'];
 
   const { data: channels = [], isLoading, isError } = useQuery({
-    queryKey: ['me-notification-channels'],
+    queryKey: cacheKey,
     queryFn: () => apiClient.notificationPrefs.listChannels(),
     staleTime: 60_000,
     retry: false,
   });
 
-  const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['me-notification-channels'] });
-  };
+  const refresh = () => queryClient.invalidateQueries({ queryKey: cacheKey });
 
   const channelMap = new Map<string, UserNotificationChannel>(
     channels.map((c) => [c.channel, c]),
@@ -362,19 +466,16 @@ function ChannelsSection() {
 
   return (
     <div>
-      <p className="text-xs text-secondary mb-3">{t('notifPrefs.channels.desc')}</p>
+      <p className="text-xs text-secondary mb-3">
+        {t('notifPrefs.channels.desc', { defaultValue: 'Your personal channels — used across all your projects' })}
+      </p>
 
-      {isLoading && (
-        <div className="flex items-center gap-2 py-4 text-sm text-muted">
-          <Loader2 size={14} className="animate-spin" />
-          {t('notifPrefs.loading')}
-        </div>
-      )}
+      {isLoading && <ChannelsSkeleton />}
 
       {isError && (
         <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
           <AlertTriangle size={13} />
-          {t('notifPrefs.channels.loadError')}
+          {t('notifPrefs.channels.loadError', { defaultValue: 'Failed to load channels. Refresh to retry.' })}
         </div>
       )}
 
@@ -394,92 +495,158 @@ function ChannelsSection() {
   );
 }
 
-// ─── Inherit-or-Custom field ──────────────────────────────────────────────────
+// ─── Project multi-select (searchable, grouped by org) ───────────────────────
 
-/**
- * Renders the "inherit vs explicit" control for one nullable setting.
- *
- * Design rationale:
- * - null = follow the project default (shown grayed out with the current default value)
- * - non-null = pinned to your explicit choice
- *
- * The user sees:
- *   "Suivre le projet (valeur actuelle: Oui)"  [Personnaliser]
- * or, once personalized:
- *   [toggle/buttons]  [Réinitialiser vers le projet]
- *
- * This way the user can never confuse "I chose this" vs "the project chose this".
- */
-function InheritOrCustomToggle({
-  label,
-  desc,
-  value,
-  defaultValue,
-  onChange,
-  disabled,
+interface ProjectOption {
+  project_id: string;
+  project_name: string;
+  project_slug: string;
+  org_id: string;
+  org_name: string;
+}
+
+function ProjectMultiSelect({
+  options,
+  selected,
+  onToggle,
 }: {
-  label: string;
-  desc: string;
-  value: boolean | null;
-  defaultValue: boolean;
-  onChange: (v: boolean | null) => void;
-  disabled: boolean;
+  options: ProjectOption[];
+  selected: Set<string>;
+  onToggle: (projectId: string) => void;
 }) {
   const { t } = useTranslation();
-  const isInherited = value === null;
-  const effective = isInherited ? defaultValue : value;
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const filtered = options.filter(
+    (o) =>
+      o.project_name.toLowerCase().includes(search.toLowerCase()) ||
+      o.org_name.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  // Group by org
+  const groups = new Map<string, { org_name: string; projects: ProjectOption[] }>();
+  for (const o of filtered) {
+    if (!groups.has(o.org_id)) groups.set(o.org_id, { org_name: o.org_name, projects: [] });
+    groups.get(o.org_id)!.projects.push(o);
+  }
+
+  const selectedCount = selected.size;
 
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm text-primary">{label}</p>
-        <p className="text-xs text-muted">{desc}</p>
-        {isInherited && (
-          <p className="text-[11px] text-muted mt-0.5">
-            {t('notifPrefs.subscriptions.inheritedFrom')}{' '}
-            <span className={cn('font-medium', effective ? 'text-green-400' : 'text-secondary')}>
-              {effective
-                ? t('notifPrefs.subscriptions.inheritedOn')
-                : t('notifPrefs.subscriptions.inheritedOff')}
-            </span>
-          </p>
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={cn(
+          'flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-bg px-3 py-2 text-sm text-primary',
+          'hover:border-accent/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
         )}
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {isInherited ? (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange(defaultValue)}
-            className="flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-muted hover:text-primary hover:border-accent transition-colors disabled:opacity-50"
-          >
-            <Settings2 size={10} />
-            {t('notifPrefs.subscriptions.customize')}
-          </button>
-        ) : (
-          <>
-            <ToggleSwitch
-              checked={value as boolean}
-              onChange={(v) => onChange(v)}
-              disabled={disabled}
+        aria-label={t('notifPrefs.subscriptions.addProject', { defaultValue: 'Select projects to follow' })}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          <Plus size={13} className="text-muted shrink-0" />
+          <span className="text-muted truncate">
+            {selectedCount > 0
+              ? t('notifPrefs.subscriptions.selectedCount', { defaultValue: '{{count}} project(s) followed', count: selectedCount }).replace('{{count}}', String(selectedCount))
+              : t('notifPrefs.subscriptions.addProject', { defaultValue: 'Follow projects…' })}
+          </span>
+        </span>
+        <ChevronDown size={13} className={cn('text-muted shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-multiselectable="true"
+          aria-label={t('notifPrefs.subscriptions.addProject', { defaultValue: 'Select projects to follow' })}
+          className={cn(
+            'absolute z-50 mt-1 w-full min-w-[260px] rounded-xl border border-border bg-surface shadow-lg',
+            'max-h-72 overflow-hidden flex flex-col',
+          )}
+        >
+          {/* Search */}
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+            <Search size={13} className="text-muted shrink-0" />
+            <input
+              type="text"
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('notifPrefs.subscriptions.search', { defaultValue: 'Search projects…' })}
+              className="flex-1 bg-transparent text-sm text-primary placeholder-muted outline-none"
+              aria-label={t('notifPrefs.subscriptions.search', { defaultValue: 'Search projects' })}
             />
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onChange(null)}
-              title={t('notifPrefs.subscriptions.resetToProject')}
-              className="rounded p-1 text-muted hover:text-secondary transition-colors disabled:opacity-50"
-            >
-              <RotateCcw size={11} />
-            </button>
-          </>
-        )}
-      </div>
+            {search && (
+              <button type="button" onClick={() => setSearch('')} className="text-muted hover:text-secondary">
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Options */}
+          <div className="overflow-y-auto flex-1">
+            {groups.size === 0 && (
+              <p className="px-3 py-4 text-center text-xs text-muted">
+                {t('notifPrefs.subscriptions.noResults', { defaultValue: 'No projects match.' })}
+              </p>
+            )}
+            {Array.from(groups.entries()).map(([orgId, { org_name, projects }]) => (
+              <div key={orgId}>
+                <div className="sticky top-0 bg-surface px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted">
+                  {org_name}
+                </div>
+                {projects.map((p) => {
+                  const isSelected = selected.has(p.project_id);
+                  return (
+                    <button
+                      key={p.project_id}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => onToggle(p.project_id)}
+                      className={cn(
+                        'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors',
+                        'hover:bg-surface-hover focus:outline-none focus-visible:bg-surface-hover',
+                        isSelected ? 'text-primary' : 'text-secondary',
+                      )}
+                    >
+                      <span className={cn(
+                        'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+                        isSelected ? 'border-accent bg-accent' : 'border-border bg-transparent',
+                      )}>
+                        {isSelected && <CheckCircle2 size={10} className="text-black" />}
+                      </span>
+                      <span className="min-w-0 truncate">{p.project_name}</span>
+                      <span className="ml-auto text-[11px] text-muted font-mono shrink-0">{p.project_slug}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function InheritOrCustomStatuses({
+// ─── Status chips (direct, no customize gate) ─────────────────────────────────
+
+function StatusChips({
   value,
   defaultValue,
   statuses,
@@ -493,61 +660,51 @@ function InheritOrCustomStatuses({
   disabled: boolean;
 }) {
   const { t } = useTranslation();
-  const isInherited = value === null;
-  const effective = isInherited ? defaultValue : value;
+  // Effective value: override ?? default
+  const effective = value ?? defaultValue;
+  const hasOverride = value !== null;
 
-  const handleToggleStatus = (key: string) => {
+  const handleToggleStatus = useCallback((key: string) => {
     const current = effective;
     const next = current.includes(key)
       ? current.filter((k) => k !== key)
       : [...current, key];
     onChange(next);
-  };
+  }, [effective, onChange]);
+
+  if (statuses.length === 0) {
+    return <p className="text-xs text-muted">{t('notifPrefs.subscriptions.noStatuses', { defaultValue: 'No statuses defined.' })}</p>;
+  }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs font-medium text-secondary uppercase tracking-wider">
-          {t('notifPrefs.subscriptions.statuses')}
+      <div className="flex items-center gap-2 mb-1.5">
+        <p className="text-[10px] font-medium uppercase tracking-wider text-muted">
+          {t('notifPrefs.subscriptions.statuses', { defaultValue: 'Status transitions' })}
         </p>
-        {isInherited ? (
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-muted italic">{t('notifPrefs.subscriptions.inheritLabel')}</span>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onChange([...defaultValue])}
-              className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[11px] text-muted hover:text-primary hover:border-accent transition-colors disabled:opacity-50"
-            >
-              <Settings2 size={10} />
-              {t('notifPrefs.subscriptions.customize')}
-            </button>
-          </div>
-        ) : (
+        {hasOverride && (
           <button
             type="button"
             disabled={disabled}
             onClick={() => onChange(null)}
-            className="flex items-center gap-1 text-[11px] text-muted hover:text-secondary transition-colors disabled:opacity-50"
+            title={t('notifPrefs.subscriptions.resetToProject', { defaultValue: 'Reset to project default' })}
+            aria-label={t('notifPrefs.subscriptions.resetToProject', { defaultValue: 'Reset to project default' })}
+            className="rounded p-0.5 text-muted hover:text-secondary transition-colors disabled:opacity-50"
           >
             <RotateCcw size={10} />
-            {t('notifPrefs.subscriptions.resetToProject')}
           </button>
         )}
       </div>
-
-      <div className={cn('flex flex-wrap gap-1.5', isInherited && 'opacity-50 pointer-events-none')}>
-        {statuses.length === 0 && (
-          <p className="text-xs text-muted">{t('notifPrefs.subscriptions.noStatuses')}</p>
-        )}
+      <div className="flex flex-wrap gap-1.5">
         {statuses.map((status) => {
           const active = effective.includes(status.key);
           return (
             <button
               key={status.key}
               type="button"
-              disabled={disabled || isInherited}
+              disabled={disabled}
               onClick={() => handleToggleStatus(status.key)}
+              aria-pressed={active}
               className={cn(
                 'flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-all',
                 'disabled:cursor-not-allowed',
@@ -561,7 +718,6 @@ function InheritOrCustomStatuses({
                 style={{ backgroundColor: active ? (status.color || '#64748b') : '#64748b' }}
               />
               {status.label}
-              {active && <CheckCircle2 size={10} className="text-accent ml-0.5" />}
             </button>
           );
         })}
@@ -570,34 +726,23 @@ function InheritOrCustomStatuses({
   );
 }
 
-// ─── Project Subscription Row ─────────────────────────────────────────────────
+// ─── Project subscription row (direct toggles, no customize gate) ─────────────
 
 function ProjectSubscriptionRow({
   sub,
   onUpdate,
+  onRemove,
 }: {
   sub: ProjectSubscription;
   onUpdate: (projectId: string, patch: Partial<ProjectSubscription>) => Promise<void>;
+  onRemove: (projectId: string) => void;
 }) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(true);
 
-  const handleToggleEnabled = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      await onUpdate(sub.project_id, { enabled: !sub.enabled });
-      if (!sub.enabled) setExpanded(true); // auto-expand when subscribing
-    } catch {
-      setError(t('notifPrefs.subscriptions.saveError'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handlePatch = async (patch: Partial<{
+  const handlePatch = useCallback(async (patch: Partial<{
     notify_statuses: string[] | null;
     notify_comments: boolean | null;
     notify_issue_created: boolean | null;
@@ -607,75 +752,137 @@ function ProjectSubscriptionRow({
     try {
       await onUpdate(sub.project_id, patch);
     } catch {
-      setError(t('notifPrefs.subscriptions.saveError'));
+      setError(t('notifPrefs.subscriptions.saveError', { defaultValue: 'Could not save preference.' }));
     } finally {
       setSaving(false);
     }
-  };
+  }, [onUpdate, sub.project_id, t]);
+
+  // Effective values: override ?? project default
+  const effectiveComments = sub.notify_comments ?? sub.project_defaults.notify_comments;
+  const effectiveIssues = sub.notify_issue_created ?? sub.project_defaults.notify_issue_created;
 
   return (
-    <div className={cn(
-      'rounded-lg border transition-colors',
-      sub.enabled ? 'border-border bg-bg' : 'border-border/50 bg-bg/50',
-    )}>
-      {/* Header row */}
-      <div className="flex items-center gap-3 px-4 py-3">
-        <ToggleSwitch
-          checked={sub.enabled}
-          onChange={handleToggleEnabled}
-          disabled={saving}
-        />
+    <div className="rounded-lg border border-border bg-bg">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3.5 py-3">
         <div className="flex-1 min-w-0">
-          <p className={cn('text-sm font-medium truncate', sub.enabled ? 'text-primary' : 'text-muted')}>
-            {sub.project_name}
-          </p>
-          <p className="text-[11px] text-muted">{sub.project_slug}</p>
+          <p className="text-sm font-medium text-primary truncate">{sub.project_name}</p>
+          <p className="text-[11px] text-muted">{sub.org_name} · {sub.project_slug}</p>
         </div>
-        {sub.enabled && (
+        <div className="flex items-center gap-2 shrink-0">
+          {saving && (
+            <span className="text-[11px] text-muted animate-pulse">
+              {t('notifPrefs.channels.saving', { defaultValue: 'Saving…' })}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
-            className="text-muted hover:text-secondary transition-colors p-1"
+            className="p-1 text-muted hover:text-secondary transition-colors rounded"
+            aria-label={expanded ? t('common.collapse', { defaultValue: 'Collapse' }) : t('common.expand', { defaultValue: 'Expand' })}
           >
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
-        )}
-        {saving && <Loader2 size={13} className="animate-spin text-muted shrink-0" />}
+          <button
+            type="button"
+            onClick={() => onRemove(sub.project_id)}
+            aria-label={t('notifPrefs.subscriptions.removeProject', { defaultValue: 'Stop following project' })}
+            className="p-1 text-muted hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
+          >
+            <X size={13} />
+          </button>
+        </div>
       </div>
 
-      {/* Expanded settings — only when subscribed */}
-      {sub.enabled && expanded && (
-        <div className="border-t border-border px-4 py-4 space-y-4">
-          {/* Statuses */}
-          <InheritOrCustomStatuses
+      {expanded && (
+        <div className="border-t border-border px-3.5 py-3 space-y-4">
+          {/* Comments toggle — direct */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm text-primary">
+                {t('notifPrefs.subscriptions.comments', { defaultValue: 'New comments' })}
+              </p>
+              {sub.notify_comments === null && (
+                <p className="text-[11px] text-muted">
+                  {t('notifPrefs.subscriptions.inheritedFrom', { defaultValue: 'Project default:' })}{' '}
+                  <span className={effectiveComments ? 'text-green-400' : 'text-secondary'}>
+                    {effectiveComments
+                      ? t('notifPrefs.subscriptions.inheritedOn', { defaultValue: 'On' })
+                      : t('notifPrefs.subscriptions.inheritedOff', { defaultValue: 'Off' })}
+                  </span>
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <ToggleSwitch
+                checked={effectiveComments}
+                onChange={(v) => handlePatch({ notify_comments: v })}
+                disabled={saving}
+                aria-label={t('notifPrefs.subscriptions.comments', { defaultValue: 'New comments' })}
+              />
+              {sub.notify_comments !== null && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => handlePatch({ notify_comments: null })}
+                  title={t('notifPrefs.subscriptions.resetToProject', { defaultValue: 'Reset to project default' })}
+                  aria-label={t('notifPrefs.subscriptions.resetComments', { defaultValue: 'Reset comments to project default' })}
+                  className="rounded p-1 text-muted hover:text-secondary transition-colors disabled:opacity-50"
+                >
+                  <RotateCcw size={10} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Issues toggle — direct */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm text-primary">
+                {t('notifPrefs.subscriptions.issueCreated', { defaultValue: 'New issues' })}
+              </p>
+              {sub.notify_issue_created === null && (
+                <p className="text-[11px] text-muted">
+                  {t('notifPrefs.subscriptions.inheritedFrom', { defaultValue: 'Project default:' })}{' '}
+                  <span className={effectiveIssues ? 'text-green-400' : 'text-secondary'}>
+                    {effectiveIssues
+                      ? t('notifPrefs.subscriptions.inheritedOn', { defaultValue: 'On' })
+                      : t('notifPrefs.subscriptions.inheritedOff', { defaultValue: 'Off' })}
+                  </span>
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <ToggleSwitch
+                checked={effectiveIssues}
+                onChange={(v) => handlePatch({ notify_issue_created: v })}
+                disabled={saving}
+                aria-label={t('notifPrefs.subscriptions.issueCreated', { defaultValue: 'New issues' })}
+              />
+              {sub.notify_issue_created !== null && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => handlePatch({ notify_issue_created: null })}
+                  title={t('notifPrefs.subscriptions.resetToProject', { defaultValue: 'Reset to project default' })}
+                  aria-label={t('notifPrefs.subscriptions.resetIssues', { defaultValue: 'Reset new issues to project default' })}
+                  className="rounded p-1 text-muted hover:text-secondary transition-colors disabled:opacity-50"
+                >
+                  <RotateCcw size={10} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Status chips — direct */}
+          <StatusChips
             value={sub.notify_statuses}
             defaultValue={sub.project_defaults.notify_statuses}
             statuses={sub.statuses}
             onChange={(v) => handlePatch({ notify_statuses: v })}
             disabled={saving}
           />
-
-          <div className="border-t border-border/50 pt-3 space-y-3">
-            {/* notify_comments */}
-            <InheritOrCustomToggle
-              label={t('notifPrefs.subscriptions.comments')}
-              desc={t('notifPrefs.subscriptions.commentsDesc')}
-              value={sub.notify_comments}
-              defaultValue={sub.project_defaults.notify_comments}
-              onChange={(v) => handlePatch({ notify_comments: v })}
-              disabled={saving}
-            />
-
-            {/* notify_issue_created */}
-            <InheritOrCustomToggle
-              label={t('notifPrefs.subscriptions.issueCreated')}
-              desc={t('notifPrefs.subscriptions.issueCreatedDesc')}
-              value={sub.notify_issue_created}
-              defaultValue={sub.project_defaults.notify_issue_created}
-              onChange={(v) => handlePatch({ notify_issue_created: v })}
-              disabled={saving}
-            />
-          </div>
 
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
@@ -685,35 +892,39 @@ function ProjectSubscriptionRow({
           )}
         </div>
       )}
-
-      {error && !expanded && (
-        <div className="px-4 pb-3">
-          <p className="text-xs text-red-400">{error}</p>
-        </div>
-      )}
     </div>
   );
 }
 
-// ─── Subscriptions Section ────────────────────────────────────────────────────
+// ─── Subscriptions section ────────────────────────────────────────────────────
+
+function SubscriptionsSkeleton() {
+  return (
+    <div className="space-y-2">
+      <Skeleton className="h-10 rounded-lg" />
+      <Skeleton className="h-28 rounded-lg" />
+      <Skeleton className="h-28 rounded-lg" />
+    </div>
+  );
+}
 
 export function SubscriptionsSection() {
   const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();
+  const cacheKey = [...apiClient.notificationPrefs.cacheScope, 'subscriptions'];
 
   const { data: subs = [], isLoading, isError } = useQuery({
-    queryKey: ['me-project-subscriptions'],
+    queryKey: cacheKey,
     queryFn: () => apiClient.notificationPrefs.listSubscriptions(),
     staleTime: 30_000,
     retry: false,
   });
 
-  const handleUpdate = async (
+  const handleUpdate = useCallback(async (
     projectId: string,
     patch: Partial<ProjectSubscription>,
   ) => {
-    // Build the API body from the patch
     const body: Record<string, unknown> = {};
     if ('enabled' in patch) body.enabled = patch.enabled;
     if ('notify_statuses' in patch) body.notify_statuses = patch.notify_statuses;
@@ -722,37 +933,62 @@ export function SubscriptionsSection() {
 
     const updated = await apiClient.notificationPrefs.updateSubscription(projectId, body);
 
-    // Optimistic update in cache
     queryClient.setQueryData<ProjectSubscription[]>(
-      ['me-project-subscriptions'],
-      (old) =>
-        old?.map((s) => (s.project_id === projectId ? updated : s)) ?? [],
+      cacheKey,
+      (old) => old?.map((s) => (s.project_id === projectId ? updated : s)) ?? [],
     );
-  };
+  }, [apiClient, cacheKey, queryClient]);
 
-  // Group by org_id
-  const byOrg = new Map<string, ProjectSubscription[]>();
-  for (const sub of subs) {
-    const arr = byOrg.get(sub.org_id) ?? [];
-    arr.push(sub);
-    byOrg.set(sub.org_id, arr);
-  }
-  const multiOrg = byOrg.size > 1;
+  const handleToggleProject = useCallback(async (projectId: string) => {
+    const sub = subs.find((s) => s.project_id === projectId);
+    if (!sub) return;
+    const newEnabled = !sub.enabled;
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 py-4 text-sm text-muted">
-        <Loader2 size={14} className="animate-spin" />
-        {t('notifPrefs.loading')}
-      </div>
+    // Optimistic toggle
+    queryClient.setQueryData<ProjectSubscription[]>(
+      cacheKey,
+      (old) => old?.map((s) => s.project_id === projectId ? { ...s, enabled: newEnabled } : s) ?? [],
     );
-  }
+
+    try {
+      const updated = await apiClient.notificationPrefs.updateSubscription(projectId, { enabled: newEnabled });
+      queryClient.setQueryData<ProjectSubscription[]>(
+        cacheKey,
+        (old) => old?.map((s) => s.project_id === projectId ? updated : s) ?? [],
+      );
+    } catch {
+      // revert
+      queryClient.setQueryData<ProjectSubscription[]>(
+        cacheKey,
+        (old) => old?.map((s) => s.project_id === projectId ? { ...s, enabled: !newEnabled } : s) ?? [],
+      );
+    }
+  }, [subs, apiClient, cacheKey, queryClient]);
+
+  const handleRemoveProject = useCallback(async (projectId: string) => {
+    // Disable = unfollow (no hard delete needed; keep settings)
+    queryClient.setQueryData<ProjectSubscription[]>(
+      cacheKey,
+      (old) => old?.map((s) => s.project_id === projectId ? { ...s, enabled: false } : s) ?? [],
+    );
+    try {
+      await apiClient.notificationPrefs.updateSubscription(projectId, { enabled: false });
+    } catch {
+      // revert
+      queryClient.setQueryData<ProjectSubscription[]>(
+        cacheKey,
+        (old) => old?.map((s) => s.project_id === projectId ? { ...s, enabled: true } : s) ?? [],
+      );
+    }
+  }, [apiClient, cacheKey, queryClient]);
+
+  if (isLoading) return <SubscriptionsSkeleton />;
 
   if (isError) {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
         <AlertTriangle size={13} />
-        {t('notifPrefs.subscriptions.loadError')}
+        {t('notifPrefs.subscriptions.loadError', { defaultValue: 'Failed to load subscriptions. Refresh to retry.' })}
       </div>
     );
   }
@@ -760,61 +996,86 @@ export function SubscriptionsSection() {
   if (subs.length === 0) {
     return (
       <p className="text-xs text-muted py-4 text-center">
-        {t('notifPrefs.subscriptions.noProjects')}
+        {t('notifPrefs.subscriptions.noProjects', { defaultValue: 'No visible projects. Create or join a project first.' })}
       </p>
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <p className="text-xs text-secondary">{t('notifPrefs.subscriptions.desc')}</p>
+  const enabledSubs = subs.filter((s) => s.enabled);
 
-      {Array.from(byOrg.entries()).map(([orgId, projects]) => (
-        <div key={orgId}>
-          {multiOrg && (
-            <p className="text-[11px] text-muted uppercase tracking-wider mb-2 font-medium">
-              {orgId}
-            </p>
-          )}
-          <div className="space-y-2">
-            {projects.map((sub) => (
-              <ProjectSubscriptionRow
-                key={sub.project_id}
-                sub={sub}
-                onUpdate={handleUpdate}
-              />
-            ))}
-          </div>
+  // Resolve org names from Clerk memberships (fallback to org_id)
+  const { userMemberships } = useOrganizationList({ userMemberships: { infinite: true } });
+  const orgNamesMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const mem of (userMemberships?.data ?? [])) {
+      m.set(mem.organization.id, mem.organization.name);
+    }
+    return m;
+  }, [userMemberships?.data]);
+
+  const allOptions: ProjectOption[] = subs.map((s) => ({
+    project_id: s.project_id,
+    project_name: s.project_name,
+    project_slug: s.project_slug,
+    org_id: s.org_id,
+    org_name: s.org_name || orgNamesMap.get(s.org_id) || s.org_id,
+  }));
+  const selectedSet = new Set(enabledSubs.map((s) => s.project_id));
+
+  return (
+    <div className="space-y-3">
+      {/* Multi-select dropdown */}
+      <ProjectMultiSelect
+        options={allOptions}
+        selected={selectedSet}
+        onToggle={handleToggleProject}
+      />
+
+      {/* Enabled projects list */}
+      {enabledSubs.length === 0 ? (
+        <p className="text-xs text-muted text-center py-3">
+          {t('notifPrefs.subscriptions.noneSelected', { defaultValue: 'No projects followed yet. Select some above.' })}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {enabledSubs.map((sub) => (
+            <ProjectSubscriptionRow
+              key={sub.project_id}
+              sub={sub}
+              onUpdate={handleUpdate}
+              onRemove={handleRemoveProject}
+            />
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
-// ─── Main export ─────────────────────────────────────────────────────────────
+// ─── Main export ──────────────────────────────────────────────────────────────
 
 export function NotificationPreferencesSection() {
   const { t } = useTranslation();
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4 md:p-6 space-y-6">
-      {/* Section header */}
+      {/* Header */}
       <div className="flex items-center gap-3">
         <Bell size={20} className="text-accent shrink-0" />
         <div>
           <h2 className="text-sm font-semibold text-primary uppercase tracking-wider">
-            {t('notifPrefs.title')}
+            {t('notifPrefs.title', { defaultValue: 'Notification Preferences' })}
           </h2>
           <p className="text-xs text-secondary mt-0.5">
-            {t('notifPrefs.desc')}
+            {t('notifPrefs.desc', { defaultValue: 'Manage your personal notification channels and project subscriptions' })}
           </p>
         </div>
       </div>
 
-      {/* Channels */}
+      {/* Destination channels */}
       <div>
         <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">
-          {t('notifPrefs.channels.title')}
+          {t('notifPrefs.channels.title', { defaultValue: 'Notification Channels' })}
         </h3>
         <ChannelsSection />
       </div>
@@ -822,7 +1083,7 @@ export function NotificationPreferencesSection() {
       {/* Project subscriptions */}
       <div className="border-t border-border pt-5">
         <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">
-          {t('notifPrefs.subscriptions.title')}
+          {t('notifPrefs.subscriptions.title', { defaultValue: 'Project Subscriptions' })}
         </h3>
         <SubscriptionsSection />
       </div>

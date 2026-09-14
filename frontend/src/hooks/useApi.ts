@@ -60,6 +60,7 @@ import type {
  */
 export function useApi() {
   const { getToken, signOut, sessionId } = useAuth();
+  const { userId } = useAuth();
 
   const getAuthToken = useCallback(async () => {
     try {
@@ -959,21 +960,37 @@ export function useApi() {
 
     // ─── User Notification Preferences ──────────────
     notificationPrefs: {
+      /**
+       * User-scoped cache prefix — include in queryKey arrays so /me data
+       * is never shared across accounts.
+       * Usage: queryKey: [...api.notificationPrefs.cacheScope, 'channels']
+       */
+      cacheScope: ['notif-prefs', userId ?? 'anon'] as readonly string[],
+
       listChannels: async (): Promise<UserNotificationChannel[]> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.get<UserNotificationChannel[]>('/me/notification-channels', token);
         }),
 
+      /**
+       * Save a notification channel.
+       * For Telegram: pass threadId when destination is a group topic.
+       */
       setChannel: async (
         channel: string,
         address: string,
+        threadId?: number | null,
       ): Promise<UserNotificationChannel> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
+          const body: Record<string, unknown> = { address };
+          if (channel === 'telegram' && threadId != null) {
+            body.telegram_thread_id = threadId;
+          }
           return api.put<UserNotificationChannel>(
             `/me/notification-channels/${channel}`,
-            { address },
+            body,
             token,
           );
         }),
@@ -984,12 +1001,17 @@ export function useApi() {
           return api.delete(`/me/notification-channels/${channel}`, token);
         }),
 
-      getTelegramLink: async (): Promise<TelegramLinkResult> =>
+      /**
+       * Request a Telegram deep-link for account linking.
+       * kind='private' (default) → DM link.
+       * kind='group' → group/topic link; response includes command to paste.
+       */
+      getTelegramLink: async (opts?: { kind?: 'private' | 'group' }): Promise<TelegramLinkResult> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.post<TelegramLinkResult>(
             '/me/notification-channels/telegram/link',
-            {},
+            opts ?? {},
             token,
           );
         }),
@@ -1022,5 +1044,7 @@ export function useApi() {
 
     // Expose token getter for direct fetch calls (e.g. Admin page)
     _getToken: getAuthToken,
-  }), [getAuthToken, withErrorHandling]);
+    /** Stable user id for query key scoping */
+    _userId: userId,
+  }), [getAuthToken, withErrorHandling, userId]);
 }
