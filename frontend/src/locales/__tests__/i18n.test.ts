@@ -28,13 +28,21 @@ describe('i18n completeness', () => {
     expect(missingInEn.length).toBeLessThanOrEqual(5);
   });
 
+  // Keys intentionally left empty — each entry must explain why.
+  const intentionallyEmpty: string[] = [
+    // landing.pricing.enterprisePeriod: Enterprise tier has no fixed billing period
+    // (price is on demand / custom quote). Landing.tsx guards the render with a
+    // truthiness check so an empty string means "no period label", not a bug.
+    'landing.pricing.enterprisePeriod',
+  ];
+
   it('no empty values in EN', () => {
-    const emptyKeys = enKeys.filter((k) => !(en as any)[k]);
+    const emptyKeys = enKeys.filter((k) => !(en as any)[k] && !intentionallyEmpty.includes(k));
     expect(emptyKeys).toEqual([]);
   });
 
   it('no empty values in FR', () => {
-    const emptyKeys = frKeys.filter((k) => !(fr as any)[k]);
+    const emptyKeys = frKeys.filter((k) => !(fr as any)[k] && !intentionallyEmpty.includes(k));
     expect(emptyKeys).toEqual([]);
   });
 });
