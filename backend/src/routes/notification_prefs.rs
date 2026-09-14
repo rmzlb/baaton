@@ -1026,6 +1026,7 @@ pub async fn resolve_recipients(
           AND s.enabled \
           AND c.user_id <> $4 \
           AND (cardinality(s.channels) = 0 OR c.channel = ANY(s.channels)) \
+          AND (c.channel != 'telegram' OR c.verified_at IS NOT NULL) \
           AND CASE $2 \
                 WHEN 'status_changed' THEN \
                   COALESCE(s.notify_statuses, p.notify_statuses) @> to_jsonb($3::text) \
