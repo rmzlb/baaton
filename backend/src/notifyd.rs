@@ -44,6 +44,27 @@ pub struct IssueNotice {
     pub issue_id: uuid::Uuid,
 }
 
+/// A status transition. This is what the room reacts to: a ticket coming back
+/// from review is a call to action, and the reviewer's last comment is the
+/// reason. Announcing the move without it forces everyone to open the board to
+/// learn why, which is the same blind spot `IssueNotice` fixed for creation.
+pub struct StatusNotice {
+    pub issue: IssueNotice,
+    /// Human labels when the project defines them, raw keys otherwise.
+    pub from_status: String,
+    pub to_status: String,
+    /// `(author, body)` of the most recent comment. `None` when there is none.
+    pub last_comment: Option<(String, String)>,
+    /// Distinguishes one transition from the next for idempotency: two moves to
+    /// the same status must both be announced.
+    pub changed_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Longest comment excerpt carried into a chat line. Telegram caps a message at
+/// 4096 bytes, but the limit here is attention, not bytes: a notification is a
+/// pointer to the thread, not the thread.
+const COMMENT_EXCERPT_CHARS: usize = 280;
+
 impl NotifydClient {
     /// `None` when notifyd is not configured, which is the normal state of a
     /// deployment that does not use it.
@@ -84,6 +105,25 @@ impl NotifydClient {
         let text = notice.text("New issue");
         let url = notice.url(self.public_url.as_deref());
         let key = format!("baaton-issue-created-{}", notice.issue_id);
+        tokio::spawn(async move {
+            client.send_telegram(text, url, key).await;
+        });
+    }
+
+    /// Announce a status transition, carrying the last comment as the reason.
+    pub fn issue_status_changed(&self, notice: StatusNotice) {
+        let client = self.clone();
+        let text = notice.text();
+        let url = notice.issue.url(self.public_url.as_deref());
+        // The transition timestamp is part of the key: a ticket that goes
+        // in_review → not_ok → in_review → not_ok must announce twice, so
+        // keying on the target status alone would swallow the second move.
+        let key = format!(
+            "baaton-issue-status-{}-{}-{}",
+            notice.issue.issue_id,
+            notice.to_status,
+            notice.changed_at.timestamp_millis()
+        );
         tokio::spawn(async move {
             client.send_telegram(text, url, key).await;
         });
@@ -148,6 +188,40 @@ impl IssueNotice {
     }
 }
 
+impl StatusNotice {
+    /// Four lines at most: the transition, the title, then the reason. The arrow
+    /// carries the information a bare "moved to Not OK" loses — where it came
+    /// from, which is what tells the room whether this is progress or a bounce.
+    fn text(&self) -> String {
+        let headline = format!("{} → {}", self.from_status, self.to_status);
+        let mut out = self.issue.text(&headline);
+        if let Some((author, body)) = &self.last_comment {
+            let excerpt = excerpt(body);
+            if !excerpt.is_empty() {
+                out.push_str(&format!("\n\n💬 {author}: {excerpt}"));
+            }
+        }
+        out
+    }
+}
+
+/// One-line excerpt of a comment: newlines collapse to separators so a long
+/// review comment cannot push the transition line off screen, and the cut is on
+/// a character boundary (`chars`, not bytes) because these comments are French.
+fn excerpt(body: &str) -> String {
+    let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= COMMENT_EXCERPT_CHARS {
+        return flat;
+    }
+    let cut: String = flat.chars().take(COMMENT_EXCERPT_CHARS).collect();
+    // Prefer the last word boundary so the excerpt does not end mid-word.
+    let cut = match cut.rsplit_once(' ') {
+        Some((head, _)) if head.chars().count() > COMMENT_EXCERPT_CHARS / 2 => head.to_string(),
+        _ => cut,
+    };
+    format!("{cut}…")
+}
+
 fn non_empty(name: &str) -> Option<String> {
     std::env::var(name)
         .ok()
@@ -196,5 +270,63 @@ mod tests {
             notice().url(Some("https://baaton.dev/")),
             Some("https://baaton.dev//issues/00000000-0000-0000-0000-000000000000".into())
         );
+    }
+
+    fn status_notice() -> StatusNotice {
+        StatusNotice {
+            issue: notice(),
+            from_status: "In Review".into(),
+            to_status: "Not OK".into(),
+            last_comment: None,
+            changed_at: chrono::Utc::now(),
+        }
+    }
+
+    /// The arrow is the point: "moved to Not OK" alone does not say whether the
+    /// ticket progressed or bounced back.
+    #[test]
+    fn status_text_shows_both_ends_of_the_transition() {
+        assert_eq!(
+            status_notice().text(),
+            "In Review \u{2192} Not OK \u{b7} SQX-304 \u{b7} Square \u{b7} by agent\nLe bouton d'export ne r\u{e9}pond plus"
+        );
+    }
+
+    /// The reviewer's reason travels with the transition.
+    #[test]
+    fn status_text_carries_the_last_comment() {
+        let mut n = status_notice();
+        n.last_comment = Some(("Ramzi L.".into(), "Le total TTC est faux sur la ligne 3.".into()));
+        assert!(n.text().ends_with("\n\n\u{1f4ac} Ramzi L.: Le total TTC est faux sur la ligne 3."));
+    }
+
+    /// A comment that is only whitespace must not produce a dangling "author:".
+    #[test]
+    fn status_text_skips_an_empty_comment() {
+        let mut n = status_notice();
+        n.last_comment = Some(("Ramzi L.".into(), "   \n  ".into()));
+        assert_eq!(n.text(), status_notice().text());
+    }
+
+    /// Multi-line comments collapse to one line so the transition stays visible.
+    #[test]
+    fn excerpt_flattens_and_keeps_short_comments_intact() {
+        assert_eq!(excerpt("ligne 1\n\nligne 2"), "ligne 1 ligne 2");
+    }
+
+    /// Long comments are cut on a word boundary, and on chars not bytes: cutting
+    /// mid-codepoint on accented French text would panic.
+    #[test]
+    fn excerpt_truncates_on_a_word_boundary() {
+        let long = "\u{e9}".repeat(400);
+        let out = excerpt(&long);
+        assert!(out.ends_with('\u{2026}'));
+        assert_eq!(out.chars().count(), COMMENT_EXCERPT_CHARS + 1);
+
+        let words = "r\u{e9}gularisation ".repeat(40);
+        let out = excerpt(&words);
+        assert!(out.ends_with('\u{2026}'));
+        assert!(out.chars().count() <= COMMENT_EXCERPT_CHARS + 1);
+        assert!(!out.contains("  "));
     }
 }

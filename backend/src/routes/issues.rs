@@ -1638,6 +1638,7 @@ pub async fn get_one(
 pub async fn update(
     Extension(auth): Extension<AuthUser>,
     Extension(novu): Extension<Option<crate::novu::NovuClient>>,
+    Extension(notifyd): Extension<Option<crate::notifyd::NotifydClient>>,
     Extension(sse_tx): Extension<EventSender>,
     Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
@@ -2196,6 +2197,78 @@ pub async fn update(
         tokio::spawn(async move {
             recompute_sla(&pool2, iid).await;
         });
+    }
+
+    // ── Chat notification for the room on a status change ──
+    // Creation was already announced; a transition is the other event the room
+    // reacts to, and `in_review → not_ok` is the one that needs a reason. The
+    // last comment is that reason, so it travels with the notice instead of
+    // making everyone open the board to find out why the ticket bounced.
+    if status_changed {
+        if let Some(ref notifyd) = notifyd {
+            let pool2 = pool.clone();
+            let notifyd = notifyd.clone();
+            let display_id = issue.display_id.clone();
+            let title = issue.title.clone();
+            let actor = auth.display_name.clone();
+            let issue_id = issue.id;
+            let project_id = issue.project_id;
+            let from_key = existing.status.clone();
+            let to_key = issue.status.clone();
+            let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
+            tokio::spawn(async move {
+                let project: Option<(String, serde_json::Value)> =
+                    sqlx::query_as("SELECT name, statuses FROM projects WHERE id = $1")
+                        .bind(project_id)
+                        .fetch_optional(&pool2)
+                        .await
+                        .ok()
+                        .flatten();
+                let (project_name, statuses) = match project {
+                    Some((name, statuses)) => (Some(name), Some(statuses)),
+                    None => (None, None),
+                };
+
+                // Show what the board shows: a raw `not_ok` in the chat while
+                // the UI says "Not OK" makes the two look like two systems.
+                let label = |key: &str| -> String {
+                    statuses
+                        .as_ref()
+                        .and_then(|s| s.as_array())
+                        .and_then(|arr| {
+                            arr.iter()
+                                .find(|s| s.get("key").and_then(|k| k.as_str()) == Some(key))
+                        })
+                        .and_then(|s| s.get("label").and_then(|l| l.as_str()))
+                        .unwrap_or(key)
+                        .to_string()
+                };
+
+                let last_comment: Option<(String, String)> = sqlx::query_as(
+                    "SELECT author_name, body FROM comments WHERE issue_id = $1 \
+                     ORDER BY created_at DESC LIMIT 1",
+                )
+                .bind(issue_id)
+                .fetch_optional(&pool2)
+                .await
+                .ok()
+                .flatten();
+
+                notifyd.issue_status_changed(crate::notifyd::StatusNotice {
+                    issue: crate::notifyd::IssueNotice {
+                        display_id,
+                        title,
+                        project_name,
+                        actor,
+                        issue_id,
+                    },
+                    from_status: label(&from_key),
+                    to_status: label(&to_key),
+                    last_comment,
+                    changed_at,
+                });
+            });
+        }
     }
 
     // ── Automations: status/priority change (fire-and-forget) ─
