@@ -29,7 +29,11 @@ pub struct NotifydClient {
     http: reqwest::Client,
     base_url: String,
     api_key: String,
-    chat_id: String,
+    /// The legacy shared room, kept as an *extra* destination so an instance that
+    /// announced into a Telegram topic keeps doing so. `Option` because it is no
+    /// longer how anyone is reached: keeping it mandatory would mean an instance
+    /// that routes per user, with no shared room, gets no client at all.
+    chat_id: Option<String>,
     thread_id: Option<i64>,
     public_url: Option<String>,
 }
@@ -82,7 +86,7 @@ impl NotifydClient {
     pub fn from_env() -> Option<Self> {
         let base_url = non_empty("NOTIFYD_URL")?.trim_end_matches('/').to_string();
         let api_key = non_empty("NOTIFYD_API_KEY")?;
-        let chat_id = non_empty("NOTIFYD_TELEGRAM_CHAT_ID")?;
+        let chat_id = non_empty("NOTIFYD_TELEGRAM_CHAT_ID");
         // A thread id that does not parse is dropped rather than guessed: a
         // wrong topic is as invisible as no topic at all.
         let thread_id = non_empty("NOTIFYD_TELEGRAM_THREAD_ID")
@@ -92,7 +96,7 @@ impl NotifydClient {
 
         tracing::info!(
             base_url = %base_url,
-            chat_id = %chat_id,
+            chat_id = ?chat_id,
             thread_id = ?thread_id,
             "notifyd client initialized"
         );
@@ -110,19 +114,37 @@ impl NotifydClient {
         })
     }
 
-    /// Announce a created issue in the room. Spawned, never awaited by a handler.
-    pub fn issue_created(&self, notice: IssueNotice) {
+    /// Announce a created issue. Spawned, never awaited by a handler.
+    ///
+    /// `announce_room` carries the project-level filter, which gates the shared
+    /// room only: a subscriber's own settings are already applied by
+    /// `resolve_recipients`, so a person who asked for this event still gets it
+    /// when the project keeps the room quiet.
+    pub fn issue_created(
+        &self,
+        notice: IssueNotice,
+        recipients: Vec<crate::routes::notification_prefs::Recipient>,
+        announce_room: bool,
+    ) {
         let client = self.clone();
         let text = notice.text("New issue");
         let url = notice.url(self.public_url.as_deref());
         let key = format!("baaton-issue-created-{}", notice.issue_id);
-        tokio::spawn(async move {
-            client.send_telegram(text, url, key).await;
-        });
+        self.fan_out(recipients, text.clone(), url.clone(), key.clone());
+        if announce_room {
+            tokio::spawn(async move {
+                client.send_telegram(text, url, key).await;
+            });
+        }
     }
 
     /// Announce a status transition, carrying the last comment as the reason.
-    pub fn issue_status_changed(&self, notice: StatusNotice) {
+    pub fn issue_status_changed(
+        &self,
+        notice: StatusNotice,
+        recipients: Vec<crate::routes::notification_prefs::Recipient>,
+        announce_room: bool,
+    ) {
         let client = self.clone();
         let text = notice.text();
         let url = notice.issue.url(self.public_url.as_deref());
@@ -135,26 +157,42 @@ impl NotifydClient {
             notice.to_status,
             notice.changed_at.timestamp_millis()
         );
-        tokio::spawn(async move {
-            client.send_telegram(text, url, key).await;
-        });
+        self.fan_out(recipients, text.clone(), url.clone(), key.clone());
+        if announce_room {
+            tokio::spawn(async move {
+                client.send_telegram(text, url, key).await;
+            });
+        }
     }
 
     /// Announce a new comment, carrying the words themselves.
-    pub fn issue_commented(&self, notice: CommentNotice) {
+    pub fn issue_commented(
+        &self,
+        notice: CommentNotice,
+        recipients: Vec<crate::routes::notification_prefs::Recipient>,
+        announce_room: bool,
+    ) {
         let client = self.clone();
         let text = notice.text();
         let url = notice.issue.url(self.public_url.as_deref());
         let key = format!("baaton-comment-{}", notice.comment_id);
-        tokio::spawn(async move {
-            client.send_telegram(text, url, key).await;
-        });
+        self.fan_out(recipients, text.clone(), url.clone(), key.clone());
+        if announce_room {
+            tokio::spawn(async move {
+                client.send_telegram(text, url, key).await;
+            });
+        }
     }
 
     async fn send_telegram(&self, text: String, url: Option<String>, idempotency_key: String) {
+        // No shared room configured: per-user routing is now the main path, so
+        // this is a normal state and not a failure.
+        let Some(chat_id) = self.chat_id.clone() else {
+            return;
+        };
         let mut body = json!({
             "channel": "telegram",
-            "to": self.chat_id,
+            "to": chat_id,
             "body": text,
             // Baaton may retry a write; the same issue must not announce twice.
             "idempotency_key": idempotency_key,
@@ -167,7 +205,47 @@ impl NotifydClient {
         if let Some(thread) = self.thread_id {
             body["chat"] = json!({ "telegram_thread_id": thread });
         }
+        self.post_send(body).await;
+    }
 
+    /// Deliver one notice to every person who subscribed to it.
+    ///
+    /// The per-recipient idempotency key is the load-bearing detail: notifyd
+    /// dedupes on that key, so reusing the event's key across recipients would
+    /// deliver to whoever was served first and silently drop everybody else.
+    ///
+    /// No `telegram_thread_id` here. A thread id belongs to the shared forum
+    /// topic; sending it to a private chat is the exact failure that made this
+    /// whole feature look broken (`Bad Request: message thread not found`).
+    pub fn fan_out(
+        &self,
+        recipients: Vec<crate::routes::notification_prefs::Recipient>,
+        text: String,
+        url: Option<String>,
+        key_base: String,
+    ) {
+        if recipients.is_empty() {
+            return;
+        }
+        let client = self.clone();
+        tokio::spawn(async move {
+            for r in recipients {
+                let mut body = json!({
+                    "channel": r.channel,
+                    "to": r.address,
+                    "body": text,
+                    "idempotency_key": format!("{key_base}-{}-{}", r.user_id, r.channel),
+                    "priority": "high",
+                });
+                if let Some(url) = url.as_ref() {
+                    body["url"] = json!(url);
+                }
+                client.post_send(body).await;
+            }
+        });
+    }
+
+    async fn post_send(&self, body: serde_json::Value) {
         let endpoint = format!("{}/v1/send", self.base_url);
         match self
             .http

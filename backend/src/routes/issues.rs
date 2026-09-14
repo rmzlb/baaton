@@ -201,7 +201,19 @@ fn on_status_changed(
                 None => return,
             };
 
-            let wanted = notify_statuses
+            // Per-user routing (migration 074) resolves its own filter, so it is
+            // asked before the project gate: a subscriber who explicitly wants
+            // this transition must still hear about it when the project keeps the
+            // shared room quiet.
+            let recipients = crate::routes::notification_prefs::resolve_recipients(
+                &pool2,
+                project_id,
+                "status_changed",
+                Some(&to_key),
+            )
+            .await;
+
+            let announce_room = notify_statuses
                 .as_array()
                 .map(|arr| {
                     arr.iter()
@@ -209,7 +221,8 @@ fn on_status_changed(
                         .any(|k| k == to_key.as_str())
                 })
                 .unwrap_or(false);
-            if !wanted {
+            // Nobody to tell, on either path: skip the two extra queries below.
+            if !announce_room && recipients.is_empty() {
                 return;
             }
 
@@ -238,19 +251,23 @@ fn on_status_changed(
             .ok()
             .flatten();
 
-            notifyd.issue_status_changed(crate::notifyd::StatusNotice {
-                issue: crate::notifyd::IssueNotice {
-                    display_id,
-                    title,
-                    project_name,
-                    actor,
-                    issue_id,
+            notifyd.issue_status_changed(
+                crate::notifyd::StatusNotice {
+                    issue: crate::notifyd::IssueNotice {
+                        display_id,
+                        title,
+                        project_name,
+                        actor,
+                        issue_id,
+                    },
+                    from_status: label(&from_key),
+                    to_status: label(&to_key),
+                    last_comment,
+                    changed_at,
                 },
-                from_status: label(&from_key),
-                to_status: label(&to_key),
-                last_comment,
-                changed_at,
-            });
+                recipients,
+                announce_room,
+            );
         });
     }
 }
@@ -1486,13 +1503,39 @@ pub async fn create(
                     .await
                     .ok()
                     .flatten();
-            notifyd.issue_created(crate::notifyd::IssueNotice {
-                display_id,
-                title,
-                project_name,
-                actor,
-                issue_id,
-            });
+
+            // Per-user routing (074). Resolved before the project gate because a
+            // subscriber's own settings already decided this for them.
+            let recipients = crate::routes::notification_prefs::resolve_recipients(
+                &pool2,
+                project_id,
+                "issue_created",
+                None,
+            )
+            .await;
+
+            // The shared room honours the project's own switch (073).
+            let announce_room: bool = sqlx::query_scalar(
+                "SELECT notify_issue_created FROM projects WHERE id = $1",
+            )
+            .bind(project_id)
+            .fetch_optional(&pool2)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(false);
+
+            notifyd.issue_created(
+                crate::notifyd::IssueNotice {
+                    display_id,
+                    title,
+                    project_name,
+                    actor,
+                    issue_id,
+                },
+                recipients,
+                announce_room,
+            );
         });
     }
 

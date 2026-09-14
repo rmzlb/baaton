@@ -26,6 +26,56 @@ export interface Organization {
   created_at: string;
 }
 
+// ─── User Notification Preferences ──────────────────
+
+export type NotificationChannel = 'telegram' | 'slack' | 'discord' | 'email';
+
+export interface UserNotificationChannel {
+  channel: NotificationChannel;
+  address_masked: string;
+  verified: boolean;
+  created_at: string;
+}
+
+export interface TelegramLinkResult {
+  deep_link: string;
+  expires_at: string;
+}
+
+export interface ProjectSubscriptionDefaults {
+  notify_statuses: string[];
+  notify_comments: boolean;
+  notify_issue_created: boolean;
+}
+
+export interface ProjectSubscriptionStatus {
+  key: string;
+  label: string;
+  color: string;
+}
+
+export interface ProjectSubscription {
+  project_id: string;
+  project_name: string;
+  project_slug: string;
+  org_id: string;
+  enabled: boolean;
+  notify_statuses: string[] | null;
+  notify_comments: boolean | null;
+  notify_issue_created: boolean | null;
+  channels: string[];
+  project_defaults: ProjectSubscriptionDefaults;
+  statuses: ProjectSubscriptionStatus[];
+}
+
+export interface UpdateProjectSubscriptionBody {
+  enabled?: boolean;
+  notify_statuses?: string[] | null;
+  notify_comments?: boolean | null;
+  notify_issue_created?: boolean | null;
+  channels?: string[];
+}
+
 /** Subset of org settings exposed by PATCH /orgs/:id/settings. */
 export interface OrgSettings {
   agent_runs_public_enabled: boolean;

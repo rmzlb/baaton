@@ -33,6 +33,10 @@ import type {
   ProjectGamificationStats,
   Organization,
   OrgSettings,
+  UserNotificationChannel,
+  TelegramLinkResult,
+  ProjectSubscription,
+  UpdateProjectSubscriptionBody,
 } from '@/lib/types';
 
 /**
@@ -933,6 +937,69 @@ export function useApi() {
         return api.public.post<Issue>(`/public/${slug}/submit`, body);
       },
     },
+    // ─── User Notification Preferences ──────────────
+    notificationPrefs: {
+      listChannels: async (): Promise<UserNotificationChannel[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<UserNotificationChannel[]>('/me/notification-channels', token);
+        }),
+
+      setChannel: async (
+        channel: string,
+        address: string,
+      ): Promise<UserNotificationChannel> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.put<UserNotificationChannel>(
+            `/me/notification-channels/${channel}`,
+            { address },
+            token,
+          );
+        }),
+
+      removeChannel: async (channel: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/me/notification-channels/${channel}`, token);
+        }),
+
+      getTelegramLink: async (): Promise<TelegramLinkResult> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<TelegramLinkResult>(
+            '/me/notification-channels/telegram/link',
+            {},
+            token,
+          );
+        }),
+
+      listSubscriptions: async (): Promise<ProjectSubscription[]> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<ProjectSubscription[]>('/me/project-subscriptions', token);
+        }),
+
+      updateSubscription: async (
+        projectId: string,
+        body: UpdateProjectSubscriptionBody,
+      ): Promise<ProjectSubscription> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.put<ProjectSubscription>(
+            `/me/project-subscriptions/${projectId}`,
+            body,
+            token,
+          );
+        }),
+
+      deleteSubscription: async (projectId: string): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete(`/me/project-subscriptions/${projectId}`, token);
+        }),
+    },
+
     // Expose token getter for direct fetch calls (e.g. Admin page)
     _getToken: getAuthToken,
   }), [getAuthToken, withErrorHandling]);

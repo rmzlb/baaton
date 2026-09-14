@@ -56,6 +56,7 @@ pub mod project_context;
 pub mod memory;
 pub mod project_templates;
 mod dashboard;
+pub mod notification_prefs;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -157,6 +158,27 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/notifications/{id}/read", patch(notifications::mark_read))
         .route("/notifications/read-all", post(notifications::read_all))
         .route("/notifications/preferences", get(notifications::get_preferences).patch(notifications::update_preferences))
+        // Per-user notification routing (migration 074). Always the caller: no
+        // user id in any path, so a settings screen can never address someone
+        // else's channels and redirect their notifications.
+        .route("/me/notification-channels", get(notification_prefs::list_channels))
+        .route(
+            "/me/notification-channels/telegram/link",
+            post(notification_prefs::create_telegram_link),
+        )
+        .route(
+            "/me/notification-channels/{channel}",
+            put(notification_prefs::upsert_channel).delete(notification_prefs::delete_channel),
+        )
+        .route("/me/project-subscriptions", get(notification_prefs::list_subscriptions))
+        .route(
+            "/me/project-subscriptions/{project_id}",
+            put(notification_prefs::update_subscription)
+                .delete(notification_prefs::delete_subscription),
+        )
+        // Telegram cannot present a Clerk token, so this one lives on the public
+        // prefix and authenticates with the secret header set via `setWebhook`.
+        .route("/public/telegram/webhook", post(notification_prefs::telegram_webhook))
         // API Keys
         .route("/api-keys", get(api_keys::list).post(api_keys::create))
         .route("/api-keys/{id}", patch(api_keys::update).delete(api_keys::remove))

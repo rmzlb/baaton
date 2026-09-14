@@ -66,6 +66,128 @@ pub struct UpdateProjectNotificationSettings {
     pub notify_issue_created: Option<bool>,
 }
 
+/// Where one person can be reached on one channel.
+///
+/// The address never leaves the server in clear text: a chat id is enough to
+/// message someone, and a settings screen has no use for the full value. Only
+/// `address_masked` is serialized, which is also what lets the UI say "this is
+/// configured" without becoming a place to harvest ids.
+#[derive(Debug, Serialize)]
+pub struct UserNotificationChannelView {
+    pub channel: String,
+    pub address_masked: String,
+    /// True when the address proved itself (the deep-link flow saw the user's
+    /// own `/start`). A hand-typed address stays false, and the UI must show it:
+    /// a wrong chat id fails silently forever, so unverified is the only warning
+    /// anyone will ever get.
+    pub verified: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+pub struct UserNotificationChannelRow {
+    pub channel: String,
+    pub address: String,
+    pub verified_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl UserNotificationChannelRow {
+    pub fn view(self) -> UserNotificationChannelView {
+        UserNotificationChannelView {
+            address_masked: mask_address(&self.channel, &self.address),
+            verified: self.verified_at.is_some(),
+            channel: self.channel,
+            created_at: self.created_at,
+        }
+    }
+}
+
+/// Show enough to recognize an address, never enough to reuse it.
+///
+/// Emails keep their domain because that is how someone tells two of their own
+/// addresses apart; chat ids keep their last four characters for the same
+/// reason. Anything short enough that masking would reveal it whole is replaced
+/// outright rather than "masked" in name only.
+pub fn mask_address(channel: &str, address: &str) -> String {
+    let address = address.trim();
+    if channel == "email" {
+        if let Some((local, domain)) = address.split_once('@') {
+            let head: String = local.chars().take(2).collect();
+            return format!("{head}•••@{domain}");
+        }
+    }
+    let chars: Vec<char> = address.chars().collect();
+    if chars.len() <= 4 {
+        return "•••".to_string();
+    }
+    let tail: String = chars[chars.len() - 4..].iter().collect();
+    format!("•••{tail}")
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpsertUserNotificationChannel {
+    pub address: String,
+}
+
+/// What one person wants to hear about one project.
+///
+/// The three `notify_*` fields are `Option` in the wire sense that matters here:
+/// `null` means "inherit the project's setting", and a value means an explicit
+/// choice. `project_defaults` travels with the row so the UI can show what the
+/// inherited behaviour currently is — an inherited setting the user cannot see
+/// is indistinguishable from a choice they never made.
+#[derive(Debug, Serialize)]
+pub struct ProjectSubscriptionView {
+    pub project_id: Uuid,
+    pub project_name: String,
+    pub project_slug: String,
+    pub org_id: String,
+    pub enabled: bool,
+    pub notify_statuses: Option<serde_json::Value>,
+    pub notify_comments: Option<bool>,
+    pub notify_issue_created: Option<bool>,
+    /// Empty means "every channel this user has configured".
+    pub channels: Vec<String>,
+    pub project_defaults: ProjectSubscriptionDefaults,
+    /// The project's own workflow, so the UI offers real keys instead of a
+    /// hardcoded list that drifts from custom statuses.
+    pub statuses: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectSubscriptionDefaults {
+    pub notify_statuses: serde_json::Value,
+    pub notify_comments: bool,
+    pub notify_issue_created: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProjectSubscription {
+    pub enabled: Option<bool>,
+    /// Two levels of absence, both meaningful: the field missing leaves the
+    /// stored value alone, while an explicit `null` resets it to "inherit the
+    /// project". `Option<Option<T>>` is the only shape that can tell those
+    /// apart, and losing the difference would make "reset to project" impossible
+    /// to express.
+    #[serde(default, deserialize_with = "double_option")]
+    pub notify_statuses: Option<Option<Vec<String>>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub notify_comments: Option<Option<bool>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub notify_issue_created: Option<Option<bool>>,
+    pub channels: Option<Vec<String>>,
+}
+
+/// Deserialize a present-but-null field as `Some(None)`.
+fn double_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Deserialize::deserialize(deserializer).map(Some)
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateProject {
     pub name: String,

@@ -313,6 +313,12 @@ pub fn required_permission(method: &Method, path: &str) -> Requirement {
 
         // ── Per-user state, no scope axis ────────────────────────────────
         "notifications" => Requirement::Authenticated,
+        // `/me/*` is the caller's own notification routing (migration 074):
+        // where to reach them, and which projects they follow. There is no scope
+        // axis because there is no other user to read or write — no path here
+        // takes a user id, and the handlers refuse API keys outright, since a
+        // key is not a person and has nowhere to be notified.
+        "me" => Requirement::Authenticated,
 
         _ => Requirement::Scope(ADMIN_FULL),
     }
@@ -757,6 +763,9 @@ mod tests {
             "initiatives", "triage", "uploads", "memory", "agent-config", "webhooks",
             "agent-sessions", "ai", "github", "integrations", "orgs", "invites",
             "gamification", "billing", "api-keys", "admin", "notifications", "health",
+            // The caller's own state: in-app notifications and, since 074, their
+            // notification channels and project subscriptions.
+            "me",
             // Top-level public SSR surfaces: run cards (`r`) and shared
             // issue/project links (`i`, `p`). Single-letter on purpose, they are
             // pasted into chat clients.
@@ -778,22 +787,29 @@ mod tests {
 
     #[test]
     fn nothing_maps_to_authenticated_by_accident() {
-        // `Authenticated` bypasses scope checks, so it must stay a short,
-        // deliberate list rather than a convenient escape hatch.
+        // `Authenticated` bypasses scope checks, so it must stay a deliberate
+        // list rather than a convenient escape hatch.
+        //
+        // The real invariant is not the count but the shape: a scope-free route
+        // must address the caller's own state and nobody else's. Both families
+        // qualify by construction — no path takes a user id, so there is no
+        // other user to scope access to.
         let lax: Vec<String> = router_endpoints()
             .into_iter()
             .filter(|(m, p)| required_permission(m, p) == Requirement::Authenticated)
             .map(|(m, p)| format!("{m} {p}"))
             .collect();
-        assert!(
-            lax.len() <= 6,
-            "too many scope-free authenticated routes, review these: {lax:#?}"
-        );
         for entry in &lax {
             assert!(
-                entry.contains("/notifications"),
+                entry.contains("/notifications") || entry.contains("/me/"),
                 "unexpected scope-free route: {entry}"
             );
         }
+        // Still bounded, so adding a per-user surface stays a decision someone
+        // makes on purpose rather than a drift nobody notices.
+        assert!(
+            lax.len() <= 14,
+            "too many scope-free authenticated routes, review these: {lax:#?}"
+        );
     }
 }

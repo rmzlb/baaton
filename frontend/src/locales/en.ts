@@ -2082,6 +2082,66 @@ As a [user], I want to [action] so that [benefit].
   'settings.org.allowPublicRuns.desc': 'Members can publish individual agent runs as shareable receipts at r.baaton.dev.',
   'settings.org.allowPublicRuns.saveError': 'Could not save org setting',
 
+  // ─── User Notification Preferences ─────────────────────────────────────────
+  'notifPrefs.title': 'Notification Preferences',
+  'notifPrefs.desc': 'Manage your personal notification channels and project subscriptions',
+  'notifPrefs.loading': 'Loading…',
+
+  // Channels
+  'notifPrefs.channels.title': 'Notification Channels',
+  'notifPrefs.channels.desc': 'Your personal channels — used across all your projects',
+  'notifPrefs.channels.loadError': 'Failed to load channels. Refresh to retry.',
+  'notifPrefs.channels.verified': 'Verified',
+  'notifPrefs.channels.unverified': 'Unverified',
+  'notifPrefs.channels.unverifiedHint': 'Address not yet verified — notifications may fail silently. Connect via the bot link to verify.',
+  'notifPrefs.channels.remove': 'Remove',
+  'notifPrefs.channels.removeConfirm': 'Remove this channel? You will stop receiving notifications on it.',
+  'notifPrefs.channels.connect': 'Connect',
+  'notifPrefs.channels.cancel': 'Cancel',
+  'notifPrefs.channels.save': 'Save',
+  'notifPrefs.channels.saving': 'Saving…',
+  'notifPrefs.channels.invalidAddress': 'Invalid address format.',
+  'notifPrefs.channels.saveError': 'Could not save channel. Try again.',
+  // Telegram
+  'notifPrefs.channels.telegram.label': 'Telegram',
+  'notifPrefs.channels.telegram.connectBtn': 'Connect via Telegram bot',
+  'notifPrefs.channels.telegram.deepLinkDesc': 'Click the link below, then press Start in the Telegram app to verify your account.',
+  'notifPrefs.channels.telegram.deepLinkOpen': 'Open Telegram bot',
+  'notifPrefs.channels.telegram.deepLinkExpiry': 'Link expires at',
+  'notifPrefs.channels.telegram.botUnavailable': 'Telegram bot not configured on this server.',
+  'notifPrefs.channels.telegram.manualTitle': 'Enter chat ID manually instead',
+  'notifPrefs.channels.telegram.manualDesc': 'Send a message to @userinfobot to find your numeric chat ID.',
+  'notifPrefs.channels.telegram.manualPlaceholder': 'e.g. 123456789',
+  // Slack
+  'notifPrefs.channels.slack.label': 'Slack',
+  'notifPrefs.channels.slack.placeholder': 'Webhook URL or channel ID',
+  // Discord
+  'notifPrefs.channels.discord.label': 'Discord',
+  'notifPrefs.channels.discord.placeholder': 'Webhook URL or user ID',
+  // Email
+  'notifPrefs.channels.email.label': 'Email',
+  'notifPrefs.channels.email.placeholder': 'your@email.com',
+
+  // Subscriptions
+  'notifPrefs.subscriptions.title': 'Project Subscriptions',
+  'notifPrefs.subscriptions.desc': 'Choose which projects you follow and which events you want to hear about',
+  'notifPrefs.subscriptions.loadError': 'Failed to load subscriptions. Refresh to retry.',
+  'notifPrefs.subscriptions.noProjects': 'No visible projects. Create or join a project first.',
+  'notifPrefs.subscriptions.saveError': 'Could not save preference.',
+  'notifPrefs.subscriptions.statuses': 'Status transitions',
+  'notifPrefs.subscriptions.noStatuses': 'No statuses defined for this project.',
+  'notifPrefs.subscriptions.comments': 'New comments',
+  'notifPrefs.subscriptions.commentsDesc': 'Notify when someone posts a comment',
+  'notifPrefs.subscriptions.issueCreated': 'New issues',
+  'notifPrefs.subscriptions.issueCreatedDesc': 'Notify when an issue is created',
+  // Inherit / customize
+  'notifPrefs.subscriptions.inheritLabel': 'Following project',
+  'notifPrefs.subscriptions.inheritedFrom': 'Project default:',
+  'notifPrefs.subscriptions.inheritedOn': 'On',
+  'notifPrefs.subscriptions.inheritedOff': 'Off',
+  'notifPrefs.subscriptions.customize': 'Customize',
+  'notifPrefs.subscriptions.resetToProject': 'Reset to project default',
+
   // ─── Project settings — public agent runs by default
   'settings.project.publicByDefault.title': 'Public agent runs by default',
   'settings.project.publicByDefault.desc': 'New agent runs in this project are publishable. Existing runs stay private until explicitly published.',

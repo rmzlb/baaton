@@ -2082,6 +2082,66 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'settings.org.allowPublicRuns.desc': "Les membres peuvent publier des runs d'agent comme reçus partageables sur r.baaton.dev.",
   'settings.org.allowPublicRuns.saveError': 'Impossible de sauvegarder le paramètre',
 
+  // ─── Préférences de notification utilisateur ───────────────────────────────────────
+  'notifPrefs.title': 'Préférences de notification',
+  'notifPrefs.desc': 'Gère tes canaux de notification et tes abonnements aux projets',
+  'notifPrefs.loading': 'Chargement…',
+
+  // Canaux
+  'notifPrefs.channels.title': 'Canaux de notification',
+  'notifPrefs.channels.desc': 'Tes canaux personnels — valables sur tous tes projets',
+  'notifPrefs.channels.loadError': 'Échec du chargement des canaux. Rafraîchis pour réessayer.',
+  'notifPrefs.channels.verified': 'Vérifié',
+  'notifPrefs.channels.unverified': 'Non vérifié',
+  'notifPrefs.channels.unverifiedHint': 'Adresse non encore vérifiée — les notifications peuvent échouer silencieusement. Connecte-toi via le lien bot pour vérifier.',
+  'notifPrefs.channels.remove': 'Supprimer',
+  'notifPrefs.channels.removeConfirm': 'Supprimer ce canal ? Tu ne recevras plus de notifications dessus.',
+  'notifPrefs.channels.connect': 'Connecter',
+  'notifPrefs.channels.cancel': 'Annuler',
+  'notifPrefs.channels.save': 'Enregistrer',
+  'notifPrefs.channels.saving': 'Enregistrement…',
+  'notifPrefs.channels.invalidAddress': 'Format d’adresse invalide.',
+  'notifPrefs.channels.saveError': 'Impossible d’enregistrer le canal. Réessaie.',
+  // Telegram
+  'notifPrefs.channels.telegram.label': 'Telegram',
+  'notifPrefs.channels.telegram.connectBtn': 'Connecter via le bot Telegram',
+  'notifPrefs.channels.telegram.deepLinkDesc': 'Clique sur le lien ci-dessous, puis appuie sur Démarrer dans l’app Telegram pour vérifier ton compte.',
+  'notifPrefs.channels.telegram.deepLinkOpen': 'Ouvrir le bot Telegram',
+  'notifPrefs.channels.telegram.deepLinkExpiry': 'Lien expire à',
+  'notifPrefs.channels.telegram.botUnavailable': 'Bot Telegram non configuré sur ce serveur.',
+  'notifPrefs.channels.telegram.manualTitle': 'Saisir le chat ID manuellement',
+  'notifPrefs.channels.telegram.manualDesc': 'Envoie un message à @userinfobot pour trouver ton chat ID numérique.',
+  'notifPrefs.channels.telegram.manualPlaceholder': 'ex. 123456789',
+  // Slack
+  'notifPrefs.channels.slack.label': 'Slack',
+  'notifPrefs.channels.slack.placeholder': 'URL webhook ou ID de canal',
+  // Discord
+  'notifPrefs.channels.discord.label': 'Discord',
+  'notifPrefs.channels.discord.placeholder': 'URL webhook ou ID utilisateur',
+  // Email
+  'notifPrefs.channels.email.label': 'Email',
+  'notifPrefs.channels.email.placeholder': 'ton@email.com',
+
+  // Abonnements
+  'notifPrefs.subscriptions.title': 'Projets suivis',
+  'notifPrefs.subscriptions.desc': 'Choisis les projets que tu suis et les événements qui t’intéressent',
+  'notifPrefs.subscriptions.loadError': 'Échec du chargement des abonnements. Rafraîchis pour réessayer.',
+  'notifPrefs.subscriptions.noProjects': 'Aucun projet visible. Crée ou rejoins un projet d’abord.',
+  'notifPrefs.subscriptions.saveError': 'Impossible d’enregistrer la préférence.',
+  'notifPrefs.subscriptions.statuses': 'Transitions de statut',
+  'notifPrefs.subscriptions.noStatuses': 'Aucun statut défini pour ce projet.',
+  'notifPrefs.subscriptions.comments': 'Nouveaux commentaires',
+  'notifPrefs.subscriptions.commentsDesc': 'Notifier quand quelqu’un poste un commentaire',
+  'notifPrefs.subscriptions.issueCreated': 'Nouvelles issues',
+  'notifPrefs.subscriptions.issueCreatedDesc': 'Notifier quand une issue est créée',
+  // Héritage / personnalisation
+  'notifPrefs.subscriptions.inheritLabel': 'Suit le projet',
+  'notifPrefs.subscriptions.inheritedFrom': 'Réglage projet :',
+  'notifPrefs.subscriptions.inheritedOn': 'Activé',
+  'notifPrefs.subscriptions.inheritedOff': 'Désactivé',
+  'notifPrefs.subscriptions.customize': 'Personnaliser',
+  'notifPrefs.subscriptions.resetToProject': 'Réinitialiser vers le projet',
+
   // ─── Paramètres projet — runs publics par défaut ───
   'settings.project.publicByDefault.title': "Runs d'agent publics par défaut",
   'settings.project.publicByDefault.desc': "Les nouveaux runs d'agent dans ce projet sont publiables. Les runs existants restent privés tant qu'ils ne sont pas explicitement publiés.",

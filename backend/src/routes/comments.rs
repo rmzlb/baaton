@@ -370,11 +370,11 @@ pub async fn create(
         let comment_body = comment.body.clone();
         let author_identity = comment.author_id.clone();
         tokio::spawn(async move {
-            type Row = (Uuid, String, String, Option<String>, bool, Option<String>, Vec<String>);
+            type Row = (Uuid, String, String, Option<String>, bool, Option<String>, Vec<String>, Uuid);
             let row: Option<Row> = sqlx::query_as(
                 r#"
                 SELECT i.id, i.display_id, i.title, p.name, p.notify_comments,
-                       i.created_by_id, i.assignee_ids
+                       i.created_by_id, i.assignee_ids, i.project_id
                 FROM issues i
                 JOIN projects p ON p.id = i.project_id
                 WHERE i.id = $1
@@ -394,11 +394,24 @@ pub async fn create(
                 notify_comments,
                 creator_id,
                 assignee_ids,
+                project_id,
             )) = row
             else {
                 return;
             };
-            if !notify_comments {
+
+            // Per-user routing (074) applies its own filter, so it is resolved
+            // before the project gate below: a subscriber who asked for comments
+            // still gets them when the project keeps the shared room quiet.
+            let recipients = crate::routes::notification_prefs::resolve_recipients(
+                &pool2,
+                project_id,
+                "comment_added",
+                None,
+            )
+            .await;
+
+            if !notify_comments && recipients.is_empty() {
                 return;
             }
 
@@ -418,17 +431,21 @@ pub async fn create(
                 return;
             }
 
-            notifyd.issue_commented(crate::notifyd::CommentNotice {
-                issue: crate::notifyd::IssueNotice {
-                    display_id,
-                    title,
-                    project_name,
-                    actor: Some(comment_author),
-                    issue_id: iid,
+            notifyd.issue_commented(
+                crate::notifyd::CommentNotice {
+                    issue: crate::notifyd::IssueNotice {
+                        display_id,
+                        title,
+                        project_name,
+                        actor: Some(comment_author),
+                        issue_id: iid,
+                    },
+                    body: comment_body,
+                    comment_id,
                 },
-                body: comment_body,
-                comment_id,
-            });
+                recipients,
+                notify_comments,
+            );
         });
     }
 

@@ -7,6 +7,7 @@ import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
 import { IntegrationsTab } from '@/components/settings/IntegrationsTab';
+import { NotificationPreferencesSection } from '@/components/settings/NotificationPreferencesSection';
 import { createOnboardingTour } from '@/lib/onboarding';
 import { ApiError } from '@/lib/api';
 import type { ApiKey } from '@/lib/types';
@@ -53,6 +54,9 @@ export function Settings() {
           </button>
         </div>
       </div>
+
+      {/* Notification Preferences (per-user) */}
+      <NotificationPreferencesSection />
 
       {/* Integrations Section */}
       <IntegrationsTab />
