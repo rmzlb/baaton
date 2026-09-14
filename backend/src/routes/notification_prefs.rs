@@ -499,7 +499,7 @@ pub async fn resolve_recipients(
         ) c \
         WHERE s.project_id = $1 \
           AND s.enabled \
-          AND s.user_id <> $4 \
+          AND ($2 <> 'comment_added' OR s.user_id <> $4) \
           AND (cardinality(s.channels) = 0 OR c.channel = ANY(s.channels)) \
           AND CASE $2 \
                 WHEN 'status_changed' THEN \
