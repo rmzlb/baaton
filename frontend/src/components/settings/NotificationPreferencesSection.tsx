@@ -4,7 +4,7 @@ import { useOrganizationList } from '@clerk/clerk-react';
 import {
   Bell, CheckCircle2, AlertTriangle, Trash2,
   Link2, ExternalLink, ChevronDown, ChevronUp,
-  RotateCcw, Search, X, Plus, RefreshCw,
+  Search, X, Plus, RefreshCw,
 } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/shared/Skeleton';
 import type {
   UserNotificationChannel,
   ProjectSubscription,
+  ProjectSubscriptionStatus,
   NotificationChannel,
 } from '@/lib/types';
 
@@ -314,10 +315,12 @@ export function ChannelRow({
   config,
   existing,
   onRefresh,
+  hideAddress = false,
 }: {
   config: typeof SUPPORTED_CHANNELS[0];
   existing: UserNotificationChannel | undefined;
   onRefresh: () => void;
+  hideAddress?: boolean;
 }) {
   const { t } = useTranslation();
   const apiClient = useApi();
@@ -395,7 +398,7 @@ export function ChannelRow({
         )}
       </div>
 
-      {existing && (
+      {existing && !hideAddress && (
         <p className="mt-1.5 text-xs text-muted font-mono">{existing.address_masked}</p>
       )}
 
@@ -644,60 +647,136 @@ function ProjectMultiSelect({
   );
 }
 
-// ─── Status chips (direct, no customize gate) ─────────────────────────────────
+// ─── Global notification rule ──────────────────────────────────────────────────
 
-function StatusChips({
+interface GlobalRule {
+  allProjects: boolean;
+  selectedProjectIds: string[];
+  statuses: string[] | null; // null = All statuses
+  comments: boolean;
+  issueCreated: boolean;
+}
+
+function deriveRule(subs: ProjectSubscription[]): GlobalRule {
+  const enabled = subs.filter((s) => s.enabled);
+  if (enabled.length === 0) {
+    return { allProjects: false, selectedProjectIds: [], statuses: null, comments: false, issueCreated: false };
+  }
+  const first = enabled[0];
+  const statuses = first.notify_statuses ?? first.project_defaults.notify_statuses;
+  const allKeys = first.statuses.map((s) => s.key);
+  const isAll = allKeys.length === 0 || allKeys.every((k) => statuses.includes(k));
+  return {
+    allProjects: enabled.length === subs.length && subs.length > 0,
+    selectedProjectIds: enabled.map((s) => s.project_id),
+    statuses: isAll ? null : statuses,
+    comments: first.notify_comments ?? first.project_defaults.notify_comments,
+    issueCreated: first.notify_issue_created ?? first.project_defaults.notify_issue_created,
+  };
+}
+
+// ─── Rule summary ─────────────────────────────────────────────────────────────
+
+function RuleSummary({ rule, subs }: { rule: GlobalRule; subs: ProjectSubscription[] }) {
+  const { t } = useTranslation();
+  const allStatuses = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Array<{ key: string; label: string }> = [];
+    for (const sub of subs) {
+      for (const s of sub.statuses) {
+        if (!seen.has(s.key)) { seen.add(s.key); result.push(s); }
+      }
+    }
+    return result;
+  }, [subs]);
+  const active = rule.allProjects || rule.selectedProjectIds.length > 0;
+  const scopeLabel = rule.allProjects
+    ? t('notifPrefs.rule.allProjects', { defaultValue: 'All projects' })
+    : `${rule.selectedProjectIds.length} ${t('notifPrefs.rule.projects', { defaultValue: 'project(s)' })}`;
+  const statusLabel = rule.statuses === null
+    ? t('notifPrefs.rule.allStatuses', { defaultValue: 'All' })
+    : (rule.statuses.map((k) => allStatuses.find((s) => s.key === k)?.label ?? k).join(', ') || '—');
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-surface-hover border border-border px-3 py-2 text-xs flex-wrap">
+      <span className={cn('h-2 w-2 rounded-full shrink-0', active ? 'bg-accent' : 'bg-border')} />
+      <span className={active ? 'text-primary' : 'text-muted'}>{scopeLabel}</span>
+      <span className="text-muted">·</span>
+      <span className="text-secondary">
+        {t('notifPrefs.rule.status', { defaultValue: 'Status:' })}{' '}
+        <span className={active ? 'text-primary' : 'text-muted'}>{statusLabel}</span>
+      </span>
+      <span className="text-muted">·</span>
+      <span className="text-secondary">
+        {t('notifPrefs.rule.comments', { defaultValue: 'Comments:' })}{' '}
+        <span className={rule.comments ? 'text-emerald-400' : 'text-muted'}>
+          {rule.comments
+            ? t('notifPrefs.rule.on', { defaultValue: 'on' })
+            : t('notifPrefs.rule.off', { defaultValue: 'off' })}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+// ─── Status pills ─────────────────────────────────────────────────────────────
+
+function StatusPills({
+  allStatuses,
   value,
-  defaultValue,
-  statuses,
   onChange,
   disabled,
 }: {
+  allStatuses: ProjectSubscriptionStatus[];
   value: string[] | null;
-  defaultValue: string[];
-  statuses: Array<{ key: string; label: string; color: string }>;
   onChange: (v: string[] | null) => void;
   disabled: boolean;
 }) {
   const { t } = useTranslation();
-  // Effective value: override ?? default
-  const effective = value ?? defaultValue;
-  const hasOverride = value !== null;
+  const isAll = value === null;
+
+  const handleToggleAll = () => onChange(null);
 
   const handleToggleStatus = useCallback((key: string) => {
-    const current = effective;
-    const next = current.includes(key)
-      ? current.filter((k) => k !== key)
-      : [...current, key];
-    onChange(next);
-  }, [effective, onChange]);
+    if (isAll) { onChange([key]); return; }
+    const current = value ?? [];
+    const next = current.includes(key) ? current.filter((k) => k !== key) : [...current, key];
+    if (next.length === 0 || (allStatuses.length > 0 && next.length === allStatuses.length)) {
+      onChange(null);
+    } else {
+      onChange(next);
+    }
+  }, [isAll, value, allStatuses.length, onChange]);
 
-  if (statuses.length === 0) {
-    return <p className="text-xs text-muted">{t('notifPrefs.subscriptions.noStatuses', { defaultValue: 'No statuses defined.' })}</p>;
+  if (allStatuses.length === 0) {
+    return (
+      <p className="text-xs text-muted">
+        {t('notifPrefs.subscriptions.noStatuses', { defaultValue: 'No statuses defined.' })}
+      </p>
+    );
   }
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-1.5">
-        <p className="text-[10px] font-medium uppercase tracking-wider text-muted">
-          {t('notifPrefs.subscriptions.statuses', { defaultValue: 'Status transitions' })}
-        </p>
-        {hasOverride && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange(null)}
-            title={t('notifPrefs.subscriptions.resetToProject', { defaultValue: 'Reset to project default' })}
-            aria-label={t('notifPrefs.subscriptions.resetToProject', { defaultValue: 'Reset to project default' })}
-            className="rounded p-0.5 text-muted hover:text-secondary transition-colors disabled:opacity-50"
-          >
-            <RotateCcw size={10} />
-          </button>
-        )}
-      </div>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted mb-1.5">
+        {t('notifPrefs.subscriptions.statuses', { defaultValue: 'Status transitions' })}
+      </p>
       <div className="flex flex-wrap gap-1.5">
-        {statuses.map((status) => {
-          const active = effective.includes(status.key);
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={handleToggleAll}
+          aria-pressed={isAll}
+          className={cn(
+            'rounded-md border px-2.5 py-1 text-xs font-medium transition-all disabled:cursor-not-allowed',
+            isAll
+              ? 'border-accent/40 bg-accent/10 text-accent'
+              : 'border-border bg-transparent text-muted hover:border-border hover:text-secondary',
+          )}
+        >
+          {t('notifPrefs.rule.allPill', { defaultValue: 'All' })}
+        </button>
+        {allStatuses.map((status) => {
+          const active = isAll || (value ?? []).includes(status.key);
           return (
             <button
               key={status.key}
@@ -706,8 +785,7 @@ function StatusChips({
               onClick={() => handleToggleStatus(status.key)}
               aria-pressed={active}
               className={cn(
-                'flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-all',
-                'disabled:cursor-not-allowed',
+                'flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-all disabled:cursor-not-allowed',
                 active
                   ? 'border-accent/40 bg-accent/10 text-accent'
                   : 'border-border bg-transparent text-muted hover:border-border hover:text-secondary',
@@ -726,183 +804,12 @@ function StatusChips({
   );
 }
 
-// ─── Project subscription row (direct toggles, no customize gate) ─────────────
-
-function ProjectSubscriptionRow({
-  sub,
-  onUpdate,
-  onRemove,
-}: {
-  sub: ProjectSubscription;
-  onUpdate: (projectId: string, patch: Partial<ProjectSubscription>) => Promise<void>;
-  onRemove: (projectId: string) => void;
-}) {
-  const { t } = useTranslation();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(true);
-
-  const handlePatch = useCallback(async (patch: Partial<{
-    notify_statuses: string[] | null;
-    notify_comments: boolean | null;
-    notify_issue_created: boolean | null;
-  }>) => {
-    setSaving(true);
-    setError(null);
-    try {
-      await onUpdate(sub.project_id, patch);
-    } catch {
-      setError(t('notifPrefs.subscriptions.saveError', { defaultValue: 'Could not save preference.' }));
-    } finally {
-      setSaving(false);
-    }
-  }, [onUpdate, sub.project_id, t]);
-
-  // Effective values: override ?? project default
-  const effectiveComments = sub.notify_comments ?? sub.project_defaults.notify_comments;
-  const effectiveIssues = sub.notify_issue_created ?? sub.project_defaults.notify_issue_created;
-
-  return (
-    <div className="rounded-lg border border-border bg-bg">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3.5 py-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-primary truncate">{sub.project_name}</p>
-          <p className="text-[11px] text-muted">{sub.org_name} · {sub.project_slug}</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {saving && (
-            <span className="text-[11px] text-muted animate-pulse">
-              {t('notifPrefs.channels.saving', { defaultValue: 'Saving…' })}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => setExpanded(!expanded)}
-            className="p-1 text-muted hover:text-secondary transition-colors rounded"
-            aria-label={expanded ? t('common.collapse', { defaultValue: 'Collapse' }) : t('common.expand', { defaultValue: 'Expand' })}
-          >
-            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          </button>
-          <button
-            type="button"
-            onClick={() => onRemove(sub.project_id)}
-            aria-label={t('notifPrefs.subscriptions.removeProject', { defaultValue: 'Stop following project' })}
-            className="p-1 text-muted hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
-          >
-            <X size={13} />
-          </button>
-        </div>
-      </div>
-
-      {expanded && (
-        <div className="border-t border-border px-3.5 py-3 space-y-4">
-          {/* Comments toggle — direct */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm text-primary">
-                {t('notifPrefs.subscriptions.comments', { defaultValue: 'New comments' })}
-              </p>
-              {sub.notify_comments === null && (
-                <p className="text-[11px] text-muted">
-                  {t('notifPrefs.subscriptions.inheritedFrom', { defaultValue: 'Project default:' })}{' '}
-                  <span className={effectiveComments ? 'text-green-400' : 'text-secondary'}>
-                    {effectiveComments
-                      ? t('notifPrefs.subscriptions.inheritedOn', { defaultValue: 'On' })
-                      : t('notifPrefs.subscriptions.inheritedOff', { defaultValue: 'Off' })}
-                  </span>
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <ToggleSwitch
-                checked={effectiveComments}
-                onChange={(v) => handlePatch({ notify_comments: v })}
-                disabled={saving}
-                aria-label={t('notifPrefs.subscriptions.comments', { defaultValue: 'New comments' })}
-              />
-              {sub.notify_comments !== null && (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => handlePatch({ notify_comments: null })}
-                  title={t('notifPrefs.subscriptions.resetToProject', { defaultValue: 'Reset to project default' })}
-                  aria-label={t('notifPrefs.subscriptions.resetComments', { defaultValue: 'Reset comments to project default' })}
-                  className="rounded p-1 text-muted hover:text-secondary transition-colors disabled:opacity-50"
-                >
-                  <RotateCcw size={10} />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Issues toggle — direct */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm text-primary">
-                {t('notifPrefs.subscriptions.issueCreated', { defaultValue: 'New issues' })}
-              </p>
-              {sub.notify_issue_created === null && (
-                <p className="text-[11px] text-muted">
-                  {t('notifPrefs.subscriptions.inheritedFrom', { defaultValue: 'Project default:' })}{' '}
-                  <span className={effectiveIssues ? 'text-green-400' : 'text-secondary'}>
-                    {effectiveIssues
-                      ? t('notifPrefs.subscriptions.inheritedOn', { defaultValue: 'On' })
-                      : t('notifPrefs.subscriptions.inheritedOff', { defaultValue: 'Off' })}
-                  </span>
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <ToggleSwitch
-                checked={effectiveIssues}
-                onChange={(v) => handlePatch({ notify_issue_created: v })}
-                disabled={saving}
-                aria-label={t('notifPrefs.subscriptions.issueCreated', { defaultValue: 'New issues' })}
-              />
-              {sub.notify_issue_created !== null && (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => handlePatch({ notify_issue_created: null })}
-                  title={t('notifPrefs.subscriptions.resetToProject', { defaultValue: 'Reset to project default' })}
-                  aria-label={t('notifPrefs.subscriptions.resetIssues', { defaultValue: 'Reset new issues to project default' })}
-                  className="rounded p-1 text-muted hover:text-secondary transition-colors disabled:opacity-50"
-                >
-                  <RotateCcw size={10} />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Status chips — direct */}
-          <StatusChips
-            value={sub.notify_statuses}
-            defaultValue={sub.project_defaults.notify_statuses}
-            statuses={sub.statuses}
-            onChange={(v) => handlePatch({ notify_statuses: v })}
-            disabled={saving}
-          />
-
-          {error && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
-              <AlertTriangle size={13} className="shrink-0" />
-              {error}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Subscriptions section ────────────────────────────────────────────────────
 
 function SubscriptionsSkeleton() {
   return (
     <div className="space-y-2">
       <Skeleton className="h-10 rounded-lg" />
-      <Skeleton className="h-28 rounded-lg" />
       <Skeleton className="h-28 rounded-lg" />
     </div>
   );
@@ -921,68 +828,7 @@ export function SubscriptionsSection() {
     retry: false,
   });
 
-  const handleUpdate = useCallback(async (
-    projectId: string,
-    patch: Partial<ProjectSubscription>,
-  ) => {
-    const body: Record<string, unknown> = {};
-    if ('enabled' in patch) body.enabled = patch.enabled;
-    if ('notify_statuses' in patch) body.notify_statuses = patch.notify_statuses;
-    if ('notify_comments' in patch) body.notify_comments = patch.notify_comments;
-    if ('notify_issue_created' in patch) body.notify_issue_created = patch.notify_issue_created;
-
-    const updated = await apiClient.notificationPrefs.updateSubscription(projectId, body);
-
-    queryClient.setQueryData<ProjectSubscription[]>(
-      cacheKey,
-      (old) => old?.map((s) => (s.project_id === projectId ? updated : s)) ?? [],
-    );
-  }, [apiClient, cacheKey, queryClient]);
-
-  const handleToggleProject = useCallback(async (projectId: string) => {
-    const sub = subs.find((s) => s.project_id === projectId);
-    if (!sub) return;
-    const newEnabled = !sub.enabled;
-
-    // Optimistic toggle
-    queryClient.setQueryData<ProjectSubscription[]>(
-      cacheKey,
-      (old) => old?.map((s) => s.project_id === projectId ? { ...s, enabled: newEnabled } : s) ?? [],
-    );
-
-    try {
-      const updated = await apiClient.notificationPrefs.updateSubscription(projectId, { enabled: newEnabled });
-      queryClient.setQueryData<ProjectSubscription[]>(
-        cacheKey,
-        (old) => old?.map((s) => s.project_id === projectId ? updated : s) ?? [],
-      );
-    } catch {
-      // revert
-      queryClient.setQueryData<ProjectSubscription[]>(
-        cacheKey,
-        (old) => old?.map((s) => s.project_id === projectId ? { ...s, enabled: !newEnabled } : s) ?? [],
-      );
-    }
-  }, [subs, apiClient, cacheKey, queryClient]);
-
-  const handleRemoveProject = useCallback(async (projectId: string) => {
-    // Disable = unfollow (no hard delete needed; keep settings)
-    queryClient.setQueryData<ProjectSubscription[]>(
-      cacheKey,
-      (old) => old?.map((s) => s.project_id === projectId ? { ...s, enabled: false } : s) ?? [],
-    );
-    try {
-      await apiClient.notificationPrefs.updateSubscription(projectId, { enabled: false });
-    } catch {
-      // revert
-      queryClient.setQueryData<ProjectSubscription[]>(
-        cacheKey,
-        (old) => old?.map((s) => s.project_id === projectId ? { ...s, enabled: true } : s) ?? [],
-      );
-    }
-  }, [apiClient, cacheKey, queryClient]);
-
-  // Resolve org names from Clerk memberships — must stay before early returns (Rules of Hooks)
+  // Must stay before early returns (Rules of Hooks)
   const { userMemberships } = useOrganizationList({ userMemberships: { infinite: true } });
   const orgNamesMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -991,6 +837,98 @@ export function SubscriptionsSection() {
     }
     return m;
   }, [userMemberships?.data]);
+
+  const [rule, setRule] = useState<GlobalRule>({
+    allProjects: false,
+    selectedProjectIds: [],
+    statuses: null,
+    comments: false,
+    issueCreated: false,
+  });
+  const [ruleInitialized, setRuleInitialized] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Initialize rule once from loaded subscriptions
+  useEffect(() => {
+    if (!ruleInitialized && subs.length > 0) {
+      setRule(deriveRule(subs));
+      setRuleInitialized(true);
+    }
+  }, [subs, ruleInitialized]);
+
+  // All unique statuses across projects, for the pills display
+  const allStatuses = useMemo(() => {
+    const seen = new Set<string>();
+    const result: ProjectSubscriptionStatus[] = [];
+    for (const sub of subs) {
+      for (const s of sub.statuses) {
+        if (!seen.has(s.key)) { seen.add(s.key); result.push(s); }
+      }
+    }
+    return result;
+  }, [subs]);
+
+  const allOptions: ProjectOption[] = subs.map((s) => ({
+    project_id: s.project_id,
+    project_name: s.project_name,
+    project_slug: s.project_slug,
+    org_id: s.org_id,
+    org_name: s.org_name || orgNamesMap.get(s.org_id) || s.org_id,
+  }));
+
+  const applyRule = useCallback(async (nextRule: GlobalRule) => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const projectsToEnable = nextRule.allProjects
+        ? subs.map((s) => s.project_id)
+        : nextRule.selectedProjectIds;
+
+      // Projects that were enabled but are no longer in scope → disable
+      const toDisable = !nextRule.allProjects
+        ? subs
+            .filter((s) => s.enabled && !nextRule.selectedProjectIds.includes(s.project_id))
+            .map((s) => s.project_id)
+        : [];
+
+      await Promise.all([
+        ...projectsToEnable.map((pid) => {
+          const sub = subs.find((s) => s.project_id === pid);
+          const projectStatusKeys = new Set((sub?.statuses ?? []).map((s) => s.key));
+          // "All" pill → full project status list; specific selection → intersect with project
+          const statusesToSave: string[] | null =
+            nextRule.statuses === null
+              ? (projectStatusKeys.size > 0 ? Array.from(projectStatusKeys) : null)
+              : nextRule.statuses.filter((k) => projectStatusKeys.has(k));
+          return apiClient.notificationPrefs.updateSubscription(pid, {
+            enabled: true,
+            notify_statuses: statusesToSave,
+            notify_comments: nextRule.comments,
+            notify_issue_created: nextRule.issueCreated,
+          });
+        }),
+        ...toDisable.map((pid) =>
+          apiClient.notificationPrefs.updateSubscription(pid, { enabled: false })
+        ),
+      ]);
+
+      await queryClient.invalidateQueries({ queryKey: cacheKey });
+    } catch {
+      setSaveError(t('notifPrefs.subscriptions.saveError', { defaultValue: 'Could not save preference.' }));
+    } finally {
+      setSaving(false);
+    }
+  }, [subs, apiClient, queryClient, cacheKey, t]);
+
+  const patchRule = useCallback((patch: Partial<GlobalRule>) => {
+    setRule((prev) => {
+      const next = { ...prev, ...patch };
+      applyRule(next);
+      return next;
+    });
+  }, [applyRule]);
 
   if (isLoading) return <SubscriptionsSkeleton />;
 
@@ -1011,47 +949,119 @@ export function SubscriptionsSection() {
     );
   }
 
-  const enabledSubs = subs.filter((s) => s.enabled);
-
-  const allOptions: ProjectOption[] = subs.map((s) => ({
-    project_id: s.project_id,
-    project_name: s.project_name,
-    project_slug: s.project_slug,
-    org_id: s.org_id,
-    org_name: s.org_name || orgNamesMap.get(s.org_id) || s.org_id,
-  }));
-  const selectedSet = new Set(enabledSubs.map((s) => s.project_id));
+  const selectedProjectSet = new Set(rule.selectedProjectIds);
 
   return (
-    <div className="space-y-3">
-      {/* Multi-select dropdown */}
-      <ProjectMultiSelect
-        options={allOptions}
-        selected={selectedSet}
-        onToggle={handleToggleProject}
-      />
+    <div className="space-y-4">
+      {/* Summary line */}
+      <RuleSummary rule={rule} subs={subs} />
 
-      {/* Enabled projects list */}
-      {enabledSubs.length === 0 ? (
-        <p className="text-xs text-muted text-center py-3">
-          {t('notifPrefs.subscriptions.noneSelected', { defaultValue: 'No projects followed yet. Select some above.' })}
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {enabledSubs.map((sub) => (
-            <ProjectSubscriptionRow
-              key={sub.project_id}
-              sub={sub}
-              onUpdate={handleUpdate}
-              onRemove={handleRemoveProject}
+      {/* Rule editor */}
+      <div className="rounded-lg border border-border bg-bg p-4 space-y-5">
+
+        {/* Scope */}
+        <div className="space-y-3">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted">
+            {t('notifPrefs.rule.scope', { defaultValue: 'Scope' })}
+          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-primary">
+              {t('notifPrefs.rule.allProjects', { defaultValue: 'All projects' })}
+            </p>
+            <ToggleSwitch
+              checked={rule.allProjects}
+              onChange={(v) => {
+                const next: GlobalRule = { ...rule, allProjects: v };
+                setRule(next);
+                applyRule(next);
+              }}
+              disabled={saving}
+              aria-label={t('notifPrefs.rule.allProjects', { defaultValue: 'All projects' })}
             />
-          ))}
+          </div>
+          {!rule.allProjects && (
+            <ProjectMultiSelect
+              options={allOptions}
+              selected={selectedProjectSet}
+              onToggle={(projectId) => {
+                const next = new Set(selectedProjectSet);
+                if (next.has(projectId)) next.delete(projectId);
+                else next.add(projectId);
+                patchRule({ selectedProjectIds: Array.from(next) });
+              }}
+            />
+          )}
         </div>
-      )}
+
+        {/* Status pills */}
+        <StatusPills
+          allStatuses={allStatuses}
+          value={rule.statuses}
+          onChange={(v) => patchRule({ statuses: v })}
+          disabled={saving}
+        />
+
+        {/* Comments */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm text-primary">
+              {t('notifPrefs.rule.commentsFromOthers', { defaultValue: 'New comments from others' })}
+            </p>
+            <p className="text-[11px] text-muted mt-0.5">
+              {t('notifPrefs.rule.commentsHint', { defaultValue: 'Excludes your own comments and those from your API keys.' })}
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={rule.comments}
+            onChange={(v) => patchRule({ comments: v })}
+            disabled={saving}
+            aria-label={t('notifPrefs.rule.commentsFromOthers', { defaultValue: 'New comments from others' })}
+          />
+        </div>
+
+        {/* Advanced: new issues */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center gap-1 text-xs text-muted hover:text-secondary transition-colors"
+            aria-expanded={showAdvanced}
+          >
+            {showAdvanced ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            {t('common.advanced', { defaultValue: 'Advanced' })}
+          </button>
+          {showAdvanced && (
+            <div className="mt-3 pl-3 border-l-2 border-border">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-primary min-w-0">
+                  {t('notifPrefs.rule.newIssuesByOthers', { defaultValue: 'New issues created by others' })}
+                </p>
+                <ToggleSwitch
+                  checked={rule.issueCreated}
+                  onChange={(v) => patchRule({ issueCreated: v })}
+                  disabled={saving}
+                  aria-label={t('notifPrefs.rule.newIssuesByOthers', { defaultValue: 'New issues created by others' })}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {saving && (
+          <p className="text-xs text-muted animate-pulse">
+            {t('notifPrefs.channels.saving', { defaultValue: 'Saving…' })}
+          </p>
+        )}
+        {saveError && (
+          <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+            <AlertTriangle size={13} className="shrink-0" />
+            {saveError}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function NotificationPreferencesSection() {

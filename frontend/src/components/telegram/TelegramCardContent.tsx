@@ -259,25 +259,24 @@ function TelegramDestinationStep({ botAvailable }: { botAvailable: boolean }) {
 
       {botAvailable && !isLoading && !isError && (
         <>
-          {telegramChannel && (
-            <div className="text-[11px] text-muted space-y-0.5 mb-1">
-              {telegramChannel.telegram_bot_username && (
-                <span>
-                  {t('integrations.telegram.channel.viaBot', { defaultValue: 'via' })}{' '}
-                  <span className="font-mono text-secondary">@{telegramChannel.telegram_bot_username}</span>
-                </span>
-              )}
-              {telegramChannel.telegram_thread_id && (
-                <span className="ml-2">
-                  · {t('integrations.telegram.channel.topic', { defaultValue: 'Topic' })} #{telegramChannel.telegram_thread_id}
-                </span>
-              )}
+          {telegramChannel?.verified && telegramChannel.telegram_bot_username && (
+            <div className="flex items-center gap-1.5 text-[11px] mb-2">
+              <span className="text-muted">
+                {t('integrations.telegram.channel.viaBot', { defaultValue: 'via' })}
+              </span>
+              <span className="font-mono text-secondary">@{telegramChannel.telegram_bot_username}</span>
+              <span className="text-muted">·</span>
+              <span className="flex items-center gap-1 text-emerald-400">
+                <CheckCircle2 size={11} />
+                {t('notifPrefs.channels.verified', { defaultValue: 'Verified' })}
+              </span>
             </div>
           )}
           <ChannelRow
             config={TELEGRAM_CHANNEL_CFG}
             existing={telegramChannel}
             onRefresh={refresh}
+            hideAddress
           />
         </>
       )}
