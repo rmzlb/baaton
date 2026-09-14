@@ -7,26 +7,13 @@ import {
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { ApiError } from '@/lib/api';
+import { TelegramIcon } from '@/components/shared/TelegramIcon';
 import { Skeleton } from '@/components/shared/Skeleton';
 import type { NotificationChannel } from '@/lib/types';
 import {
   ChannelRow,
   SubscriptionsSection,
 } from '@/components/settings/NotificationPreferencesSection';
-
-// ─── Telegram logo SVG ────────────────────────────────────────────────────────
-
-function TelegramIcon({ size = 16, className }: { size?: number; className?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
-      <circle cx="12" cy="12" r="12" fill="#2AABEE" />
-      <path
-        d="M5.49 11.74l11.57-4.46c.54-.19 1.01.13.83.94l-1.97 9.28c-.15.66-.54.82-1.08.51l-3-2.21-1.45 1.39c-.16.16-.3.3-.6.3l.21-3.05 5.56-5.02c.24-.21-.05-.33-.37-.12l-6.87 4.33-2.96-.93c-.64-.2-.66-.64.14-.95z"
-        fill="white"
-      />
-    </svg>
-  );
-}
 
 // ─── Telegram channel config ───────────────────────────────────────────────────
 
@@ -243,18 +230,12 @@ function TelegramDestinationStep({ botAvailable }: { botAvailable: boolean }) {
   const refresh = () => queryClient.invalidateQueries({ queryKey: channelsCacheKey });
   const hasChannel = Boolean(telegramChannel);
 
-  // Auto-update after Telegram /start: poll until verified so the user doesn't need to refresh
-  const hasTelegramVerified = Boolean(telegramChannel?.verified);
-  useEffect(() => {
-    if (hasTelegramVerified || !botAvailable) return;
-    const id = setInterval(refresh, 4_000);
-    return () => clearInterval(id);
-  }, [hasTelegramVerified, botAvailable]); // eslint-disable-line react-hooks/exhaustive-deps
- = useState(false);
+  const [changing, setChanging] = useState(false);
   const [destType, setDestType] = useState<DestType>('dm');
   const [address, setAddress] = useState('');
   const [threadId, setThreadId] = useState('');
   const [submitError, setSubmitError] = useState('');
+  const [testError, setTestError] = useState('');
   const [testState, setTestState] = useState<'idle' | 'sent' | 'error'>('idle');
 
   const testMutation = useMutation({
@@ -263,7 +244,10 @@ function TelegramDestinationStep({ botAvailable }: { botAvailable: boolean }) {
       setTestState('sent');
       setTimeout(() => setTestState('idle'), 2000);
     },
-    onError: () => setTestState('error'),
+    onError: (error) => {
+      setTestError(error instanceof ApiError ? error.message : t('integrations.telegram.test.networkError', { defaultValue: 'Could not reach the notification service. Try again.' }));
+      setTestState('error');
+    },
   });
 
   const setDestMutation = useMutation({
@@ -350,11 +334,11 @@ function TelegramDestinationStep({ botAvailable }: { botAvailable: boolean }) {
               >
                 {testMutation.isPending ? (
                   <span className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
-                ) : testState === 'sent' ? '✓ Sent!' : '🔔 Send test'}
+                ) : testState === 'sent' ? t('integrations.telegram.test.queued', { defaultValue: 'Test queued' }) : t('integrations.telegram.test.send', { defaultValue: 'Send test' })}
               </button>
               {testState === 'error' && (
                 <span className="text-[11px] text-red-400">
-                  {t('integrations.telegram.test.error', { defaultValue: 'Failed to send — check your bot is active' })}
+                  {testError}
                 </span>
               )}
               <button
@@ -399,7 +383,7 @@ function TelegramDestinationStep({ botAvailable }: { botAvailable: boolean }) {
                 <ChannelRow
                   config={TELEGRAM_CHANNEL_CFG}
                   existing={telegramChannel}
-                  onRefresh={refresh}
+                  onRefresh={() => { setChanging(false); void refresh(); }}
                   hideAddress
                 />
               )}

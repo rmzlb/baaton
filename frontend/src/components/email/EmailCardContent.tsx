@@ -1,11 +1,12 @@
 import { useState } from 'react';
+import { useUser, useClerk } from '@clerk/clerk-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { ApiError } from '@/lib/api';
 import { Skeleton } from '@/components/shared/Skeleton';
-import { SubscriptionsSection } from '@/components/settings/NotificationPreferencesSection';
+import { EmailStatusRules } from './EmailStatusRules';
 
 // ─── Step number badge ────────────────────────────────────────────────────────
 
@@ -23,22 +24,14 @@ function StepBadge({ n, done }: { n: number; done?: boolean }) {
   );
 }
 
-// ─── Email masking helper ─────────────────────────────────────────────────────
-
-function maskEmail(email: string): string {
-  const at = email.indexOf('@');
-  if (at < 0) return email;
-  const local = email.slice(0, at);
-  const domain = email.slice(at);
-  const visible = local.slice(0, Math.min(2, local.length));
-  return `${visible}***${domain}`;
-}
-
 // ─── Step 1 – Email address ───────────────────────────────────────────────────
 
 function EmailAddressStep() {
   const { t } = useTranslation();
   const apiClient = useApi();
+  const { user } = useUser();
+  const { openUserProfile } = useClerk();
+  const verifiedAddresses = (user?.emailAddresses ?? []).filter((e) => e.verification?.status === 'verified');
   const queryClient = useQueryClient();
   const channelsCacheKey = [...apiClient.notificationPrefs.cacheScope, 'channels'];
 
@@ -58,7 +51,7 @@ function EmailAddressStep() {
   });
 
   const emailChannel = channels.find((c) => c.channel === 'email');
-  const hasChannel = Boolean(emailChannel);
+  const hasChannel = Boolean(emailChannel?.verified);
   const refresh = () => queryClient.invalidateQueries({ queryKey: channelsCacheKey });
 
   const saveMutation = useMutation({
@@ -130,7 +123,7 @@ function EmailAddressStep() {
                 {t('notifPrefs.channels.saved', { defaultValue: 'Saved' })}
               </span>
               <span className="font-mono text-secondary">
-                {emailChannel.address_masked ?? maskEmail(String(emailChannel.address ?? ''))}
+                {emailChannel.address_masked}
               </span>
               <button
                 type="button"
@@ -161,22 +154,15 @@ function EmailAddressStep() {
           {showForm && (
             <div className="space-y-2">
               <div className="flex gap-2">
-                <input
-                  type="email"
+                <select
+                  aria-label={t('integrations.email.address.title', { defaultValue: 'Email address' })}
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && address.trim()) {
-                      setSaveError('');
-                      saveMutation.mutate();
-                    }
-                  }}
-                  placeholder={t('integrations.email.address.placeholder', {
-                    defaultValue: 'you@example.com',
-                  })}
-                  autoComplete="email"
-                  className="flex-1 rounded-lg border border-border bg-bg px-3 py-2 text-sm text-primary placeholder-muted outline-none focus:border-accent transition-colors"
-                />
+                  className="flex-1 min-w-0 rounded-md border border-border bg-bg px-3 py-2 text-sm text-primary focus:ring-2 focus:ring-accent/30"
+                >
+                  <option value="">{t('integrations.email.selectVerified', { defaultValue: 'Select a verified account email' })}</option>
+                  {verifiedAddresses.map((e) => <option key={e.id} value={e.emailAddress}>{e.emailAddress}</option>)}
+                </select>
                 <button
                   type="button"
                   disabled={saveMutation.isPending || !address.trim()}
@@ -193,6 +179,12 @@ function EmailAddressStep() {
                   )}
                 </button>
               </div>
+              <p className="text-xs text-muted">
+                {t('integrations.email.verifiedOnly', { defaultValue: 'Only verified account emails can receive ticket content.' })}{' '}
+                <button type="button" onClick={() => openUserProfile()} className="text-accent underline focus:ring-2 focus:ring-accent/30">
+                  {t('integrations.email.manageAccount', { defaultValue: 'Manage account emails' })}
+                </button>
+              </p>
               {saveError && <p className="text-xs text-red-400">{saveError}</p>}
               {changing && (
                 <button
@@ -221,7 +213,7 @@ function EmailSubscriptionsStep({ hasChannel }: { hasChannel: boolean }) {
       <div className="flex items-center gap-2">
         <StepBadge n={2} done={false} />
         <p className="text-xs font-semibold text-primary uppercase tracking-wider">
-          {t('integrations.email.subs.title', { defaultValue: 'Projects & events' })}
+          {t('integrations.email.subs.title', { defaultValue: 'Email rules' })}
         </p>
       </div>
 
@@ -232,7 +224,7 @@ function EmailSubscriptionsStep({ hasChannel }: { hasChannel: boolean }) {
           })}
         </p>
       ) : (
-        <SubscriptionsSection />
+        <EmailStatusRules />
       )}
     </div>
   );
@@ -261,7 +253,7 @@ export function EmailCardContent() {
 
       {/* Step 2 – Subscriptions */}
       <div className="border-t border-border pt-5">
-        <EmailSubscriptionsStep hasChannel={Boolean(emailChannel)} />
+        <EmailSubscriptionsStep hasChannel={Boolean(emailChannel?.verified)} />
       </div>
     </div>
   );
@@ -281,5 +273,5 @@ export function useEmailStatus(): 'connected' | 'disconnected' {
   });
 
   const emailChannel = channels.find((c) => c.channel === 'email');
-  return emailChannel ? 'connected' : 'disconnected';
+  return emailChannel?.verified ? 'connected' : 'disconnected';
 }

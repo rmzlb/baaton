@@ -1,91 +1,62 @@
-# Email Setup — Cloudflare Email Service
+# Baaton — Cloudflare Email Sending
 
-notifyd uses **Cloudflare Email Service** to send transactional emails from `notifications@baaton.dev`.
+Provider: Cloudflare Email Service REST API, via notifyd. No Resend or inbound-mail migration is required.
 
-## Prerequisites
+## Current verified state (2026-09-15)
 
-- A Cloudflare account with `baaton.dev` as a managed zone
-- Access to Dokploy to set environment variables on the notifyd service
+- Zone `baaton.dev` exists in the Cloudflare account named Carbonable.
+- Sending MX records on `cf-bounce.baaton.dev` and DKIM on `cf-bounce._domainkey.baaton.dev` are present. This alone does not prove delivery or full domain onboarding.
+- The operator credential available to this session verifies as active and can read DNS, but `/zones/{zone}/email/sending/subdomains` returns 403. A send-endpoint request with an empty body (no recipient, no message sent) returns 401.
+- Dokploy compose `SD_17_tF_Xju_8Lf221Sd` still specifies `EMAIL_PROVIDER: log`. It has not been switched to real sending.
+- No successful Cloudflare email delivery has been demonstrated. A notification logged by the log provider is not delivery.
 
----
+## 1. Inspect domain onboarding
 
-## 1. Enable Cloudflare Email Routing (if not done)
+Go to **Compute → Email Service → Email Sending**, select `baaton.dev`, then **Settings**.
 
-1. Go to Cloudflare Dashboard → **baaton.dev** → **Email** → **Email Routing**
-2. Click **Get started** and follow the wizard — this adds the required MX records automatically
+If absent, use **Onboard Domain** and inspect the proposed records before confirming. Sending uses `cf-bounce` MX/SPF, the `cf-bounce._domainkey` DKIM selector and the domain's DMARC policy. Do not replace root MX/SPF records or existing DMARC policy just to enable outbound mail. Inbound **Email Routing** is separate and is not a prerequisite.
 
-> Note: Email Routing is for *incoming* mail. Outbound sending uses the **Email Service API** (separate product).
+Verify sending DNS and domain readiness in Cloudflare. Do not invent a DKIM key or assume verification merely because the domain uses Cloudflare DNS.
 
----
+## 2. Dedicated sending credential
 
-## 2. Enable Cloudflare Email Service (outbound)
+Use a Cloudflare API token with **Email Sending: Edit**, scoped to the account that owns `baaton.dev`. Administrative domain inspection may require additional documented zone permissions; do not broaden the send token unnecessarily.
 
-1. Go to **Cloudflare Dashboard** → **Email** → **Email Service**  
-   (direct URL: `https://dash.cloudflare.com/{account_id}/email/service`)
-2. Click **Enable** — no domain verification required; Cloudflare verifies SPF/DKIM automatically
+Pass the token through protected secret entry or the deployment platform's masked secret settings, never chat, repository files, screenshots, CLI arguments, or logs. The existing DNS token does not authorize sending in the observed account.
 
----
+## 3. Configure the existing notifyd compose
 
-## 3. DNS Records
+Inspect and merge the existing compose and environment settings. Keep Telegram, the database, encryption settings, volumes and routing unchanged. Ensure the running notifyd version supports `provider=cloudflare`.
 
-Add these records in **Cloudflare DNS** for `baaton.dev` :
+Expected environment **names** (secret values omitted):
 
-### SPF
-| Type | Name | Content | Proxy |
-|------|------|---------|-------|
-| TXT | `@` | `v=spf1 include:_spf.mx.cloudflare.net ~all` | DNS only |
-
-> If you already have an SPF record, append `include:_spf.mx.cloudflare.net` before the `~all`.
-
-### DKIM
-Cloudflare Email Service adds DKIM automatically when you enable the service. Verify in Dashboard → Email → Email Service → DKIM.
-
-### DMARC
-| Type | Name | Content | Proxy |
-|------|------|---------|-------|
-| TXT | `_dmarc` | `v=DMARC1; p=quarantine; rua=mailto:admin@baaton.dev; pct=100` | DNS only |
-
----
-
-## 4. Create API Token
-
-1. Go to **Cloudflare Dashboard** → **My Profile** → **API Tokens** → **Create Token**
-2. Use **Custom Token** with:
-   - **Permission**: `Account` → `Email Service` → `Edit`
-   - **Account Resources**: Include `baaton` account
-3. Click **Continue to summary** → **Create Token**
-4. **Copy the token immediately** — it will not be shown again
-
----
-
-## 5. Get your Account ID
-
-1. Go to Cloudflare Dashboard → **baaton.dev** → right sidebar
-2. Copy the **Account ID** (32-character hex string)
-
----
-
-## 6. Configure notifyd env vars (Dokploy)
-
-In Dokploy, navigate to the **notifyd** service → **Environment Variables** and set:
-
-```
+```text
 EMAIL_PROVIDER=cloudflare
-CLOUDFLARE_EMAIL_API_TOKEN=<token from step 4>
-CLOUDFLARE_ACCOUNT_ID=<account id from step 5>
+CLOUDFLARE_EMAIL_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID
 EMAIL_FROM=notifications@baaton.dev
 EMAIL_FROM_NAME=Baaton
 ```
 
-Then **redeploy** notifyd to apply the new variables.
+The current compose has `EMAIL_PROVIDER: log` inline. Adding an environment variable elsewhere will not override that inline value unless the compose is updated to reference it. Set the provider only after the dedicated credential and sending domain are ready. Do not deploy placeholder token values.
 
----
+Check the Baaton notifyd project's own sender overrides and allowed channels too: they can override the instance sender. Use the Baaton project only; do not change unrelated notifyd tenants.
 
-## 7. Verify
+## 4. Delivery check
 
-After deploying, set an email address in Baaton (Settings → Integrations → Email) and create or update a test issue to trigger a notification.
+Use an authorized test recipient with a verified email registered in Baaton. Trigger the requested `in_review` transition from another effective actor and confirm:
 
-If no email arrives within 5 minutes, check:
-- notifyd logs: `docker logs baaton-notifyd` (or via Dokploy log viewer)
-- Cloudflare Email Service → **Sending Activity** for bounce/rejection details
-- SPF/DMARC: use [MXToolbox](https://mxtoolbox.com/spf.aspx)
+1. Recipient selection: current org membership, creator/actor identity, verified address and deduplication.
+2. notifyd accepts a request with `body_html` (not `html`), text fallback, subject and recipient-scoped event key.
+3. The job reaches the Cloudflare connector, not the log connector.
+4. Cloudflare reports delivered/queued/bounced accurately, then check the actual inbox.
+5. The hosted PNG mascot, ticket CTA and notification preferences link render correctly. Queue acceptance is not proof of inbox delivery.
+
+Do not notify real project subscribers while debugging or replay old queued production events. Keep email activation blocked if credentials, authentication, or recipient verification fail.
+
+## References
+
+- https://developers.cloudflare.com/email-service/get-started/send-emails/
+- https://developers.cloudflare.com/email-service/configuration/domains/
+- https://developers.cloudflare.com/email-service/api/send-emails/rest-api/
+- https://developers.cloudflare.com/api/resources/email_sending/

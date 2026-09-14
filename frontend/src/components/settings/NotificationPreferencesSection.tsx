@@ -10,6 +10,8 @@ import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { ApiError } from '@/lib/api';
+import { TelegramIcon } from '@/components/shared/TelegramIcon';
+import { useTelegramLinkVerification, telegramDestinationFingerprint } from '@/hooks/useTelegramLinkVerification';
 import { Skeleton } from '@/components/shared/Skeleton';
 import type {
   UserNotificationChannel,
@@ -59,8 +61,9 @@ function ToggleSwitch({
 // ─── Channel icon ─────────────────────────────────────────────────────────────
 
 function ChannelIcon({ channel }: { channel: NotificationChannel }) {
+  if (channel === 'telegram') return <TelegramIcon size={18} />;
   const emojis: Record<NotificationChannel, string> = {
-    telegram: '✈️',
+    telegram: '',
     slack: '💬',
     discord: '🎮',
     email: '✉️',
@@ -75,6 +78,7 @@ function TelegramConnectPanel({ onSaved }: { onSaved: () => void }) {
   const apiClient = useApi();
   const [mode, setMode] = useState<'dm' | 'group' | 'manual'>('dm');
   const [deepLink, setDeepLink] = useState<string | null>(null);
+  const [baseline, setBaseline] = useState<string | null>(null);
   const [command, setCommand] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [botError, setBotError] = useState(false);
@@ -85,8 +89,11 @@ function TelegramConnectPanel({ onSaved }: { onSaved: () => void }) {
   const [showManual, setShowManual] = useState(false);
 
   const linkMutation = useMutation({
-    mutationFn: (kind: 'private' | 'group') =>
-      apiClient.notificationPrefs.getTelegramLink({ kind }),
+    mutationFn: async (kind: 'private' | 'group') => {
+      const channels = await apiClient.notificationPrefs.listChannels();
+      setBaseline(telegramDestinationFingerprint(channels));
+      return apiClient.notificationPrefs.getTelegramLink({ kind });
+    },
     onSuccess: (data, kind) => {
       setDeepLink(data.deep_link);
       setExpiresAt(data.expires_at);
@@ -99,6 +106,10 @@ function TelegramConnectPanel({ onSaved }: { onSaved: () => void }) {
         setBotError(true);
       }
     },
+  });
+
+  const linkExpired = useTelegramLinkVerification({
+    active: Boolean(deepLink), expiresAt, baseline, onVerified: onSaved,
   });
 
   const handleSaveManual = async () => {
@@ -166,7 +177,7 @@ function TelegramConnectPanel({ onSaved }: { onSaved: () => void }) {
               : t('notifPrefs.channels.telegram.deepLinkDesc', { defaultValue: 'Click the link below, then press Start in the Telegram app.' })}
           </p>
           <a
-            href={deepLink}
+            href={linkExpired ? undefined : deepLink}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
@@ -174,7 +185,7 @@ function TelegramConnectPanel({ onSaved }: { onSaved: () => void }) {
             <ExternalLink size={13} />
             {t('notifPrefs.channels.telegram.deepLinkOpen', { defaultValue: 'Open Telegram bot' })}
           </a>
-          {command && (
+          {command && mode === 'group' && (
             <div className="rounded bg-surface-hover px-2 py-1.5 text-[11px] font-mono text-secondary">
               <span className="text-muted mr-1">{t('notifPrefs.channels.telegram.groupCommand', { defaultValue: 'Paste in group:' })}</span>
               {command}
@@ -194,6 +205,14 @@ function TelegramConnectPanel({ onSaved }: { onSaved: () => void }) {
             {t('notifPrefs.channels.telegram.tryAnother', { defaultValue: 'Try another method' })}
           </button>
         </div>
+      )}
+
+      {deepLink && (
+        <p role="status" className="text-xs text-muted">
+          {linkExpired
+            ? t('notifPrefs.channels.telegram.linkExpired', { defaultValue: 'Link expired. Choose another method to generate a new link.' })
+            : t('notifPrefs.channels.telegram.waiting', { defaultValue: 'Waiting for Telegram confirmation… This page updates automatically.' })}
+        </p>
       )}
 
       {/* Manual entry (progressive disclosure) */}

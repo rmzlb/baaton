@@ -71,6 +71,8 @@ export interface ProjectSubscriptionStatus {
 }
 
 export interface ProjectSubscription {
+  /** Explicit email-only status keys; absent/empty means no extra emails. */
+  email_notify_statuses?: string[];
   project_id: string;
   project_name: string;
   project_slug: string;
@@ -87,6 +89,7 @@ export interface ProjectSubscription {
 }
 
 export interface UpdateProjectSubscriptionBody {
+  email_notify_statuses?: string[];
   enabled?: boolean;
   notify_statuses?: string[] | null;
   notify_comments?: boolean | null;
