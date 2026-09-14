@@ -416,23 +416,23 @@ pub async fn create(
             )
             .await;
 
-            if !notify_comments && recipients.is_empty() {
-                return;
-            }
-
-            // The room is one shared channel, so "self-authored" means: nobody
-            // other than the commenter is involved in this ticket. If the author
-            // is the only party, the notice would be telling rmzlb what rmzlb
-            // just did.
+            // The room only hears when someone else is involved in the ticket.
+            // Per-user subscribers opted in independently and receive regardless:
+            // `resolve_recipients` already excludes the actor (c.user_id <> $4),
+            // so the ticket-party check must not gate them a second time.
             let commenter = resolve_owner_identity(&pool2, &author_identity).await;
-            let mut others = false;
+            let mut others_on_ticket = false;
             for uid in assignee_ids.into_iter().chain(creator_id) {
                 if resolve_owner_identity(&pool2, &uid).await != commenter {
-                    others = true;
+                    others_on_ticket = true;
                     break;
                 }
             }
-            if !others {
+            // `announce_room` requires both the project setting and at least one
+            // other party: a solo-ticket comment must not spam the shared channel.
+            let announce_room = notify_comments && others_on_ticket;
+
+            if !announce_room && recipients.is_empty() {
                 return;
             }
 
@@ -449,7 +449,7 @@ pub async fn create(
                     comment_id,
                 },
                 recipients,
-                notify_comments,
+                announce_room,
             );
         });
     }
