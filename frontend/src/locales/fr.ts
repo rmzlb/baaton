@@ -2043,7 +2043,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 
   // ─── Intégration Telegram ──────────────────────────────────────────────────
   'integrations.telegram.description': 'Reçois les notifications Baaton sur Telegram.',
-  'integrations.telegram.bot.title': 'Ton bot',
+  'integrations.telegram.bot.title': 'Bot',
   'integrations.telegram.bot.desc': 'Crée un bot sur @BotFather et colle son token. Baaton enregistre le webhook automatiquement.',
   'integrations.telegram.bot.tokenPlaceholder': '123456:ABC-...',
   'integrations.telegram.bot.save': 'Enregistrer',
@@ -2056,7 +2056,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'integrations.telegram.bot.deleteConfirm': 'Supprimer ce bot ? Les notifications Telegram s\'arrêtent immédiatement.',
   'integrations.telegram.bot.errorGeneric': 'Impossible d\'enregistrer le bot. Réessaie.',
   'integrations.telegram.bot.loadError': 'Impossible de charger le statut du bot.',
-  'integrations.telegram.channel.title': 'Ton compte',
+  'integrations.telegram.channel.title': 'Destination',
   'integrations.telegram.channel.desc': 'Relie ton compte Telegram pour que Baaton sache où envoyer tes notifications.',
   'integrations.telegram.subs.title': 'Projets & événements',
   'integrations.telegram.subs.desc': 'Sélectionne les projets à suivre et configure les événements.',

@@ -2043,7 +2043,7 @@ As a [user], I want to [action] so that [benefit].
 
   // ─── Telegram Integration ─────────────────────────────
   'integrations.telegram.description': 'Receive Baaton notifications in Telegram.',
-  'integrations.telegram.bot.title': 'Your bot',
+  'integrations.telegram.bot.title': 'Bot',
   'integrations.telegram.bot.desc': 'Create a bot on @BotFather and paste its token. Baaton registers the webhook automatically.',
   'integrations.telegram.bot.tokenPlaceholder': '123456:ABC-...',
   'integrations.telegram.bot.save': 'Register',
@@ -2056,11 +2056,11 @@ As a [user], I want to [action] so that [benefit].
   'integrations.telegram.bot.deleteConfirm': 'Remove this bot? Telegram notifications will stop immediately.',
   'integrations.telegram.bot.errorGeneric': 'Could not register bot. Try again.',
   'integrations.telegram.bot.loadError': 'Could not load bot status.',
-  'integrations.telegram.channel.title': 'Your account',
+  'integrations.telegram.channel.title': 'Destination',
   'integrations.telegram.channel.desc': 'Link your Telegram account so Baaton knows where to send your notifications.',
   'integrations.telegram.subs.title': 'Projects & events',
   'integrations.telegram.subs.desc': 'Select projects to follow and tune event settings.',
-  'integrations.telegram.channel.needsBot': 'A bot must be configured first (step 1) before you can link your account.',
+  'integrations.telegram.channel.needsBot': 'A bot must be configured first (step 1) before you can set a destination.',
   'integrations.telegram.subs.needsChannel': 'Connect your Telegram account first (step 2 above).',
 
   // ─── Public Run Cards ──────────────────────────────
