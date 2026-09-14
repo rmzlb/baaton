@@ -982,6 +982,16 @@ export function SubscriptionsSection() {
     }
   }, [apiClient, cacheKey, queryClient]);
 
+  // Resolve org names from Clerk memberships — must stay before early returns (Rules of Hooks)
+  const { userMemberships } = useOrganizationList({ userMemberships: { infinite: true } });
+  const orgNamesMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const mem of (userMemberships?.data ?? [])) {
+      m.set(mem.organization.id, mem.organization.name);
+    }
+    return m;
+  }, [userMemberships?.data]);
+
   if (isLoading) return <SubscriptionsSkeleton />;
 
   if (isError) {
@@ -1002,16 +1012,6 @@ export function SubscriptionsSection() {
   }
 
   const enabledSubs = subs.filter((s) => s.enabled);
-
-  // Resolve org names from Clerk memberships (fallback to org_id)
-  const { userMemberships } = useOrganizationList({ userMemberships: { infinite: true } });
-  const orgNamesMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const mem of (userMemberships?.data ?? [])) {
-      m.set(mem.organization.id, mem.organization.name);
-    }
-    return m;
-  }, [userMemberships?.data]);
 
   const allOptions: ProjectOption[] = subs.map((s) => ({
     project_id: s.project_id,
