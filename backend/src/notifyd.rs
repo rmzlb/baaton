@@ -331,6 +331,44 @@ impl NotifydClient {
         Ok(data)
     }
 
+
+    /// Send the "In Review" creator email to one specific address.
+    ///
+    /// The creator is notified automatically regardless of subscription, so
+    /// there is no recipients list to iterate and no per-channel routing —
+    /// it is always email. Fire-and-forget; errors are WARN-logged.
+    pub fn send_creator_in_review(
+        &self,
+        display_id: &str,
+        title: &str,
+        issue_id: uuid::Uuid,
+        project_name: &str,
+        creator_email: &str,
+        idempotency_key: &str,
+    ) {
+        let Some(base_url) = self.public_url.as_deref() else {
+            tracing::trace!("creator.in_review.no_public_url; skip");
+            return;
+        };
+        let html = crate::email_templates::in_review_creator_html(
+            display_id, title, issue_id, project_name, base_url,
+        );
+        let subject = format!("[Baaton] {display_id} \u{2014} Ready for your review");
+        let body = serde_json::json!({
+            "channel": "email",
+            "to": creator_email,
+            "subject": subject,
+            "html": html,
+            "body": format!("{display_id} is ready for your review"),
+            "idempotency_key": idempotency_key,
+            "priority": "high"
+        });
+        let client = self.clone();
+        tokio::spawn(async move {
+            client.post_send(body).await;
+        });
+    }
+
     async fn post_send(&self, body: serde_json::Value) {
         let endpoint = format!("{}/v1/send", self.base_url);
         match self

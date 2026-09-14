@@ -176,3 +176,38 @@ pub fn comment_added_html(notice: &crate::notifyd::CommentNotice, public_url: &s
         notice.issue.project_name.as_deref().unwrap_or("Baaton"),
     )
 }
+
+/// Template for the "In Review" creator notification.
+///
+/// Distinct from `status_changed_html` (for subscribers): the creator is
+/// notified automatically, no subscription required.
+/// Strip color: indigo (#6366f1) — matches the board's in_review badge.
+pub fn in_review_creator_html(
+    display_id: &str,
+    title: &str,
+    issue_id: uuid::Uuid,
+    project_name: &str,
+    public_url: &str,
+) -> String {
+    let accent = "#6366f1";
+    let badge = status_badge("IN REVIEW", accent);
+    let issue_url = format!("{public_url}/issues/{issue_id}");
+    let cta = format!(
+        "<a href=\"{issue_url}\" style=\"display:inline-block;margin-top:16px;\
+padding:10px 20px;background:#f59e0b;color:#0a0a0a;font-weight:700;\
+font-size:13px;border-radius:8px;text-decoration:none;\
+letter-spacing:0.02em;\">Review {display_id} &#8594;</a>"
+    );
+    let content = format!(
+        "{badge}\
+<h2 style=\"margin:12px 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;\
+font-family:Arial,Helvetica,sans-serif;\">{display_id} is ready for your review</h2>\
+<p style=\"margin:4px 0 12px;font-size:13px;color:#5c5c57;\
+font-family:Arial,Helvetica,sans-serif;\">Someone has submitted their work on this \
+ticket. Take a look when you&#39;re ready.</p>\
+<div style=\"margin:8px 0;padding:10px 12px;background:#f6f5f3;border-radius:6px;\
+font-size:13px;color:#3d3d3a;font-family:Arial,Helvetica,sans-serif;\">{title}</div>\
+{cta}"
+    );
+    email_layout(accent, &content, project_name)
+}

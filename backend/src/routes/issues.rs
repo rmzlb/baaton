@@ -276,6 +276,67 @@ fn on_status_changed(
             );
         });
     }
+
+    // ── Creator notification (in_review) ──
+    // The creator is automatically notified when their ticket reaches in_review
+    // — no subscription required. Only this transition triggers it; other
+    // status moves do not. The actor is excluded so nobody hears about their
+    // own action.
+    if issue.status == "in_review" {
+        if let (Some(notifyd), Some(creator_id)) = (notifyd, issue.created_by_id.as_ref()) {
+            if creator_id.as_str() != actor_id {
+                let pool2 = pool.clone();
+                let notifyd = notifyd.clone();
+                let creator_id = creator_id.clone();
+                let display_id = issue.display_id.clone();
+                let title = issue.title.clone();
+                let issue_id = issue.id;
+                let project_id = issue.project_id;
+                let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
+                tokio::spawn(async move {
+                    // Lookup creator email (skip silently if none).
+                    let creator_email: Option<String> = sqlx::query_scalar(
+                        "SELECT address FROM user_notification_channels                          WHERE user_id = $1 AND channel = 'email'",
+                    )
+                    .bind(&creator_id)
+                    .fetch_optional(&pool2)
+                    .await
+                    .ok()
+                    .flatten();
+
+                    let Some(email) = creator_email else {
+                        tracing::trace!(
+                            creator_id = %creator_id,
+                            "creator.in_review.no_email; skip"
+                        );
+                        return;
+                    };
+
+                    let project_name: Option<String> = sqlx::query_scalar(
+                        "SELECT name FROM projects WHERE id = $1",
+                    )
+                    .bind(project_id)
+                    .fetch_optional(&pool2)
+                    .await
+                    .ok()
+                    .flatten();
+
+                    let idempotency_key = format!(
+                        "baaton-creator-in-review-{issue_id}-{}",
+                        changed_at.timestamp_millis()
+                    );
+                    notifyd.send_creator_in_review(
+                        &display_id,
+                        &title,
+                        issue_id,
+                        project_name.as_deref().unwrap_or("Baaton"),
+                        &email,
+                        &idempotency_key,
+                    );
+                });
+            }
+        }
+    }
 }
 
 /// Strip unsafe/non-renderable inline data: URIs from HTML descriptions.
