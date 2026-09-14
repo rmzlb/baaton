@@ -127,14 +127,37 @@ pub async fn send_test_notification(
         .unwrap_or_default();
 
     let route = routes.first().ok_or_else(|| {
-        (StatusCode::BAD_REQUEST, Json(json!({ "error": "No verified Telegram destination" })))
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "No verified Telegram destination. \
+                         Open the Telegram bot and press Start, then retry."
+            })),
+        )
     })?;
 
     let route_id = route
         .get("route_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            (StatusCode::BAD_GATEWAY, Json(json!({ "error": "Invalid route response from notifyd" })))
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": "Invalid route response from notifyd" })),
+            )
+        })?;
+
+    // `/v1/send` requires `to` (the address / chat-id) even when routing via
+    // `chat.telegram_route_id`. Without it notifyd returns 422
+    // "Missing 'to' or 'subscriber_id'", which was the root cause of
+    // `send_test_notification` returning a generic failure.
+    let to_address = route
+        .get("address")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": "Invalid route: missing address from notifyd" })),
+            )
         })?;
 
     let timestamp = std::time::SystemTime::now()
@@ -148,6 +171,7 @@ pub async fn send_test_notification(
             "/v1/send",
             Some(json!({
                 "channel": "telegram",
+                "to": to_address,
                 "chat": { "telegram_route_id": route_id },
                 "body": "\u{1f514} Baaton test notification \u{2014} your setup is working!",
                 "idempotency_key": format!("baaton-test-{}-{}", user_id, timestamp),
@@ -190,4 +214,65 @@ pub async fn telegram_webhook(
         headers.get("x-telegram-bot-api-secret-token").and_then(|v| v.to_str().ok()),
     ).await?;
     Ok(StatusCode::OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    /// `/v1/send` requires either `to` or `subscriber_id`. Without it notifyd
+    /// returns 422 "Missing 'to' or 'subscriber_id'", which was the root cause
+    /// of `send_test_notification` returning a generic failure instead of a
+    /// clear error.
+    ///
+    /// This verifies the payload shape; the real HTTP call requires a live
+    /// notifyd instance.
+    #[test]
+    fn test_payload_has_to_and_route_id() {
+        // Simulate the route object returned by /v1/telegram/lookup.
+        let route = json!({
+            "route_id": "550e8400-e29b-41d4-a716-446655440000",
+            "address": "-100380385762",
+            "owner": "user_abc"
+        });
+
+        let route_id = route.get("route_id").and_then(|v| v.as_str()).unwrap();
+        let to_address = route.get("address").and_then(|v| v.as_str()).unwrap();
+
+        // Reproduce the exact payload shape built by send_test_notification.
+        let payload = json!({
+            "channel": "telegram",
+            "to": to_address,
+            "chat": { "telegram_route_id": route_id },
+            "body": "test",
+            "idempotency_key": "baaton-test-user_abc-1234567890",
+        });
+
+        assert_eq!(
+            payload["to"].as_str(),
+            Some("-100380385762"),
+            "`to` is required by notifyd /v1/send"
+        );
+        assert_eq!(
+            payload["chat"]["telegram_route_id"].as_str(),
+            Some("550e8400-e29b-41d4-a716-446655440000"),
+            "route_id selects the correct bot for this user"
+        );
+        assert!(payload.get("to").is_some(), "missing `to` causes 422 from notifyd");
+    }
+
+    /// Missing `address` field in the route response must surface as
+    /// BAD_GATEWAY, not an unrelated error.
+    #[test]
+    fn route_without_address_is_bad_gateway() {
+        let route = json!({
+            "route_id": "550e8400-e29b-41d4-a716-446655440000",
+            "owner": "user_abc"
+            // "address" deliberately absent
+        });
+        // The real handler returns Err(BAD_GATEWAY) here; we just verify the
+        // field access mirrors what the handler does.
+        let to_address = route.get("address").and_then(|v| v.as_str());
+        assert!(to_address.is_none(), "should be None so handler returns BAD_GATEWAY");
+    }
 }

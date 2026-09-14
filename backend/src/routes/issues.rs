@@ -278,63 +278,125 @@ fn on_status_changed(
     }
 
     // ── Creator notification (in_review) ──
-    // The creator is automatically notified when their ticket reaches in_review
-    // — no subscription required. Only this transition triggers it; other
-    // status moves do not. The actor is excluded so nobody hears about their
-    // own action.
+    // The creator is notified when their ticket reaches in_review — no
+    // subscription required. Identity resolution uses resolve_owner_identity
+    // so an agent acting through somebody's API key is identified as that
+    // person; verified email only; org membership revalidated (same gate as
+    // resolve_recipients); deduplication skips the creator email when they
+    // are also a subscriber who will already receive the status_changed mail.
     if issue.status == "in_review" {
         if let (Some(notifyd), Some(creator_id)) = (notifyd, issue.created_by_id.as_ref()) {
-            if creator_id.as_str() != actor_id {
-                let pool2 = pool.clone();
-                let notifyd = notifyd.clone();
-                let creator_id = creator_id.clone();
-                let display_id = issue.display_id.clone();
-                let title = issue.title.clone();
-                let issue_id = issue.id;
-                let project_id = issue.project_id;
-                let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
-                tokio::spawn(async move {
-                    // Lookup creator email (skip silently if none).
-                    let creator_email: Option<String> = sqlx::query_scalar(
-                        "SELECT address FROM user_notification_channels                          WHERE user_id = $1 AND channel = 'email'",
-                    )
-                    .bind(&creator_id)
-                    .fetch_optional(&pool2)
-                    .await
-                    .ok()
-                    .flatten();
-
-                    let Some(email) = creator_email else {
-                        tracing::trace!(
-                            creator_id = %creator_id,
-                            "creator.in_review.no_email; skip"
-                        );
-                        return;
-                    };
-
-                    let project_name: Option<String> = sqlx::query_scalar(
-                        "SELECT name FROM projects WHERE id = $1",
-                    )
-                    .bind(project_id)
-                    .fetch_optional(&pool2)
-                    .await
-                    .ok()
-                    .flatten();
-
-                    let idempotency_key = format!(
-                        "baaton-creator-in-review-{issue_id}-{}",
-                        changed_at.timestamp_millis()
+            let pool2 = pool.clone();
+            let notifyd = notifyd.clone();
+            let creator_id = creator_id.clone();
+            let actor_id_owned = actor_id.to_string();
+            let display_id = issue.display_id.clone();
+            let title = issue.title.clone();
+            let issue_id = issue.id;
+            let project_id = issue.project_id;
+            let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
+            tokio::spawn(async move {
+                // Resolve both identities before comparing: apikey:<uuid>
+                // collapses to the key's human owner so the creator is not
+                // emailed about their own API-key action.
+                let resolved_creator =
+                    crate::routes::comments::resolve_owner_identity(&pool2, &creator_id).await;
+                let resolved_actor =
+                    crate::routes::comments::resolve_owner_identity(&pool2, &actor_id_owned).await;
+                if resolved_creator == resolved_actor {
+                    tracing::trace!(
+                        creator = %resolved_creator,
+                        "creator.in_review.self_action; skip"
                     );
-                    notifyd.send_creator_in_review(
-                        &display_id,
-                        &title,
-                        issue_id,
-                        project_name.as_deref().unwrap_or("Baaton"),
-                        &email,
-                        &idempotency_key,
+                    return;
+                }
+
+                // Verified addresses only: an unverified address was never
+                // proven to belong to this person and could expose project
+                // content to the wrong inbox.
+                let creator_email: Option<String> = sqlx::query_scalar(
+                    "SELECT address FROM user_notification_channels                      WHERE user_id = $1 AND channel = 'email' AND verified_at IS NOT NULL",
+                )
+                .bind(&resolved_creator)
+                .fetch_optional(&pool2)
+                .await
+                .ok()
+                .flatten();
+
+                let Some(email) = creator_email else {
+                    tracing::trace!(
+                        creator = %resolved_creator,
+                        "creator.in_review.no_verified_email; skip"
                     );
-                });
-            }
+                    return;
+                };
+
+                // Revalidate org membership — a stored creator_id from a
+                // deleted membership must not receive project content.
+                let org_id: Option<String> = sqlx::query_scalar(
+                    "SELECT org_id FROM projects WHERE id = $1",
+                )
+                .bind(project_id)
+                .fetch_optional(&pool2)
+                .await
+                .ok()
+                .flatten();
+                let Some(org_id) = org_id else { return; };
+                let is_member = fetch_user_org_ids(&resolved_creator)
+                    .await
+                    .is_ok_and(|ids| ids.contains(&org_id));
+                if !is_member {
+                    tracing::trace!(
+                        creator = %resolved_creator,
+                        org = %org_id,
+                        "creator.in_review.not_in_org; skip"
+                    );
+                    return;
+                }
+
+                // Deduplication: if the creator is also a subscriber who will
+                // receive the status_changed notification for in_review on this
+                // project, skip the creator email so they get one email, not two.
+                let already_subscribed: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(                         SELECT 1 FROM project_notification_subscriptions s                         JOIN projects p ON p.id = s.project_id                         WHERE s.project_id = $1 AND s.user_id = $2 AND s.enabled                         AND COALESCE(s.notify_statuses, p.notify_statuses) @> to_jsonb('in_review'::text)                         AND (cardinality(s.channels) = 0 OR 'email' = ANY(s.channels))                     )",
+                )
+                .bind(project_id)
+                .bind(&resolved_creator)
+                .fetch_optional(&pool2)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or(false);
+
+                if already_subscribed {
+                    tracing::trace!(
+                        creator = %resolved_creator,
+                        "creator.in_review.already_subscribed; skip duplicate"
+                    );
+                    return;
+                }
+
+                let project_name: Option<String> = sqlx::query_scalar(
+                    "SELECT name FROM projects WHERE id = $1",
+                )
+                .bind(project_id)
+                .fetch_optional(&pool2)
+                .await
+                .ok()
+                .flatten();
+
+                let idempotency_key = format!(
+                    "baaton-creator-in-review-{issue_id}-{}",
+                    changed_at.timestamp_millis()
+                );
+                notifyd.send_creator_in_review(
+                    &display_id,
+                    &title,
+                    project_name.as_deref().unwrap_or("Baaton"),
+                    &email,
+                    &idempotency_key,
+                );
+            });
         }
     }
 }

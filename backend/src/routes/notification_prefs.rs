@@ -494,7 +494,7 @@ pub async fn resolve_recipients(
         JOIN projects p ON p.id = s.project_id \
         CROSS JOIN LATERAL ( \
           SELECT channel, address FROM user_notification_channels \
-           WHERE user_id = s.user_id AND channel <> 'telegram' \
+           WHERE user_id = s.user_id AND channel <> 'telegram' \\n             AND (channel <> 'email' OR verified_at IS NOT NULL) \
           UNION ALL SELECT 'telegram'::text, ''::text \
         ) c \
         WHERE s.project_id = $1 \

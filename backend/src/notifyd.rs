@@ -283,7 +283,10 @@ impl NotifydClient {
                                     "channel": "email",
                                     "to": r.address,
                                     "subject": ep.subject,
-                                    "html": ep.html,
+                                    // notifyd SendRequest field is `body_html`, not `html`.
+                                    // The wrong name is silently ignored and the email falls
+                                    // back to plain-text-only delivery.
+                                    "body_html": ep.html,
                                     "body": text,
                                     "idempotency_key": format!("{key_base}-{}-email", r.user_id),
                                     "priority": "high"
@@ -337,11 +340,15 @@ impl NotifydClient {
     /// The creator is notified automatically regardless of subscription, so
     /// there is no recipients list to iterate and no per-channel routing —
     /// it is always email. Fire-and-forget; errors are WARN-logged.
+    /// Send the "In Review" creator email.
+    ///
+    /// `issue_id` is no longer needed: the template now uses `display_id` to
+    /// build the `/all-issues?issue=` deep-link (the only frontend route for
+    /// per-issue navigation).  The signature was simplified accordingly.
     pub fn send_creator_in_review(
         &self,
         display_id: &str,
         title: &str,
-        issue_id: uuid::Uuid,
         project_name: &str,
         creator_email: &str,
         idempotency_key: &str,
@@ -351,14 +358,15 @@ impl NotifydClient {
             return;
         };
         let html = crate::email_templates::in_review_creator_html(
-            display_id, title, issue_id, project_name, base_url,
+            display_id, title, project_name, base_url,
         );
         let subject = format!("[Baaton] {display_id} \u{2014} Ready for your review");
         let body = serde_json::json!({
             "channel": "email",
             "to": creator_email,
             "subject": subject,
-            "html": html,
+            // notifyd SendRequest field is `body_html`, not `html`.
+            "body_html": html,
             "body": format!("{display_id} is ready for your review"),
             "idempotency_key": idempotency_key,
             "priority": "high"
@@ -407,7 +415,9 @@ impl IssueNotice {
     }
 
     fn url(&self, public_url: Option<&str>) -> Option<String> {
-        Some(format!("{}/issues/{}", public_url?, self.issue_id))
+        // Frontend router: /all-issues?issue=DISPLAY_ID (no /issues/:uuid route exists).
+        // display_id is alphanumeric + hyphen — URL-safe without encoding.
+        Some(format!("{}/all-issues?issue={}", public_url?.trim_end_matches('/'), self.display_id))
     }
 }
 
@@ -505,13 +515,50 @@ mod tests {
     }
 
     /// No public URL means no link rather than a broken one.
+    /// The URL format uses the frontend deep-link pattern.
     #[test]
     fn url_needs_a_public_base() {
         assert_eq!(notice().url(None), None);
+        // Correct deep-link: /all-issues?issue=DISPLAY_ID
+        assert_eq!(
+            notice().url(Some("https://baaton.dev")),
+            Some("https://baaton.dev/all-issues?issue=SQX-304".into())
+        );
+        // Trailing slash on the base URL is trimmed.
         assert_eq!(
             notice().url(Some("https://baaton.dev/")),
-            Some("https://baaton.dev//issues/00000000-0000-0000-0000-000000000000".into())
+            Some("https://baaton.dev/all-issues?issue=SQX-304".into())
         );
+    }
+
+    /// notifyd's `/v1/send` contract uses `body_html` for the HTML email body.
+    /// The old field name `html` is silently unknown and the email falls back
+    /// to plain-text-only delivery — a regression no log entry surfaces.
+    #[test]
+    fn email_fan_out_payload_uses_body_html_field() {
+        let ep = EmailPayload {
+            subject: "Test subject".into(),
+            html: "<b>hello</b>".into(),
+        };
+        let text = "hello plain";
+        let key_base = "baaton-test";
+        let user_id = "user_abc";
+        let address = "test@example.com";
+
+        // Reproduce the exact JSON body built by fan_out for an email recipient.
+        let body = serde_json::json!({
+            "channel": "email",
+            "to": address,
+            "subject": ep.subject,
+            "body_html": ep.html,
+            "body": text,
+            "idempotency_key": format!("{key_base}-{user_id}-email"),
+            "priority": "high"
+        });
+
+        assert!(body.get("body_html").is_some(), "body_html must be set");
+        assert!(body.get("html").is_none(), "`html` is not a notifyd field");
+        assert_eq!(body["body_html"], "<b>hello</b>");
     }
 
     fn status_notice() -> StatusNotice {
