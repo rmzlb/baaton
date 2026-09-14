@@ -135,8 +135,31 @@ fn require_supported_channel(channel: &str) -> Result<(), ApiErr> {
     }
 }
 
-fn is_api_key(auth: &AuthUser) -> bool {
-    auth.user_id.starts_with("apikey:")
+
+/// The person these settings belong to.
+///
+/// An API key is not a person, but it *belongs* to one: `resolve_owner_identity`
+/// maps `apikey:<uuid>` to the human who created it. So an agent holding a key
+/// configures its owner's notifications, which is the only reading that makes
+/// sense — the key was issued by that person, and the very same collapse already
+/// decides who must not be notified of that key's actions.
+///
+/// A key whose creator is unknown is refused. There would be no person to
+/// configure, and picking one anyway would hand somebody else's notifications to
+/// a credential.
+async fn effective_user_id(pool: &PgPool, auth: &AuthUser) -> Result<String, ApiErr> {
+    let resolved = crate::routes::comments::resolve_owner_identity(pool, &auth.user_id).await;
+    if resolved.starts_with("apikey:") {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": "This API key has no owner",
+                "detail": "Notification settings belong to a person. Recreate the key from a \
+                           user account so it inherits an owner.",
+            })),
+        ));
+    }
+    Ok(resolved)
 }
 
 // ─────────────────────────── channels ───────────────────────────
@@ -145,11 +168,12 @@ pub async fn list_channels(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Vec<UserNotificationChannelView>>>, ApiErr> {
+    let user_id = effective_user_id(&pool, &auth).await?;
     let rows = sqlx::query_as::<_, UserNotificationChannelRow>(
         "SELECT channel, address, verified_at, created_at \
          FROM user_notification_channels WHERE user_id = $1 ORDER BY channel",
     )
-    .bind(&auth.user_id)
+    .bind(&user_id)
     .fetch_all(&pool)
     .await
     .map_err(internal)?;
@@ -171,6 +195,7 @@ pub async fn upsert_channel(
     Json(body): Json<UpsertUserNotificationChannel>,
 ) -> Result<Json<ApiResponse<UserNotificationChannelView>>, ApiErr> {
     require_supported_channel(&channel)?;
+    let user_id = effective_user_id(&pool, &auth).await?;
     let address =
         validate_address(&channel, &body.address).map_err(|e| bad_request("Invalid address", &e))?;
 
@@ -185,7 +210,7 @@ pub async fn upsert_channel(
                  THEN user_notification_channels.verified_at ELSE NULL END \
          RETURNING channel, address, verified_at, created_at",
     )
-    .bind(&auth.user_id)
+    .bind(&user_id)
     .bind(&channel)
     .bind(&address)
     .fetch_one(&pool)
@@ -200,8 +225,9 @@ pub async fn delete_channel(
     State(pool): State<PgPool>,
     Path(channel): Path<String>,
 ) -> Result<StatusCode, ApiErr> {
+    let user_id = effective_user_id(&pool, &auth).await?;
     sqlx::query("DELETE FROM user_notification_channels WHERE user_id = $1 AND channel = $2")
-        .bind(&auth.user_id)
+        .bind(&user_id)
         .bind(&channel)
         .execute(&pool)
         .await
@@ -255,13 +281,14 @@ pub async fn get_bot(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Option<TelegramBotView>>>, ApiErr> {
+    let user_id = effective_user_id(&pool, &auth).await?;
     let row: Option<(String, Option<String>, Option<chrono::DateTime<chrono::Utc>>)> =
         sqlx::query_as(
             "SELECT bot_username, owner_user_id, webhook_registered_at FROM telegram_bots \
              WHERE owner_user_id = $1 OR owner_user_id IS NULL \
              ORDER BY owner_user_id NULLS LAST LIMIT 1",
         )
-        .bind(&auth.user_id)
+        .bind(&user_id)
         .fetch_optional(&pool)
         .await
         .map_err(internal)?;
@@ -292,9 +319,7 @@ pub async fn register_bot(
     headers: HeaderMap,
     Json(body): Json<RegisterTelegramBot>,
 ) -> Result<Json<ApiResponse<TelegramBotView>>, ApiErr> {
-    if is_api_key(&auth) {
-        return Err(api_keys_have_no_person());
-    }
+    let user_id = effective_user_id(&pool, &auth).await?;
     let token = body.bot_token.trim().to_string();
     if token.is_empty() {
         return Err(bad_request(
@@ -345,7 +370,7 @@ pub async fn register_bot(
                updated_at = now() \
          RETURNING id",
     )
-    .bind(&auth.user_id)
+    .bind(&user_id)
     .bind(&username)
     .bind(&token)
     .bind(&secret)
@@ -417,12 +442,13 @@ pub async fn delete_bot(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<StatusCode, ApiErr> {
+    let user_id = effective_user_id(&pool, &auth).await?;
     // Tell Telegram to stop sending, before the credential disappears. Skipping
     // this leaves a webhook pointing at an instance that can no longer identify
     // the bot, and Telegram retries a failing webhook for a long time.
     let row: Option<(String,)> =
         sqlx::query_as("SELECT bot_token FROM telegram_bots WHERE owner_user_id = $1")
-            .bind(&auth.user_id)
+            .bind(&user_id)
             .fetch_optional(&pool)
             .await
             .map_err(internal)?;
@@ -439,7 +465,7 @@ pub async fn delete_bot(
     }
 
     sqlx::query("DELETE FROM telegram_bots WHERE owner_user_id = $1")
-        .bind(&auth.user_id)
+        .bind(&user_id)
         .execute(&pool)
         .await
         .map_err(internal)?;
@@ -486,10 +512,8 @@ pub async fn create_telegram_link(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<TelegramLink>>, ApiErr> {
-    if is_api_key(&auth) {
-        return Err(api_keys_have_no_person());
-    }
-    let bot = bot_for_user(&pool, &auth.user_id).await.ok_or_else(|| {
+    let user_id = effective_user_id(&pool, &auth).await?;
+    let bot = bot_for_user(&pool, &user_id).await.ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({
@@ -509,7 +533,7 @@ pub async fn create_telegram_link(
          VALUES ($1, $2, now() + ($3 || ' minutes')::interval, $4) RETURNING expires_at",
     )
     .bind(&token)
-    .bind(&auth.user_id)
+    .bind(&user_id)
     .bind(LINK_TOKEN_TTL_MINUTES.to_string())
     .bind(bot.id)
     .fetch_one(&pool)
@@ -774,12 +798,13 @@ pub async fn list_subscriptions(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Vec<ProjectSubscriptionView>>>, ApiErr> {
-    let org_ids = user_org_ids(&auth).await?;
+    let user_id = effective_user_id(&pool, &auth).await?;
+    let org_ids = user_org_ids(&auth, &user_id).await;
 
     let rows = sqlx::query_as::<_, SubscriptionRow>(&format!(
         "{SUBSCRIPTION_PROJECTION} WHERE p.org_id = ANY($2) ORDER BY p.org_id, p.name"
     ))
-    .bind(&auth.user_id)
+    .bind(&user_id)
     .bind(&org_ids)
     .fetch_all(&pool)
     .await
@@ -796,7 +821,8 @@ pub async fn update_subscription(
     Path(project_id): Path<Uuid>,
     Json(body): Json<UpdateProjectSubscription>,
 ) -> Result<Json<ApiResponse<ProjectSubscriptionView>>, ApiErr> {
-    let org_ids = user_org_ids(&auth).await?;
+    let user_id = effective_user_id(&pool, &auth).await?;
+    let org_ids = user_org_ids(&auth, &user_id).await;
 
     // The project must be one the caller can see. Without this, any uuid would
     // create a subscription row — and reveal by its success that it exists.
@@ -878,7 +904,7 @@ pub async fn update_subscription(
            channels = COALESCE($10, project_notification_subscriptions.channels), \
            updated_at = now()",
     )
-    .bind(&auth.user_id)
+    .bind(&user_id)
     .bind(project_id)
     .bind(body.enabled)
     .bind(statuses_set)
@@ -897,7 +923,7 @@ pub async fn update_subscription(
     let row = sqlx::query_as::<_, SubscriptionRow>(&format!(
         "{SUBSCRIPTION_PROJECTION} WHERE p.id = $2"
     ))
-    .bind(&auth.user_id)
+    .bind(&user_id)
     .bind(project_id)
     .fetch_one(&pool)
     .await
@@ -911,10 +937,11 @@ pub async fn delete_subscription(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiErr> {
+    let user_id = effective_user_id(&pool, &auth).await?;
     sqlx::query(
         "DELETE FROM project_notification_subscriptions WHERE user_id = $1 AND project_id = $2",
     )
-    .bind(&auth.user_id)
+    .bind(&user_id)
     .bind(project_id)
     .execute(&pool)
     .await
@@ -922,24 +949,24 @@ pub async fn delete_subscription(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn api_keys_have_no_person() -> ApiErr {
-    (
-        StatusCode::FORBIDDEN,
-        Json(json!({
-            "error": "Not available to API keys",
-            "detail": "Notification preferences belong to a person, not a key.",
-        })),
-    )
-}
 
-/// Orgs the caller belongs to. A channel is the person's, so their subscriptions
-/// span every org they are a member of — the request's current org is not the
-/// boundary here.
-async fn user_org_ids(auth: &AuthUser) -> Result<Vec<String>, ApiErr> {
-    if is_api_key(auth) {
-        return Err(api_keys_have_no_person());
+/// Orgs whose projects the caller may subscribe to. A channel is the person's,
+/// so their subscriptions span every org they belong to — the request's current
+/// org is not the boundary here.
+///
+/// For an API key, the owner's memberships are the right set, but a key may also
+/// carry its own org scoping; both are honoured, since a key must never reach
+/// further than the org it was scoped to.
+async fn user_org_ids(auth: &AuthUser, user_id: &str) -> Vec<String> {
+    let mut ids = fetch_user_org_ids(user_id).await.unwrap_or_default();
+    if !auth.scoped_org_ids.is_empty() {
+        ids.retain(|id| auth.scoped_org_ids.contains(id));
+        for id in &auth.scoped_org_ids {
+            if !ids.contains(id) {
+                ids.push(id.clone());
+            }
+        }
     }
-    let mut ids = fetch_user_org_ids(&auth.user_id).await.unwrap_or_default();
     // Clerk can be slow or down. Falling back to the request's org keeps the
     // screen usable instead of showing an empty project list, which would read as
     // "you have no projects".
@@ -948,7 +975,7 @@ async fn user_org_ids(auth: &AuthUser) -> Result<Vec<String>, ApiErr> {
             ids.push(org);
         }
     }
-    Ok(ids)
+    ids
 }
 
 // ───────────────────── recipient resolution ─────────────────────

@@ -52,6 +52,11 @@ Base URL: `https://api.baaton.dev/api/v1`
 | List webhooks | GET | `/webhooks` |
 | Create webhook | POST | `/webhooks` |
 | Get metrics | GET | `/metrics?days=30` |
+| List my notification channels | GET | `/me/notification-channels` |
+| Set a notification channel | PUT | `/me/notification-channels/telegram` |
+| List my project subscriptions | GET | `/me/project-subscriptions` |
+| Subscribe / tune a project | PUT | `/me/project-subscriptions/{project_id}` |
+| Register my Telegram bot | POST | `/me/telegram-bot` |
 | Full API docs | GET | `/public/docs` (no auth) |
 
 ## Core Workflow
@@ -294,6 +299,93 @@ Add an agent summary to an issue. Designed for CI/CD or coding agents.
 
 API keys are managed via the web UI (Settings → Integrations).
 Keys are org-scoped — one key accesses all projects in the organization.
+
+---
+
+### Notifications (per user)
+
+Where a person is reached, and what they want to hear about. Three separate
+questions, deliberately owned by three different things:
+
+| question | owned by |
+|---|---|
+| where to reach someone | `/me/notification-channels` (a chat id belongs to a person, in every org) |
+| what they want to hear | `/me/project-subscriptions` (user x project) |
+| which statuses exist | `/projects/{id}/notifications` (the project's workflow) |
+
+**An API key acts as the person who created it.** `/me/*` addresses that owner's
+settings, so an agent can configure notifications for its human. A key whose
+creator is unknown gets `403`: there would be no person to configure. No path
+takes a user id, so a key can never reach somebody else's settings.
+
+**Nobody is notified of their own actions.** An agent acting through your key *is
+you*, so its comments and status changes never notify you. This is why a feed
+stays readable, and why testing your own setup needs a second actor.
+
+#### GET /me/notification-channels
+Addresses are returned masked (`address_masked`). `verified` is true only when the
+owner proved the address by pressing Start on the bot; a hand-typed one stays
+false, and an unverified Telegram chat id fails silently at Telegram's end.
+
+#### PUT /me/notification-channels/{channel}
+`channel` is `telegram`, `slack`, `discord` or `email`.
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `address` | string | Yes | Telegram: numeric chat id (negative for a group). Slack: member/channel id or incoming webhook URL. Discord: webhook URL. Email: address. |
+
+Rejects a malformed address with `400` rather than storing a destination that can
+never be reached.
+
+#### DELETE /me/notification-channels/{channel}
+`204`.
+
+#### POST /me/notification-channels/telegram/link
+Returns `{ deep_link, expires_at }`. Telegram reveals a chat id only when that
+chat speaks, so the owner opens the link and presses Start; the resulting update
+carries the chat id back and marks the channel verified. Single use, 15 minutes.
+`503` when no bot is available.
+
+#### GET /me/project-subscriptions
+Every project the caller can see, subscribed or not. Each row carries
+`project_defaults` and the project's own `statuses`, so a client never has to
+guess what inheritance currently resolves to.
+
+#### PUT /me/project-subscriptions/{project_id}
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `enabled` | bool | Subscribe or mute without losing the settings |
+| `notify_statuses` | string[] \| null | Status **keys** from this project's workflow. `null` = inherit the project |
+| `notify_comments` | bool \| null | `null` = inherit |
+| `notify_issue_created` | bool \| null | `null` = inherit |
+| `channels` | string[] | Empty = every channel this user has configured |
+
+Omitting a field leaves it untouched; sending `null` resets it to "inherit the
+project", which then follows the project as it evolves. An unknown status key is
+rejected with `400` and the valid list, because a silently ignored key would show
+a notification as enabled while nothing ever fires.
+
+#### DELETE /me/project-subscriptions/{project_id}
+`204`. Back to not subscribed.
+
+#### GET /me/telegram-bot
+`{ bot_username, owned, webhook_registered }`, or `null` when no bot exists.
+`owned: false` is the shared instance bot. **`webhook_registered: false` means the
+bot exists and will never receive anything** — configured is not working.
+
+#### POST /me/telegram-bot
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `bot_token` | string | Yes | From @BotFather |
+
+Validates the token with `getMe`, stores it, generates a webhook secret unique to
+that bot and calls `setWebhook`. Nothing to configure on the server: the bot
+belongs to the person, not to the deployment. `400` if Telegram rejects the token.
+
+#### DELETE /me/telegram-bot
+`204`. Unregisters the webhook at Telegram before dropping the credential.
 
 ---
 
