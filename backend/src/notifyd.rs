@@ -81,6 +81,12 @@ pub struct CommentNotice {
     pub comment_id: uuid::Uuid,
 }
 
+/// Subject + HTML body for an email recipient in a fan-out.
+pub struct EmailPayload {
+    pub subject: String,
+    pub html: String,
+}
+
 impl NotifydClient {
     /// `None` when notifyd is not configured, which is the normal state of a
     /// deployment that does not use it.
@@ -130,7 +136,15 @@ impl NotifydClient {
         let text = notice.text("New issue");
         let url = notice.url(self.public_url.as_deref());
         let key = format!("baaton-issue-created-{}", notice.issue_id);
-        self.fan_out(recipients, text.clone(), url.clone(), key.clone());
+        let email_payload = self.public_url.as_deref().map(|base_url| EmailPayload {
+            subject: format!(
+                "[Baaton] {} \u{00b7} {} \u{2014} New Issue",
+                notice.project_name.as_deref().unwrap_or("Baaton"),
+                notice.display_id
+            ),
+            html: crate::email_templates::issue_created_html(&notice, base_url),
+        });
+        self.fan_out(recipients, text.clone(), url.clone(), key.clone(), email_payload);
         if announce_room {
             tokio::spawn(async move {
                 client.send_telegram(text, url, key).await;
@@ -157,7 +171,17 @@ impl NotifydClient {
             notice.to_status,
             notice.changed_at.timestamp_millis()
         );
-        self.fan_out(recipients, text.clone(), url.clone(), key.clone());
+        let email_payload = self.public_url.as_deref().map(|base_url| EmailPayload {
+            subject: format!(
+                "[Baaton] {} \u{00b7} {} \u{2014} {} \u{2192} {}",
+                notice.issue.project_name.as_deref().unwrap_or("Baaton"),
+                notice.issue.display_id,
+                notice.from_status,
+                notice.to_status
+            ),
+            html: crate::email_templates::status_changed_html(&notice, base_url),
+        });
+        self.fan_out(recipients, text.clone(), url.clone(), key.clone(), email_payload);
         if announce_room {
             tokio::spawn(async move {
                 client.send_telegram(text, url, key).await;
@@ -176,7 +200,15 @@ impl NotifydClient {
         let text = notice.text();
         let url = notice.issue.url(self.public_url.as_deref());
         let key = format!("baaton-comment-{}", notice.comment_id);
-        self.fan_out(recipients, text.clone(), url.clone(), key.clone());
+        let email_payload = self.public_url.as_deref().map(|base_url| EmailPayload {
+            subject: format!(
+                "[Baaton] {} \u{00b7} {} \u{2014} New comment",
+                notice.issue.project_name.as_deref().unwrap_or("Baaton"),
+                notice.issue.display_id
+            ),
+            html: crate::email_templates::comment_added_html(&notice, base_url),
+        });
+        self.fan_out(recipients, text.clone(), url.clone(), key.clone(), email_payload);
         if announce_room {
             tokio::spawn(async move {
                 client.send_telegram(text, url, key).await;
@@ -223,6 +255,7 @@ impl NotifydClient {
         text: String,
         url: Option<String>,
         key_base: String,
+        email_payload: Option<EmailPayload>,
     ) {
         if recipients.is_empty() {
             return;
@@ -234,7 +267,32 @@ impl NotifydClient {
                 let text = &text;
                 let url = &url;
                 let key_base = &key_base;
+                let email_payload = &email_payload;
                 async move {
+                    if r.channel == "email" {
+                        match email_payload {
+                            None => {
+                                tracing::warn!(
+                                    user_id = %r.user_id,
+                                    "email.fan_out.no_payload; skipping"
+                                );
+                                return;
+                            }
+                            Some(ep) => {
+                                let body = json!({
+                                    "channel": "email",
+                                    "to": r.address,
+                                    "subject": ep.subject,
+                                    "html": ep.html,
+                                    "body": text,
+                                    "idempotency_key": format!("{key_base}-{}-email", r.user_id),
+                                    "priority": "high"
+                                });
+                                client.post_send(body).await;
+                                return;
+                            }
+                        }
+                    }
                     let mut body = json!({
                         "channel": r.channel,
                         "to": r.address,

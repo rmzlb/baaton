@@ -18,6 +18,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod ai_models;
+mod email_templates;
 mod filter;
 mod github;
 mod middleware;

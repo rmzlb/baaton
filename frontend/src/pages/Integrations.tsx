@@ -4,6 +4,7 @@ import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { TelegramCardContent, useTelegramStatus } from '@/components/telegram/TelegramCardContent';
+import { EmailCardContent, useEmailStatus } from '@/components/email/EmailCardContent';
 
 /* ── AgentMail flow diagram ─── */
 function AgentMailFlowDiagram() {
@@ -149,6 +150,7 @@ export default function Integrations() {
   const githubConnected = githubInstallation?.status === 'active';
 
   const telegramStatus = useTelegramStatus();
+  const emailStatus = useEmailStatus();
 
   /* ── Slack status — shown as disconnected until API endpoint is available ── */
   const slackConnected = false;
@@ -161,6 +163,19 @@ export default function Integrations() {
         <h1 className="text-xl font-bold text-primary">{t('integrations.title')}</h1>
         <p className="text-sm text-secondary mt-1">{t('integrations.subtitle')}</p>
       </div>
+
+      {/* Email */}
+      <IntegrationCard
+        icon={<Mail size={20} className="text-amber-500" />}
+        name="Email"
+        description={t('integrations.email.description', {
+          defaultValue: 'Receive issue updates, status changes, and comments directly by email.',
+        })}
+        status={emailStatus}
+        hideAction
+      >
+        <EmailCardContent />
+      </IntegrationCard>
 
       {/* Telegram */}
       <IntegrationCard
