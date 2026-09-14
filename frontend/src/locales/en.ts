@@ -733,6 +733,7 @@ const en = {
   'common.edit': 'Edit',
   'common.preview': 'Preview',
   'common.loading': 'Loading…',
+  'common.saving': 'Saving…',
   'common.pending': 'Pending',
   'common.processing': 'Processing',
   'common.approved': 'Approved',
@@ -2085,6 +2086,21 @@ As a [user], I want to [action] so that [benefit].
   'settings.project.publicByDefault.title': 'Public agent runs by default',
   'settings.project.publicByDefault.desc': 'New agent runs in this project are publishable. Existing runs stay private until explicitly published.',
   'settings.project.publicByDefault.orgGate': 'Enable "Allow public agent runs" in org settings first.',
+
+
+  // ─── Project settings — chat notifications ─────────────────────────────
+  'notifications.title': 'Chat Notifications',
+  'notifications.desc': 'Choose which events send a Telegram notification for this project.',
+  'notifications.statusesLabel': 'Status transitions',
+  'notifications.statusesDesc': 'Notify when an issue moves to one of these statuses.',
+  'notifications.commentsLabel': 'New comments',
+  'notifications.commentsDesc': 'Notify when a comment is added to an issue.',
+  'notifications.issueCreatedLabel': 'New issues',
+  'notifications.issueCreatedDesc': 'Notify when a new issue is created in this project.',
+  'notifications.unknownStatus': 'Some status keys are no longer valid. Reload the page and try again.',
+  'notifications.saveError': 'Could not save notification settings.',
+  'notifications.loading': 'Loading notification settings…',
+  'notifications.loadError': 'Could not load notification settings. Reload the page.',
 
 
   // ─── Keyboard Shortcuts ────────────────────────────

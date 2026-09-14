@@ -78,6 +78,13 @@ export interface ProjectAutoAssignSettings {
   default_assignee_id: string | null;
 }
 
+export interface ProjectNotificationSettings {
+  project_id: string;
+  notify_statuses: string[];
+  notify_comments: boolean;
+  notify_issue_created: boolean;
+}
+
 export interface PublicSubmitSettings {
   enabled: boolean;
   token: string | null;

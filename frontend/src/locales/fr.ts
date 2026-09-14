@@ -733,6 +733,7 @@ const fr = {
   'common.edit': 'Modifier',
   'common.preview': 'Aperçu',
   'common.loading': 'Chargement…',
+  'common.saving': 'Enregistrement…',
   'common.pending': 'En attente',
   'common.processing': 'En cours',
   'common.approved': 'Approuvé',
@@ -2084,7 +2085,22 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   // ─── Paramètres projet — runs publics par défaut ───
   'settings.project.publicByDefault.title': "Runs d'agent publics par défaut",
   'settings.project.publicByDefault.desc': "Les nouveaux runs d'agent dans ce projet sont publiables. Les runs existants restent privés tant qu'ils ne sont pas explicitement publiés.",
-  'settings.project.publicByDefault.orgGate': "Activez d'abord « Autoriser les runs d'agent publics » dans les paramètres de l'organisation.",
+  'settings.project.publicByDefault.orgGate': "Activez d'abord « Autoriser les runs d'agent publics » dans les paramètres de l'organisation.",
+
+
+  // ─── Paramètres projet — notifications chat ──────────────────────────────
+  'notifications.title': 'Notifications chat',
+  'notifications.desc': 'Choisis quels événements déclenchent une notification Telegram pour ce projet.',
+  'notifications.statusesLabel': 'Transitions de statut',
+  'notifications.statusesDesc': 'Notifier quand une issue passe à un de ces statuts.',
+  'notifications.commentsLabel': 'Nouveaux commentaires',
+  'notifications.commentsDesc': 'Notifier quand un commentaire est ajouté à une issue.',
+  'notifications.issueCreatedLabel': 'Nouvelles issues',
+  'notifications.issueCreatedDesc': 'Notifier quand une nouvelle issue est créée dans ce projet.',
+  'notifications.unknownStatus': 'Certaines clés de statut ne sont plus valides. Recharge la page et réessaie.',
+  'notifications.saveError': 'Impossible de sauvegarder les réglages de notification.',
+  'notifications.loading': 'Chargement des réglages de notification…',
+  'notifications.loadError': 'Impossible de charger les réglages. Recharge la page.',
 
 
   // ─── Raccourcis Clavier ────────────────────────────

@@ -9,9 +9,10 @@ import {
   Workflow, Plus, Trash2, Loader2, X, ArrowRight,
   ArrowLeftRight, AlertTriangle, UserPlus, Tag, Clock,
   CheckCircle, User, Globe, MessageSquare, FolderOpen,
-  Zap, ChevronRight, Layers, PlusCircle, Bot,
+  Zap, ChevronRight, Layers, PlusCircle, Bot, Bell,
 } from 'lucide-react';
-import type { Automation, Project } from '@/lib/types';
+import type { Automation, Project, ProjectNotificationSettings } from '@/lib/types';
+import { ApiError } from '@/lib/api';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -711,6 +712,187 @@ function AutomationCard({ automation, onEdit, onDelete, onToggle, isDeleting, is
 
 
 
+// ─── Chat Notifications Section ─────────────────────────────────────────────
+
+function ChatNotificationsSection({ project }: { project: Project }) {
+  const { t } = useTranslation();
+  const apiClient = useApi();
+  const queryClient = useQueryClient();
+
+  // Local mirror of server state — lets us apply optimistic updates per-field.
+  const [settings, setSettings] = useState<ProjectNotificationSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const { data: fetchedSettings, isLoading, isError } = useQuery({
+    queryKey: ['project-notifications', project.id],
+    queryFn: () => apiClient.projects.getNotifications(project.id),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  // Sync local state once on first fetch.
+  useEffect(() => {
+    if (fetchedSettings && !settings) {
+      setSettings(fetchedSettings);
+    }
+  }, [fetchedSettings, settings]);
+
+  // Patch a single field and revert on failure.
+  const save = async (patch: Partial<Omit<ProjectNotificationSettings, 'project_id'>>) => {
+    if (saving || !settings) return;
+    const prev = { ...settings };
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    setError(null);
+    setSaving(true);
+    try {
+      const updated = await apiClient.projects.updateNotifications(project.id, patch);
+      setSettings(updated);
+      queryClient.setQueryData(['project-notifications', project.id], updated);
+    } catch (err) {
+      setSettings(prev);
+      if (err instanceof ApiError && err.status === 400) {
+        setError(t('notifications.unknownStatus'));
+      } else {
+        setError(t('notifications.saveError'));
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStatusToggle = (key: string, checked: boolean) => {
+    if (!settings) return;
+    const next = checked
+      ? [...settings.notify_statuses, key]
+      : settings.notify_statuses.filter((k) => k !== key);
+    save({ notify_statuses: next });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 py-4 text-sm text-muted">
+        <Loader2 size={14} className="animate-spin" />
+        {t('notifications.loading')}
+      </div>
+    );
+  }
+
+  // A settings panel that vanishes on a failed fetch is worse than one that says
+  // it failed: the reader concludes the feature does not exist and stops looking.
+  if (isError || !settings) {
+    return (
+      <div className="rounded-xl border border-border bg-surface p-4 md:p-5">
+        <div className="flex items-center gap-2">
+          <Bell size={15} className="text-muted shrink-0" />
+          <h2 className="text-sm font-semibold text-primary">{t('notifications.title')}</h2>
+        </div>
+        <p className="mt-2 text-xs text-danger">{t('notifications.loadError')}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4 md:p-5">
+      {/* Section header */}
+      <div className="flex items-center gap-2 mb-4">
+        <Bell size={15} className="text-accent shrink-0" />
+        <div>
+          <h2 className="text-sm font-semibold text-primary">{t('notifications.title')}</h2>
+          <p className="text-xs text-secondary mt-0.5">{t('notifications.desc')}</p>
+        </div>
+      </div>
+
+      {/* Statuses */}
+      <div className="mb-5">
+        <p className="text-xs font-medium text-secondary uppercase tracking-wider mb-2">
+          {t('notifications.statusesLabel')}
+        </p>
+        <p className="text-xs text-muted mb-3">{t('notifications.statusesDesc')}</p>
+        <div className="flex flex-wrap gap-2">
+          {/* Hidden statuses stay listed here on purpose. `backlog` and `cancelled`
+              ship hidden from the board, and `backlog` is precisely one of the two
+              transitions worth a chat notice: a ticket sent back to the backlog is
+              work that stopped. Filtering on `hidden` would make the default
+              configuration unreachable from the UI that owns it. */}
+          {project.statuses.map((status) => {
+            const active = settings.notify_statuses.includes(status.key);
+            return (
+                <button
+                  key={status.key}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => handleStatusToggle(status.key, !active)}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150',
+                    'disabled:cursor-not-allowed disabled:opacity-50',
+                    active
+                      ? 'border-accent/40 bg-accent/10 text-accent'
+                      : 'border-border bg-transparent text-muted hover:border-border hover:text-secondary',
+                  )}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0"
+                    style={{ backgroundColor: active ? (status.color || '#64748b') : '#64748b' }}
+                  />
+                  {status.label}
+                  {active && (
+                    <CheckCircle size={11} className="text-accent ml-0.5" />
+                  )}
+                </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Boolean toggles */}
+      <div className="space-y-3 border-t border-border pt-4">
+        {/* notify_comments */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm text-primary">{t('notifications.commentsLabel')}</p>
+            <p className="text-xs text-muted">{t('notifications.commentsDesc')}</p>
+          </div>
+          <ToggleSwitch
+            checked={settings.notify_comments}
+            onChange={(v) => save({ notify_comments: v })}
+            disabled={saving}
+          />
+        </div>
+
+        {/* notify_issue_created */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm text-primary">{t('notifications.issueCreatedLabel')}</p>
+            <p className="text-xs text-muted">{t('notifications.issueCreatedDesc')}</p>
+          </div>
+          <ToggleSwitch
+            checked={settings.notify_issue_created}
+            onChange={(v) => save({ notify_issue_created: v })}
+            disabled={saving}
+          />
+        </div>
+      </div>
+
+      {/* Error display */}
+      {error && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          <AlertTriangle size={13} className="shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {saving && (
+        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted">
+          <Loader2 size={11} className="animate-spin" />
+          {t('common.saving')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Project Selector ─────────────────────────────────────────────────────────
 
 function ProjectSelector({ projects }: { projects: Project[] }) {
@@ -942,6 +1124,11 @@ export function Automations() {
       {/* ── Content ─────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 md:p-6">
+
+          {/* ── Section 0: Chat Notifications ──────────────────────────────── */}
+          <div className="mb-8">
+            <ChatNotificationsSection project={project} />
+          </div>
 
           {/* ── Section 1: Template Gallery ─────────────────────────────────── */}
           <div className="mb-8">

@@ -5,6 +5,7 @@ import type {
   Project,
   ProjectStatus,
   ProjectAutoAssignSettings,
+  ProjectNotificationSettings,
   PublicSubmitSettings,
   Issue,
   IssueDetail,
@@ -253,6 +254,21 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.patch<PublicSubmitSettings>(`/projects/${id}/public-submit`, body, token);
+        }),
+
+      getNotifications: async (id: string): Promise<ProjectNotificationSettings> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<ProjectNotificationSettings>(`/projects/${id}/notifications`, token);
+        }),
+
+      updateNotifications: async (
+        id: string,
+        body: { notify_statuses?: string[]; notify_comments?: boolean; notify_issue_created?: boolean },
+      ): Promise<ProjectNotificationSettings> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.patch<ProjectNotificationSettings>(`/projects/${id}/notifications`, body, token);
         }),
     },
 

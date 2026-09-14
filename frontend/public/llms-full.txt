@@ -7,7 +7,7 @@
 
 **Positioning (short):** agents are the primary writers over the API, humans read and
 decide, and every run can end as a cryptographically verifiable artifact.
-**Scale:** 209 endpoints.
+**Scale:** 211 endpoints.
 **Base URL:** `https://api.baaton.dev/api/v1`
 **Auth:** `Authorization: Bearer baa_your_api_key_here`
 **Response format:** `{ "data": ... }` — errors: `{ "error": "...", "field": "...", "accepted_values": [...] }`

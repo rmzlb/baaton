@@ -6,7 +6,7 @@
 <p align="center"><strong>Signed receipts for AI agent work.</strong></p>
 <p align="center">
   API-first orchestration for AI coding agents.<br/>
-  209 REST endpoints · Ed25519-signed run receipts · Zero SDK needed.
+  211 REST endpoints · Ed25519-signed run receipts · Zero SDK needed.
 </p>
 
 <p align="center">
@@ -168,7 +168,7 @@ Your agent already speaks HTTP. A REST API with good docs beats 51 MCP tools.
 
 ## API Surface
 
-209 routes covering:
+211 routes covering:
 
 - **Issues** — CRUD, bulk ops, search, filters, relations, recurring
 - **Projects** — context, statuses, templates, auto-assign
@@ -269,7 +269,7 @@ and the check will fail. Canonicalization (RFC 8785) is on the roadmap.
 
 ## Roadmap
 
-- [x] Full REST API (209 endpoints)
+- [x] Full REST API (211 endpoints)
 - [x] GitHub bidirectional sync
 - [x] Webhooks with HMAC signing
 - [x] Agent TLDRs and context
