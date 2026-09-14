@@ -159,6 +159,24 @@ pub async fn send_test_notification(
     Ok(Json(json!({ "ok": true })))
 }
 
+#[derive(Deserialize)]
+pub struct SetDestinationRequest {
+    address: String,
+    telegram_thread_id: Option<i64>,
+}
+
+pub async fn put_telegram_destination(
+    Extension(auth): Extension<AuthUser>,
+    Extension(notifyd): Extension<Option<NotifydClient>>,
+    Json(body): Json<SetDestinationRequest>,
+) -> Result<Json<ApiResponse<UserNotificationChannelView>>, ApiErr> {
+    let owner = effective_user_id(&auth)?;
+    set_destination(notifyd.as_ref(), &owner, crate::models::UpsertUserNotificationChannel {
+        address: body.address,
+        telegram_thread_id: body.telegram_thread_id,
+    }).await
+}
+
 pub async fn telegram_webhook(
     Extension(notifyd): Extension<Option<NotifydClient>>,
     Path(id): Path<Uuid>,
