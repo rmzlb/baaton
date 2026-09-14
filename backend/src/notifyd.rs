@@ -87,12 +87,11 @@ impl NotifydClient {
     pub fn from_env() -> Option<Self> {
         let base_url = non_empty("NOTIFYD_URL")?.trim_end_matches('/').to_string();
         let api_key = non_empty("NOTIFYD_API_KEY")?;
-        let chat_id = non_empty("NOTIFYD_TELEGRAM_CHAT_ID");
-        // A thread id that does not parse is dropped rather than guessed: a
-        // wrong topic is as invisible as no topic at all.
-        let thread_id = non_empty("NOTIFYD_TELEGRAM_THREAD_ID")
-            .and_then(|v| v.parse::<i64>().ok())
-            .filter(|id| *id > 0);
+        // Per-user routing is now the main path (074). The shared-room path
+        // (NOTIFYD_TELEGRAM_CHAT_ID) is disabled: every subscriber who wants
+        // Telegram notifications registers a personal bot instead.
+        let chat_id: Option<String> = None;
+        let thread_id: Option<i64> = None;
         let public_url = non_empty("NOTIFYD_PUBLIC_URL").map(|u| u.trim_end_matches('/').to_string());
 
         tracing::info!(
