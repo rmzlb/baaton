@@ -1040,6 +1040,12 @@ export function useApi() {
           const token = await getAuthToken();
           return api.delete(`/me/project-subscriptions/${projectId}`, token);
         }),
+
+      testTelegramNotification: async (): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<void>('/me/telegram/test', {}, token);
+        }),
     },
 
     // Expose token getter for direct fetch calls (e.g. Admin page)

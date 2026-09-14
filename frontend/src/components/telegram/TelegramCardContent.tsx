@@ -227,6 +227,16 @@ function TelegramDestinationStep({ botAvailable }: { botAvailable: boolean }) {
   const refresh = () => queryClient.invalidateQueries({ queryKey: channelsCacheKey });
   const hasChannel = Boolean(telegramChannel);
 
+  const [testState, setTestState] = useState<'idle' | 'sent' | 'error'>('idle');
+  const testMutation = useMutation({
+    mutationFn: () => apiClient.notificationPrefs.testTelegramNotification(),
+    onSuccess: () => {
+      setTestState('sent');
+      setTimeout(() => setTestState('idle'), 2000);
+    },
+    onError: () => setTestState('error'),
+  });
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -260,7 +270,7 @@ function TelegramDestinationStep({ botAvailable }: { botAvailable: boolean }) {
       {botAvailable && !isLoading && !isError && (
         <>
           {telegramChannel?.verified && telegramChannel.telegram_bot_username && (
-            <div className="flex items-center gap-1.5 text-[11px] mb-2">
+            <div className="flex items-center gap-1.5 text-[11px] mb-2 flex-wrap">
               <span className="text-muted">
                 {t('integrations.telegram.channel.viaBot', { defaultValue: 'via' })}
               </span>
@@ -270,6 +280,28 @@ function TelegramDestinationStep({ botAvailable }: { botAvailable: boolean }) {
                 <CheckCircle2 size={11} />
                 {t('notifPrefs.channels.verified', { defaultValue: 'Verified' })}
               </span>
+              <button
+                type="button"
+                disabled={testMutation.isPending}
+                onClick={() => {
+                  setTestState('idle');
+                  testMutation.mutate();
+                }}
+                className="ml-1 inline-flex items-center gap-1 rounded-md border border-border bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-secondary hover:border-accent hover:text-primary disabled:opacity-50 transition-colors"
+              >
+                {testMutation.isPending ? (
+                  <span className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
+                ) : testState === 'sent' ? (
+                  '✓ Sent!'
+                ) : (
+                  '🔔 Send test'
+                )}
+              </button>
+              {testState === 'error' && (
+                <span className="text-[11px] text-red-400">
+                  {t('integrations.telegram.test.error', { defaultValue: 'Failed to send — check your bot is active' })}
+                </span>
+              )}
             </div>
           )}
           <ChannelRow

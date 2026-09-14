@@ -103,6 +103,62 @@ pub async fn create_telegram_link(
     Ok(Json(request(notifyd.as_ref(), &owner, reqwest::Method::POST, "/link", Some(json!({"kind": kind}))).await?))
 }
 
+pub async fn send_test_notification(
+    Extension(auth): Extension<AuthUser>,
+    Extension(notifyd): Extension<Option<NotifydClient>>,
+) -> Result<Json<serde_json::Value>, ApiErr> {
+    let user_id = effective_user_id(&auth)?;
+    let notifyd = client(notifyd.as_ref())?;
+
+    // Resolve the verified Telegram route for this user via notifyd.
+    let lookup = notifyd
+        .integration_request(
+            reqwest::Method::POST,
+            "/v1/telegram/lookup",
+            Some(json!({ "owners": [&user_id] })),
+            None,
+        )
+        .await?;
+
+    let routes = lookup
+        .pointer("/data")
+        .and_then(|d| d.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let route = routes.first().ok_or_else(|| {
+        (StatusCode::BAD_REQUEST, Json(json!({ "error": "No verified Telegram destination" })))
+    })?;
+
+    let route_id = route
+        .get("route_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            (StatusCode::BAD_GATEWAY, Json(json!({ "error": "Invalid route response from notifyd" })))
+        })?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    notifyd
+        .integration_request(
+            reqwest::Method::POST,
+            "/v1/send",
+            Some(json!({
+                "channel": "telegram",
+                "chat": { "telegram_route_id": route_id },
+                "body": "\u{1f514} Baaton test notification \u{2014} your setup is working!",
+                "idempotency_key": format!("baaton-test-{}-{}", user_id, timestamp),
+            })),
+            None,
+        )
+        .await?;
+
+    Ok(Json(json!({ "ok": true })))
+}
+
 pub async fn telegram_webhook(
     Extension(notifyd): Extension<Option<NotifydClient>>,
     Path(id): Path<Uuid>,

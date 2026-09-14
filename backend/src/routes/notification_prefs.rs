@@ -2,7 +2,7 @@
 //! owns Telegram bots, destinations, verification and delivery.
 
 mod telegram;
-pub use telegram::{create_telegram_link, delete_bot, get_bot, register_bot, telegram_webhook};
+pub use telegram::{create_telegram_link, delete_bot, get_bot, register_bot, send_test_notification, telegram_webhook};
 
 use axum::{
     extract::{Extension, Path, State},
