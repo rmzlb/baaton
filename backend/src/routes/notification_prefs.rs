@@ -369,6 +369,16 @@ pub async fn register_bot(
             // Only what this feature reads. Asking for everything would make the
             // bot receive every group message it can see.
             "allowed_updates": ["message"],
+            // Discard whatever queued while no webhook was set. Those updates are
+            // stale `/start` commands whose link tokens have expired, and
+            // replaying them on registration would answer "this link expired" to
+            // someone who just pressed Start.
+            "drop_pending_updates": true,
+            // Telegram's default is 40 simultaneous connections per bot. This
+            // endpoint only handles someone pressing Start, so 40 is headroom for
+            // load nobody will send; the docs call for lower values to limit the
+            // load on the receiving server.
+            "max_connections": 5,
         }))
         .send()
         .await
@@ -421,6 +431,9 @@ pub async fn delete_bot(
         let _ = reqwest::Client::new()
             .post(format!("https://api.telegram.org/bot{token}/deleteWebhook"))
             .timeout(std::time::Duration::from_secs(10))
+            // Drop the queue with the registration. Leaving it would deliver a
+            // backlog to whichever bot is registered next.
+            .json(&json!({ "drop_pending_updates": true }))
             .send()
             .await;
     }
@@ -542,8 +555,37 @@ pub async fn telegram_webhook(
         .get("x-telegram-bot-api-secret-token")
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default();
-    if presented != bot.webhook_secret {
+    if !secret_matches(presented, &bot.webhook_secret) {
         tracing::warn!(bot_id = %bot_id, "telegram.webhook.bad_secret");
+        return StatusCode::OK;
+    }
+
+    // A group promoted to a supergroup gets a new chat id, and the old one stops
+    // working for good. Telegram announces it once, in this field of a single
+    // update; missing it turns a working destination into permanent silence that
+    // looks like a bug in the notifications rather than a moved chat.
+    if let Some(new_id) = update
+        .pointer("/message/migrate_to_chat_id")
+        .and_then(|v| v.as_i64())
+    {
+        if let Some(old_id) = update.pointer("/message/chat/id").and_then(|v| v.as_i64()) {
+            match sqlx::query(
+                "UPDATE user_notification_channels SET address = $1, updated_at = now() \
+                 WHERE channel = 'telegram' AND address = $2 AND telegram_bot_id = $3",
+            )
+            .bind(new_id.to_string())
+            .bind(old_id.to_string())
+            .bind(bot.id)
+            .execute(&pool)
+            .await
+            {
+                Ok(r) => tracing::info!(
+                    rows = r.rows_affected(),
+                    "telegram.webhook.chat_migrated"
+                ),
+                Err(e) => tracing::error!(error = %e, "telegram.webhook.chat_migration_failed"),
+            }
+        }
         return StatusCode::OK;
     }
 
@@ -567,8 +609,7 @@ pub async fn telegram_webhook(
             chat_id,
             "Pour recevoir les notifications Baaton, ouvre Réglages → Notifications dans Baaton \
              et clique sur « Connecter Telegram ».",
-        )
-        .await;
+        );
         return StatusCode::OK;
     }
 
@@ -601,7 +642,7 @@ pub async fn telegram_webhook(
             Some((None,)) => "Ce lien a expiré. Génère-en un nouveau dans Baaton.",
             None => "Lien invalide. Génère-en un nouveau dans Baaton.",
         };
-        send_telegram_reply(&bot.bot_token, chat_id, msg).await;
+        send_telegram_reply(&bot.bot_token, chat_id, msg);
         return StatusCode::OK;
     };
 
@@ -629,23 +670,45 @@ pub async fn telegram_webhook(
                 chat_id,
                 "✅ Telegram connecté. Choisis les projets à suivre dans Baaton → Réglages → \
                  Notifications.",
-            )
-            .await;
+            );
         }
         Err(e) => tracing::error!(error = %e, "telegram.webhook.link_failed"),
     }
     StatusCode::OK
 }
 
-/// Confirm in the chat itself. Silence after pressing Start is indistinguishable
-/// from a broken integration, and this is the only surface the user is looking at.
-async fn send_telegram_reply(bot_token: &str, chat_id: i64, text: &str) {
-    let _ = reqwest::Client::new()
-        .post(format!("https://api.telegram.org/bot{bot_token}/sendMessage"))
-        .timeout(std::time::Duration::from_secs(5))
-        .json(&json!({ "chat_id": chat_id, "text": text }))
-        .send()
-        .await;
+/// Compare two secrets without leaking their contents through timing.
+///
+/// `==` on a string returns as soon as two bytes differ, so the time it takes
+/// says how much of a guess was right. The webhook secret is a credential
+/// presented by a caller we do not otherwise trust, which is exactly the input
+/// this applies to.
+fn secret_matches(presented: &str, expected: &str) -> bool {
+    let (a, b) = (presented.as_bytes(), expected.as_bytes());
+    // Length is not secret — Telegram's own limit publishes the range — but the
+    // fold must still run over a fixed operand to stay constant-time.
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// Confirm in the chat itself, without making Telegram wait.
+///
+/// Telegram repeats any webhook call that does not answer 2XY and gives up after
+/// a number of attempts, so the handler must return before a slow `sendMessage`:
+/// the reply is courtesy, the 200 is the contract.
+fn send_telegram_reply(bot_token: &str, chat_id: i64, text: &str) {
+    let token = bot_token.to_string();
+    let text = text.to_string();
+    tokio::spawn(async move {
+        let _ = reqwest::Client::new()
+            .post(format!("https://api.telegram.org/bot{token}/sendMessage"))
+            .timeout(std::time::Duration::from_secs(5))
+            .json(&json!({ "chat_id": chat_id, "text": text }))
+            .send()
+            .await;
+    });
 }
 
 // ───────────────────── project subscriptions ─────────────────────
@@ -1024,6 +1087,34 @@ mod tests {
             a.chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
             "token outside Telegram's deep-link alphabet: {a}"
+        );
+    }
+
+    #[test]
+    fn secret_comparison_accepts_only_the_exact_secret() {
+        assert!(secret_matches("abc", "abc"));
+        assert!(!secret_matches("abc", "abd"));
+        // A prefix must not pass: that is what a naive `starts_with` would let
+        // through, and it would accept a truncated guess.
+        assert!(!secret_matches("ab", "abc"));
+        assert!(!secret_matches("abcd", "abc"));
+        // An absent header arrives as an empty string, which must never match a
+        // configured secret.
+        assert!(!secret_matches("", "abc"));
+    }
+
+    #[test]
+    fn generated_secret_fits_telegram_rules() {
+        let secret = random_token().unwrap();
+        // setWebhook accepts 1-256 characters, and only A-Z, a-z, 0-9, _ and -.
+        // Outside that range Telegram refuses the registration, leaving a bot
+        // that never receives anything.
+        assert!((1..=256).contains(&secret.len()));
+        assert!(
+            secret
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+            "secret outside Telegram's allowed alphabet: {secret}"
         );
     }
 
