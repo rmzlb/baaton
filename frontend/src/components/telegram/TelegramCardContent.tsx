@@ -243,7 +243,14 @@ function TelegramDestinationStep({ botAvailable }: { botAvailable: boolean }) {
   const refresh = () => queryClient.invalidateQueries({ queryKey: channelsCacheKey });
   const hasChannel = Boolean(telegramChannel);
 
-  const [changing, setChanging] = useState(false);
+  // Auto-update after Telegram /start: poll until verified so the user doesn't need to refresh
+  const hasTelegramVerified = Boolean(telegramChannel?.verified);
+  useEffect(() => {
+    if (hasTelegramVerified || !botAvailable) return;
+    const id = setInterval(refresh, 4_000);
+    return () => clearInterval(id);
+  }, [hasTelegramVerified, botAvailable]); // eslint-disable-line react-hooks/exhaustive-deps
+ = useState(false);
   const [destType, setDestType] = useState<DestType>('dm');
   const [address, setAddress] = useState('');
   const [threadId, setThreadId] = useState('');

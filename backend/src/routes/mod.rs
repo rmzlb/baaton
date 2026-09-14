@@ -178,7 +178,6 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         )
         .route("/me/telegram/test", post(notification_prefs::send_test_notification))
         .route("/me/telegram/destination", put(notification_prefs::put_telegram_destination))
-        .route("/me/telegram/destination", put(notification_prefs::put_telegram_destination))
         // The bot lives in the database (migration 075), owned by the person who
         // created it in @BotFather. Baaton registers the webhook itself, so
         // bringing a bot is one paste and no deploy configuration.
