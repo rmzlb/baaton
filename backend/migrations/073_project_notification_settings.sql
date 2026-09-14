@@ -43,16 +43,18 @@ ALTER TABLE projects
 
 -- Guard the shape at the storage layer: a malformed value here silently kills
 -- notifications for a project, which is a failure nobody notices until they
--- needed the alert. `jsonb_typeof` rejects an object or a bare string; the
--- element check rejects `[1, null]`, which would never match a status key.
+-- needed the alert.
+--
+-- Only the outer type is checked. Postgres forbids subqueries in CHECK, so
+-- "every element is a string" cannot be expressed here without a function, and
+-- an immutable helper function for one column is more machinery than the risk
+-- deserves: the only writer is `update_notification_settings`, which validates
+-- each key against the project's own workflow and rejects unknown ones with a
+-- 400. This constraint exists to stop a hand-written UPDATE from storing an
+-- object or a bare string, which is the mistake that would break reads.
 ALTER TABLE projects
   DROP CONSTRAINT IF EXISTS projects_notify_statuses_is_string_array;
 ALTER TABLE projects
-  ADD CONSTRAINT projects_notify_statuses_is_string_array CHECK (
+  ADD CONSTRAINT projects_notify_statuses_is_array CHECK (
     jsonb_typeof(notify_statuses) = 'array'
-    AND NOT EXISTS (
-      SELECT 1
-      FROM jsonb_array_elements(notify_statuses) AS e
-      WHERE jsonb_typeof(e) <> 'string'
-    )
   );
