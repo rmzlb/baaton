@@ -84,6 +84,177 @@ fn internal_err(e: impl std::fmt::Display) -> (StatusCode, Json<serde_json::Valu
     )
 }
 
+/// Everything that must happen when an issue's status changes, wherever the
+/// change came from.
+///
+/// Three write paths can move a ticket: `update` (the detail panel),
+/// `update_position` (kanban drag & drop) and `batch_update`. Each grew its own
+/// side effects, so a drag on the board silently skipped the SLA clock, the
+/// automations, the webhook, the activity log and the chat notification. The bug
+/// that exposed this: `PHI-18` moved `in_review → not_ok` by drag and nothing was
+/// announced, because `update_position` never even received the notifyd client.
+///
+/// Duplicating side effects across three handlers guarantees the next one drifts
+/// too, so they live here. Fire-and-forget throughout: moving a ticket must not
+/// fail because a downstream effect did.
+fn on_status_changed(
+    pool: &PgPool,
+    notifyd: Option<&crate::notifyd::NotifydClient>,
+    org_id: &str,
+    issue: &Issue,
+    from_status: &str,
+    actor_id: &str,
+    actor_name: Option<String>,
+) {
+    // ── Activity log ──
+    {
+        let pool2 = pool.clone();
+        let oid = org_id.to_string();
+        let uid = actor_id.to_string();
+        let uname = actor_name.clone();
+        let from = from_status.to_string();
+        let to = issue.status.clone();
+        let (pid, iid) = (issue.project_id, issue.id);
+        tokio::spawn(async move {
+            log_activity(
+                &pool2,
+                &oid,
+                Some(pid),
+                Some(iid),
+                &uid,
+                uname.as_deref(),
+                "status_changed",
+                Some("status"),
+                Some(&from),
+                Some(&to),
+                None,
+            )
+            .await;
+        });
+    }
+
+    // ── SLA clock ──
+    // Moving to in_review pauses the clock; moving back out resumes it with the
+    // budget already consumed.
+    {
+        let pool2 = pool.clone();
+        let iid = issue.id;
+        tokio::spawn(async move {
+            recompute_sla(&pool2, iid).await;
+        });
+    }
+
+    // ── Automations ──
+    {
+        let pool2 = pool.clone();
+        let oid = org_id.to_string();
+        let pid = issue.project_id;
+        let issue2 = issue.clone();
+        tokio::spawn(async move {
+            evaluate_automations(&pool2, &oid, pid, "status_changed", &issue2, 3).await;
+        });
+    }
+
+    // ── Webhooks ──
+    {
+        let pool2 = pool.clone();
+        let oid = org_id.to_string();
+        let payload = serde_json::to_value(issue).unwrap_or_default();
+        tokio::spawn(async move {
+            dispatch_event(pool2, oid, "status.changed", payload).await;
+        });
+    }
+
+    // ── Chat notification ──
+    // A transition is the event the room reacts to, and `in_review → not_ok` is
+    // the one that needs a reason. The last comment is that reason, so it travels
+    // with the notice instead of making everyone open the board to find out why.
+    //
+    // Filtered by the project's `notify_statuses` (migration 073): announcing
+    // every transition, `todo → in_progress` included, is how a room gets muted
+    // in a week, and a muted room looks like coverage while delivering none.
+    if let Some(notifyd) = notifyd {
+        let pool2 = pool.clone();
+        let notifyd = notifyd.clone();
+        let display_id = issue.display_id.clone();
+        let title = issue.title.clone();
+        let actor = actor_name;
+        let issue_id = issue.id;
+        let project_id = issue.project_id;
+        let from_key = from_status.to_string();
+        let to_key = issue.status.clone();
+        let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
+        tokio::spawn(async move {
+            let project: Option<(String, serde_json::Value, serde_json::Value)> =
+                sqlx::query_as("SELECT name, statuses, notify_statuses FROM projects WHERE id = $1")
+                    .bind(project_id)
+                    .fetch_optional(&pool2)
+                    .await
+                    .ok()
+                    .flatten();
+
+            let (project_name, statuses, notify_statuses) = match project {
+                Some((name, statuses, notify)) => (Some(name), Some(statuses), notify),
+                // No project row means no configuration to honour. Staying silent
+                // is the safe default: the alternative is notifying on transitions
+                // the project may have deliberately silenced.
+                None => return,
+            };
+
+            let wanted = notify_statuses
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|k| k.as_str())
+                        .any(|k| k == to_key.as_str())
+                })
+                .unwrap_or(false);
+            if !wanted {
+                return;
+            }
+
+            // Show what the board shows: a raw `not_ok` in the chat while the UI
+            // says "Not OK" makes the two look like two systems.
+            let label = |key: &str| -> String {
+                statuses
+                    .as_ref()
+                    .and_then(|s| s.as_array())
+                    .and_then(|arr| {
+                        arr.iter()
+                            .find(|s| s.get("key").and_then(|k| k.as_str()) == Some(key))
+                    })
+                    .and_then(|s| s.get("label").and_then(|l| l.as_str()))
+                    .unwrap_or(key)
+                    .to_string()
+            };
+
+            let last_comment: Option<(String, String)> = sqlx::query_as(
+                "SELECT author_name, body FROM comments WHERE issue_id = $1 \
+                 ORDER BY created_at DESC LIMIT 1",
+            )
+            .bind(issue_id)
+            .fetch_optional(&pool2)
+            .await
+            .ok()
+            .flatten();
+
+            notifyd.issue_status_changed(crate::notifyd::StatusNotice {
+                issue: crate::notifyd::IssueNotice {
+                    display_id,
+                    title,
+                    project_name,
+                    actor,
+                    issue_id,
+                },
+                from_status: label(&from_key),
+                to_status: label(&to_key),
+                last_comment,
+                changed_at,
+            });
+        });
+    }
+}
+
 /// Strip unsafe/non-renderable inline data: URIs from HTML descriptions.
 ///
 /// Inline `data:image/*` is intentionally preserved: the Notion-style editor stores
@@ -1968,31 +2139,6 @@ pub async fn update(
         let project_id = existing.project_id;
         let org_id_str = target_org_id.clone();
 
-        if status_changed {
-            let old_val = existing.status.clone();
-            let new_val = issue.status.clone();
-            let pool2 = pool_ref.clone();
-            let uid = user_id.clone();
-            let uname = user_name.clone();
-            let oid = org_id_str.clone();
-            tokio::spawn(async move {
-                log_activity(
-                    &pool2,
-                    &oid,
-                    Some(project_id),
-                    Some(id),
-                    &uid,
-                    uname.as_deref(),
-                    "status_changed",
-                    Some("status"),
-                    Some(&old_val),
-                    Some(&new_val),
-                    None,
-                )
-                .await;
-            });
-        }
-
         if body.priority.is_some() && existing.priority != issue.priority {
             let old_val = existing.priority.clone().unwrap_or_default();
             let new_val = issue.priority.clone().unwrap_or_default();
@@ -2191,7 +2337,9 @@ pub async fn update(
     // in_review pauses the clock, moving back out resumes it with the budget
     // already consumed.
     let priority_changed_flag = body.priority.is_some() && existing.priority != issue.priority;
-    if priority_changed_flag || status_changed {
+    // A status change carries its own SLA recompute inside `on_status_changed`,
+    // so only the priority-only case needs one here.
+    if priority_changed_flag && !status_changed {
         let pool2 = pool.clone();
         let iid = issue.id;
         tokio::spawn(async move {
@@ -2199,133 +2347,43 @@ pub async fn update(
         });
     }
 
-    // ── Chat notification for the room on a status change ──
-    // Creation was already announced; a transition is the other event the room
-    // reacts to, and `in_review → not_ok` is the one that needs a reason. The
-    // last comment is that reason, so it travels with the notice instead of
-    // making everyone open the board to find out why the ticket bounced.
-    //
-    // Filtered by the project's `notify_statuses` (migration 073). Announcing
-    // every transition, `todo → in_progress` included, is how a room gets muted
-    // in a week — and a muted room looks like coverage while delivering none.
+    // ── Status change: activity, SLA, automations, webhook, chat ──
+    // One call for every consequence of a transition, shared with the kanban and
+    // batch paths so the three cannot drift again.
     if status_changed {
-        if let Some(ref notifyd) = notifyd {
-            let pool2 = pool.clone();
-            let notifyd = notifyd.clone();
-            let display_id = issue.display_id.clone();
-            let title = issue.title.clone();
-            let actor = auth.display_name.clone();
-            let issue_id = issue.id;
-            let project_id = issue.project_id;
-            let from_key = existing.status.clone();
-            let to_key = issue.status.clone();
-            let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
-            tokio::spawn(async move {
-                let project: Option<(String, serde_json::Value, serde_json::Value)> = sqlx::query_as(
-                    "SELECT name, statuses, notify_statuses FROM projects WHERE id = $1",
-                )
-                .bind(project_id)
-                .fetch_optional(&pool2)
-                .await
-                .ok()
-                .flatten();
-
-                let (project_name, statuses, notify_statuses) = match project {
-                    Some((name, statuses, notify)) => (Some(name), Some(statuses), notify),
-                    // No project row means no configuration to honour. Staying
-                    // silent is the safe default: the alternative is notifying on
-                    // transitions the project may have deliberately silenced.
-                    None => return,
-                };
-
-                let wanted = notify_statuses
-                    .as_array()
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|k| k.as_str())
-                            .any(|k| k == to_key.as_str())
-                    })
-                    .unwrap_or(false);
-                if !wanted {
-                    return;
-                }
-
-                // Show what the board shows: a raw `not_ok` in the chat while
-                // the UI says "Not OK" makes the two look like two systems.
-                let label = |key: &str| -> String {
-                    statuses
-                        .as_ref()
-                        .and_then(|s| s.as_array())
-                        .and_then(|arr| {
-                            arr.iter()
-                                .find(|s| s.get("key").and_then(|k| k.as_str()) == Some(key))
-                        })
-                        .and_then(|s| s.get("label").and_then(|l| l.as_str()))
-                        .unwrap_or(key)
-                        .to_string()
-                };
-
-                let last_comment: Option<(String, String)> = sqlx::query_as(
-                    "SELECT author_name, body FROM comments WHERE issue_id = $1 \
-                     ORDER BY created_at DESC LIMIT 1",
-                )
-                .bind(issue_id)
-                .fetch_optional(&pool2)
-                .await
-                .ok()
-                .flatten();
-
-                notifyd.issue_status_changed(crate::notifyd::StatusNotice {
-                    issue: crate::notifyd::IssueNotice {
-                        display_id,
-                        title,
-                        project_name,
-                        actor,
-                        issue_id,
-                    },
-                    from_status: label(&from_key),
-                    to_status: label(&to_key),
-                    last_comment,
-                    changed_at,
-                });
-            });
-        }
+        on_status_changed(
+            &pool,
+            notifyd.as_ref(),
+            &target_org_id,
+            &issue,
+            &existing.status,
+            &auth.user_id,
+            auth.display_name.clone(),
+        );
     }
 
-    // ── Automations: status/priority change (fire-and-forget) ─
-    {
+    // ── Automations: priority-only change ──
+    if priority_changed_flag && !status_changed {
         let pool2 = pool.clone();
         let oid = target_org_id.clone();
         let pid = issue.project_id;
         let issue2 = issue.clone();
-        let trigger = if status_changed {
-            "status_changed"
-        } else if priority_changed_flag {
-            "priority_changed"
-        } else {
-            "issue_updated"
-        };
-        let trigger = trigger.to_string();
         tokio::spawn(async move {
-            if trigger != "issue_updated" {
-                evaluate_automations(&pool2, &oid, pid, &trigger, &issue2, 3).await;
-            }
+            evaluate_automations(&pool2, &oid, pid, "priority_changed", &issue2, 3).await;
         });
     }
 
     // ── Webhook dispatch (fire-and-forget) ───────────
-    let event = if status_changed {
-        "status.changed"
-    } else {
-        "issue.updated"
-    };
-    dispatch_event(
-        pool.clone(),
-        target_org_id.clone(),
-        event,
-        serde_json::to_value(&issue).unwrap_or_default(),
-    )
-    .await;
+    // `status.changed` is dispatched by `on_status_changed`; this covers the rest.
+    if !status_changed {
+        dispatch_event(
+            pool.clone(),
+            target_org_id.clone(),
+            "issue.updated",
+            serde_json::to_value(&issue).unwrap_or_default(),
+        )
+        .await;
+    }
 
     // ── SSE broadcast ────────────────────────────────
     let sse_event = if status_changed {
@@ -2395,6 +2453,7 @@ pub async fn update(
 
 pub async fn update_position(
     Extension(auth): Extension<AuthUser>,
+    Extension(notifyd): Extension<Option<crate::notifyd::NotifydClient>>,
     Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
@@ -2457,10 +2516,26 @@ pub async fn update_position(
     let valid_statuses = get_project_statuses(&pool, project_id, &target_org_id).await?;
     validate_status(status, &valid_statuses)?;
 
+    // Needed to tell a reorder inside a column from an actual transition: only
+    // the latter has consequences, and a drag sends both through this route.
+    let previous_status: String = sqlx::query_scalar("SELECT status FROM issues WHERE id = $1")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(internal_err)?;
+    let status_changed = previous_status != status;
+
     // COALESCE keeps the existing rank when the client omits it (NULL param).
+    // `status_changed_at` moves only on a real transition, like in `update`:
+    // stamping it on every reorder would corrupt the SLA clock.
     let issue = sqlx::query_as::<_, Issue>(
         r#"
-        UPDATE issues SET status = $2, position = $3, rank = COALESCE($4, rank), updated_at = now()
+        UPDATE issues SET
+            status = $2,
+            position = $3,
+            rank = COALESCE($4, rank),
+            status_changed_at = CASE WHEN $5::boolean THEN now() ELSE status_changed_at END,
+            updated_at = now()
         WHERE id = $1
         RETURNING *
         "#,
@@ -2469,9 +2544,25 @@ pub async fn update_position(
     .bind(status)
     .bind(position)
     .bind(rank.as_deref())
+    .bind(status_changed)
     .fetch_one(&pool)
     .await
     .map_err(|e| internal_err(e))?;
+
+    // A drag across columns is a status change like any other. Before this, the
+    // board silently skipped the activity log, the SLA clock, the automations,
+    // the webhook and the chat notification.
+    if status_changed {
+        on_status_changed(
+            &pool,
+            notifyd.as_ref(),
+            &target_org_id,
+            &issue,
+            &previous_status,
+            &auth.user_id,
+            auth.display_name.clone(),
+        );
+    }
 
     // ── SSE broadcast (realtime reorder for other tabs/users) ──
     // Echo suppression: attach the caller's X-Client-Id as `origin` so the
@@ -2637,6 +2728,7 @@ pub struct BatchDeleteBody {
 
 pub async fn batch_update(
     Extension(auth): Extension<AuthUser>,
+    Extension(notifyd): Extension<Option<crate::notifyd::NotifydClient>>,
     Extension(sse_tx): Extension<EventSender>,
     State(pool): State<PgPool>,
     headers: HeaderMap,
@@ -2681,6 +2773,15 @@ pub async fn batch_update(
     let mut updated_count: i64 = 0;
 
     for issue_id in &body.issue_ids {
+        // Read before writing: a batch can contain tickets already in the target
+        // status, and those are not transitions.
+        let previous_status: Option<String> =
+            sqlx::query_scalar("SELECT status FROM issues WHERE id = $1")
+                .bind(issue_id)
+                .fetch_optional(&pool)
+                .await
+                .map_err(internal_err)?;
+
         // Build dynamic update — only touch provided fields
         let issue = sqlx::query_as::<_, Issue>(
             r#"
@@ -2689,6 +2790,7 @@ pub async fn batch_update(
                 priority   = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE priority END,
                 assignee_ids = CASE WHEN $4::text[] IS NOT NULL THEN $4 ELSE assignee_ids END,
                 tags       = CASE WHEN $5::text[] IS NOT NULL THEN $5 ELSE tags END,
+                status_changed_at = CASE WHEN $7::boolean THEN now() ELSE status_changed_at END,
                 updated_at = now()
             WHERE id = $1
               AND project_id IN (SELECT id FROM projects WHERE org_id = ANY($6))
@@ -2701,30 +2803,52 @@ pub async fn batch_update(
         .bind(&body.changes.assignee_ids)
         .bind(&body.changes.tags)
         .bind(&org_ids)
+        .bind(
+            body.changes
+                .status
+                .as_deref()
+                .zip(previous_status.as_deref())
+                .is_some_and(|(next, prev)| next != prev),
+        )
         .fetch_optional(&pool)
         .await
         .map_err(|e| internal_err(e))?;
 
         if let Some(issue) = issue {
             updated_count += 1;
-            let event = if body.changes.status.is_some() {
-                "status.changed"
-            } else {
-                "issue.updated"
-            };
             let issue_org_id: String =
                 sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
                     .bind(issue.project_id)
                     .fetch_one(&pool)
                     .await
                     .map_err(internal_err)?;
-            dispatch_event(
-                pool.clone(),
-                issue_org_id.clone(),
-                event,
-                serde_json::to_value(&issue).unwrap_or_default(),
-            )
-            .await;
+
+            // Only a real transition counts. Bulk-setting 20 tickets to a status
+            // 15 already had would otherwise fire 20 notifications for 5 moves.
+            let moved = previous_status
+                .as_deref()
+                .is_some_and(|prev| prev != issue.status);
+
+            if moved {
+                on_status_changed(
+                    &pool,
+                    notifyd.as_ref(),
+                    &issue_org_id,
+                    &issue,
+                    previous_status.as_deref().unwrap_or_default(),
+                    &auth.user_id,
+                    auth.display_name.clone(),
+                );
+            } else {
+                dispatch_event(
+                    pool.clone(),
+                    issue_org_id.clone(),
+                    "issue.updated",
+                    serde_json::to_value(&issue).unwrap_or_default(),
+                )
+                .await;
+            }
+
             let sse_event = if body.changes.status.is_some() {
                 "issue.status_changed"
             } else {
