@@ -183,6 +183,10 @@ fn on_status_changed(
         let project_id = issue.project_id;
         let from_key = from_status.to_string();
         let to_key = issue.status.clone();
+        // The acting identity, not the display name: an agent working through an
+        // API key resolves to its owner, who must not be notified of their own
+        // move.
+        let actor_identity = actor_id.to_string();
         let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
         tokio::spawn(async move {
             let project: Option<(String, serde_json::Value, serde_json::Value)> =
@@ -210,6 +214,7 @@ fn on_status_changed(
                 project_id,
                 "status_changed",
                 Some(&to_key),
+                Some(&actor_identity),
             )
             .await;
 
@@ -1495,6 +1500,8 @@ pub async fn create(
         let actor = auth.display_name.clone();
         let issue_id = issue.id;
         let project_id = issue.project_id;
+        // Same rule as a status change: the person who filed it already knows.
+        let creator_identity = auth.user_id.clone();
         tokio::spawn(async move {
             let project_name: Option<String> =
                 sqlx::query_scalar("SELECT name FROM projects WHERE id = $1")
@@ -1511,6 +1518,7 @@ pub async fn create(
                 project_id,
                 "issue_created",
                 None,
+                Some(&creator_identity),
             )
             .await;
 

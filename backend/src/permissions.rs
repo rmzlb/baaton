@@ -805,10 +805,12 @@ mod tests {
                 "unexpected scope-free route: {entry}"
             );
         }
-        // Still bounded, so adding a per-user surface stays a decision someone
-        // makes on purpose rather than a drift nobody notices.
+        // Still bounded, so mapping a whole new family to `Authenticated` stays a
+        // decision someone makes on purpose rather than a drift nobody notices.
+        // A drift alarm, not a design limit: the assertion above is the real
+        // guard, since it rejects any route that is not one caller's own state.
         assert!(
-            lax.len() <= 14,
+            lax.len() <= 20,
             "too many scope-free authenticated routes, review these: {lax:#?}"
         );
     }

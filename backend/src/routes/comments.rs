@@ -44,7 +44,11 @@ pub struct UpdateComment {
 /// a human and every API key they created share a single ownership identity.
 /// This lets a human edit/delete comments their own key posted (and vice-versa)
 /// while still blocking unrelated users and unrelated keys.
-async fn resolve_owner_identity(pool: &PgPool, identity: &str) -> String {
+///
+/// Also the rule that keeps a notification feed readable: an agent acting
+/// through somebody's key is that person acting, so they must not be told about
+/// it. See `notification_prefs::resolve_recipients`.
+pub(crate) async fn resolve_owner_identity(pool: &PgPool, identity: &str) -> String {
     if let Some(key_id_str) = identity.strip_prefix("apikey:") {
         if let Ok(key_id) = Uuid::parse_str(key_id_str) {
             let owner: Option<String> = sqlx::query_scalar(
@@ -408,6 +412,7 @@ pub async fn create(
                 project_id,
                 "comment_added",
                 None,
+                Some(&author_identity),
             )
             .await;
 

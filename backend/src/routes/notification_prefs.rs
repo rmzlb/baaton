@@ -1,18 +1,32 @@
-//! Per-user notification routing: who hears about what, and where.
+//! Per-user notification routing, and the bots that carry it.
 //!
 //! Replaces `NOTIFYD_TELEGRAM_CHAT_ID`, an environment variable that was one
 //! address for the whole instance. Adding a second user changed nothing, because
 //! no field anywhere said where to reach them.
 //!
-//! Three questions, previously collapsed into that one variable:
+//! Four questions, previously collapsed into deploy configuration:
 //!
 //! | question | owner |
 //! |---|---|
+//! | which bot sends | `telegram_bots` (a bot is created in @BotFather by a person) |
 //! | where to reach someone | `user_notification_channels` (a chat id belongs to a person) |
 //! | what they want to hear | `project_notification_subscriptions` (user × project) |
 //! | which statuses exist | `projects.notify_statuses` (migration 073) |
 //!
-//! Every route here acts on the *caller*. There is no user id in any path: a
+//! Nothing here reads the environment. An earlier version of this module asked
+//! for `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` and
+//! `TELEGRAM_WEBHOOK_SECRET`, which was a reflex rather than a need:
+//!
+//! ```text
+//! git show f6f6eab:backend/src/notifyd.rs | grep -c TELEGRAM_BOT_TOKEN  ->  0
+//! ```
+//!
+//! Baaton had never held a bot token. Configuration also fixed the product to a
+//! single bot owned by whoever deploys, which is the wrong shape for an
+//! integration: a team that wants notifications under its own name cannot get
+//! there through a deploy variable.
+//!
+//! Every `/me` route acts on the caller. There is no user id in any path: a
 //! settings screen that could address another user's channels would be a way to
 //! redirect someone else's notifications.
 
@@ -23,7 +37,7 @@ use axum::{
 };
 use base64::Engine as _;
 use rand::TryRngCore;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -56,9 +70,20 @@ fn bad_request(msg: &str, detail: &str) -> ApiErr {
 const SUPPORTED_CHANNELS: [&str; 4] = ["telegram", "slack", "discord", "email"];
 
 /// How long a Telegram link stays usable. Long enough to switch apps and press
-/// Start, short enough that a link left in a browser tab stops being a way to
+/// Start, short enough that a link left open in a tab stops being a way to
 /// capture someone's notifications.
 const LINK_TOKEN_TTL_MINUTES: i64 = 15;
+
+/// 32 random bytes, URL-safe. Used for link tokens, which must fit Telegram's
+/// deep-link alphabet (`[A-Za-z0-9_-]`) and its 64-character limit — 32 bytes
+/// encode to 43 — and for webhook secrets, where only unguessability matters.
+fn random_token() -> Result<String, ApiErr> {
+    let mut bytes = [0u8; 32];
+    rand::rngs::OsRng
+        .try_fill_bytes(&mut bytes)
+        .map_err(|e| internal(format!("OsRng failed: {e}")))?;
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+}
 
 /// An address the channel can actually reach.
 ///
@@ -72,13 +97,12 @@ fn validate_address(channel: &str, address: &str) -> Result<String, String> {
     }
     match channel {
         // A chat id is an integer, negative for groups. Anything else — a
-        // username, an invite link, a copied URL — is a value Telegram will
-        // never accept.
+        // username, an invite link, a copied URL — Telegram will never accept.
         "telegram" => address
             .parse::<i64>()
             .map(|id| id.to_string())
             .map_err(|_| {
-                "A Telegram chat id is a number (negative for a group). Send /start to the bot, \
+                "A Telegram chat id is a number (negative for a group). Press Start on the bot, \
                  or ask @userinfobot for your id."
                     .to_string()
             }),
@@ -109,6 +133,10 @@ fn require_supported_channel(channel: &str) -> Result<(), ApiErr> {
             &format!("Known channels: {}", SUPPORTED_CHANNELS.join(", ")),
         ))
     }
+}
+
+fn is_api_key(auth: &AuthUser) -> bool {
+    auth.user_id.starts_with("apikey:")
 }
 
 // ─────────────────────────── channels ───────────────────────────
@@ -181,6 +209,249 @@ pub async fn delete_channel(
     Ok(StatusCode::NO_CONTENT)
 }
 
+// ───────────────────────── the bot itself ─────────────────────────
+
+/// A bot row, as the send and link paths need it.
+#[derive(Debug, sqlx::FromRow)]
+pub struct TelegramBot {
+    pub id: Uuid,
+    pub bot_username: String,
+    pub bot_token: String,
+    pub webhook_secret: String,
+}
+
+/// What a settings screen may see. Never the token: a bot token lets its holder
+/// impersonate the bot entirely, and an integrations page has no use for it once
+/// it is stored.
+#[derive(Debug, Serialize)]
+pub struct TelegramBotView {
+    pub bot_username: String,
+    pub owned: bool,
+    pub webhook_registered: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RegisterTelegramBot {
+    pub bot_token: String,
+}
+
+/// The bot serving this user: their own when they registered one, otherwise the
+/// instance bot. `NULLS LAST` makes that precedence explicit rather than leaving
+/// it to row order.
+async fn bot_for_user(pool: &PgPool, user_id: &str) -> Option<TelegramBot> {
+    sqlx::query_as::<_, TelegramBot>(
+        "SELECT id, bot_username, bot_token, webhook_secret FROM telegram_bots \
+         WHERE owner_user_id = $1 OR owner_user_id IS NULL \
+         ORDER BY owner_user_id NULLS LAST LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+pub async fn get_bot(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+) -> Result<Json<ApiResponse<Option<TelegramBotView>>>, ApiErr> {
+    let row: Option<(String, Option<String>, Option<chrono::DateTime<chrono::Utc>>)> =
+        sqlx::query_as(
+            "SELECT bot_username, owner_user_id, webhook_registered_at FROM telegram_bots \
+             WHERE owner_user_id = $1 OR owner_user_id IS NULL \
+             ORDER BY owner_user_id NULLS LAST LIMIT 1",
+        )
+        .bind(&auth.user_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(internal)?;
+
+    Ok(Json(ApiResponse::new(row.map(
+        |(bot_username, owner, registered)| TelegramBotView {
+            bot_username,
+            owned: owner.is_some(),
+            webhook_registered: registered.is_some(),
+        },
+    ))))
+}
+
+/// Register the caller's own bot from a @BotFather token.
+///
+/// Three steps that must all succeed, because any one of them left undone is a
+/// bot that looks configured and never delivers:
+///
+/// 1. `getMe` proves the token works and yields the username the deep link needs,
+///    so the stored name can never drift from the credential.
+/// 2. A per-bot webhook secret is generated here. Per bot, never shared: one
+///    leaked secret must not let anyone forge updates for every other bot.
+/// 3. `setWebhook` points Telegram at this instance. Until it returns, no update
+///    will ever arrive, which is the difference between configured and working.
+pub async fn register_bot(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    headers: HeaderMap,
+    Json(body): Json<RegisterTelegramBot>,
+) -> Result<Json<ApiResponse<TelegramBotView>>, ApiErr> {
+    if is_api_key(&auth) {
+        return Err(api_keys_have_no_person());
+    }
+    let token = body.bot_token.trim().to_string();
+    if token.is_empty() {
+        return Err(bad_request(
+            "Missing bot token",
+            "Create a bot with @BotFather and paste the token it gives you.",
+        ));
+    }
+
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(internal)?;
+
+    // Ask Telegram, rather than trusting the shape of the string: a token that
+    // parses but is revoked would otherwise be stored as working.
+    let me = http
+        .get(format!("https://api.telegram.org/bot{token}/getMe"))
+        .send()
+        .await
+        .map_err(|e| bad_request("Telegram unreachable", &e.to_string()))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| bad_request("Telegram sent an unreadable answer", &e.to_string()))?;
+
+    let username = me
+        .pointer("/result/username")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            bad_request(
+                "Telegram rejected this bot token",
+                me.get("description")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("getMe returned no username"),
+            )
+        })?
+        .to_string();
+
+    let secret = random_token()?;
+
+    let bot_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO telegram_bots (owner_user_id, bot_username, bot_token, webhook_secret) \
+         VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (owner_user_id) WHERE owner_user_id IS NOT NULL DO UPDATE \
+           SET bot_username = EXCLUDED.bot_username, \
+               bot_token = EXCLUDED.bot_token, \
+               webhook_secret = EXCLUDED.webhook_secret, \
+               webhook_registered_at = NULL, \
+               updated_at = now() \
+         RETURNING id",
+    )
+    .bind(&auth.user_id)
+    .bind(&username)
+    .bind(&token)
+    .bind(&secret)
+    .fetch_one(&pool)
+    .await
+    .map_err(internal)?;
+
+    // The instance's own address, taken from the request that reached it. Asking
+    // for it as configuration would be a fourth variable describing something
+    // the request already proves.
+    let base = public_base(&headers).ok_or_else(|| {
+        internal("cannot determine this instance's public URL from the request headers")
+    })?;
+    let webhook_url = format!("{base}/api/v1/public/telegram/webhook/{bot_id}");
+
+    let set = http
+        .post(format!("https://api.telegram.org/bot{token}/setWebhook"))
+        .json(&json!({
+            "url": webhook_url,
+            "secret_token": secret,
+            // Only what this feature reads. Asking for everything would make the
+            // bot receive every group message it can see.
+            "allowed_updates": ["message"],
+        }))
+        .send()
+        .await
+        .map_err(|e| bad_request("Telegram unreachable", &e.to_string()))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| bad_request("Telegram sent an unreadable answer", &e.to_string()))?;
+
+    let registered = set.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    if registered {
+        let _ = sqlx::query(
+            "UPDATE telegram_bots SET webhook_registered_at = now(), updated_at = now() \
+             WHERE id = $1",
+        )
+        .bind(bot_id)
+        .execute(&pool)
+        .await;
+    } else {
+        // Keep the row: the token is valid and re-registering is one retry, while
+        // discarding it would send the user back to @BotFather for nothing.
+        tracing::warn!(
+            bot_id = %bot_id,
+            detail = ?set.get("description"),
+            "telegram.setwebhook.refused"
+        );
+    }
+
+    Ok(Json(ApiResponse::new(TelegramBotView {
+        bot_username: username,
+        owned: true,
+        webhook_registered: registered,
+    })))
+}
+
+pub async fn delete_bot(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+) -> Result<StatusCode, ApiErr> {
+    // Tell Telegram to stop sending, before the credential disappears. Skipping
+    // this leaves a webhook pointing at an instance that can no longer identify
+    // the bot, and Telegram retries a failing webhook for a long time.
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT bot_token FROM telegram_bots WHERE owner_user_id = $1")
+            .bind(&auth.user_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(internal)?;
+
+    if let Some((token,)) = row {
+        let _ = reqwest::Client::new()
+            .post(format!("https://api.telegram.org/bot{token}/deleteWebhook"))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+    }
+
+    sqlx::query("DELETE FROM telegram_bots WHERE owner_user_id = $1")
+        .bind(&auth.user_id)
+        .execute(&pool)
+        .await
+        .map_err(internal)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// This instance's public origin, from the proxy headers of the live request.
+fn public_base(headers: &HeaderMap) -> Option<String> {
+    let host = headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get("host"))
+        .and_then(|v| v.to_str().ok())?
+        .trim()
+        .to_string();
+    if host.is_empty() {
+        return None;
+    }
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("https")
+        .trim();
+    Some(format!("{proto}://{host}"))
+}
+
 // ───────────────────── telegram deep link ─────────────────────
 
 #[derive(Debug, Serialize)]
@@ -202,92 +473,77 @@ pub async fn create_telegram_link(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<TelegramLink>>, ApiErr> {
-    let username = telegram_bot_username().await.ok_or_else(|| {
+    if is_api_key(&auth) {
+        return Err(api_keys_have_no_person());
+    }
+    let bot = bot_for_user(&pool, &auth.user_id).await.ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({
-                "error": "Telegram bot not configured",
-                "detail": "TELEGRAM_BOT_TOKEN (and optionally TELEGRAM_BOT_USERNAME) must be set.",
+                "error": "No Telegram bot available",
+                "detail": "Create a bot with @BotFather and register its token, \
+                          or ask an administrator to register the instance bot.",
             })),
         )
     })?;
 
-    let mut bytes = [0u8; 32];
-    rand::rngs::OsRng
-        .try_fill_bytes(&mut bytes)
-        .map_err(|e| internal(format!("OsRng failed: {e}")))?;
-    // URL_SAFE_NO_PAD keeps the token inside Telegram's deep-link alphabet
-    // ([A-Za-z0-9_-]) and its 64-character limit: 32 bytes encode to 43 chars.
-    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    let token = random_token()?;
 
+    // The bot travels with the token: the update comes back through that bot's
+    // webhook, and a chat id is only usable by the bot that obtained it.
     let expires_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
-        "INSERT INTO telegram_link_tokens (token, user_id, expires_at) \
-         VALUES ($1, $2, now() + ($3 || ' minutes')::interval) RETURNING expires_at",
+        "INSERT INTO telegram_link_tokens (token, user_id, expires_at, telegram_bot_id) \
+         VALUES ($1, $2, now() + ($3 || ' minutes')::interval, $4) RETURNING expires_at",
     )
     .bind(&token)
     .bind(&auth.user_id)
     .bind(LINK_TOKEN_TTL_MINUTES.to_string())
+    .bind(bot.id)
     .fetch_one(&pool)
     .await
     .map_err(internal)?;
 
     Ok(Json(ApiResponse::new(TelegramLink {
-        deep_link: format!("https://t.me/{username}?start={token}"),
+        deep_link: format!("https://t.me/{}?start={token}", bot.bot_username),
         expires_at,
     })))
-}
-
-/// The bot's public username, needed to build a `t.me` link.
-///
-/// Prefer the env var; fall back to `getMe` so a deployment that only sets the
-/// token still works instead of failing on a detail Telegram can answer.
-async fn telegram_bot_username() -> Option<String> {
-    if let Ok(name) = std::env::var("TELEGRAM_BOT_USERNAME") {
-        let name = name.trim().trim_start_matches('@').to_string();
-        if !name.is_empty() {
-            return Some(name);
-        }
-    }
-    let token = std::env::var("TELEGRAM_BOT_TOKEN").ok()?;
-    let resp = reqwest::Client::new()
-        .get(format!("https://api.telegram.org/bot{token}/getMe"))
-        .timeout(std::time::Duration::from_secs(5))
-        .send()
-        .await
-        .ok()?
-        .json::<serde_json::Value>()
-        .await
-        .ok()?;
-    resp.pointer("/result/username")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
 }
 
 /// Receive Telegram updates: the missing half of the loop.
 ///
 /// notifyd sends but never listens, so nothing in the stack could learn a chat
 /// id. This endpoint is that ear. It lives under `/public/` because Telegram
-/// cannot present a Clerk token; authentication is the secret header set with
-/// `setWebhook`, compared in full so a wrong secret is rejected outright.
+/// cannot present a Clerk token; the bot id in the path says which bot is
+/// speaking, and that bot's own secret authenticates the call.
 ///
 /// Always answers 200. Telegram retries anything else, and a token already
 /// consumed would be retried forever.
 pub async fn telegram_webhook(
     State(pool): State<PgPool>,
+    Path(bot_id): Path<Uuid>,
     headers: HeaderMap,
     Json(update): Json<serde_json::Value>,
 ) -> StatusCode {
-    let expected = std::env::var("TELEGRAM_WEBHOOK_SECRET").unwrap_or_default();
-    if expected.trim().is_empty() {
-        tracing::warn!("telegram.webhook.no_secret_configured");
+    let bot: Option<TelegramBot> = sqlx::query_as(
+        "SELECT id, bot_username, bot_token, webhook_secret FROM telegram_bots WHERE id = $1",
+    )
+    .bind(bot_id)
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten();
+
+    let Some(bot) = bot else {
+        tracing::warn!(bot_id = %bot_id, "telegram.webhook.unknown_bot");
         return StatusCode::OK;
-    }
+    };
+
     let presented = headers
         .get("x-telegram-bot-api-secret-token")
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default();
-    if presented != expected {
-        tracing::warn!("telegram.webhook.bad_secret");
+    if presented != bot.webhook_secret {
+        tracing::warn!(bot_id = %bot_id, "telegram.webhook.bad_secret");
         return StatusCode::OK;
     }
 
@@ -296,8 +552,7 @@ pub async fn telegram_webhook(
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .trim();
-    let chat_id = update.pointer("/message/chat/id").and_then(|v| v.as_i64());
-    let Some(chat_id) = chat_id else {
+    let Some(chat_id) = update.pointer("/message/chat/id").and_then(|v| v.as_i64()) else {
         return StatusCode::OK;
     };
 
@@ -308,6 +563,7 @@ pub async fn telegram_webhook(
     };
     if payload.is_empty() {
         send_telegram_reply(
+            &bot.bot_token,
             chat_id,
             "Pour recevoir les notifications Baaton, ouvre Réglages → Notifications dans Baaton \
              et clique sur « Connecter Telegram ».",
@@ -316,20 +572,22 @@ pub async fn telegram_webhook(
         return StatusCode::OK;
     }
 
-    // Consume the token and read the owner in one statement: two queries would
-    // let the same link be redeemed twice concurrently.
+    // Consume the token and read its owner in one statement: two queries would
+    // let the same link be redeemed twice concurrently. Scoped to this bot, so a
+    // link cannot be replayed through a bot it was never minted for.
     let claimed: Option<(String,)> = sqlx::query_as(
         "UPDATE telegram_link_tokens SET used_at = now() \
-         WHERE token = $1 AND used_at IS NULL AND expires_at > now() \
+         WHERE token = $1 AND telegram_bot_id = $2 AND used_at IS NULL AND expires_at > now() \
          RETURNING user_id",
     )
     .bind(payload)
+    .bind(bot.id)
     .fetch_optional(&pool)
     .await
     .unwrap_or(None);
 
     let Some((user_id,)) = claimed else {
-        // Distinguish the two failures: "already used" and "never existed" are
+        // Distinguish the failures: "already used" and "never existed" are
         // different problems, and telling them apart is what makes a broken link
         // diagnosable instead of mysterious.
         let known: Option<(Option<chrono::DateTime<chrono::Utc>>,)> =
@@ -343,25 +601,31 @@ pub async fn telegram_webhook(
             Some((None,)) => "Ce lien a expiré. Génère-en un nouveau dans Baaton.",
             None => "Lien invalide. Génère-en un nouveau dans Baaton.",
         };
-        send_telegram_reply(chat_id, msg).await;
+        send_telegram_reply(&bot.bot_token, chat_id, msg).await;
         return StatusCode::OK;
     };
 
     let stored = sqlx::query(
-        "INSERT INTO user_notification_channels (user_id, channel, address, verified_at) \
-         VALUES ($1, 'telegram', $2, now()) \
+        "INSERT INTO user_notification_channels \
+           (user_id, channel, address, verified_at, telegram_bot_id) \
+         VALUES ($1, 'telegram', $2, now(), $3) \
          ON CONFLICT (user_id, channel) DO UPDATE \
-           SET address = EXCLUDED.address, verified_at = now(), updated_at = now()",
+           SET address = EXCLUDED.address, \
+               verified_at = now(), \
+               telegram_bot_id = EXCLUDED.telegram_bot_id, \
+               updated_at = now()",
     )
     .bind(&user_id)
     .bind(chat_id.to_string())
+    .bind(bot.id)
     .execute(&pool)
     .await;
 
     match stored {
         Ok(_) => {
-            tracing::info!(user_id = %user_id, "telegram.webhook.linked");
+            tracing::info!(user_id = %user_id, bot_id = %bot.id, "telegram.webhook.linked");
             send_telegram_reply(
+                &bot.bot_token,
                 chat_id,
                 "✅ Telegram connecté. Choisis les projets à suivre dans Baaton → Réglages → \
                  Notifications.",
@@ -375,12 +639,9 @@ pub async fn telegram_webhook(
 
 /// Confirm in the chat itself. Silence after pressing Start is indistinguishable
 /// from a broken integration, and this is the only surface the user is looking at.
-async fn send_telegram_reply(chat_id: i64, text: &str) {
-    let Ok(token) = std::env::var("TELEGRAM_BOT_TOKEN") else {
-        return;
-    };
+async fn send_telegram_reply(bot_token: &str, chat_id: i64, text: &str) {
     let _ = reqwest::Client::new()
-        .post(format!("https://api.telegram.org/bot{token}/sendMessage"))
+        .post(format!("https://api.telegram.org/bot{bot_token}/sendMessage"))
         .timeout(std::time::Duration::from_secs(5))
         .json(&json!({ "chat_id": chat_id, "text": text }))
         .send()
@@ -413,8 +674,8 @@ impl SubscriptionRow {
             project_name: self.project_name,
             project_slug: self.project_slug,
             org_id: self.org_id,
-            // No row means not subscribed, which reads as disabled rather than
-            // as a missing project.
+            // No row means not subscribed, which reads as disabled rather than as
+            // a missing project.
             enabled: self.enabled.unwrap_or(false),
             notify_statuses: self.notify_statuses,
             notify_comments: self.notify_comments,
@@ -430,6 +691,18 @@ impl SubscriptionRow {
     }
 }
 
+const SUBSCRIPTION_PROJECTION: &str = "\
+    SELECT p.id AS project_id, p.name AS project_name, p.slug AS project_slug, \
+           p.org_id, p.statuses, \
+           p.notify_statuses AS default_statuses, \
+           p.notify_comments AS default_comments, \
+           p.notify_issue_created AS default_issue_created, \
+           s.enabled, s.notify_statuses, s.notify_comments, \
+           s.notify_issue_created, s.channels \
+    FROM projects p \
+    LEFT JOIN project_notification_subscriptions s \
+      ON s.project_id = p.id AND s.user_id = $1 ";
+
 /// Every project the caller can see, subscribed or not.
 ///
 /// A LEFT JOIN, not an inner one: a settings screen listing only existing
@@ -440,20 +713,9 @@ pub async fn list_subscriptions(
 ) -> Result<Json<ApiResponse<Vec<ProjectSubscriptionView>>>, ApiErr> {
     let org_ids = user_org_ids(&auth).await?;
 
-    let rows = sqlx::query_as::<_, SubscriptionRow>(
-        "SELECT p.id AS project_id, p.name AS project_name, p.slug AS project_slug, \
-                p.org_id, p.statuses, \
-                p.notify_statuses AS default_statuses, \
-                p.notify_comments AS default_comments, \
-                p.notify_issue_created AS default_issue_created, \
-                s.enabled, s.notify_statuses, s.notify_comments, \
-                s.notify_issue_created, s.channels \
-         FROM projects p \
-         LEFT JOIN project_notification_subscriptions s \
-           ON s.project_id = p.id AND s.user_id = $1 \
-         WHERE p.org_id = ANY($2) \
-         ORDER BY p.org_id, p.name",
-    )
+    let rows = sqlx::query_as::<_, SubscriptionRow>(&format!(
+        "{SUBSCRIPTION_PROJECTION} WHERE p.org_id = ANY($2) ORDER BY p.org_id, p.name"
+    ))
     .bind(&auth.user_id)
     .bind(&org_ids)
     .fetch_all(&pool)
@@ -474,8 +736,7 @@ pub async fn update_subscription(
     let org_ids = user_org_ids(&auth).await?;
 
     // The project must be one the caller can see. Without this, any uuid would
-    // create a subscription row — and reveal by its success that the project
-    // exists.
+    // create a subscription row — and reveal by its success that it exists.
     let project: Option<(serde_json::Value,)> =
         sqlx::query_as("SELECT statuses FROM projects WHERE id = $1 AND org_id = ANY($2)")
             .bind(project_id)
@@ -490,9 +751,8 @@ pub async fn update_subscription(
         ));
     };
 
-    // Validate against this project's own workflow. A silently-ignored key is
-    // the worst outcome: the UI would show a notification enabled while nothing
-    // ever fires.
+    // Validate against this project's own workflow. A silently-ignored key is the
+    // worst outcome: the UI would show a notification enabled while nothing fires.
     if let Some(Some(requested)) = body.notify_statuses.as_ref() {
         let known: Vec<String> = statuses
             .as_array()
@@ -523,10 +783,9 @@ pub async fn update_subscription(
         }
     }
 
-    // `Option<Option<T>>` collapses here: the field absent leaves the stored
-    // value alone (`COALESCE`), an explicit null resets to "inherit the
-    // project". `$n::type` flags say which case applies, because a NULL bind
-    // alone cannot express the difference.
+    // `Option<Option<T>>` collapses here: the field absent leaves the stored value
+    // alone, an explicit null resets to "inherit the project". The boolean flags
+    // say which case applies, because a NULL bind alone cannot express it.
     let (statuses_set, statuses_val) = match body.notify_statuses {
         None => (false, None),
         Some(v) => (true, v.map(serde_json::Value::from)),
@@ -572,19 +831,9 @@ pub async fn update_subscription(
 
     // Read back through the same projection the list uses, so the client never
     // has to reconcile two shapes of the same object.
-    let row = sqlx::query_as::<_, SubscriptionRow>(
-        "SELECT p.id AS project_id, p.name AS project_name, p.slug AS project_slug, \
-                p.org_id, p.statuses, \
-                p.notify_statuses AS default_statuses, \
-                p.notify_comments AS default_comments, \
-                p.notify_issue_created AS default_issue_created, \
-                s.enabled, s.notify_statuses, s.notify_comments, \
-                s.notify_issue_created, s.channels \
-         FROM projects p \
-         LEFT JOIN project_notification_subscriptions s \
-           ON s.project_id = p.id AND s.user_id = $1 \
-         WHERE p.id = $2",
-    )
+    let row = sqlx::query_as::<_, SubscriptionRow>(&format!(
+        "{SUBSCRIPTION_PROJECTION} WHERE p.id = $2"
+    ))
     .bind(&auth.user_id)
     .bind(project_id)
     .fetch_one(&pool)
@@ -610,23 +859,27 @@ pub async fn delete_subscription(
     Ok(StatusCode::NO_CONTENT)
 }
 
+fn api_keys_have_no_person() -> ApiErr {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": "Not available to API keys",
+            "detail": "Notification preferences belong to a person, not a key.",
+        })),
+    )
+}
+
 /// Orgs the caller belongs to. A channel is the person's, so their subscriptions
 /// span every org they are a member of — the request's current org is not the
 /// boundary here.
 async fn user_org_ids(auth: &AuthUser) -> Result<Vec<String>, ApiErr> {
-    if auth.user_id.starts_with("apikey:") {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(json!({
-                "error": "Not available to API keys",
-                "detail": "Notification preferences belong to a person, not a key.",
-            })),
-        ));
+    if is_api_key(auth) {
+        return Err(api_keys_have_no_person());
     }
     let mut ids = fetch_user_org_ids(&auth.user_id).await.unwrap_or_default();
     // Clerk can be slow or down. Falling back to the request's org keeps the
-    // screen usable instead of showing an empty project list, which would read
-    // as "you have no projects".
+    // screen usable instead of showing an empty project list, which would read as
+    // "you have no projects".
     if ids.is_empty() {
         if let Some(org) = auth.org_id.clone() {
             ids.push(org);
@@ -654,12 +907,26 @@ pub struct Recipient {
 /// `COALESCE(s.x, p.x)` is the inheritance rule: a subscriber who expressed no
 /// opinion follows the project's setting as it evolves, and only an explicit
 /// value pins the behaviour.
+///
+/// `actor_identity` is never notified. Nobody needs to be told what they just
+/// did, and this is what keeps a feed readable in practice: an agent working
+/// through somebody's API key *is* that person, so `resolve_owner_identity`
+/// collapses `apikey:<uuid>` to its creator before the exclusion. Without it,
+/// running an agent on your own project turns your own notifications into spam.
 pub async fn resolve_recipients(
     pool: &PgPool,
     project_id: Uuid,
     event: &str,
     status_key: Option<&str>,
+    actor_identity: Option<&str>,
 ) -> Vec<Recipient> {
+    // Empty string rather than NULL: `<>` against NULL is NULL, which would
+    // silently drop every row and look exactly like "nobody subscribed".
+    let actor = match actor_identity {
+        Some(id) => crate::routes::comments::resolve_owner_identity(pool, id).await,
+        None => String::new(),
+    };
+
     let sql = "\
         SELECT c.user_id, c.channel, c.address \
         FROM project_notification_subscriptions s \
@@ -667,6 +934,7 @@ pub async fn resolve_recipients(
         JOIN user_notification_channels c ON c.user_id = s.user_id \
         WHERE s.project_id = $1 \
           AND s.enabled \
+          AND c.user_id <> $4 \
           AND (cardinality(s.channels) = 0 OR c.channel = ANY(s.channels)) \
           AND CASE $2 \
                 WHEN 'status_changed' THEN \
@@ -682,6 +950,7 @@ pub async fn resolve_recipients(
         .bind(project_id)
         .bind(event)
         .bind(status_key.unwrap_or_default())
+        .bind(&actor)
         .fetch_all(pool)
         .await
     {
@@ -708,7 +977,7 @@ mod tests {
             validate_address("telegram", "-1003803857627").unwrap(),
             "-1003803857627"
         );
-        // The three things people actually paste instead of a chat id.
+        // The three things people paste instead of a chat id.
         assert!(validate_address("telegram", "@rmzlb").is_err());
         assert!(validate_address("telegram", "https://t.me/rmzlb").is_err());
         assert!(validate_address("telegram", "").is_err());
@@ -741,5 +1010,35 @@ mod tests {
             crate::models::mask_address("email", "ramzi@baaton.dev"),
             "ra•••@baaton.dev"
         );
+    }
+
+    #[test]
+    fn random_tokens_fit_telegram_deep_links() {
+        let a = random_token().unwrap();
+        let b = random_token().unwrap();
+        assert_ne!(a, b, "two tokens must never collide");
+        // Telegram caps a start payload at 64 characters and accepts only
+        // [A-Za-z0-9_-]; a token outside that is a link that cannot be opened.
+        assert!(a.len() <= 64, "token too long for a deep link: {}", a.len());
+        assert!(
+            a.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+            "token outside Telegram's deep-link alphabet: {a}"
+        );
+    }
+
+    #[test]
+    fn webhook_url_follows_the_proxy_headers() {
+        let mut h = HeaderMap::new();
+        h.insert("host", "api.baaton.dev".parse().unwrap());
+        assert_eq!(public_base(&h).unwrap(), "https://api.baaton.dev");
+
+        // A proxy's own view wins: the internal host would build a webhook URL
+        // Telegram cannot reach.
+        h.insert("x-forwarded-host", "api.baaton.dev".parse().unwrap());
+        h.insert("x-forwarded-proto", "http".parse().unwrap());
+        assert_eq!(public_base(&h).unwrap(), "http://api.baaton.dev");
+
+        assert!(public_base(&HeaderMap::new()).is_none());
     }
 }

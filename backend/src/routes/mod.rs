@@ -176,9 +176,22 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
             put(notification_prefs::update_subscription)
                 .delete(notification_prefs::delete_subscription),
         )
-        // Telegram cannot present a Clerk token, so this one lives on the public
-        // prefix and authenticates with the secret header set via `setWebhook`.
-        .route("/public/telegram/webhook", post(notification_prefs::telegram_webhook))
+        // The bot lives in the database (migration 075), owned by the person who
+        // created it in @BotFather. Baaton registers the webhook itself, so
+        // bringing a bot is one paste and no deploy configuration.
+        .route(
+            "/me/telegram-bot",
+            get(notification_prefs::get_bot)
+                .post(notification_prefs::register_bot)
+                .delete(notification_prefs::delete_bot),
+        )
+        // Telegram cannot present a Clerk token, so this lives on the public
+        // prefix. The bot id in the path says who is speaking and that bot's own
+        // secret authenticates the call.
+        .route(
+            "/public/telegram/webhook/{bot_id}",
+            post(notification_prefs::telegram_webhook),
+        )
         // API Keys
         .route("/api-keys", get(api_keys::list).post(api_keys::create))
         .route("/api-keys/{id}", patch(api_keys::update).delete(api_keys::remove))
