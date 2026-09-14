@@ -72,7 +72,7 @@ pub struct UpdateProjectNotificationSettings {
 /// message someone, and a settings screen has no use for the full value. Only
 /// `address_masked` is serialized, which is also what lets the UI say "this is
 /// configured" without becoming a place to harvest ids.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UserNotificationChannelView {
     pub channel: String,
     pub address_masked: String,
@@ -81,6 +81,10 @@ pub struct UserNotificationChannelView {
     /// a wrong chat id fails silently forever, so unverified is the only warning
     /// anyone will ever get.
     pub verified: bool,
+    #[serde(default)]
+    pub telegram_thread_id: Option<i64>,
+    #[serde(default)]
+    pub telegram_bot_username: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -97,6 +101,8 @@ impl UserNotificationChannelRow {
         UserNotificationChannelView {
             address_masked: mask_address(&self.channel, &self.address),
             verified: self.verified_at.is_some(),
+            telegram_thread_id: None,
+            telegram_bot_username: None,
             channel: self.channel,
             created_at: self.created_at,
         }
@@ -128,6 +134,7 @@ pub fn mask_address(channel: &str, address: &str) -> String {
 #[derive(Debug, Deserialize)]
 pub struct UpsertUserNotificationChannel {
     pub address: String,
+    pub telegram_thread_id: Option<i64>,
 }
 
 /// What one person wants to hear about one project.
@@ -143,6 +150,7 @@ pub struct ProjectSubscriptionView {
     pub project_name: String,
     pub project_slug: String,
     pub org_id: String,
+    pub org_name: String,
     pub enabled: bool,
     pub notify_statuses: Option<serde_json::Value>,
     pub notify_comments: Option<bool>,

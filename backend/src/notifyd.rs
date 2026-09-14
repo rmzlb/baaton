@@ -23,6 +23,7 @@
 //! | `NOTIFYD_PUBLIC_URL` | base URL used to build the issue link |
 
 use serde_json::json;
+use futures::{stream, StreamExt};
 
 #[derive(Clone)]
 pub struct NotifydClient {
@@ -229,20 +230,48 @@ impl NotifydClient {
         }
         let client = self.clone();
         tokio::spawn(async move {
-            for r in recipients {
-                let mut body = json!({
-                    "channel": r.channel,
-                    "to": r.address,
-                    "body": text,
-                    "idempotency_key": format!("{key_base}-{}-{}", r.user_id, r.channel),
-                    "priority": "high",
-                });
-                if let Some(url) = url.as_ref() {
-                    body["url"] = json!(url);
+            stream::iter(recipients).for_each_concurrent(8, |r| {
+                let client = &client;
+                let text = &text;
+                let url = &url;
+                let key_base = &key_base;
+                async move {
+                    let mut body = json!({
+                        "channel": r.channel,
+                        "to": r.address,
+                        "body": text,
+                        "idempotency_key": format!("{key_base}-{}-{}", r.user_id, r.channel),
+                        "priority": "high",
+                    });
+                    if let Some(route_id) = r.telegram_route_id {
+                        body["chat"] = json!({"telegram_route_id": route_id});
+                    }
+                    if let Some(url) = url.as_ref() { body["url"] = json!(url); }
+                    client.post_send(body).await;
                 }
-                client.post_send(body).await;
-            }
+            }).await;
         });
+    }
+
+    pub async fn integration_request(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<serde_json::Value>,
+        webhook_secret: Option<&str>,
+    ) -> Result<serde_json::Value, (axum::http::StatusCode, axum::Json<serde_json::Value>)> {
+        use axum::{http::StatusCode, Json};
+        let unavailable = || (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "notifyd is unavailable; please retry"})));
+        let mut request = self.http.request(method, format!("{}{path}", self.base_url))
+            .header("x-api-key", &self.api_key);
+        if let Some(secret) = webhook_secret { request = request.header("x-telegram-bot-api-secret-token", secret); }
+        if let Some(body) = body { request = request.json(&body); }
+        let response = request.send().await.map_err(|_| unavailable())?;
+        let status = response.status();
+        if status == StatusCode::NO_CONTENT { return Ok(serde_json::Value::Null); }
+        let data = response.json::<serde_json::Value>().await.map_err(|_| unavailable())?;
+        if !status.is_success() { return Err((status, Json(data))); }
+        Ok(data)
     }
 
     async fn post_send(&self, body: serde_json::Value) {
@@ -260,8 +289,7 @@ impl NotifydClient {
             }
             Ok(resp) => {
                 let status = resp.status();
-                let text = resp.text().await.unwrap_or_default();
-                tracing::warn!(status = %status, body = %text, "notifyd.send.failed");
+                tracing::warn!(status = %status, "notifyd.send.failed");
             }
             Err(e) => {
                 tracing::warn!(error = %e, "notifyd.send.error");

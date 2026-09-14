@@ -211,6 +211,7 @@ fn on_status_changed(
             // shared room quiet.
             let recipients = crate::routes::notification_prefs::resolve_recipients(
                 &pool2,
+                &notifyd,
                 project_id,
                 "status_changed",
                 Some(&to_key),
@@ -1515,6 +1516,7 @@ pub async fn create(
             // subscriber's own settings already decided this for them.
             let recipients = crate::routes::notification_prefs::resolve_recipients(
                 &pool2,
+                &notifyd,
                 project_id,
                 "issue_created",
                 None,

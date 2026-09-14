@@ -409,6 +409,7 @@ pub async fn create(
             // still gets them when the project keeps the shared room quiet.
             let recipients = crate::routes::notification_prefs::resolve_recipients(
                 &pool2,
+                &notifyd,
                 project_id,
                 "comment_added",
                 None,
