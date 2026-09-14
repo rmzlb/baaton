@@ -2204,6 +2204,10 @@ pub async fn update(
     // reacts to, and `in_review → not_ok` is the one that needs a reason. The
     // last comment is that reason, so it travels with the notice instead of
     // making everyone open the board to find out why the ticket bounced.
+    //
+    // Filtered by the project's `notify_statuses` (migration 073). Announcing
+    // every transition, `todo → in_progress` included, is how a room gets muted
+    // in a week — and a muted room looks like coverage while delivering none.
     if status_changed {
         if let Some(ref notifyd) = notifyd {
             let pool2 = pool.clone();
@@ -2217,17 +2221,34 @@ pub async fn update(
             let to_key = issue.status.clone();
             let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
             tokio::spawn(async move {
-                let project: Option<(String, serde_json::Value)> =
-                    sqlx::query_as("SELECT name, statuses FROM projects WHERE id = $1")
-                        .bind(project_id)
-                        .fetch_optional(&pool2)
-                        .await
-                        .ok()
-                        .flatten();
-                let (project_name, statuses) = match project {
-                    Some((name, statuses)) => (Some(name), Some(statuses)),
-                    None => (None, None),
+                let project: Option<(String, serde_json::Value, serde_json::Value)> = sqlx::query_as(
+                    "SELECT name, statuses, notify_statuses FROM projects WHERE id = $1",
+                )
+                .bind(project_id)
+                .fetch_optional(&pool2)
+                .await
+                .ok()
+                .flatten();
+
+                let (project_name, statuses, notify_statuses) = match project {
+                    Some((name, statuses, notify)) => (Some(name), Some(statuses), notify),
+                    // No project row means no configuration to honour. Staying
+                    // silent is the safe default: the alternative is notifying on
+                    // transitions the project may have deliberately silenced.
+                    None => return,
                 };
+
+                let wanted = notify_statuses
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|k| k.as_str())
+                            .any(|k| k == to_key.as_str())
+                    })
+                    .unwrap_or(false);
+                if !wanted {
+                    return;
+                }
 
                 // Show what the board shows: a raw `not_ok` in the chat while
                 // the UI says "Not OK" makes the two look like two systems.

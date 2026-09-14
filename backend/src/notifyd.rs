@@ -65,6 +65,17 @@ pub struct StatusNotice {
 /// pointer to the thread, not the thread.
 const COMMENT_EXCERPT_CHARS: usize = 280;
 
+/// A new comment on an issue. The room wants the words, not just the fact that
+/// words exist, so the body travels with it under the same excerpt rule as a
+/// status change.
+pub struct CommentNotice {
+    pub issue: IssueNotice,
+    pub body: String,
+    /// Comment id, not issue id, for the idempotency key: a second comment on
+    /// the same issue is a second notification.
+    pub comment_id: uuid::Uuid,
+}
+
 impl NotifydClient {
     /// `None` when notifyd is not configured, which is the normal state of a
     /// deployment that does not use it.
@@ -124,6 +135,17 @@ impl NotifydClient {
             notice.to_status,
             notice.changed_at.timestamp_millis()
         );
+        tokio::spawn(async move {
+            client.send_telegram(text, url, key).await;
+        });
+    }
+
+    /// Announce a new comment, carrying the words themselves.
+    pub fn issue_commented(&self, notice: CommentNotice) {
+        let client = self.clone();
+        let text = notice.text();
+        let url = notice.issue.url(self.public_url.as_deref());
+        let key = format!("baaton-comment-{}", notice.comment_id);
         tokio::spawn(async move {
             client.send_telegram(text, url, key).await;
         });
@@ -200,6 +222,25 @@ impl StatusNotice {
             if !excerpt.is_empty() {
                 out.push_str(&format!("\n\n💬 {author}: {excerpt}"));
             }
+        }
+        out
+    }
+}
+
+impl CommentNotice {
+    /// The author leads the headline, because on a comment "who is talking" is
+    /// the first thing that decides whether this needs an answer.
+    fn text(&self) -> String {
+        let author = self
+            .issue
+            .actor
+            .as_deref()
+            .filter(|a| !a.trim().is_empty())
+            .unwrap_or("Quelqu'un");
+        let mut out = self.issue.text("New comment");
+        let excerpt = excerpt(&self.body);
+        if !excerpt.is_empty() {
+            out.push_str(&format!("\n\n💬 {author}: {excerpt}"));
         }
         out
     }
@@ -328,5 +369,33 @@ mod tests {
         assert!(out.ends_with('\u{2026}'));
         assert!(out.chars().count() <= COMMENT_EXCERPT_CHARS + 1);
         assert!(!out.contains("  "));
+    }
+
+    /// A comment notice carries the words: "someone commented" without the text
+    /// forces a round trip to the board for what is usually one sentence.
+    #[test]
+    fn comment_text_carries_the_body() {
+        let n = CommentNotice {
+            issue: notice(),
+            body: "Le total TTC est faux sur la ligne 3.".into(),
+            comment_id: uuid::Uuid::nil(),
+        };
+        assert_eq!(
+            n.text(),
+            "New comment \u{b7} SQX-304 \u{b7} Square \u{b7} by agent\nLe bouton d'export ne r\u{e9}pond plus\n\n\u{1f4ac} agent: Le total TTC est faux sur la ligne 3."
+        );
+    }
+
+    /// A missing author falls back rather than printing an empty "по: " segment.
+    #[test]
+    fn comment_text_survives_a_missing_author() {
+        let mut issue = notice();
+        issue.actor = None;
+        let n = CommentNotice {
+            issue,
+            body: "RAS".into(),
+            comment_id: uuid::Uuid::nil(),
+        };
+        assert!(n.text().ends_with("\u{1f4ac} Quelqu'un: RAS"));
     }
 }

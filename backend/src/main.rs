@@ -183,6 +183,10 @@ async fn main() -> anyhow::Result<()> {
             include_str!("../migrations/071_enforce_api_key_scopes.sql"),
         ),
         (72, include_str!("../migrations/072_share_links.sql")),
+        (
+            73,
+            include_str!("../migrations/073_project_notification_settings.sql"),
+        ),
     ];
 
     for &(version, sql) in migrations {

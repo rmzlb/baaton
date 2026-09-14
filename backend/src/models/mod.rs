@@ -37,7 +37,33 @@ pub struct Project {
     pub agent_runs_public_default: bool,
     pub github_repo_url: Option<String>,
     pub github_metadata: Option<serde_json::Value>,
+    /// Status keys whose transitions are announced in chat (migration 073).
+    /// Keys, not labels: labels are renameable, keys are what issues store.
+    pub notify_statuses: serde_json::Value,
+    pub notify_comments: bool,
+    pub notify_issue_created: bool,
     pub created_at: DateTime<Utc>,
+}
+
+/// What a project announces in chat. Split from `Project` so the settings screen
+/// can read and write only this, without a full project payload carrying tokens
+/// (`public_submit_token`) through a settings form.
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct ProjectNotificationSettings {
+    pub project_id: Uuid,
+    pub notify_statuses: serde_json::Value,
+    pub notify_comments: bool,
+    pub notify_issue_created: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProjectNotificationSettings {
+    /// Absent means "leave as is"; `Some([])` means "announce no transition".
+    /// The distinction matters: silencing every status is a legitimate choice
+    /// and must not be read as an omission that restores the default.
+    pub notify_statuses: Option<Vec<String>>,
+    pub notify_comments: Option<bool>,
+    pub notify_issue_created: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -10,7 +10,8 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{
-    ApiResponse, CreateProject, Project, ProjectAutoAssignSettings, UpdateProjectAutoAssignSettings,
+    ApiResponse, CreateProject, Project, ProjectAutoAssignSettings, ProjectNotificationSettings,
+    UpdateProjectAutoAssignSettings, UpdateProjectNotificationSettings,
 };
 use crate::routes::issues::fetch_user_org_ids;
 use crate::routes::sse::{broadcast_event, EventSender};
@@ -856,6 +857,154 @@ pub async fn update_auto_assign_settings(
     .bind(org_id)
     .bind(&body.auto_assign_mode)
     .bind(&body.default_assignee_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
+
+    match settings {
+        Some(s) => Ok(Json(ApiResponse::new(s))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )),
+    }
+}
+
+// ─── Chat notification settings ───────────────────────
+
+/// Read what this project announces in chat.
+pub async fn get_notification_settings(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<ProjectNotificationSettings>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
+
+    let settings = sqlx::query_as::<_, ProjectNotificationSettings>(
+        r#"
+        SELECT id AS project_id, notify_statuses, notify_comments, notify_issue_created
+        FROM projects
+        WHERE id = $1 AND org_id = $2
+        "#,
+    )
+    .bind(id)
+    .bind(org_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
+
+    match settings {
+        Some(s) => Ok(Json(ApiResponse::new(s))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )),
+    }
+}
+
+/// Change what this project announces in chat.
+///
+/// Every field is optional and absent means "unchanged", so the settings screen
+/// can toggle one switch without resending the rest and racing another tab.
+pub async fn update_notification_settings(
+    Extension(auth): Extension<AuthUser>,
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateProjectNotificationSettings>,
+) -> Result<Json<ApiResponse<ProjectNotificationSettings>>, (StatusCode, Json<serde_json::Value>)> {
+    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Organization required"})),
+        )
+    })?;
+
+    // Validate requested status keys against *this project's* statuses, not the
+    // core list: projects may define custom statuses, and a silently-ignored key
+    // is the worst outcome here — the UI would show a notification enabled while
+    // nothing ever fires.
+    let normalized: Option<Vec<String>> = match body.notify_statuses {
+        Some(ref requested) => {
+            let project_statuses: Option<serde_json::Value> =
+                sqlx::query_scalar("SELECT statuses FROM projects WHERE id = $1 AND org_id = $2")
+                    .bind(id)
+                    .bind(org_id)
+                    .fetch_optional(&pool)
+                    .await
+                    .map_err(|e| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({"error": e.to_string()})),
+                        )
+                    })?
+                    .flatten();
+
+            let known: Vec<String> = project_statuses
+                .as_ref()
+                .and_then(|s| s.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.get("key").and_then(|k| k.as_str()))
+                        .map(|k| k.to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let unknown: Vec<&String> = requested.iter().filter(|k| !known.contains(k)).collect();
+            if !unknown.is_empty() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": "Unknown status keys",
+                        "unknown": unknown,
+                        "hint": "notify_statuses holds status keys from this project's workflow, not labels.",
+                        "valid": known,
+                    })),
+                ));
+            }
+
+            // De-duplicate: the same key twice would notify twice per transition.
+            let mut seen: Vec<String> = Vec::with_capacity(requested.len());
+            for key in requested {
+                if !seen.contains(key) {
+                    seen.push(key.clone());
+                }
+            }
+            Some(seen)
+        }
+        None => None,
+    };
+
+    let settings = sqlx::query_as::<_, ProjectNotificationSettings>(
+        r#"
+        UPDATE projects
+        SET notify_statuses = COALESCE($3, notify_statuses),
+            notify_comments = COALESCE($4, notify_comments),
+            notify_issue_created = COALESCE($5, notify_issue_created)
+        WHERE id = $1 AND org_id = $2
+        RETURNING id AS project_id, notify_statuses, notify_comments, notify_issue_created
+        "#,
+    )
+    .bind(id)
+    .bind(org_id)
+    .bind(normalized.map(serde_json::Value::from))
+    .bind(body.notify_comments)
+    .bind(body.notify_issue_created)
     .fetch_optional(&pool)
     .await
     .map_err(|e| {

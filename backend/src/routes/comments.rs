@@ -96,6 +96,7 @@ pub async fn list_by_issue(
 pub async fn create(
     Extension(auth): Extension<AuthUser>,
     Extension(novu): Extension<Option<crate::novu::NovuClient>>,
+    Extension(notifyd): Extension<Option<crate::notifyd::NotifydClient>>,
     Extension(sse_tx): Extension<EventSender>,
     Extension(s3): Extension<Option<std::sync::Arc<crate::s3::S3State>>>,
     State(pool): State<PgPool>,
@@ -349,6 +350,85 @@ pub async fn create(
                     ).await;
                 }
             }
+        });
+    }
+
+    // ── Chat notification for the room ────────────────
+    // A comment is someone talking to you, so it is the most actionable of the
+    // three events — but only when someone else wrote it. Announcing your own
+    // comments back to you is the fastest way to make a room ignorable, and it
+    // would fire constantly here because agents comment through API keys.
+    //
+    // `resolve_owner_identity` is the right comparison: it collapses
+    // `apikey:<uuid>` to the human who created the key, so a comment posted by
+    // rmzlb's own key counts as his own and stays quiet.
+    if let Some(ref notifyd) = notifyd {
+        let pool2 = pool.clone();
+        let notifyd = notifyd.clone();
+        let comment_id = comment.id;
+        let comment_author = comment.author_name.clone();
+        let comment_body = comment.body.clone();
+        let author_identity = comment.author_id.clone();
+        tokio::spawn(async move {
+            type Row = (Uuid, String, String, Option<String>, bool, Option<String>, Vec<String>);
+            let row: Option<Row> = sqlx::query_as(
+                r#"
+                SELECT i.id, i.display_id, i.title, p.name, p.notify_comments,
+                       i.created_by_id, i.assignee_ids
+                FROM issues i
+                JOIN projects p ON p.id = i.project_id
+                WHERE i.id = $1
+                "#,
+            )
+            .bind(issue_id)
+            .fetch_optional(&pool2)
+            .await
+            .ok()
+            .flatten();
+
+            let Some((
+                iid,
+                display_id,
+                title,
+                project_name,
+                notify_comments,
+                creator_id,
+                assignee_ids,
+            )) = row
+            else {
+                return;
+            };
+            if !notify_comments {
+                return;
+            }
+
+            // The room is one shared channel, so "self-authored" means: nobody
+            // other than the commenter is involved in this ticket. If the author
+            // is the only party, the notice would be telling rmzlb what rmzlb
+            // just did.
+            let commenter = resolve_owner_identity(&pool2, &author_identity).await;
+            let mut others = false;
+            for uid in assignee_ids.into_iter().chain(creator_id) {
+                if resolve_owner_identity(&pool2, &uid).await != commenter {
+                    others = true;
+                    break;
+                }
+            }
+            if !others {
+                return;
+            }
+
+            notifyd.issue_commented(crate::notifyd::CommentNotice {
+                issue: crate::notifyd::IssueNotice {
+                    display_id,
+                    title,
+                    project_name,
+                    actor: Some(comment_author),
+                    issue_id: iid,
+                },
+                body: comment_body,
+                comment_id,
+            });
         });
     }
 
