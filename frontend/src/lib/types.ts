@@ -37,6 +37,12 @@ export interface UserNotificationChannel {
   created_at: string;
 }
 
+export interface TelegramBotInfo {
+  bot_username: string;
+  owned: boolean;
+  webhook_registered: boolean;
+}
+
 export interface TelegramLinkResult {
   deep_link: string;
   expires_at: string;

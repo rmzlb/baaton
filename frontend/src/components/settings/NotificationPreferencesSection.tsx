@@ -253,7 +253,7 @@ function GenericConnectPanel({
   );
 }
 
-function ChannelRow({
+export function ChannelRow({
   config,
   existing,
   onRefresh,
@@ -697,7 +697,7 @@ function ProjectSubscriptionRow({
 
 // ─── Subscriptions Section ────────────────────────────────────────────────────
 
-function SubscriptionsSection() {
+export function SubscriptionsSection() {
   const { t } = useTranslation();
   const apiClient = useApi();
   const queryClient = useQueryClient();

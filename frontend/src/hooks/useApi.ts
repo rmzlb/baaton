@@ -34,6 +34,7 @@ import type {
   Organization,
   OrgSettings,
   UserNotificationChannel,
+  TelegramBotInfo,
   TelegramLinkResult,
   ProjectSubscription,
   UpdateProjectSubscriptionBody,
@@ -937,6 +938,25 @@ export function useApi() {
         return api.public.post<Issue>(`/public/${slug}/submit`, body);
       },
     },
+    // ─── Telegram Bot ─────────────────────────────────
+    telegramBot: {
+      get: async (): Promise<TelegramBotInfo | null> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<TelegramBotInfo | null>('/me/telegram-bot', token);
+        }),
+      set: async (botToken: string): Promise<TelegramBotInfo> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.post<TelegramBotInfo>('/me/telegram-bot', { bot_token: botToken }, token);
+        }),
+      remove: async (): Promise<void> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete('/me/telegram-bot', token);
+        }),
+    },
+
     // ─── User Notification Preferences ──────────────
     notificationPrefs: {
       listChannels: async (): Promise<UserNotificationChannel[]> =>

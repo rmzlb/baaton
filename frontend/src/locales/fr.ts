@@ -2041,6 +2041,27 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'integrations.agentmail.feature2Title': 'Issue → E-mail',
   'integrations.agentmail.feature2Desc': 'Les changements de statut et commentaires déclenchent des notifications par e-mail.',
 
+  // ─── Intégration Telegram ──────────────────────────────────────────────────
+  'integrations.telegram.description': 'Reçois les notifications Baaton sur Telegram.',
+  'integrations.telegram.bot.title': 'Ton bot',
+  'integrations.telegram.bot.desc': 'Crée un bot sur @BotFather et colle son token. Baaton enregistre le webhook automatiquement.',
+  'integrations.telegram.bot.tokenPlaceholder': '123456:ABC-...',
+  'integrations.telegram.bot.save': 'Enregistrer',
+  'integrations.telegram.bot.owned': 'Ton bot',
+  'integrations.telegram.bot.sharedInstance': 'Bot partagé',
+  'integrations.telegram.bot.sharedInstanceHint': 'Baaton utilise un bot d\'instance partagé. Enregistre ton propre token pour un contrôle dédié.',
+  'integrations.telegram.bot.noBotHint': 'Aucun bot configuré. Colle un token depuis @BotFather.',
+  'integrations.telegram.bot.webhookOk': 'Webhook actif',
+  'integrations.telegram.bot.webhookDead': 'Webhook non enregistré — Telegram ne peut pas livrer de messages. Ré-enregistre ton bot pour corriger.',
+  'integrations.telegram.bot.deleteConfirm': 'Supprimer ce bot ? Les notifications Telegram s\'arrêtent immédiatement.',
+  'integrations.telegram.bot.errorGeneric': 'Impossible d\'enregistrer le bot. Réessaie.',
+  'integrations.telegram.bot.loadError': 'Impossible de charger le statut du bot.',
+  'integrations.telegram.channel.title': 'Ton compte',
+  'integrations.telegram.channel.desc': 'Relie ton compte Telegram pour que Baaton sache où envoyer tes notifications.',
+  'integrations.telegram.subs.title': 'Projets & événements',
+  'integrations.telegram.subs.desc': 'Choisis pour quels projets tu veux des notifications.',
+  'integrations.telegram.subs.needsChannel': 'Connecte d\'abord ton compte Telegram (étape 2 ci-dessus).',
+
   // ─── Run Cards publiques ───────────────────────────
   'publicRun.errorTitle': 'Run indisponible',
   'publicRun.backHome': 'Retour à Baaton',

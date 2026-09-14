@@ -1,8 +1,9 @@
-import { GitFork as Github, Mail, MessageSquare as Slack, Plug, Unplug, ExternalLink } from 'lucide-react';
+import { GitFork as Github, Mail, MessageSquare as Slack, Send, Plug, Unplug, ExternalLink } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
+import { TelegramCardContent, useTelegramStatus } from '@/components/telegram/TelegramCardContent';
 
 /* ── AgentMail flow diagram ─── */
 function AgentMailFlowDiagram() {
@@ -53,12 +54,14 @@ interface IntegrationCardProps {
   connecting?: boolean;
   children?: React.ReactNode;
   badge?: string;
+  /** Set to true for multi-step integrations that manage their own connect/disconnect UI */
+  hideAction?: boolean;
 }
 
 function IntegrationCard({
   icon, name, description,
   status, onConnect, onDisconnect, connecting,
-  children, badge,
+  children, badge, hideAction,
 }: IntegrationCardProps) {
   const { t } = useTranslation();
 
@@ -91,27 +94,29 @@ function IntegrationCard({
           </div>
           <p className="text-sm text-secondary mt-1">{description}</p>
         </div>
-        <div className="shrink-0">
-          {status === 'coming_soon' ? null : status === 'connected' ? (
-            <button
-              onClick={onDisconnect}
-              disabled={connecting}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-            >
-              <Unplug size={12} />
-              {t('integrations.disconnect')}
-            </button>
-          ) : (
-            <button
-              onClick={onConnect}
-              disabled={connecting}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-black text-xs font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50"
-            >
-              <Plug size={12} />
-              {connecting ? t('common.loading') : t('integrations.connect')}
-            </button>
-          )}
-        </div>
+        {!hideAction && (
+          <div className="shrink-0">
+            {status === 'coming_soon' ? null : status === 'connected' ? (
+              <button
+                onClick={onDisconnect}
+                disabled={connecting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+              >
+                <Unplug size={12} />
+                {t('integrations.disconnect')}
+              </button>
+            ) : (
+              <button
+                onClick={onConnect}
+                disabled={connecting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-black text-xs font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50"
+              >
+                <Plug size={12} />
+                {connecting ? t('common.loading') : t('integrations.connect')}
+              </button>
+            )}
+          </div>
+        )}
       </div>
       {children && (
         <div className="mt-4 pt-4 border-t border-border">
@@ -143,6 +148,8 @@ export default function Integrations() {
 
   const githubConnected = githubInstallation?.status === 'active';
 
+  const telegramStatus = useTelegramStatus();
+
   /* ── Slack status — shown as disconnected until API endpoint is available ── */
   const slackConnected = false;
   const slackIntegrations: unknown[] = [];
@@ -154,6 +161,17 @@ export default function Integrations() {
         <h1 className="text-xl font-bold text-primary">{t('integrations.title')}</h1>
         <p className="text-sm text-secondary mt-1">{t('integrations.subtitle')}</p>
       </div>
+
+      {/* Telegram */}
+      <IntegrationCard
+        icon={<Send size={20} className="text-[#2CA5E0]" style={{ color: '#2CA5E0' }} />}
+        name="Telegram"
+        description={t('integrations.telegram.description')}
+        status={telegramStatus}
+        hideAction
+      >
+        <TelegramCardContent />
+      </IntegrationCard>
 
       {/* GitHub */}
       <IntegrationCard

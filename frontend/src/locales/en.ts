@@ -2041,6 +2041,27 @@ As a [user], I want to [action] so that [benefit].
   'integrations.agentmail.feature2Title': 'Issue → Email',
   'integrations.agentmail.feature2Desc': 'Status changes and comments trigger email notifications to stakeholders.',
 
+  // ─── Telegram Integration ─────────────────────────────
+  'integrations.telegram.description': 'Receive Baaton notifications in Telegram.',
+  'integrations.telegram.bot.title': 'Your bot',
+  'integrations.telegram.bot.desc': 'Create a bot on @BotFather and paste its token. Baaton registers the webhook automatically.',
+  'integrations.telegram.bot.tokenPlaceholder': '123456:ABC-...',
+  'integrations.telegram.bot.save': 'Register',
+  'integrations.telegram.bot.owned': 'Your bot',
+  'integrations.telegram.bot.sharedInstance': 'Shared bot',
+  'integrations.telegram.bot.sharedInstanceHint': 'Baaton is using a shared instance bot. Register your own token for dedicated control.',
+  'integrations.telegram.bot.noBotHint': 'No bot configured yet. Paste a token from @BotFather.',
+  'integrations.telegram.bot.webhookOk': 'Webhook active',
+  'integrations.telegram.bot.webhookDead': 'Webhook not registered — Telegram cannot deliver any messages. Re-register your bot to fix.',
+  'integrations.telegram.bot.deleteConfirm': 'Remove this bot? Telegram notifications will stop immediately.',
+  'integrations.telegram.bot.errorGeneric': 'Could not register bot. Try again.',
+  'integrations.telegram.bot.loadError': 'Could not load bot status.',
+  'integrations.telegram.channel.title': 'Your account',
+  'integrations.telegram.channel.desc': 'Link your Telegram account so Baaton knows where to send your notifications.',
+  'integrations.telegram.subs.title': 'Projects & events',
+  'integrations.telegram.subs.desc': 'Choose which projects you want to receive notifications for.',
+  'integrations.telegram.subs.needsChannel': 'Connect your Telegram account first (step 2 above).',
+
   // ─── Public Run Cards ──────────────────────────────
   'publicRun.errorTitle': 'Run unavailable',
   'publicRun.backHome': 'Back to Baaton',
