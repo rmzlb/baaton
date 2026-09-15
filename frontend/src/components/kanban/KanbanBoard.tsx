@@ -88,14 +88,14 @@ export function KanbanBoard({
   } = useIssueContextMenu(statuses, onIssueClick);
   const { selectedIds, toggle: toggleSelect, selectAll, deselectAll } = useSelection();
   const mutations = useIssueMutations();
+
+  // ── User board density preference ─────────────────────────────────────────
   const density = useUIStore((s) => s.density);
+
+  // ── Filter / sort state ────────────────────────────────────────────────────
   const [filterTab, setFilterTab] = useState<FilterTab>('active');
   const [sortMode, setSortMode] = useState<SortMode>('created');
   const [searchQuery, setSearchQuery] = useState('');
-  const [isTight, setIsTight] = useState(false);
-  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([]);
-  const columnRefs = useRef<Map<string, HTMLElement>>(new Map());
-  const boardScrollRef = useRef<HTMLDivElement>(null);
   const [showSort, setShowSort] = useState(false);
 
   // Enhanced filters
@@ -103,6 +103,15 @@ export function KanbanBoard({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+
+  // ── Alt A: auto-tight layout ───────────────────────────────────────────────
+  const [isTight, setIsTight] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  /** Outer-div ref per column key — used for scroll-to and IntersectionObserver. */
+  const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // ── Alt B: persistent status strip ────────────────────────────────────────
+  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([]);
 
   const hasActiveFilters = selectedPriorities.length > 0 || selectedTags.length > 0 || selectedAssignees.length > 0 || selectedCategories.length > 0;
 
@@ -226,45 +235,6 @@ export function KanbanBoard({
     [sortMode],
   );
 
-  // isTight: recalculate whenever visible column count or window width changes
-  useEffect(() => {
-    const checkTight = () => {
-      setIsTight(visibleStatuses.length * 192 > window.innerWidth - 256);
-    };
-    checkTight();
-    const ro = new ResizeObserver(checkTight);
-    ro.observe(document.documentElement);
-    return () => ro.disconnect();
-  }, [visibleStatuses.length]);
-
-  // Track which columns are currently visible in the horizontal scroll area
-  useEffect(() => {
-    const scrollEl = boardScrollRef.current;
-    if (!scrollEl) return;
-    const refs = columnRefs.current;
-    if (refs.size === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        setVisibleColumnIds((prev) => {
-          const next = new Set(prev);
-          entries.forEach((entry) => {
-            const id = entry.target.getAttribute('data-column-id');
-            if (id) {
-              if (entry.isIntersecting) next.add(id);
-              else next.delete(id);
-            }
-          });
-          return Array.from(next);
-        });
-      },
-      { root: scrollEl, threshold: 0.3 },
-    );
-
-    refs.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, [visibleStatuses]);
-
   const issuesByStatus = useMemo(() => {
     return visibleStatuses.reduce(
       (acc, status) => {
@@ -276,6 +246,71 @@ export function KanbanBoard({
     );
   }, [visibleStatuses, filteredIssues, sortIssues]);
 
+  // ── Alt A: recompute isTight on viewport resize or column count change ─────
+  useEffect(() => {
+    const compute = () => setIsTight(visibleStatuses.length * 192 > window.innerWidth - 256);
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [visibleStatuses.length]);
+
+  // ── Alt B: track which columns are visible in the scroll viewport ──────────
+  useEffect(() => {
+    const root = scrollContainerRef.current;
+    if (!root) return;
+
+    // Reset visibility state and prune stale refs when the column set changes.
+    setVisibleColumnIds([]);
+    const validKeys = new Set(visibleStatuses.map((s) => s.key));
+    for (const key of Object.keys(columnRefs.current)) {
+      if (!validKeys.has(key)) delete columnRefs.current[key];
+    }
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        setVisibleColumnIds((prev) => {
+          const next = new Set(prev);
+          for (const entry of entries) {
+            // Identify the column by matching the target element against our ref map.
+            const id = Object.entries(columnRefs.current).find(
+              ([, el]) => el === entry.target,
+            )?.[0];
+            if (!id) continue;
+            if (entry.isIntersecting) next.add(id);
+            else next.delete(id);
+          }
+          return Array.from(next);
+        });
+      },
+      { root, threshold: 0.1 },
+    );
+
+    for (const el of Object.values(columnRefs.current)) {
+      if (el) io.observe(el);
+    }
+    return () => io.disconnect();
+  }, [visibleStatuses]);
+
+  const scrollToColumn = useCallback((columnId: string) => {
+    const el = columnRefs.current[columnId];
+    if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+  }, []);
+
+  /** Data fed into the StatusStrip — one entry per visible column. */
+  const stripColumns = useMemo(
+    () =>
+      visibleStatuses.map((s) => ({
+        id: s.key,
+        label: s.label,
+        count: (issuesByStatus[s.key] ?? []).length,
+        color: s.color,
+      })),
+    [visibleStatuses, issuesByStatus],
+  );
+
+  // ── DnD ────────────────────────────────────────────────────────────────────
+
   // Announce DnD results to screen readers
   const announceToScreenReader = useCallback((message: string) => {
     const announcer = document.getElementById('a11y-announcer');
@@ -285,22 +320,6 @@ export function KanbanBoard({
   }, []);
 
   const allIssueIds = useMemo(() => issues.map((i) => i.id), [issues]);
-
-  const stripColumns = useMemo(
-    () =>
-      visibleStatuses.map((s) => ({
-        id: s.key,
-        label: s.label,
-        count: (issuesByStatus[s.key] || []).length,
-        color: s.color,
-      })),
-    [visibleStatuses, issuesByStatus],
-  );
-
-  const handleStatusStripClick = useCallback((columnId: string) => {
-    const el = columnRefs.current.get(columnId);
-    if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-  }, []);
 
   // Stable callback so memoized KanbanCard doesn't re-render on every board render.
   const handleSelect = useCallback(
@@ -393,6 +412,8 @@ export function KanbanBoard({
     [issuesByStatus, moveIssueOptimistic, restoreIssues, addNotification, onMoveIssue, announceToScreenReader, issues, visibleStatuses, t],
   );
 
+  // ── Filter helpers ─────────────────────────────────────────────────────────
+
   const clearAllFilters = () => {
     setSelectedPriorities([]);
     setSelectedTags([]);
@@ -415,7 +436,7 @@ export function KanbanBoard({
 
   const toggleAssignee = (a: string) => {
     setSelectedAssignees((prev) =>
-      prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a],
+      prev.filter((x) => x !== a).concat(prev.includes(a) ? [] : [a]),
     );
   };
 
@@ -438,6 +459,8 @@ export function KanbanBoard({
     { key: 'created', label: t('kanban.created') },
     { key: 'updated', label: t('kanban.updated') },
   ];
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex h-full flex-col">
@@ -644,12 +667,14 @@ export function KanbanBoard({
         </div>
       </div>
 
-      {/* Status Strip — persistent navigation layer */}
-      <KanbanStatusStrip
-        columns={stripColumns}
-        visibleColumnIds={visibleColumnIds}
-        onColumnClick={handleStatusStripClick}
-      />
+      {/* Alt B — Persistent Status Strip: always visible when statuses are configured */}
+      {visibleStatuses.length > 0 && (
+        <KanbanStatusStrip
+          columns={stripColumns}
+          visibleColumnIds={visibleColumnIds}
+          onColumnClick={scrollToColumn}
+        />
+      )}
 
       {/* Board */}
       {issues.length === 0 && !searchQuery && !hasActiveFilters ? (
@@ -670,31 +695,34 @@ export function KanbanBoard({
         />
       ) : (
         <DragDropContext onDragEnd={handleDragEnd}>
-          <div ref={boardScrollRef} className="kanban-scroll-container flex flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth">
-            {visibleStatuses.map((status) => (
-              <Droppable key={status.key} droppableId={status.key}>
-                {(provided, snapshot) => (
-                  <KanbanColumn
-                    status={status}
-                    issues={issuesByStatus[status.key] || []}
-                    provided={provided}
-                    isDraggingOver={snapshot.isDraggingOver}
-                    onIssueClick={onIssueClick}
-                    onContextMenu={handleContextMenu}
-                    selectedIds={selectedIds}
-                    onSelect={handleSelect}
-                    onCreateIssue={onCreateIssue}
-                    projectTags={projectTags}
-                    density={isTight ? 'tight' : density}
-                    collapsed={isTight && (issuesByStatus[status.key] || []).length === 0}
-                    columnRef={(el) => {
-                      if (el) columnRefs.current.set(status.key, el);
-                      else columnRefs.current.delete(status.key);
-                    }}
-                  />
-                )}
-              </Droppable>
-            ))}
+          <div
+            ref={scrollContainerRef}
+            className="kanban-scroll-container flex flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth"
+          >
+            {visibleStatuses.map((status) => {
+              const colIssues = issuesByStatus[status.key] ?? [];
+              return (
+                <Droppable key={status.key} droppableId={status.key}>
+                  {(provided, snapshot) => (
+                    <KanbanColumn
+                      status={status}
+                      issues={colIssues}
+                      provided={provided}
+                      isDraggingOver={snapshot.isDraggingOver}
+                      onIssueClick={onIssueClick}
+                      onContextMenu={handleContextMenu}
+                      selectedIds={selectedIds}
+                      onSelect={handleSelect}
+                      onCreateIssue={onCreateIssue}
+                      projectTags={projectTags}
+                      density={isTight ? 'tight' : density}
+                      collapsed={colIssues.length === 0 && isTight}
+                      columnRef={(el) => { columnRefs.current[status.key] = el; }}
+                    />
+                  )}
+                </Droppable>
+              );
+            })}
           </div>
         </DragDropContext>
       )}
