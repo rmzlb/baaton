@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanStatusStrip } from './KanbanStatusStrip';
+import { getBoardLayout, getOffscreenSide, TIGHT_GAP, TIGHT_PADDING, type OffscreenSide } from './layout';
 import { IssueContextMenu, DeleteConfirmModal, useIssueContextMenu } from '@/components/shared/IssueContextMenu';
 import { BulkActionBar, useBulkKeyboardShortcuts } from '@/components/shared/BulkActionBar';
 import { useSelection } from '@/hooks/useSelection';
@@ -105,13 +106,14 @@ export function KanbanBoard({
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   // ── Alt A: auto-tight layout ───────────────────────────────────────────────
-  const [isTight, setIsTight] = useState(false);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [boardSize, setBoardSize] = useState({ width: 0, viewport: 0 });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  /** Outer-div ref per column key — used for scroll-to and IntersectionObserver. */
+  /** Outer-div ref per column key — used for horizontal navigation and clipping measurements. */
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // ── Alt B: persistent status strip ────────────────────────────────────────
-  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([]);
+  const [offscreenColumns, setOffscreenColumns] = useState<Record<string, OffscreenSide>>({});
 
   const hasActiveFilters = selectedPriorities.length > 0 || selectedTags.length > 0 || selectedAssignees.length > 0 || selectedCategories.length > 0;
 
@@ -246,55 +248,80 @@ export function KanbanBoard({
     );
   }, [visibleStatuses, filteredIssues, sortIssues]);
 
-  // ── Alt A: recompute isTight on viewport resize or column count change ─────
+  // Observe the actual board, including sidebar/AI-panel changes, not the window.
   useEffect(() => {
-    const compute = () => setIsTight(visibleStatuses.length * 192 > window.innerWidth - 256);
-    compute();
-    const ro = new ResizeObserver(compute);
-    ro.observe(document.documentElement);
-    return () => ro.disconnect();
-  }, [visibleStatuses.length]);
+    const root = boardRef.current;
+    if (!root) return;
+    const measure = () => setBoardSize({ width: root.clientWidth, viewport: window.innerWidth });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
 
-  // ── Alt B: track which columns are visible in the scroll viewport ──────────
+  const { isTight, columnWidth } = getBoardLayout({
+    containerWidth: boardSize.width,
+    viewportWidth: boardSize.viewport,
+    columnCount: visibleStatuses.length,
+    emptyColumnCount: visibleStatuses.filter((s) => !issuesByStatus[s.key]?.length).length,
+    density,
+  });
+  const hasBoard = issues.length > 0 && filteredIssues.length > 0;
+
+  // Ref callbacks run before this effect. Rebind when the empty state becomes a
+  // board as well as on filter/layout changes. Geometry tracks partial clipping
+  // and direction; an IntersectionObserver cannot detect fully-offscreen motion.
   useEffect(() => {
     const root = scrollContainerRef.current;
-    if (!root) return;
-
-    // Reset visibility state and prune stale refs when the column set changes.
-    setVisibleColumnIds([]);
-    const validKeys = new Set(visibleStatuses.map((s) => s.key));
-    for (const key of Object.keys(columnRefs.current)) {
-      if (!validKeys.has(key)) delete columnRefs.current[key];
+    if (!root) {
+      setOffscreenColumns({});
+      return;
     }
-
-    const io = new IntersectionObserver(
-      (entries) => {
-        setVisibleColumnIds((prev) => {
-          const next = new Set(prev);
-          for (const entry of entries) {
-            // Identify the column by matching the target element against our ref map.
-            const id = Object.entries(columnRefs.current).find(
-              ([, el]) => el === entry.target,
-            )?.[0];
-            if (!id) continue;
-            if (entry.isIntersecting) next.add(id);
-            else next.delete(id);
-          }
-          return Array.from(next);
-        });
-      },
-      { root, threshold: 0.1 },
-    );
-
-    for (const el of Object.values(columnRefs.current)) {
-      if (el) io.observe(el);
+    let frame = 0;
+    const measure = () => {
+      const bounds = root.getBoundingClientRect();
+      const next: Record<string, OffscreenSide> = {};
+      for (const status of visibleStatuses) {
+        const el = columnRefs.current[status.key];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        const side = getOffscreenSide(rect.left, rect.right, bounds.left, bounds.left + root.clientWidth);
+        if (side) next[status.key] = side;
+      }
+      setOffscreenColumns((prev) => JSON.stringify(prev) === JSON.stringify(next) ? prev : next);
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    measure();
+    const observer = new ResizeObserver(schedule);
+    observer.observe(root);
+    for (const status of visibleStatuses) {
+      const el = columnRefs.current[status.key];
+      if (el) observer.observe(el);
     }
-    return () => io.disconnect();
-  }, [visibleStatuses]);
+    root.addEventListener('scroll', schedule, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      root.removeEventListener('scroll', schedule);
+    };
+  }, [visibleStatuses, hasBoard, isTight, columnWidth]);
 
   const scrollToColumn = useCallback((columnId: string) => {
+    const root = scrollContainerRef.current;
     const el = columnRefs.current[columnId];
-    if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+    if (!root || !el) return;
+    const padding = parseFloat(getComputedStyle(root).paddingLeft) || 0;
+    root.scrollTo({
+      left: root.scrollLeft + el.getBoundingClientRect().left - root.getBoundingClientRect().left - padding,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    });
   }, []);
 
   /** Data fed into the StatusStrip — one entry per visible column. */
@@ -463,7 +490,7 @@ export function KanbanBoard({
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={boardRef} className="flex h-full min-h-0 min-w-0 flex-col">
       {/* Filter Bar */}
       <div className="relative flex flex-wrap items-center gap-1.5 md:gap-2 border-b border-border px-3 md:px-6 py-2 overflow-visible z-30">
         {/* Search */}
@@ -671,7 +698,7 @@ export function KanbanBoard({
       {visibleStatuses.length > 0 && (
         <KanbanStatusStrip
           columns={stripColumns}
-          visibleColumnIds={visibleColumnIds}
+          offscreenColumns={offscreenColumns}
           onColumnClick={scrollToColumn}
         />
       )}
@@ -697,7 +724,8 @@ export function KanbanBoard({
         <DragDropContext onDragEnd={handleDragEnd}>
           <div
             ref={scrollContainerRef}
-            className="kanban-scroll-container flex flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth"
+            className="kanban-scroll-container flex min-h-0 flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth"
+            style={isTight ? { gap: TIGHT_GAP, padding: TIGHT_PADDING } : undefined}
           >
             {visibleStatuses.map((status) => {
               const colIssues = issuesByStatus[status.key] ?? [];
@@ -716,6 +744,7 @@ export function KanbanBoard({
                       onCreateIssue={onCreateIssue}
                       projectTags={projectTags}
                       density={isTight ? 'tight' : density}
+                      tightWidth={columnWidth}
                       collapsed={colIssues.length === 0 && isTight}
                       columnRef={(el) => { columnRefs.current[status.key] = el; }}
                     />

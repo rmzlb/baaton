@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { Draggable, type DroppableProvided } from '@hello-pangea/dnd';
 import { Plus } from 'lucide-react';
 import { KanbanCard } from './KanbanCard';
+import { COLLAPSED_COLUMN_WIDTH } from './layout';
 import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
@@ -76,7 +77,8 @@ interface KanbanColumnProps {
    * Only applied when the column has 0 issues AND isTight in the board.
    */
   collapsed?: boolean;
-  /** Forward outer element ref to parent for IntersectionObserver. */
+  tightWidth?: number;
+  /** Forward the outer element ref for viewport measurements. */
   columnRef?: (el: HTMLDivElement | null) => void;
 }
 
@@ -114,6 +116,7 @@ export function KanbanColumn({
   projectTags,
   density: densityProp,
   collapsed = false,
+  tightWidth = 192,
   columnRef,
 }: KanbanColumnProps) {
   const { t } = useTranslation();
@@ -162,7 +165,7 @@ export function KanbanColumn({
         role="group"
         aria-label={`${status.label} — 0 issues (collapsed)`}
         className="flex h-full shrink-0 snap-center"
-        style={{ width: '40px', minWidth: '40px' }}
+        style={{ width: COLLAPSED_COLUMN_WIDTH, minWidth: COLLAPSED_COLUMN_WIDTH }}
       >
         <div
           ref={provided.innerRef}
@@ -183,7 +186,17 @@ export function KanbanColumn({
           >
             {status.label}
           </span>
-          <span className="text-[10px] font-medium text-muted">0</span>
+          <span className="text-[10px] font-medium text-muted tabular-nums">0</span>
+          {onCreateIssue && (
+            <button
+              type="button"
+              onClick={() => onCreateIssue(status.key)}
+              aria-label={t('kanban.addInStatus', { defaultValue: 'Add issue in {{status}}', status: status.label })}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+            >
+              <Plus size={14} aria-hidden="true" />
+            </button>
+          )}
           {provided.placeholder}
         </div>
       </div>
@@ -196,7 +209,8 @@ export function KanbanColumn({
       ref={columnRef}
       role="group"
       aria-label={`${status.label} — ${issues.length} issues`}
-      className={cn('flex h-full flex-col shrink-0 snap-center', COLUMN_WIDTHS[effectiveDensity])}
+      className={cn('flex h-full min-h-0 flex-col shrink-0 snap-center', COLUMN_WIDTHS[effectiveDensity])}
+      style={effectiveDensity === 'tight' ? { width: tightWidth, minWidth: tightWidth } : undefined}
     >
       {/* Column Header */}
       <div className={cn(
@@ -288,7 +302,7 @@ export function KanbanColumn({
                 onSelect={onSelect}
                 projectTags={projectTags}
                 index={index}
-                densityOverride={effectiveDensity === 'tight' ? 'compact' : undefined}
+                densityOverride={effectiveDensity}
               />
             )}
           </Draggable>

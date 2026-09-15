@@ -1,0 +1,60 @@
+export type BoardDensity = 'compact' | 'default' | 'spacious';
+export type OffscreenSide = 'left' | 'right';
+
+const NORMAL_COLUMN_WIDTH: Record<BoardDensity, number> = {
+  compact: 256,
+  default: 320,
+  spacious: 340,
+};
+
+// Shared with the board's inline spacing and the collapsed column width.
+export const COLLAPSED_COLUMN_WIDTH = 40;
+export const TIGHT_GAP = 8;
+export const TIGHT_PADDING = 12;
+const TIGHT_MIN_WIDTH = 176;
+const TIGHT_MAX_WIDTH = 192;
+
+export function getBoardLayout({
+  containerWidth,
+  viewportWidth,
+  columnCount,
+  emptyColumnCount,
+  density,
+}: {
+  containerWidth: number;
+  viewportWidth: number;
+  columnCount: number;
+  emptyColumnCount: number;
+  density: BoardDensity;
+}) {
+  const regularGap = viewportWidth >= 768 ? 16 : 12;
+  const regularPadding = viewportWidth >= 768 ? 24 : 12;
+  const regularWidth = columnCount * NORMAL_COLUMN_WIDTH[density]
+    + Math.max(0, columnCount - 1) * regularGap + 2 * regularPadding;
+  // Preserve the existing touch-sized, horizontally scrollable mobile board.
+  // Compare the *normal* layout, not the already-tight width (avoids oscillation).
+  const isTight = viewportWidth >= 640 && containerWidth > 0
+    && columnCount > 0 && regularWidth > containerWidth;
+  const emptyCount = Math.min(columnCount, Math.max(0, emptyColumnCount));
+  const filledCount = columnCount - emptyCount;
+  const availableForCards = containerWidth - 2 * TIGHT_PADDING
+    - Math.max(0, columnCount - 1) * TIGHT_GAP
+    - emptyCount * COLLAPSED_COLUMN_WIDTH;
+  const columnWidth = filledCount === 0 ? TIGHT_MAX_WIDTH : Math.max(
+    TIGHT_MIN_WIDTH,
+    Math.min(TIGHT_MAX_WIDTH, Math.floor(availableForCards / filledCount)),
+  );
+  return { isTight, columnWidth };
+}
+
+/** Horizontal clipping only; vertical card scrolling does not hide a column. */
+export function getOffscreenSide(
+  columnLeft: number,
+  columnRight: number,
+  viewportLeft: number,
+  viewportRight: number,
+): OffscreenSide | undefined {
+  if (columnLeft < viewportLeft - 1) return 'left';
+  if (columnRight > viewportRight + 1) return 'right';
+  return undefined;
+}

@@ -1,97 +1,59 @@
-import { ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from '@/hooks/useTranslation';
+import type { OffscreenSide } from './layout';
 
 export interface StatusStripColumn {
-  id: string;       // IssueStatus key
-  label: string;    // "Draft", "Backlog", etc.
+  id: string;
+  label: string;
   count: number;
-  color: string;    // hex color string
+  color: string;
 }
 
 interface StatusStripProps {
   columns: StatusStripColumn[];
-  visibleColumnIds: string[];       // columns currently intersecting the scroll viewport
+  offscreenColumns: Record<string, OffscreenSide>;
   onColumnClick: (columnId: string) => void;
 }
 
-/**
- * Persistent horizontal navigation strip that sits above the kanban columns.
- *
- * - Columns currently in the viewport get a highlighted background.
- * - Off-screen columns with tickets show an orange count + scroll-hint arrow.
- * - Click any item → smooth-scroll that column into view.
- * - The strip itself scrolls horizontally (hidden scrollbar) when cramped.
- */
-export function KanbanStatusStrip({
-  columns,
-  visibleColumnIds,
-  onColumnClick,
-}: StatusStripProps) {
-  const visibleSet = new Set(visibleColumnIds);
-
+/** All statuses stay discoverable: wrap rather than creating another hidden scroller. */
+export function KanbanStatusStrip({ columns, offscreenColumns, onColumnClick }: StatusStripProps) {
+  const { t } = useTranslation();
   return (
-    <div
-      className={cn(
-        'flex items-center gap-0.5 overflow-x-auto border-b border-border bg-surface',
-        'px-3 py-1 shrink-0',
-        // Hide scrollbar cross-browser
-        '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-      )}
+    <nav
+      aria-label={t('kanban.statusNavigation', { defaultValue: 'Board columns' })}
+      className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-border bg-surface px-3 py-1"
     >
       {columns.map((col) => {
-        const isVisible = visibleSet.has(col.id);
-        const isOffScreen = !isVisible;
-        const hasOffScreenTickets = isOffScreen && col.count > 0;
-
+        const side = offscreenColumns[col.id];
+        const hasOffscreenTickets = !!side && col.count > 0;
+        const Arrow = side === 'left' ? ChevronLeft : ChevronRight;
         return (
           <button
             key={col.id}
+            type="button"
             onClick={() => onColumnClick(col.id)}
-            title={`Go to ${col.label}`}
-            aria-label={`${col.label}: ${col.count} issues${isOffScreen ? ' (off screen)' : ''}`}
+            title={t('kanban.goToColumn', { defaultValue: 'Go to {{status}}', status: col.label })}
+            aria-label={t('kanban.columnIssues', {
+              defaultValue: '{{status}}: {{count}} issues',
+              status: col.label,
+              count: col.count,
+            })}
             className={cn(
-              'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium',
-              'transition-colors shrink-0 whitespace-nowrap',
-              isVisible
-                ? 'bg-surface-hover text-primary'
-                : 'text-secondary hover:text-primary hover:bg-surface-hover/60',
+              'flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-medium',
+              'transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30',
+              side ? 'text-secondary hover:bg-surface-hover hover:text-primary' : 'bg-surface-hover text-primary',
             )}
           >
-            {/* Status color dot */}
-            <span
-              className="h-1.5 w-1.5 rounded-full shrink-0"
-              style={{ backgroundColor: col.color }}
-              aria-hidden="true"
-            />
-
-            {/* Column label */}
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: col.color }} aria-hidden="true" />
             {col.label}
-
-            {/* Ticket count — orange when off-screen and non-zero */}
-            <span
-              className={cn(
-                'tabular-nums',
-                col.count === 0
-                  ? 'text-muted'
-                  : isOffScreen
-                  ? 'text-orange-400 font-semibold'
-                  : 'text-secondary',
-              )}
-            >
+            <span className={cn('tabular-nums', col.count === 0 ? 'text-muted' : hasOffscreenTickets ? 'font-semibold text-accent' : 'text-secondary')}>
               {col.count}
             </span>
-
-            {/* Scroll-hint chevron for off-screen columns that still have tickets */}
-            {hasOffScreenTickets && (
-              <ChevronRight
-                size={11}
-                className="text-orange-400 shrink-0 -ml-0.5"
-                aria-hidden="true"
-              />
-            )}
+            {hasOffscreenTickets && <Arrow size={12} className="shrink-0 text-accent" aria-hidden="true" />}
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }

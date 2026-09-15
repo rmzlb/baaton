@@ -343,21 +343,22 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
         role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
         style={provided.draggableProps.style}
         className={cn(
-          'group/card relative cursor-pointer rounded-sm bg-card ring-1 ring-foreground/12 px-2 py-1 will-change-transform transition-all duration-150 hover:ring-foreground/20',
+          'group/card relative min-h-9 cursor-pointer rounded-md bg-card ring-1 ring-foreground/12 px-2 py-2 will-change-transform transition-all duration-150 hover:ring-foreground/20',
           isDone && 'opacity-60',
           isDragging && 'shadow-lg rotate-1 scale-[1.02]',
           selected && 'ring-2 ring-accent/40',
           leftBorder,
         )}
       >
-        <div className="flex items-center gap-1 min-w-0">
+        {SelectCheckbox}
+        <div className="flex items-center gap-1.5 min-w-0">
           {isDone ? (
             <CheckCircle2 size={10} className="text-emerald-500 shrink-0" />
           ) : PriorityConfig ? (
             <PriorityConfig.icon size={10} className={cn(PriorityConfig.color, 'shrink-0')} />
           ) : null}
           <span className={cn(
-            'text-[11px] font-medium truncate flex-1 min-w-0',
+            'text-[12px] leading-4 font-medium line-clamp-2 flex-1 min-w-0',
             isDone ? 'line-through text-muted' : 'text-primary',
           )}>{issue.title}</span>
           {issue.assignee_ids.length > 0 && (
