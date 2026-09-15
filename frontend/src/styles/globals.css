@@ -577,6 +577,10 @@ body, .bg-transition {
 .issue-desc-prose h4 { font-size: 13px !important; font-weight: 500 !important; margin-top: 0.4em; margin-bottom: 0.1em; line-height: 1.3; }
 .issue-desc-prose h5,
 .issue-desc-prose h6 { font-size: 12px !important; font-weight: 500 !important; margin-top: 0.3em; margin-bottom: 0.1em; }
+/* Direct ProseMirror headings (covers novel-editor variant without class) */
+.issue-desc-prose .ProseMirror h1 { font-size: 16px !important; font-weight: 600 !important; margin-top: 0.5em; margin-bottom: 0.2em; }
+.issue-desc-prose .ProseMirror h2 { font-size: 15px !important; font-weight: 600 !important; margin-top: 0.4em; margin-bottom: 0.15em; }
+.issue-desc-prose .ProseMirror h3 { font-size: 13px !important; font-weight: 500 !important; margin-top: 0.35em; margin-bottom: 0.1em; }
 /* NotionEditor (novel-editor/ProseMirror) heading overrides inside drawer */
 .issue-desc-prose .novel-editor .ProseMirror h1 { font-size: 16px !important; font-weight: 600 !important; margin-top: 0.6em; margin-bottom: 0.2em; }
 .issue-desc-prose .novel-editor .ProseMirror h2 { font-size: 15px !important; font-weight: 600 !important; margin-top: 0.5em; margin-bottom: 0.15em; }

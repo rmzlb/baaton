@@ -201,7 +201,7 @@ export function KanbanColumn({
         'flex items-center justify-between px-1 border-b border-border/50',
         resolvedDensity === 'compact' ? 'mb-2 pb-1.5' : 'mb-3 pb-2',
       )}>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
           <div
             className={cn(
               'rounded-full shrink-0',
@@ -212,7 +212,7 @@ export function KanbanColumn({
           />
           <span className={cn(
             'font-medium text-gray-900 dark:text-primary',
-            resolvedDensity === 'compact' || tightWidth != null ? 'text-xs' : 'text-sm',
+            resolvedDensity === 'compact' || tightWidth != null ? 'text-xs truncate' : 'text-sm truncate',
           )}>
             {status.label}
           </span>

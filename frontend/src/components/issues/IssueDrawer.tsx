@@ -1092,7 +1092,7 @@ function DescriptionView({ description, editing, draft, hasUnsavedChanges, isSav
           )}
         </label>
         <div className="rounded-lg bg-surface border border-border overflow-hidden">
-          <div className="min-h-[160px]">
+          <div className="min-h-[160px] issue-desc-prose">
             <NotionEditor
               initialContent={draft}
               onChange={onDraftChange}
