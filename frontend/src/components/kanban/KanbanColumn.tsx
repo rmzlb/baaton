@@ -212,13 +212,13 @@ export function KanbanColumn({
           />
           <span className={cn(
             'font-medium text-gray-900 dark:text-primary',
-            resolvedDensity === 'compact' ? 'text-xs' : 'text-sm',
+            resolvedDensity === 'compact' || tightWidth != null ? 'text-xs' : 'text-sm',
           )}>
             {status.label}
           </span>
           <span className={cn(
             'px-1.5 py-0.5 rounded-full bg-foreground/8 text-secondary font-medium',
-            resolvedDensity === 'compact' ? 'text-[10px]' : 'text-xs',
+            resolvedDensity === 'compact' || tightWidth != null ? 'text-[10px]' : 'text-xs',
           )} aria-label={`${issues.length} issues`}>
             {issues.length}
           </span>
@@ -308,11 +308,11 @@ export function KanbanColumn({
             onClick={() => onCreateIssue?.(status.key)}
             className={cn(
               'w-full border border-dashed border-gray-200 dark:border-border rounded-lg flex flex-col items-center justify-center text-gray-400 dark:text-secondary hover:text-gray-600 dark:hover:text-primary hover:border-gray-300 dark:hover:border-accent hover:bg-white dark:hover:bg-surface transition-all group/empty',
-              resolvedDensity === 'compact' ? 'h-20' : 'h-32',
+              tightWidth != null ? 'h-14' : resolvedDensity === 'compact' ? 'h-20' : 'h-32',
             )}
           >
-            <Plus size={20} className="mb-2 text-gray-300 dark:text-muted group-hover/empty:text-gray-500 dark:group-hover/empty:text-secondary transition-colors" />
-            <span className="text-sm font-medium">{t('kanban.addIssue')}</span>
+            <Plus size={tightWidth != null ? 14 : 20} className="mb-1.5 text-gray-300 dark:text-muted group-hover/empty:text-gray-500 dark:group-hover/empty:text-secondary transition-colors" />
+            <span className={cn('font-medium', tightWidth != null ? 'text-[10px]' : 'text-sm')}>{t('kanban.addIssue')}</span>
           </button>
         )}
       </div>

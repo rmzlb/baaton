@@ -1141,10 +1141,12 @@ function DescriptionView({ description, editing, draft, hasUnsavedChanges, isSav
           ) : /^#{1,3}\s|^\*\*|^- |^```|^\|/.test(description.trim()) ? (
             <div className="issue-desc-prose"><MarkdownRenderer content={description} /></div>
           ) : (
-            <NotionEditor
-              initialContent={description}
-              editable={false}
-            />
+            <div className="issue-desc-prose">
+              <NotionEditor
+                initialContent={description}
+                editable={false}
+              />
+            </div>
           )}
         </div>
       ) : (

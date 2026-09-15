@@ -744,7 +744,7 @@ export function KanbanBoard({
                       onCreateIssue={onCreateIssue}
                       projectTags={projectTags}
                       density={density}
-                      tightWidth={isTight ? columnWidth : undefined}
+                      tightWidth={isTight ? (colIssues.length === 0 && !collapseEmpty ? Math.max(120, Math.floor(columnWidth * 0.65)) : columnWidth) : undefined}
                       collapsed={colIssues.length === 0 && isTight && collapseEmpty}
                       columnRef={(el) => { columnRefs.current[status.key] = el; }}
                     />
