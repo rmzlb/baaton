@@ -41,7 +41,7 @@ export function getBoardLayout({
 
   // On desktop (≥ 1280 px) keep every status column fully visible so every
   // status is always reachable as a drag-and-drop target — never collapse.
-  const isDesktop = viewportWidth >= 1280;
+  const isDesktop = viewportWidth >= 1024;
 
   if (isDesktop && isTight) {
     // Distribute space evenly across ALL columns (empty included).
