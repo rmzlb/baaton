@@ -455,14 +455,14 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
 
         {/* Title */}
         <h3 className={cn(
-          'text-sm font-medium leading-snug tracking-tight mb-2',
+          'text-[12px] font-medium leading-snug tracking-tight mb-2',
           isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
         )}>{issue.title}</h3>
 
         {/* Description preview */}
         {issue.description && !isDone && (() => {
           const preview = stripHtml(issue.description);
-          return preview ? <p className="text-xs text-gray-500 dark:text-muted leading-relaxed line-clamp-2 mb-3">{preview}</p> : null;
+          return preview ? <p className="text-[11px] text-gray-500 dark:text-muted leading-relaxed line-clamp-2 mb-3">{preview}</p> : null;
         })()}
 
         {/* Row 1: Type + tags */}
@@ -545,14 +545,14 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
 
       {/* Title */}
       <h3 className={cn(
-        'text-sm font-medium leading-snug tracking-tight line-clamp-2',
+        'text-[12px] font-medium leading-snug tracking-tight line-clamp-2',
         isDone ? 'line-through text-gray-400 dark:text-muted' : 'text-gray-900 dark:text-primary',
       )}>{issue.title}</h3>
 
       {/* Description preview */}
       {issue.description && !isDone && (() => {
         const preview = stripHtml(issue.description).slice(0, 80);
-        return preview ? <p className="text-xs text-muted leading-relaxed line-clamp-1 mt-1">{preview}</p> : null;
+        return preview ? <p className="text-[11px] text-muted leading-relaxed line-clamp-1 mt-1">{preview}</p> : null;
       })()}
 
       {/* Footer: type + tags + due | PR + assignee */}

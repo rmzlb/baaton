@@ -43,19 +43,27 @@ export function getBoardLayout({
   // status is always reachable as a drag-and-drop target — never collapse.
   const isDesktop = viewportWidth >= 1024;
 
-  if (isDesktop && isTight) {
-    // Distribute space evenly across ALL columns (empty included).
-    const availableForAll = containerWidth - 2 * TIGHT_PADDING
-      - Math.max(0, columnCount - 1) * TIGHT_GAP;
-    const columnWidth = Math.max(
-      MIN_DESKTOP_COL_WIDTH,
-      Math.floor(availableForAll / columnCount),
-    );
-    return { isTight, columnWidth, collapseEmpty: false };
-  }
-
   const emptyCount = Math.min(columnCount, Math.max(0, emptyColumnCount));
   const filledCount = columnCount - emptyCount;
+
+  if (isDesktop && isTight) {
+    // Filled columns get more space; empty columns are narrower but total fills width.
+    const availableForAll = containerWidth - 2 * TIGHT_PADDING
+      - Math.max(0, columnCount - 1) * TIGHT_GAP;
+    const EMPTY_RATIO = 0.45; // empty col = 45 % of filled col width
+    let columnWidth: number;
+    let emptyColumnWidth: number;
+    if (filledCount > 0 && emptyCount > 0) {
+      const raw = availableForAll / (filledCount + EMPTY_RATIO * emptyCount);
+      columnWidth = Math.max(MIN_DESKTOP_COL_WIDTH, Math.floor(raw));
+      emptyColumnWidth = Math.max(100, Math.floor(columnWidth * EMPTY_RATIO));
+    } else {
+      columnWidth = Math.max(MIN_DESKTOP_COL_WIDTH, Math.floor(availableForAll / columnCount));
+      emptyColumnWidth = columnWidth;
+    }
+    return { isTight, columnWidth, emptyColumnWidth, collapseEmpty: false };
+  }
+
   const availableForCards = containerWidth - 2 * TIGHT_PADDING
     - Math.max(0, columnCount - 1) * TIGHT_GAP
     - emptyCount * COLLAPSED_COLUMN_WIDTH;
@@ -63,9 +71,7 @@ export function getBoardLayout({
     TIGHT_MIN_WIDTH,
     Math.min(TIGHT_MAX_WIDTH, Math.floor(availableForCards / filledCount)),
   );
-  // On mobile/tablet in tight mode empty columns collapse to narrow strips;
-  // everywhere else (including non-tight desktop) all columns stay visible.
-  return { isTight, columnWidth, collapseEmpty: isTight && !isDesktop };
+  return { isTight, columnWidth, emptyColumnWidth: columnWidth, collapseEmpty: isTight && !isDesktop };
 }
 
 /** Horizontal clipping only; vertical card scrolling does not hide a column. */

@@ -263,7 +263,7 @@ export function KanbanBoard({
     };
   }, []);
 
-  const { isTight, columnWidth, collapseEmpty } = getBoardLayout({
+  const { isTight, columnWidth, emptyColumnWidth, collapseEmpty } = getBoardLayout({
     containerWidth: boardSize.width,
     viewportWidth: boardSize.viewport,
     columnCount: visibleStatuses.length,
@@ -311,7 +311,7 @@ export function KanbanBoard({
       observer.disconnect();
       root.removeEventListener('scroll', schedule);
     };
-  }, [visibleStatuses, hasBoard, isTight, columnWidth, collapseEmpty]);
+  }, [visibleStatuses, hasBoard, isTight, columnWidth, emptyColumnWidth, collapseEmpty]);
 
   const scrollToColumn = useCallback((columnId: string) => {
     const root = scrollContainerRef.current;
@@ -744,7 +744,7 @@ export function KanbanBoard({
                       onCreateIssue={onCreateIssue}
                       projectTags={projectTags}
                       density={density}
-                      tightWidth={isTight ? (colIssues.length === 0 && !collapseEmpty ? Math.max(120, Math.floor(columnWidth * 0.65)) : columnWidth) : undefined}
+                      tightWidth={isTight ? (colIssues.length === 0 && !collapseEmpty ? emptyColumnWidth : columnWidth) : undefined}
                       collapsed={colIssues.length === 0 && isTight && collapseEmpty}
                       columnRef={(el) => { columnRefs.current[status.key] = el; }}
                     />
