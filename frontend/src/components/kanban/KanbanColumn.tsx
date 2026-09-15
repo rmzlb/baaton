@@ -197,40 +197,50 @@ export function KanbanColumn({
       style={tightWidth != null ? { width: tightWidth, minWidth: tightWidth } : undefined}
     >
       {/* Column Header */}
-      <div className={cn(
-        'flex items-center justify-between px-1 border-b border-border/50',
-        resolvedDensity === 'compact' ? 'mb-2 pb-1.5' : 'mb-3 pb-2',
-      )}>
-        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-          <div
-            className={cn(
-              'rounded-full shrink-0',
-              resolvedDensity === 'compact' ? 'h-2 w-2' : 'h-2.5 w-2.5',
-            )}
-            style={{ backgroundColor: status.color }}
-            aria-hidden="true"
-          />
-          <span className={cn(
-            'font-medium text-gray-900 dark:text-primary',
-            resolvedDensity === 'compact' || tightWidth != null ? 'text-xs truncate' : 'text-sm truncate',
-          )}>
-            {status.label}
-          </span>
-          <span className={cn(
-            'px-1.5 py-0.5 rounded-full bg-foreground/8 text-secondary font-medium',
-            resolvedDensity === 'compact' || tightWidth != null ? 'text-[10px]' : 'text-xs',
-          )} aria-label={`${issues.length} issues`}>
-            {issues.length}
-          </span>
-        </div>
-        <button
-          onClick={() => onCreateIssue?.(status.key)}
-          aria-label={`${t('kanban.addIssue')} in ${status.label}`}
-          className="rounded-md p-1 text-gray-400 dark:text-secondary hover:text-gray-600 dark:hover:text-primary hover:bg-gray-50 dark:hover:bg-surface-hover transition-colors min-h-[28px] min-w-[28px] flex items-center justify-center"
+      {tightWidth != null && tightWidth < 115 && issues.length === 0 ? (
+        /* Very narrow tight empty column — dot only, no label or button */
+        <div
+          className={cn('flex items-center justify-center border-b border-border/50', resolvedDensity === 'compact' ? 'py-2 mb-2' : 'py-2.5 mb-3')}
+          title={`${status.label} — ${issues.length} issues`}
         >
-          <Plus size={resolvedDensity === 'compact' ? 14 : 16} aria-hidden="true" />
-        </button>
-      </div>
+          <div className="rounded-full h-2.5 w-2.5" style={{ backgroundColor: status.color }} aria-hidden="true" />
+        </div>
+      ) : (
+        <div className={cn(
+          'flex items-center justify-between px-1 border-b border-border/50',
+          resolvedDensity === 'compact' ? 'mb-2 pb-1.5' : 'mb-3 pb-2',
+        )}>
+          <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+            <div
+              className={cn(
+                'rounded-full shrink-0',
+                resolvedDensity === 'compact' ? 'h-2 w-2' : 'h-2.5 w-2.5',
+              )}
+              style={{ backgroundColor: status.color }}
+              aria-hidden="true"
+            />
+            <span className={cn(
+              'font-medium text-gray-900 dark:text-primary',
+              resolvedDensity === 'compact' || tightWidth != null ? 'text-xs truncate' : 'text-sm truncate',
+            )}>
+              {status.label}
+            </span>
+            <span className={cn(
+              'px-1.5 py-0.5 rounded-full bg-foreground/8 text-secondary font-medium',
+              resolvedDensity === 'compact' || tightWidth != null ? 'text-[10px]' : 'text-xs',
+            )} aria-label={`${issues.length} issues`}>
+              {issues.length}
+            </span>
+          </div>
+          <button
+            onClick={() => onCreateIssue?.(status.key)}
+            aria-label={`${t('kanban.addIssue')} in ${status.label}`}
+            className="rounded-md p-1 text-gray-400 dark:text-secondary hover:text-gray-600 dark:hover:text-primary hover:bg-gray-50 dark:hover:bg-surface-hover transition-colors min-h-[28px] min-w-[28px] flex items-center justify-center"
+          >
+            <Plus size={resolvedDensity === 'compact' ? 14 : 16} aria-hidden="true" />
+          </button>
+        </div>
+      )}
 
       {/* Sub-status filter chips */}
       {subStatuses && subStatusCounts && issues.length > 0 && (
