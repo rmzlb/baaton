@@ -440,6 +440,30 @@ async fn user_org_ids(auth: &AuthUser, user_id: &str) -> Result<Vec<String>, Api
 
 // ───────────────────── recipient resolution ─────────────────────
 
+const RECIPIENTS_SQL: &str = "\
+        SELECT s.user_id, c.channel, c.address \
+        FROM project_notification_subscriptions s \
+        JOIN projects p ON p.id = s.project_id \
+        CROSS JOIN LATERAL ( \
+          SELECT channel, address FROM user_notification_channels \
+           WHERE user_id = s.user_id AND channel <> 'telegram' \
+             AND (channel <> 'email' OR verified_at IS NOT NULL) \
+          UNION ALL SELECT 'telegram'::text, ''::text \
+        ) c \
+        WHERE s.project_id = $1 \
+          AND s.enabled \
+          AND ($2 <> 'comment_added' OR s.user_id <> $4) \
+          AND (cardinality(s.channels) = 0 OR c.channel = ANY(s.channels)) \
+          AND CASE $2 \
+                WHEN 'status_changed' THEN \
+                  COALESCE(s.notify_statuses, p.notify_statuses) @> to_jsonb($3::text) \
+                WHEN 'comment_added' THEN \
+                  COALESCE(s.notify_comments, p.notify_comments) \
+                WHEN 'issue_created' THEN \
+                  COALESCE(s.notify_issue_created, p.notify_issue_created) \
+                ELSE false \
+              END";
+
 /// One delivery: a person, a channel, an address.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Recipient {
@@ -468,11 +492,8 @@ struct TelegramRoute {
 /// opinion follows the project's setting as it evolves, and only an explicit
 /// value pins the behaviour.
 ///
-/// `actor_identity` is never notified. Nobody needs to be told what they just
-/// did, and this is what keeps a feed readable in practice: an agent working
-/// through somebody's API key *is* that person, so `resolve_owner_identity`
-/// collapses `apikey:<uuid>` to its creator before the exclusion. Without it,
-/// running an agent on your own project turns your own notifications into spam.
+/// Status transitions and issue creation include the actor. Only comments
+/// exclude their author, resolving API-key identities to their human owner.
 pub async fn resolve_recipients(
     pool: &PgPool,
     notifyd: &crate::notifyd::NotifydClient,
@@ -488,30 +509,7 @@ pub async fn resolve_recipients(
         None => String::new(),
     };
 
-    let sql = "\
-        SELECT s.user_id, c.channel, c.address \
-        FROM project_notification_subscriptions s \
-        JOIN projects p ON p.id = s.project_id \
-        CROSS JOIN LATERAL ( \
-          SELECT channel, address FROM user_notification_channels \
-           WHERE user_id = s.user_id AND channel <> 'telegram' \\n             AND (channel <> 'email' OR verified_at IS NOT NULL) \
-          UNION ALL SELECT 'telegram'::text, ''::text \
-        ) c \
-        WHERE s.project_id = $1 \
-          AND s.enabled \
-          AND ($2 <> 'comment_added' OR s.user_id <> $4) \
-          AND (cardinality(s.channels) = 0 OR c.channel = ANY(s.channels)) \
-          AND CASE $2 \
-                WHEN 'status_changed' THEN \
-                  COALESCE(s.notify_statuses, p.notify_statuses) @> to_jsonb($3::text) \
-                WHEN 'comment_added' THEN \
-                  COALESCE(s.notify_comments, p.notify_comments) \
-                WHEN 'issue_created' THEN \
-                  COALESCE(s.notify_issue_created, p.notify_issue_created) \
-                ELSE false \
-              END";
-
-    let mut recipients = match sqlx::query_as::<_, Recipient>(sql)
+    let mut recipients = match sqlx::query_as::<_, Recipient>(RECIPIENTS_SQL)
         .bind(project_id)
         .bind(event)
         .bind(status_key.unwrap_or_default())
@@ -567,6 +565,10 @@ pub async fn resolve_recipients(
     recipients
 }
 
+
+#[cfg(test)]
+#[path = "notification_prefs/tests.rs"]
+mod regression_tests;
 
 #[cfg(test)]
 mod tests {

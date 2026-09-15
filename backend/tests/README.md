@@ -19,6 +19,21 @@ Notable unit-test surfaces:
 - `routes::public_run_ssr::truncate_chars` — char-boundary-safe truncation for
   multibyte summaries (regression: French accents used to panic on byte slicing).
 
+## Recipient SQL regression
+
+`cargo test` checks the recipient query for accidental literal newline escapes.
+To execute the same production query against PostgreSQL, set `DATABASE_URL_TEST`
+to a disposable test database and run:
+
+```bash
+cargo test --bin baaton-api recipient_sql_postgres_regression -- --ignored
+```
+
+The test uses connection-local temporary tables, removed on disconnect. It
+checks Backlog/Not OK for self and other actors, status/project/channel filters,
+disabled subscriptions, comment self-exclusion and verified-email gating.
+It does not call Clerk, notifyd or external recipients.
+
 ## Running the smoke script
 
 ```bash
