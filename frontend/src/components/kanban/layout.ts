@@ -13,6 +13,9 @@ export const TIGHT_GAP = 8;
 export const TIGHT_PADDING = 12;
 const TIGHT_MIN_WIDTH = 176;
 const TIGHT_MAX_WIDTH = 192;
+/** Minimum column width on desktop — keeps all statuses reachable as drag targets
+ *  and lets ≥ 6 columns fit on a 13" screen (≈ 1440 px wide). */
+export const MIN_DESKTOP_COL_WIDTH = 160;
 
 export function getBoardLayout({
   containerWidth,
@@ -35,6 +38,22 @@ export function getBoardLayout({
   // Compare the *normal* layout, not the already-tight width (avoids oscillation).
   const isTight = viewportWidth >= 640 && containerWidth > 0
     && columnCount > 0 && regularWidth > containerWidth;
+
+  // On desktop (≥ 1280 px) keep every status column fully visible so every
+  // status is always reachable as a drag-and-drop target — never collapse.
+  const isDesktop = viewportWidth >= 1280;
+
+  if (isDesktop && isTight) {
+    // Distribute space evenly across ALL columns (empty included).
+    const availableForAll = containerWidth - 2 * TIGHT_PADDING
+      - Math.max(0, columnCount - 1) * TIGHT_GAP;
+    const columnWidth = Math.max(
+      MIN_DESKTOP_COL_WIDTH,
+      Math.floor(availableForAll / columnCount),
+    );
+    return { isTight, columnWidth, collapseEmpty: false };
+  }
+
   const emptyCount = Math.min(columnCount, Math.max(0, emptyColumnCount));
   const filledCount = columnCount - emptyCount;
   const availableForCards = containerWidth - 2 * TIGHT_PADDING
@@ -44,7 +63,9 @@ export function getBoardLayout({
     TIGHT_MIN_WIDTH,
     Math.min(TIGHT_MAX_WIDTH, Math.floor(availableForCards / filledCount)),
   );
-  return { isTight, columnWidth };
+  // On mobile/tablet in tight mode empty columns collapse to narrow strips;
+  // everywhere else (including non-tight desktop) all columns stay visible.
+  return { isTight, columnWidth, collapseEmpty: isTight && !isDesktop };
 }
 
 /** Horizontal clipping only; vertical card scrolling does not hide a column. */
