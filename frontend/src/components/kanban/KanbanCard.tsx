@@ -461,7 +461,7 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
 
         {/* Description preview */}
         {issue.description && !isDone && (() => {
-          const preview = stripHtml(issue.description).replace(/^#{1,6}\s+/gm,'').replace(/\*\*/g,'').trim();
+          const preview = stripHtml(issue.description).replace(/#{1,6}\s+/g,' ').replace(/\*\*/g,'').replace(/\s{2,}/g,' ').trim();
           return preview ? <p className="text-[11px] text-gray-500 dark:text-muted leading-relaxed line-clamp-2 mb-3">{preview}</p> : null;
         })()}
 
@@ -551,7 +551,7 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
 
       {/* Description preview */}
       {issue.description && !isDone && (() => {
-        const preview = stripHtml(issue.description).replace(/^#{1,6}\s+/gm,'').replace(/\*\*/g,'').trim().slice(0, 80);
+        const preview = stripHtml(issue.description).replace(/#{1,6}\s+/g,' ').replace(/\*\*/g,'').replace(/\s{2,}/g,' ').trim().slice(0, 80);
         return preview ? <p className="text-[11px] text-muted leading-relaxed line-clamp-1 mt-1">{preview}</p> : null;
       })()}
 
