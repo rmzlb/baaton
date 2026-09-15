@@ -289,28 +289,16 @@ fn on_status_changed(
             let pool2 = pool.clone();
             let notifyd = notifyd.clone();
             let creator_id = creator_id.clone();
-            let actor_id_owned = actor_id.to_string();
             let display_id = issue.display_id.clone();
             let title = issue.title.clone();
             let issue_id = issue.id;
             let project_id = issue.project_id;
             let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
             tokio::spawn(async move {
-                // Resolve both identities before comparing: apikey:<uuid>
-                // collapses to the key's human owner so the creator is not
-                // emailed about their own API-key action.
+                // Collapse apikey:<uuid> to the key's human owner so the
+                // creator's real identity is used for email/membership checks.
                 let resolved_creator =
                     crate::routes::comments::resolve_owner_identity(&pool2, &creator_id).await;
-                let resolved_actor =
-                    crate::routes::comments::resolve_owner_identity(&pool2, &actor_id_owned).await;
-                if resolved_creator == resolved_actor {
-                    tracing::trace!(
-                        creator = %resolved_creator,
-                        "creator.in_review.self_action; skip"
-                    );
-                    return;
-                }
-
                 // Verified addresses only: an unverified address was never
                 // proven to belong to this person and could expose project
                 // content to the wrong inbox.
@@ -1665,6 +1653,89 @@ pub async fn create(
                     project_name,
                     actor,
                     issue_id,
+                },
+                recipients,
+                announce_room,
+            );
+        });
+    }
+
+    // ── Status notification for initial subscribed status ──
+    // A ticket created directly in Backlog or Not OK has no prior
+    // status_changed event. Treat the initial status the same as a
+    // transition so subscribers hear about it regardless of how the
+    // ticket arrived (created-in-status vs moved-to-status).
+    if let Some(ref notifyd) = notifyd {
+        let to_key = issue.status.clone();
+        let pool2 = pool.clone();
+        let notifyd = notifyd.clone();
+        let display_id2 = issue.display_id.clone();
+        let title2 = issue.title.clone();
+        let actor2 = auth.display_name.clone();
+        let issue_id2 = issue.id;
+        let project_id2 = issue.project_id;
+        let actor_identity = auth.user_id.clone();
+        let created_at = issue.created_at;
+        tokio::spawn(async move {
+            let project: Option<(String, serde_json::Value, serde_json::Value)> =
+                sqlx::query_as(
+                    "SELECT name, statuses, notify_statuses FROM projects WHERE id = $1",
+                )
+                .bind(project_id2)
+                .fetch_optional(&pool2)
+                .await
+                .ok()
+                .flatten();
+            let (project_name2, statuses, notify_statuses) = match project {
+                Some((name, statuses, notify)) => (Some(name), Some(statuses), notify),
+                None => return,
+            };
+            let recipients = crate::routes::notification_prefs::resolve_recipients(
+                &pool2,
+                &notifyd,
+                project_id2,
+                "status_changed",
+                Some(&to_key),
+                Some(&actor_identity),
+            )
+            .await;
+            let announce_room = notify_statuses
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|k| k.as_str())
+                        .any(|k| k == to_key.as_str())
+                })
+                .unwrap_or(false);
+            if !announce_room && recipients.is_empty() {
+                return;
+            }
+            let label = |key: &str| -> String {
+                statuses
+                    .as_ref()
+                    .and_then(|s| s.as_array())
+                    .and_then(|arr| {
+                        arr.iter().find(|s| {
+                            s.get("key").and_then(|k| k.as_str()) == Some(key)
+                        })
+                    })
+                    .and_then(|s| s.get("label").and_then(|l| l.as_str()))
+                    .unwrap_or(key)
+                    .to_string()
+            };
+            notifyd.issue_status_changed(
+                crate::notifyd::StatusNotice {
+                    issue: crate::notifyd::IssueNotice {
+                        display_id: display_id2,
+                        title: title2,
+                        project_name: project_name2,
+                        actor: actor2,
+                        issue_id: issue_id2,
+                    },
+                    from_status: String::new(),
+                    to_status: label(&to_key),
+                    last_comment: None,
+                    changed_at: created_at,
                 },
                 recipients,
                 announce_room,
