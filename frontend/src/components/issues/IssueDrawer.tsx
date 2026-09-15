@@ -1135,7 +1135,7 @@ function DescriptionView({ description, editing, draft, hasUnsavedChanges, isSav
         >
           {description.trim().startsWith('<') ? (
             <div
-              className="prose prose-xs dark:prose-invert prose-headings:text-primary prose-p:text-secondary prose-li:text-secondary prose-a:text-accent prose-img:rounded-lg prose-img:border prose-img:border-border max-w-none text-[11px] leading-relaxed [&_img]:max-w-full [&_img]:my-2 [&_h1]:!text-sm [&_h1]:!font-semibold [&_h2]:!text-[13px] [&_h2]:!font-semibold [&_h3]:!text-[12px] [&_h3]:!font-medium [&_h4]:!text-[11px] [&_h4]:!font-medium [&_h5]:!text-[10px] [&_h6]:!text-[10px]"
+              className="issue-desc-prose prose prose-xs dark:prose-invert prose-headings:text-primary prose-p:text-secondary prose-li:text-secondary prose-a:text-accent prose-img:rounded-lg prose-img:border prose-img:border-border max-w-none text-[11px] leading-relaxed [&_img]:max-w-full [&_img]:my-2"
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description, { ADD_DATA_URI_TAGS: ['img'], ADD_ATTR: ['target'], ALLOWED_URI_REGEXP: /^(?:(?:https?|data):)/i }) }}
             />
           ) : /^#{1,3}\s|^\*\*|^- |^```|^\|/.test(description.trim()) ? (

@@ -116,7 +116,7 @@ export function KanbanColumn({
   projectTags,
   density: densityProp,
   collapsed = false,
-  tightWidth = 192,
+  tightWidth,
   columnRef,
 }: KanbanColumnProps) {
   const { t } = useTranslation();
@@ -194,7 +194,7 @@ export function KanbanColumn({
       role="group"
       aria-label={`${status.label} — ${issues.length} issues`}
       className={cn('flex h-full min-h-0 flex-col shrink-0 snap-center', COLUMN_WIDTHS[effectiveDensity])}
-      style={effectiveDensity === 'tight' ? { width: tightWidth, minWidth: tightWidth } : undefined}
+      style={tightWidth != null ? { width: tightWidth, minWidth: tightWidth } : undefined}
     >
       {/* Column Header */}
       <div className={cn(
