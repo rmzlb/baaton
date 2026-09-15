@@ -1139,7 +1139,7 @@ function DescriptionView({ description, editing, draft, hasUnsavedChanges, isSav
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(description, { ADD_DATA_URI_TAGS: ['img'], ADD_ATTR: ['target'], ALLOWED_URI_REGEXP: /^(?:(?:https?|data):)/i }) }}
             />
           ) : /^#{1,3}\s|^\*\*|^- |^```|^\|/.test(description.trim()) ? (
-            <MarkdownRenderer content={description} />
+            <div className="issue-desc-prose"><MarkdownRenderer content={description} /></div>
           ) : (
             <NotionEditor
               initialContent={description}
