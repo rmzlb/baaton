@@ -668,7 +668,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
           className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 h-[100dvh] w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border flex flex-col animate-slide-in-right overflow-hidden safe-pt safe-pb safe-pl safe-pr"
         >
           {/* Header skeleton */}
-          <div className="flex items-center justify-between border-b border-border px-4 py-2.5 shrink-0">
+          <div className="flex items-center justify-between border-b border-border px-3 sm:px-4 py-2 sm:py-2.5 shrink-0">
             <div className="flex items-center gap-2">
               <div className="h-4 w-4 animate-pulse rounded-sm bg-surface-hover" />
               <div className="h-4 w-20 animate-pulse rounded bg-surface-hover" />
@@ -706,10 +706,10 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
         className="fixed inset-0 md:inset-y-0 md:left-auto md:right-0 z-50 h-[100dvh] w-full md:w-[75vw] md:max-w-5xl bg-bg md:border-l border-border md:shadow-2xl flex flex-col animate-slide-in-right overflow-hidden safe-pt safe-pb safe-pl safe-pr"
       >
         {/* ── Header ── */}
-        <div className="flex items-center justify-between gap-2 border-b border-border px-3 sm:px-4 py-2.5 shrink-0">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-3 sm:px-4 py-2 sm:py-2.5 shrink-0">
           <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
             <TypeIcon size={14} className={cn(typeColor, 'shrink-0')} />
-            <CopyableId id={issue.display_id} className="text-sm font-semibold text-accent shrink-0" iconSize={12} />
+            <CopyableId id={issue.display_id} className="text-[11px] sm:text-sm font-semibold text-accent shrink-0" iconSize={12} />
             <span className="hidden sm:inline text-[10px] text-muted shrink-0">· {timeAgo(issue.created_at)}</span>
             {(issue.created_by_name || issue.created_by_id) && (() => {
               const creatorName = resolveUserName(issue.created_by_id, issue.created_by_name);
@@ -754,7 +754,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     }}
                     autoFocus
                     aria-label={t('issueDrawer.editTitle') || 'Edit issue title'}
-                    className="w-full bg-transparent text-lg font-semibold text-primary outline-none border-b border-accent pb-1"
+                    className="w-full bg-transparent text-sm sm:text-base lg:text-lg font-semibold text-primary outline-none border-b border-accent pb-1"
                   />
                 ) : (
                   <h2
@@ -763,7 +763,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                       setTitleDraft(issue.title);
                       setEditingTitle(true);
                     }}
-                    className="text-lg font-semibold text-primary cursor-pointer hover:text-accent transition-colors leading-snug"
+                    className="text-sm sm:text-base lg:text-lg font-semibold text-primary cursor-pointer hover:text-accent transition-colors leading-snug"
                   >
                     {issue.title}
                   </h2>
@@ -875,7 +875,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             </div>
 
             {/* RIGHT COLUMN: Metadata Sidebar */}
-            <div className="w-full shrink-0 space-y-3 bg-surface/30 p-4 pb-6 sm:p-5 md:w-56 md:p-3 md:pb-3 md:overflow-y-auto lg:w-60">
+            <div className="w-full shrink-0 space-y-3 bg-surface/30 p-2.5 pb-4 sm:p-4 sm:pb-5 md:w-56 md:p-3 md:pb-3 md:overflow-y-auto lg:w-60">
               <MetadataSidebar
                 issue={issue}
                 availableStatuses={availableStatuses}
