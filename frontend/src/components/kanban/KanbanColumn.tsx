@@ -66,18 +66,32 @@ interface KanbanColumnProps {
   onSelect?: (id: string, shiftKey: boolean) => void;
   onCreateIssue?: (statusKey: string) => void;
   projectTags?: ProjectTag[];
+  /**
+   * Override the UIStore density for this column.
+   * 'tight' = narrow width (192px) + compact cards. Empty columns collapse.
+   */
+  density?: 'compact' | 'default' | 'spacious' | 'tight';
+  /**
+   * When true, renders a 40 px vertical pill. DnD drops remain active.
+   * Only applied when the column has 0 issues AND isTight in the board.
+   */
+  collapsed?: boolean;
+  /** Forward outer element ref to parent for IntersectionObserver. */
+  columnRef?: (el: HTMLDivElement | null) => void;
 }
 
 const COLUMN_WIDTHS = {
   compact: 'w-[75vw] sm:w-64 min-w-[256px]',
   default: 'w-[80vw] sm:w-80 min-w-[320px]',
   spacious: 'w-[85vw] sm:w-[340px] min-w-[340px]',
+  tight: 'w-[60vw] sm:w-48 min-w-[192px]',
 } as const;
 
 const CARD_GAPS = {
   compact: 'space-y-1.5',
   default: 'space-y-3',
   spacious: 'space-y-3',
+  tight: 'space-y-1.5',
 } as const;
 
 // A column is mounted with every card in a `Draggable`. At 150+ cards the
@@ -98,9 +112,16 @@ export function KanbanColumn({
   onSelect,
   onCreateIssue,
   projectTags,
+  density: densityProp,
+  collapsed = false,
+  columnRef,
 }: KanbanColumnProps) {
   const { t } = useTranslation();
-  const density = useUIStore((s) => s.density);
+  const storeD = useUIStore((s) => s.density);
+  // Prop overrides UIStore; tight maps to compact for internal rendering logic
+  const effectiveDensity = densityProp ?? storeD;
+  const resolvedDensity = effectiveDensity === 'tight' ? 'compact' : effectiveDensity;
+
   const [activeSubFilter, setActiveSubFilter] = useState('all');
   const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
 
@@ -133,31 +154,73 @@ export function KanbanColumn({
   );
   const hiddenCount = filteredIssues.length - renderedIssues.length;
 
+  /* ── Collapsed: 40 px vertical pill, DnD still active ── */
+  if (collapsed) {
+    return (
+      <div
+        ref={columnRef}
+        role="group"
+        aria-label={`${status.label} — 0 issues (collapsed)`}
+        className="flex h-full shrink-0 snap-center"
+        style={{ width: '40px', minWidth: '40px' }}
+      >
+        <div
+          ref={provided.innerRef}
+          {...provided.droppableProps}
+          className={cn(
+            'flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-3 transition-colors',
+            isDraggingOver ? 'border-border bg-surface' : 'border-border/40 hover:border-border/70',
+          )}
+        >
+          <div
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ backgroundColor: status.color }}
+            aria-hidden="true"
+          />
+          <span
+            className="select-none text-[10px] font-medium text-secondary"
+            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.04em' }}
+          >
+            {status.label}
+          </span>
+          <span className="text-[10px] font-medium text-muted">0</span>
+          {provided.placeholder}
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Normal column ── */
   return (
-    <div role="group" aria-label={`${status.label} — ${issues.length} issues`} className={cn('flex h-full flex-col shrink-0 snap-center', COLUMN_WIDTHS[density])}>
+    <div
+      ref={columnRef}
+      role="group"
+      aria-label={`${status.label} — ${issues.length} issues`}
+      className={cn('flex h-full flex-col shrink-0 snap-center', COLUMN_WIDTHS[effectiveDensity])}
+    >
       {/* Column Header */}
       <div className={cn(
         'flex items-center justify-between px-1 border-b border-border/50',
-        density === 'compact' ? 'mb-2 pb-1.5' : 'mb-3 pb-2',
+        resolvedDensity === 'compact' ? 'mb-2 pb-1.5' : 'mb-3 pb-2',
       )}>
         <div className="flex items-center gap-2">
           <div
             className={cn(
               'rounded-full shrink-0',
-              density === 'compact' ? 'h-2 w-2' : 'h-2.5 w-2.5',
+              resolvedDensity === 'compact' ? 'h-2 w-2' : 'h-2.5 w-2.5',
             )}
             style={{ backgroundColor: status.color }}
             aria-hidden="true"
           />
           <span className={cn(
             'font-medium text-gray-900 dark:text-primary',
-            density === 'compact' ? 'text-xs' : 'text-sm',
+            resolvedDensity === 'compact' ? 'text-xs' : 'text-sm',
           )}>
             {status.label}
           </span>
           <span className={cn(
             'px-1.5 py-0.5 rounded-full bg-foreground/8 text-secondary font-medium',
-            density === 'compact' ? 'text-[10px]' : 'text-xs',
+            resolvedDensity === 'compact' ? 'text-[10px]' : 'text-xs',
           )} aria-label={`${issues.length} issues`}>
             {issues.length}
           </span>
@@ -167,13 +230,13 @@ export function KanbanColumn({
           aria-label={`${t('kanban.addIssue')} in ${status.label}`}
           className="rounded-md p-1 text-gray-400 dark:text-secondary hover:text-gray-600 dark:hover:text-primary hover:bg-gray-50 dark:hover:bg-surface-hover transition-colors min-h-[28px] min-w-[28px] flex items-center justify-center"
         >
-          <Plus size={density === 'compact' ? 14 : 16} aria-hidden="true" />
+          <Plus size={resolvedDensity === 'compact' ? 14 : 16} aria-hidden="true" />
         </button>
       </div>
 
       {/* Sub-status filter chips */}
       {subStatuses && subStatusCounts && issues.length > 0 && (
-        <div className={cn('flex items-center gap-1 px-1 flex-wrap', density === 'compact' ? 'mb-1.5' : 'mb-2')}>
+        <div className={cn('flex items-center gap-1 px-1 flex-wrap', resolvedDensity === 'compact' ? 'mb-1.5' : 'mb-2')}>
           {subStatuses.map((sub) => {
             const count = subStatusCounts[sub.key] || 0;
             const isActive = activeSubFilter === sub.key;
@@ -208,7 +271,7 @@ export function KanbanColumn({
         {...provided.droppableProps}
         className={cn(
           'flex-1 overflow-y-auto rounded-lg p-1 pb-10 transition-colors',
-          CARD_GAPS[density],
+          CARD_GAPS[effectiveDensity],
           isDraggingOver ? 'bg-surface' : '',
         )}
       >
@@ -225,6 +288,7 @@ export function KanbanColumn({
                 onSelect={onSelect}
                 projectTags={projectTags}
                 index={index}
+                densityOverride={effectiveDensity === 'tight' ? 'compact' : undefined}
               />
             )}
           </Draggable>
@@ -246,7 +310,7 @@ export function KanbanColumn({
             onClick={() => onCreateIssue?.(status.key)}
             className={cn(
               'w-full border border-dashed border-gray-200 dark:border-border rounded-lg flex flex-col items-center justify-center text-gray-400 dark:text-secondary hover:text-gray-600 dark:hover:text-primary hover:border-gray-300 dark:hover:border-accent hover:bg-white dark:hover:bg-surface transition-all group/empty',
-              density === 'compact' ? 'h-20' : 'h-32',
+              resolvedDensity === 'compact' ? 'h-20' : 'h-32',
             )}
           >
             <Plus size={20} className="mb-2 text-gray-300 dark:text-muted group-hover/empty:text-gray-500 dark:group-hover/empty:text-secondary transition-colors" />

@@ -80,6 +80,7 @@ interface KanbanCardProps {
   projectTags?: ProjectTag[];
   githubPrs?: GitHubPrLink[];
   index?: number;
+  densityOverride?: 'compact' | 'default' | 'spacious' | 'tight';
 }
 
 const typeConfig: Record<IssueType, { icon: typeof Bug; color: string; bg: string; label: string }> = {
@@ -297,7 +298,7 @@ function getLeftBorderClass(issue: Issue): string {
 // merge, or a re-render. This survives unmount/remount within the tab session.
 const animatedIssueIds = new Set<string>();
 
-export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, selected = false, onSelect, projectTags = [], githubPrs = [], index = 0 }: KanbanCardProps) {
+export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging, onClick, onContextMenu, selected = false, onSelect, projectTags = [], githubPrs = [], index = 0, densityOverride }: KanbanCardProps) {
   const handleClick = () => onClick(issue);
   // Play the entry animation only the first time this issue id is rendered.
   const playEntry = useMemo(() => {
@@ -322,6 +323,7 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
   ) : null;
 
   const density = useUIStore((s) => s.density);
+  const effectiveDensity = densityOverride ?? density;
   const crossOrg = useMemberResolutionContext();
   const clerk = useClerkMembers();
   const resolveUserName = crossOrg?.resolveUserName ?? clerk.resolveUserName;
@@ -332,8 +334,42 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
   const getTagColor = (tagName: string) => projectTags.find((t) => t.name === tagName)?.color || '#6b7280';
   const leftBorder = isDone ? '' : getLeftBorderClass(issue);
 
+  /* ── TIGHT ──────────────────────────────────────── */
+  if (effectiveDensity === 'tight') {
+    return (
+      <div
+        ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
+        onClick={handleClick} onContextMenu={handleContextMenu}
+        role="article" aria-roledescription="draggable item" aria-label={`${issue.display_id}: ${issue.title}`}
+        style={provided.draggableProps.style}
+        className={cn(
+          'group/card relative cursor-pointer rounded-sm bg-card ring-1 ring-foreground/12 px-2 py-1 will-change-transform transition-all duration-150 hover:ring-foreground/20',
+          isDone && 'opacity-60',
+          isDragging && 'shadow-lg rotate-1 scale-[1.02]',
+          selected && 'ring-2 ring-accent/40',
+          leftBorder,
+        )}
+      >
+        <div className="flex items-center gap-1 min-w-0">
+          {isDone ? (
+            <CheckCircle2 size={10} className="text-emerald-500 shrink-0" />
+          ) : PriorityConfig ? (
+            <PriorityConfig.icon size={10} className={cn(PriorityConfig.color, 'shrink-0')} />
+          ) : null}
+          <span className={cn(
+            'text-[11px] font-medium truncate flex-1 min-w-0',
+            isDone ? 'line-through text-muted' : 'text-primary',
+          )}>{issue.title}</span>
+          {issue.assignee_ids.length > 0 && (
+            <AssigneeAvatar id={issue.assignee_ids[0]} size={4} resolveUserName={resolveUserName} resolveUserAvatar={resolveUserAvatar} issueUpdatedAt={issue.updated_at} />
+          )}
+        </div>
+      </div>
+    );
+  }
+
   /* ── COMPACT ─────────────────────────────────────── */
-  if (density === 'compact') {
+  if (effectiveDensity === 'compact') {
     return (
       <div
         ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
@@ -386,7 +422,7 @@ export const KanbanCard = memo(function KanbanCard({ issue, provided, isDragging
   }
 
   /* ── SPACIOUS ────────────────────────────────────── */
-  if (density === 'spacious') {
+  if (effectiveDensity === 'spacious') {
     return (
       <div
         ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}

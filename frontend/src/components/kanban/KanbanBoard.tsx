@@ -9,6 +9,7 @@ import {
   Tag, User, ChevronDown, Layers, Inbox, SearchX,
 } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
+import { KanbanStatusStrip } from './KanbanStatusStrip';
 import { IssueContextMenu, DeleteConfirmModal, useIssueContextMenu } from '@/components/shared/IssueContextMenu';
 import { BulkActionBar, useBulkKeyboardShortcuts } from '@/components/shared/BulkActionBar';
 import { useSelection } from '@/hooks/useSelection';
@@ -89,6 +90,10 @@ export function KanbanBoard({
   const [filterTab, setFilterTab] = useState<FilterTab>('active');
   const [sortMode, setSortMode] = useState<SortMode>('created');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isTight, setIsTight] = useState(false);
+  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([]);
+  const columnRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const boardScrollRef = useRef<HTMLDivElement>(null);
   const [showSort, setShowSort] = useState(false);
 
   // Enhanced filters
@@ -219,6 +224,45 @@ export function KanbanBoard({
     [sortMode],
   );
 
+  // isTight: recalculate whenever visible column count or window width changes
+  useEffect(() => {
+    const checkTight = () => {
+      setIsTight(visibleStatuses.length * 192 > window.innerWidth - 256);
+    };
+    checkTight();
+    const ro = new ResizeObserver(checkTight);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [visibleStatuses.length]);
+
+  // Track which columns are currently visible in the horizontal scroll area
+  useEffect(() => {
+    const scrollEl = boardScrollRef.current;
+    if (!scrollEl) return;
+    const refs = columnRefs.current;
+    if (refs.size === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setVisibleColumnIds((prev) => {
+          const next = new Set(prev);
+          entries.forEach((entry) => {
+            const id = entry.target.getAttribute('data-column-id');
+            if (id) {
+              if (entry.isIntersecting) next.add(id);
+              else next.delete(id);
+            }
+          });
+          return Array.from(next);
+        });
+      },
+      { root: scrollEl, threshold: 0.3 },
+    );
+
+    refs.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [visibleStatuses]);
+
   const issuesByStatus = useMemo(() => {
     return visibleStatuses.reduce(
       (acc, status) => {
@@ -239,6 +283,22 @@ export function KanbanBoard({
   }, []);
 
   const allIssueIds = useMemo(() => issues.map((i) => i.id), [issues]);
+
+  const stripColumns = useMemo(
+    () =>
+      visibleStatuses.map((s) => ({
+        id: s.key,
+        label: s.label,
+        count: (issuesByStatus[s.key] || []).length,
+        color: s.color,
+      })),
+    [visibleStatuses, issuesByStatus],
+  );
+
+  const handleStatusStripClick = useCallback((columnId: string) => {
+    const el = columnRefs.current.get(columnId);
+    if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, []);
 
   // Stable callback so memoized KanbanCard doesn't re-render on every board render.
   const handleSelect = useCallback(
@@ -582,6 +642,13 @@ export function KanbanBoard({
         </div>
       </div>
 
+      {/* Status Strip — persistent navigation layer */}
+      <KanbanStatusStrip
+        columns={stripColumns}
+        visibleColumnIds={visibleColumnIds}
+        onColumnClick={handleStatusStripClick}
+      />
+
       {/* Board */}
       {issues.length === 0 && !searchQuery && !hasActiveFilters ? (
         <EmptyState
@@ -601,7 +668,7 @@ export function KanbanBoard({
         />
       ) : (
         <DragDropContext onDragEnd={handleDragEnd}>
-          <div className="kanban-scroll-container flex flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth">
+          <div ref={boardScrollRef} className="kanban-scroll-container flex flex-1 gap-3 md:gap-4 overflow-x-auto p-3 md:p-6 snap-x snap-mandatory md:snap-none scroll-smooth">
             {visibleStatuses.map((status) => (
               <Droppable key={status.key} droppableId={status.key}>
                 {(provided, snapshot) => (
@@ -616,6 +683,12 @@ export function KanbanBoard({
                     onSelect={handleSelect}
                     onCreateIssue={onCreateIssue}
                     projectTags={projectTags}
+                    densityOverride={isTight ? 'tight' : undefined}
+                    collapsed={isTight && (issuesByStatus[status.key] || []).length === 0}
+                    columnRef={(el) => {
+                      if (el) columnRefs.current.set(status.key, el);
+                      else columnRefs.current.delete(status.key);
+                    }}
                   />
                 )}
               </Droppable>
