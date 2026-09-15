@@ -8,7 +8,7 @@ const NORMAL_COLUMN_WIDTH: Record<BoardDensity, number> = {
 };
 
 // Shared with the board's inline spacing and the collapsed column width.
-export const COLLAPSED_COLUMN_WIDTH = 40;
+export const COLLAPSED_COLUMN_WIDTH = 20;
 export const TIGHT_GAP = 8;
 export const TIGHT_PADDING = 12;
 const TIGHT_MIN_WIDTH = 176;

@@ -157,46 +157,30 @@ export function KanbanColumn({
   );
   const hiddenCount = filteredIssues.length - renderedIssues.length;
 
-  /* ── Collapsed: 40 px vertical pill, DnD still active ── */
+  /* ── Collapsed: fine bande colorée, pas de texte vertical ── */
   if (collapsed) {
     return (
       <div
         ref={columnRef}
         role="group"
-        aria-label={`${status.label} — 0 issues (collapsed)`}
-        className="flex h-full shrink-0 snap-center"
+        aria-label={`${status.label} — 0 issues`}
+        title={status.label}
+        className="flex h-full shrink-0"
         style={{ width: COLLAPSED_COLUMN_WIDTH, minWidth: COLLAPSED_COLUMN_WIDTH }}
       >
         <div
           ref={provided.innerRef}
           {...provided.droppableProps}
           className={cn(
-            'flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-3 transition-colors',
-            isDraggingOver ? 'border-border bg-surface' : 'border-border/40 hover:border-border/70',
+            'flex flex-1 flex-col items-center rounded-md pt-2 transition-colors',
+            isDraggingOver ? 'bg-surface' : 'hover:bg-surface/40',
           )}
         >
           <div
-            className="h-2 w-2 shrink-0 rounded-full"
+            className="h-1.5 w-1.5 rounded-full opacity-60"
             style={{ backgroundColor: status.color }}
             aria-hidden="true"
           />
-          <span
-            className="select-none text-[10px] font-medium text-secondary"
-            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', letterSpacing: '0.04em' }}
-          >
-            {status.label}
-          </span>
-          <span className="text-[10px] font-medium text-muted tabular-nums">0</span>
-          {onCreateIssue && (
-            <button
-              type="button"
-              onClick={() => onCreateIssue(status.key)}
-              aria-label={t('kanban.addInStatus', { defaultValue: 'Add issue in {{status}}', status: status.label })}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-primary active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
-            >
-              <Plus size={14} aria-hidden="true" />
-            </button>
-          )}
           {provided.placeholder}
         </div>
       </div>
