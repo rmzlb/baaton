@@ -130,7 +130,7 @@ export function Sidebar() {
       {...(tourId ? { 'data-tour': tourId } : {})}
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-2 sm:gap-3 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-sm transition-colors min-h-[28px] sm:min-h-[36px]',
+          'flex items-center gap-2 sm:gap-3 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] md:text-xs transition-colors min-h-[26px] sm:min-h-[34px]',
           isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
           isCompact && 'justify-center px-0',
         )
@@ -160,7 +160,7 @@ export function Sidebar() {
 
   const ExtLink = ({ href, icon: Icon, label, isExternal }: { href: string; icon: any; label: string; isExternal?: boolean }) => {
     const cls = cn(
-      'flex items-center gap-2 sm:gap-3 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-sm transition-colors min-h-[26px] sm:min-h-[32px] text-muted hover:bg-surface hover:text-secondary',
+      'flex items-center gap-2 sm:gap-3 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] md:text-xs transition-colors min-h-[24px] sm:min-h-[30px] text-muted hover:bg-surface hover:text-secondary',
       isCompact && 'justify-center px-0',
     );
     if (isExternal) {
@@ -214,7 +214,7 @@ export function Sidebar() {
               <PixelTanuki size={isCompact ? 28 : 24} />
             </div>
             {!isCompact && (
-              <span className="font-display text-[11px] sm:text-sm font-bold text-primary uppercase tracking-wide truncate">Baaton</span>
+              <span className="font-display text-[10px] sm:text-[11px] md:text-xs font-bold text-primary uppercase tracking-wide truncate">Baaton</span>
             )}
           </Link>
           <div className="flex items-center gap-0.5 shrink-0">
@@ -278,7 +278,7 @@ export function Sidebar() {
                   onClick={closeMobile}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-2 sm:gap-3 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-sm transition-colors min-h-[26px] sm:min-h-[32px]',
+                      'flex items-center gap-2 sm:gap-3 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-[11px] md:text-xs transition-colors min-h-[24px] sm:min-h-[30px]',
                       isActive ? 'bg-surface-hover text-primary' : 'text-secondary hover:bg-surface hover:text-primary',
                     )
                   }
