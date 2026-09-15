@@ -16,6 +16,7 @@ import { useSelection } from '@/hooks/useSelection';
 import { useIssueMutations } from '@/hooks/useIssueMutations';
 import { useIssuesStore } from '@/stores/issues';
 import { useNotificationStore } from '@/stores/notifications';
+import { useUIStore } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
 import { computeRankBetween } from '@/lib/rank';
@@ -87,6 +88,7 @@ export function KanbanBoard({
   } = useIssueContextMenu(statuses, onIssueClick);
   const { selectedIds, toggle: toggleSelect, selectAll, deselectAll } = useSelection();
   const mutations = useIssueMutations();
+  const density = useUIStore((s) => s.density);
   const [filterTab, setFilterTab] = useState<FilterTab>('active');
   const [sortMode, setSortMode] = useState<SortMode>('created');
   const [searchQuery, setSearchQuery] = useState('');
@@ -683,7 +685,7 @@ export function KanbanBoard({
                     onSelect={handleSelect}
                     onCreateIssue={onCreateIssue}
                     projectTags={projectTags}
-                    densityOverride={isTight ? 'tight' : undefined}
+                    density={isTight ? 'tight' : density}
                     collapsed={isTight && (issuesByStatus[status.key] || []).length === 0}
                     columnRef={(el) => {
                       if (el) columnRefs.current.set(status.key, el);
