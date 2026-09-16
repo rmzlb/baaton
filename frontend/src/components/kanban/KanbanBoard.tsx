@@ -9,8 +9,7 @@ import {
   Tag, User, ChevronDown, Layers, Inbox, SearchX,
 } from 'lucide-react';
 import { KanbanColumn } from './KanbanColumn';
-import { KanbanStatusStrip } from './KanbanStatusStrip';
-import { getBoardLayout, getOffscreenSide, TIGHT_GAP, TIGHT_PADDING, type OffscreenSide } from './layout';
+import { getBoardLayout, TIGHT_GAP, TIGHT_PADDING } from './layout';
 import { IssueContextMenu, DeleteConfirmModal, useIssueContextMenu } from '@/components/shared/IssueContextMenu';
 import { BulkActionBar, useBulkKeyboardShortcuts } from '@/components/shared/BulkActionBar';
 import { useSelection } from '@/hooks/useSelection';
@@ -111,9 +110,6 @@ export function KanbanBoard({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   /** Outer-div ref per column key — used for horizontal navigation and clipping measurements. */
   const columnRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
-  // ── Alt B: persistent status strip ────────────────────────────────────────
-  const [offscreenColumns, setOffscreenColumns] = useState<Record<string, OffscreenSide>>({});
 
   const hasActiveFilters = selectedPriorities.length > 0 || selectedTags.length > 0 || selectedAssignees.length > 0 || selectedCategories.length > 0;
 
@@ -271,70 +267,6 @@ export function KanbanBoard({
     density,
   });
   const hasBoard = issues.length > 0 && filteredIssues.length > 0;
-
-  // Ref callbacks run before this effect. Rebind when the empty state becomes a
-  // board as well as on filter/layout changes. Geometry tracks partial clipping
-  // and direction; an IntersectionObserver cannot detect fully-offscreen motion.
-  useEffect(() => {
-    const root = scrollContainerRef.current;
-    if (!root) {
-      setOffscreenColumns({});
-      return;
-    }
-    let frame = 0;
-    const measure = () => {
-      const bounds = root.getBoundingClientRect();
-      const next: Record<string, OffscreenSide> = {};
-      for (const status of visibleStatuses) {
-        const el = columnRefs.current[status.key];
-        if (!el) continue;
-        const rect = el.getBoundingClientRect();
-        const side = getOffscreenSide(rect.left, rect.right, bounds.left, bounds.left + root.clientWidth);
-        if (side) next[status.key] = side;
-      }
-      setOffscreenColumns((prev) => JSON.stringify(prev) === JSON.stringify(next) ? prev : next);
-    };
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    };
-    measure();
-    const observer = new ResizeObserver(schedule);
-    observer.observe(root);
-    for (const status of visibleStatuses) {
-      const el = columnRefs.current[status.key];
-      if (el) observer.observe(el);
-    }
-    root.addEventListener('scroll', schedule, { passive: true });
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-      root.removeEventListener('scroll', schedule);
-    };
-  }, [visibleStatuses, hasBoard, isTight, columnWidth, emptyColumnWidth, collapseEmpty]);
-
-  const scrollToColumn = useCallback((columnId: string) => {
-    const root = scrollContainerRef.current;
-    const el = columnRefs.current[columnId];
-    if (!root || !el) return;
-    const padding = parseFloat(getComputedStyle(root).paddingLeft) || 0;
-    root.scrollTo({
-      left: root.scrollLeft + el.getBoundingClientRect().left - root.getBoundingClientRect().left - padding,
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-    });
-  }, []);
-
-  /** Data fed into the StatusStrip — one entry per visible column. */
-  const stripColumns = useMemo(
-    () =>
-      visibleStatuses.map((s) => ({
-        id: s.key,
-        label: s.label,
-        count: (issuesByStatus[s.key] ?? []).length,
-        color: s.color,
-      })),
-    [visibleStatuses, issuesByStatus],
-  );
 
   // ── DnD ────────────────────────────────────────────────────────────────────
 
@@ -693,15 +625,6 @@ export function KanbanBoard({
           )}
         </div>
       </div>
-
-      {/* Alt B — Persistent Status Strip: always visible when statuses are configured */}
-      {visibleStatuses.length > 0 && (
-        <KanbanStatusStrip
-          columns={stripColumns}
-          offscreenColumns={offscreenColumns}
-          onColumnClick={scrollToColumn}
-        />
-      )}
 
       {/* Board */}
       {issues.length === 0 && !searchQuery && !hasActiveFilters ? (
