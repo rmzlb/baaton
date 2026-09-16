@@ -3,9 +3,9 @@ import { NavLink, useLocation, Link } from 'react-router-dom';
 import { UserButton, OrganizationSwitcher } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  LayoutDashboard, Kanban, PanelLeftClose, PanelLeft, X,
+  LayoutDashboard, Kanban, PanelLeftClose, PanelLeft, X, ChevronRight,
   Sun, Moon, CheckSquare, Layers, Globe, Target, Zap, Eye, Inbox,
-  CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink, KeyRound, Search,
+  CalendarRange, BarChart3, Webhook, BookOpen, MessageSquare, ExternalLink, KeyRound,
   Flag, Workflow, CreditCard, Sparkles, Shield, Plug, Brain, LayoutTemplate,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui';
@@ -64,6 +64,13 @@ export function Sidebar() {
 
   const isCompact = (collapsed || aiPanelOpen) && !mobileOpen;
 
+  // Auto-expand the section that contains the current route
+  const _planPaths = ['/milestones', '/roadmap', '/initiatives', '/memory', '/sprints'];
+  const _settingsPaths = ['/analytics', '/webhooks', '/api-keys', '/billing', '/admin', '/automations', '/integrations', '/templates'];
+  const [planExpanded, setPlanExpanded] = useState(() => _planPaths.some(p => location.pathname.startsWith(p)));
+  const [settingsExpanded, setSettingsExpanded] = useState(() => _settingsPaths.some(p => location.pathname.startsWith(p)));
+  const [viewsExpanded, setViewsExpanded] = useState(false);
+
   const toggleLanguage = () => {
     const next = i18n.language === 'fr' ? 'en' : 'fr';
     i18n.changeLanguage(next);
@@ -88,34 +95,36 @@ export function Sidebar() {
   }, []);
 
   /* ─── Nav Groups ─────────────────────────── */
-  const coreItems = [
+  // Tier 1 — used every day, always visible
+  const primaryItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: t('sidebar.dashboard') },
-    { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks'), tourId: 'my-tasks' },
     { to: '/all-issues', icon: Layers, label: t('sidebar.allIssues') },
-    { to: '/triage', icon: Inbox, label: t('sidebar.triage'), badge: triageCount > 0 ? triageCount : undefined },
     { to: '/projects', icon: Kanban, label: t('sidebar.projects'), tourId: 'projects-list' },
   ];
 
+  // Tier 2 — personal / team queue
+  const workItems = [
+    { to: '/my-tasks', icon: CheckSquare, label: t('sidebar.myTasks'), tourId: 'my-tasks' },
+    { to: '/triage', icon: Inbox, label: t('sidebar.triage'), badge: triageCount > 0 ? triageCount : undefined },
+  ];
+
+  // Planning — collapsible, rarely visited daily
   const planItems = [
     { to: currentProjectSlug ? `/projects/${currentProjectSlug}/milestones` : '/milestones', icon: Target, label: t('sidebar.milestones') },
     { to: '/roadmap', icon: CalendarRange, label: t('sidebar.roadmap') },
     ...(currentProjectSlug ? [{ to: `/projects/${currentProjectSlug}/sprints`, icon: Zap, label: t('sidebar.sprints') }] : []),
     { to: '/initiatives', icon: Flag, label: t('sidebar.initiatives') },
-  ];
-
-  const agentItems = [
     { to: currentProjectSlug ? `/projects/${currentProjectSlug}/memory` : '/memory', icon: Brain, label: t('sidebar.memory') },
   ];
 
-  const toolItems = [
-    { to: '/search', icon: Search, label: t('sidebar.search') || 'Search' },
+  // Settings / Tools — collapsible, infrequent access
+  const settingsItems = [
     { to: '/analytics', icon: BarChart3, label: t('sidebar.analytics') },
-
+    { to: currentProjectSlug ? `/projects/${currentProjectSlug}/automations` : '/automations', icon: Workflow, label: t('sidebar.automations') },
     { to: '/webhooks', icon: Webhook, label: t('sidebar.webhooks') },
     { to: '/api-keys', icon: KeyRound, label: t('sidebar.apiKeys') },
     { to: '/billing', icon: CreditCard, label: t('sidebar.billing') },
     ...(isSuperAdmin ? [{ to: '/admin', icon: Shield, label: t('sidebar.admin') }] : []),
-    { to: currentProjectSlug ? `/projects/${currentProjectSlug}/automations` : '/automations', icon: Workflow, label: t('sidebar.automations') },
     { to: '/integrations', icon: Plug, label: t('sidebar.integrations') },
     { to: '/templates', icon: LayoutTemplate, label: 'Templates' },
   ];
@@ -149,12 +158,33 @@ export function Sidebar() {
     </NavLink>
   );
 
-  const Divider = ({ label }: { label?: string }) => (
-    <div className="pt-3 pb-1">
-      {!isCompact && label && (
-        <span className="px-3 text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</span>
+  const CollapsibleSection = ({
+    label, expanded, onToggle, children,
+  }: { label: string; expanded: boolean; onToggle: () => void; children: React.ReactNode }) => (
+    <div className="pt-2">
+      <button
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className={cn(
+          'flex items-center gap-1 w-full rounded-md px-2 sm:px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted hover:text-secondary transition-colors',
+          isCompact && 'justify-center px-0',
+        )}
+      >
+        {!isCompact && (
+          <>
+            <ChevronRight
+              size={10}
+              aria-hidden="true"
+              className={cn('transition-transform shrink-0', expanded && 'rotate-90')}
+            />
+            <span>{label}</span>
+          </>
+        )}
+        {isCompact && <div className="w-6 border-t border-border" />}
+      </button>
+      {(expanded || isCompact) && (
+        <div className="mt-0.5 space-y-0.5">{children}</div>
       )}
-      {isCompact && <div className="mx-3 border-t border-border" />}
     </div>
   );
 
@@ -256,21 +286,40 @@ export function Sidebar() {
 
         {/* ─── Main Nav ─── */}
         <nav aria-label="Main navigation" className="flex-1 space-y-0.5 p-1.5 overflow-y-auto">
-          {coreItems.map((item) => <NavItem key={item.to} {...item} />)}
+          {/* Primary — Dashboard · All Issues · Projects */}
+          {primaryItems.map((item) => <NavItem key={item.to} {...item} />)}
 
-          <Divider label={t('sidebar.planning')} />
-          {planItems.map((item) => <NavItem key={item.to} {...item} />)}
+          {/* Thin separator */}
+          <div className="my-1 mx-3 border-t border-border/40" />
 
-          <Divider label={t('sidebar.agent')} />
-          {agentItems.map((item) => <NavItem key={item.to} {...item} />)}
+          {/* Work — My Tasks · Triage */}
+          {workItems.map((item) => <NavItem key={item.to} {...item} />)}
 
-          <Divider label={t('sidebar.tools')} />
-          {toolItems.map((item) => <NavItem key={item.to} {...item} />)}
+          {/* Planning — collapsible */}
+          <CollapsibleSection
+            label={t('sidebar.planning')}
+            expanded={planExpanded}
+            onToggle={() => setPlanExpanded((v) => !v)}
+          >
+            {planItems.map((item) => <NavItem key={item.to} {...item} />)}
+          </CollapsibleSection>
 
-          {/* Saved Views */}
+          {/* Settings — collapsible */}
+          <CollapsibleSection
+            label="Settings"
+            expanded={settingsExpanded}
+            onToggle={() => setSettingsExpanded((v) => !v)}
+          >
+            {settingsItems.map((item) => <NavItem key={item.to} {...item} />)}
+          </CollapsibleSection>
+
+          {/* Saved Views — collapsible */}
           {savedViews.length > 0 && !isCompact && (
-            <>
-              <Divider label={t('sidebar.views')} />
+            <CollapsibleSection
+              label={t('sidebar.views')}
+              expanded={viewsExpanded}
+              onToggle={() => setViewsExpanded((v) => !v)}
+            >
               {savedViews.map((view) => (
                 <NavLink
                   key={view.id}
@@ -287,7 +336,7 @@ export function Sidebar() {
                   <span className="truncate">{view.name}</span>
                 </NavLink>
               ))}
-            </>
+            </CollapsibleSection>
           )}
         </nav>
 
