@@ -761,15 +761,15 @@ export function AllIssues() {
           <button
             onClick={toggleDoneVisibility}
             className={cn(
-              'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors min-h-[32px]',
+              'flex items-center justify-center rounded-lg border p-1.5 transition-colors min-h-[32px] min-w-[32px]',
               showDone
                 ? 'border-green-500/30 bg-green-500/10 text-green-400'
-                : 'border-border bg-surface text-secondary hover:bg-surface-hover hover:text-primary',
+                : 'border-transparent text-muted hover:bg-surface-hover hover:text-secondary',
             )}
-            title={showDone ? 'Closed loaded' : 'Closed hidden'}
+            title={showDone ? 'Hide closed issues (Done/Cancelled)' : 'Show closed issues (Done/Cancelled)'}
+            aria-pressed={showDone}
           >
             <CheckCircle2 size={14} />
-            <span className="hidden lg:inline">{showDone ? 'Closed loaded' : 'Closed hidden'}</span>
           </button>
           <div className="flex items-center rounded-md border border-border bg-surface p-0.5">
             <button
