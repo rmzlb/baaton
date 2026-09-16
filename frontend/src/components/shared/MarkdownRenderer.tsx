@@ -29,7 +29,8 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
             const isInline = !codeClassName;
             if (isInline) {
               return (
-                <code className="px-1.5 py-0.5 rounded bg-surface-hover text-accent text-xs font-mono" {...props}>
+                // not-prose prevents Tailwind Typography from adding ` ` pseudo-elements
+                <code className="not-prose px-1.5 py-0.5 rounded bg-surface-hover text-accent text-xs font-mono" {...props}>
                   {children}
                 </code>
               );

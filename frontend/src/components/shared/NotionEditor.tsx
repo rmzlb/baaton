@@ -304,6 +304,59 @@ function BubbleToolbar() {
 }
 
 // ─── Markdown → Tiptap JSON converter ───────────
+
+/**
+ * Parse inline Markdown marks (code, bold, italic) within a text string.
+ * Used by markdownToTiptap so that inline formatting in paragraphs and headings
+ * is preserved when the NotionEditor displays Markdown content.
+ */
+function parseInlineMarks(text: string): import('novel').JSONContent[] {
+  const nodes: import('novel').JSONContent[] = [];
+  let i = 0;
+  while (i < text.length) {
+    // Inline code: `…`  (takes priority over bold/italic)
+    if (text[i] === '`') {
+      const end = text.indexOf('`', i + 1);
+      if (end > i) {
+        const inner = text.slice(i + 1, end);
+        if (inner) nodes.push({ type: 'text', text: inner, marks: [{ type: 'code' }] });
+        i = end + 1;
+        continue;
+      }
+    }
+    // Bold: **…**
+    if (i + 1 < text.length && text[i] === '*' && text[i + 1] === '*') {
+      const end = text.indexOf('**', i + 2);
+      if (end > i + 1) {
+        const inner = parseInlineMarks(text.slice(i + 2, end));
+        for (const n of inner) {
+          nodes.push({ ...n, marks: [{ type: 'bold' }, ...((n.marks as any[] | undefined) || [])] });
+        }
+        i = end + 2;
+        continue;
+      }
+    }
+    // Italic: *…*
+    if (text[i] === '*') {
+      const end = text.indexOf('*', i + 1);
+      if (end > i) {
+        const inner = text.slice(i + 1, end);
+        if (inner) nodes.push({ type: 'text', text: inner, marks: [{ type: 'italic' }] });
+        i = end + 1;
+        continue;
+      }
+    }
+    // Plain text — consume up to next special char
+    let j = i + 1;
+    while (j < text.length && text[j] !== '`' && text[j] !== '*') j++;
+    const t = text.slice(i, j);
+    if (t) nodes.push({ type: 'text', text: t });
+    i = j;
+  }
+  return nodes.length > 0 ? nodes : [{ type: 'text', text }];
+}
+
+// ─── Markdown → Tiptap JSON converter ───────────
 const IMAGE_PLACEHOLDER_PREFIX = 'BAATON_IMAGE_PLACEHOLDER_';
 
 /**
@@ -403,11 +456,11 @@ function markdownToTiptap(md: string): JSONContent {
     const line = lines[i];
 
     const h3 = line.match(/^### (.+)/);
-    if (h3) { content.push({ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: h3[1] }] }); continue; }
+    if (h3) { content.push({ type: 'heading', attrs: { level: 3 }, content: parseInlineMarks(h3[1]) }); continue; }
     const h2 = line.match(/^## (.+)/);
-    if (h2) { content.push({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: h2[1] }] }); continue; }
+    if (h2) { content.push({ type: 'heading', attrs: { level: 2 }, content: parseInlineMarks(h2[1]) }); continue; }
     const h1 = line.match(/^# (.+)/);
-    if (h1) { content.push({ type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: h1[1] }] }); continue; }
+    if (h1) { content.push({ type: 'heading', attrs: { level: 1 }, content: parseInlineMarks(h1[1]) }); continue; }
 
     // Task list items
     const task = line.match(/^- \[( |x)\] (.*)/);
@@ -461,7 +514,7 @@ function markdownToTiptap(md: string): JSONContent {
     }
 
     if (!line.trim()) { content.push({ type: 'paragraph' }); continue; }
-    content.push({ type: 'paragraph', content: [{ type: 'text', text: line }] });
+    content.push({ type: 'paragraph', content: parseInlineMarks(line) });
   }
 
   return { type: 'doc', content: content.length > 0 ? content : [{ type: 'paragraph' }] };
