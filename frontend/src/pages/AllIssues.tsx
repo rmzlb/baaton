@@ -410,9 +410,34 @@ export function AllIssues() {
     return counts;
   }, [allIssuesRaw]);
 
-  // Tab order is by open-issue volume, not alphabetical. On this account one
-  // project holds over half the issues while a third of projects are dormant,
-  // so alphabetical order pushes the only tabs that matter off-screen.
+  // Active issue count per project (excludes done / cancelled)
+  const activeCountByProject = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const i of allIssuesRaw) {
+      const key = columnKeyFor(i);
+      if (key !== 'done' && key !== 'cancelled') {
+        counts[i.project_id] = (counts[i.project_id] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [allIssuesRaw, columnKeyFor]);
+
+  // Latest created_at of any active issue per project (used for sort)
+  const latestActiveByProject = useMemo(() => {
+    const latest: Record<string, string> = {};
+    for (const i of allIssuesRaw) {
+      const key = columnKeyFor(i);
+      if (key !== 'done' && key !== 'cancelled') {
+        if (!latest[i.project_id] || i.created_at > latest[i.project_id]) {
+          latest[i.project_id] = i.created_at;
+        }
+      }
+    }
+    return latest;
+  }, [allIssuesRaw, columnKeyFor]);
+
+  // Tab order: projects with open work first, most recently updated first.
+  // Projects with no active tickets go last (alphabetical among themselves).
   const projectTabs = useMemo(
     () =>
       effectiveProjects
@@ -420,10 +445,17 @@ export function AllIssues() {
           id: p.id,
           name: p.name,
           prefix: p.prefix,
-          count: issueCountByProject[p.id] || 0,
+          count: activeCountByProject[p.id] || 0,
         }))
-        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
-    [effectiveProjects, issueCountByProject],
+        .sort((a, b) => {
+          const aLatest = latestActiveByProject[a.id] ?? null;
+          const bLatest = latestActiveByProject[b.id] ?? null;
+          if (aLatest && bLatest) return bLatest.localeCompare(aLatest);
+          if (aLatest) return -1;
+          if (bLatest) return 1;
+          return a.name.localeCompare(b.name);
+        }),
+    [effectiveProjects, activeCountByProject, latestActiveByProject],
   );
 
   const issueCountByStatus = useMemo(() => {
