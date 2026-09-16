@@ -65,7 +65,7 @@ const isDoneStatus = (status: ProjectStatus) =>
   status.key === 'done' || status.category === 'completed';
 
 const isCancelledStatus = (status: ProjectStatus) =>
-  status.key === 'cancelled' || status.category === 'canceled' || status.category === 'cancelled';
+  status.key === 'cancelled' || status.category === 'canceled';
 
 export function KanbanBoard({
   statuses,
@@ -266,7 +266,6 @@ export function KanbanBoard({
     emptyColumnCount: visibleStatuses.filter((s) => !issuesByStatus[s.key]?.length).length,
     density,
   });
-  const hasBoard = issues.length > 0 && filteredIssues.length > 0;
 
   // ── DnD ────────────────────────────────────────────────────────────────────
 
