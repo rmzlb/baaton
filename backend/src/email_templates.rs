@@ -219,6 +219,82 @@ font-size:13px;color:#3d3d3a;font-family:Arial,Helvetica,sans-serif;\">{title_es
     email_layout(accent, &content, project_name, public_url)
 }
 
+/// Digest email grouping several events on the same issue.
+/// Returns `(subject, html)`.
+pub fn digest_email_html(
+    events: &[crate::pending_notif::DigestEvent],
+    display_id: &str,
+    title: &str,
+    project_name: Option<&str>,
+    public_url: &str,
+) -> (String, String) {
+    let count = events.len();
+    let subject = format!(
+        "[Baaton] {} \u{00b7} {} \u{2014} {} mise{} \u{00e0} jour",
+        project_name.unwrap_or("Baaton"),
+        he(display_id),
+        count,
+        if count > 1 { "s" } else { "" },
+    );
+
+    let issue_url = format!(
+        "{}/all-issues?issue={}",
+        public_url.trim_end_matches('/'),
+        display_id,
+    );
+
+    let mut event_blocks = String::new();
+    for ev in events {
+        let block = match ev {
+            crate::pending_notif::DigestEvent::Comment { actor, body, .. } => {
+                let excerpt: String = body.chars().take(200).collect();
+                format!(
+                    r#"<div style="margin:8px 0;background:#f6f5f3;border-radius:6px;padding:10px 12px;font-size:12px;color:#3d3d3a;font-family:Arial,Helvetica,sans-serif;"><span style="font-weight:700;">{}</span> a commenté&nbsp;:<br><span style="margin-top:4px;display:block;color:#5c5c57;">{}</span></div>"#,
+                    he(actor),
+                    he(&excerpt),
+                )
+            }
+            crate::pending_notif::DigestEvent::Transition {
+                actor,
+                from_status,
+                to_status,
+                ..
+            } => {
+                let sc = status_color(&to_status.to_lowercase());
+                let from_badge = if from_status.is_empty() {
+                    String::new()
+                } else {
+                    format!("{} &#8594; ", status_badge(&he(from_status), "#9c9b95"))
+                };
+                let to_badge = status_badge(&he(to_status), sc);
+                format!(
+                    r#"<div style="margin:8px 0;padding:8px 0;font-size:12px;color:#5c5c57;font-family:Arial,Helvetica,sans-serif;"><span style="font-weight:700;">{}</span> a changé le statut&nbsp;: {}{}</div>"#,
+                    he(actor),
+                    from_badge,
+                    to_badge,
+                )
+            }
+        };
+        event_blocks.push_str(&block);
+    }
+
+    let display_id_esc = he(display_id);
+    let title_esc = he(title);
+    let cta = cta_button(&issue_url, "Voir le ticket");
+    let label = format!("{} mise{} \u{00e0} jour", count, if count > 1 { "s" } else { "" });
+    let badge = status_badge(&label, "#0ea5e9");
+    let content = format!(
+        r#"{badge}<h2 style="margin:12px 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;">{display_id_esc} &middot; {title_esc}</h2>{event_blocks}{cta}"#
+    );
+    let html = email_layout(
+        "#0ea5e9",
+        &content,
+        project_name.unwrap_or("Baaton"),
+        public_url,
+    );
+    (subject, html)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

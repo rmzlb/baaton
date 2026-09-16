@@ -25,6 +25,7 @@ mod middleware;
 mod models;
 mod notifyd;
 mod novu;
+mod pending_notif;
 mod permissions;
 mod receipts;
 mod routes;
@@ -204,6 +205,10 @@ async fn main() -> anyhow::Result<()> {
             77,
             include_str!("../migrations/077_grant_comments_delete.sql"),
         ),
+        (
+            78,
+            include_str!("../migrations/078_pending_notifications.sql"),
+        ),
     ];
 
     for &(version, sql) in migrations {
@@ -287,6 +292,29 @@ async fn main() -> anyhow::Result<()> {
 
     // Chat notifications for the room (None if NOTIFYD_URL/KEY/CHAT unset)
     let notifyd_client = notifyd::NotifydClient::from_env();
+
+    // Digest flush: deliver batched email notifications every 30 seconds.
+    if let Some(ref notifyd_cl) = notifyd_client {
+        let pool_digest = pool.clone();
+        let notifyd_digest = notifyd_cl.clone();
+        let digest_public_url = std::env::var("NOTIFYD_PUBLIC_URL")
+            .unwrap_or_default()
+            .trim_end_matches('/')
+            .to_string();
+        tokio::spawn(async move {
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                pending_notif::flush_digests(
+                    &pool_digest,
+                    &notifyd_digest,
+                    &digest_public_url,
+                )
+                .await;
+            }
+        });
+    }
 
 
     // CORS — restrict origins in production, permissive in dev

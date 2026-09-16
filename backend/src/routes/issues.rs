@@ -257,23 +257,51 @@ fn on_status_changed(
             .ok()
             .flatten();
 
+            // Split: email is deferred through the digest window; Telegram
+            // (per-user) stays immediate.
+            let (email_recipients, other_recipients): (Vec<_>, Vec<_>) =
+                recipients.into_iter().partition(|r| r.channel == "email");
+            let from_label = label(&from_key);
+            let to_label = label(&to_key);
+            let actor_str = actor.clone().unwrap_or_default();
+
             notifyd.issue_status_changed(
                 crate::notifyd::StatusNotice {
                     issue: crate::notifyd::IssueNotice {
-                        display_id,
-                        title,
-                        project_name,
-                        actor,
+                        display_id: display_id.clone(),
+                        title: title.clone(),
+                        project_name: project_name.clone(),
+                        actor: actor.clone(),
                         issue_id,
                     },
-                    from_status: label(&from_key),
-                    to_status: label(&to_key),
+                    from_status: from_label.clone(),
+                    to_status: to_label.clone(),
                     last_comment,
                     changed_at,
                 },
-                recipients,
+                other_recipients,
                 announce_room,
             );
+
+            // Deferred email digest.
+            for r in &email_recipients {
+                crate::pending_notif::queue_digest_event(
+                    &pool2,
+                    issue_id,
+                    &display_id,
+                    &title,
+                    project_name.as_deref(),
+                    &r.address,
+                    &crate::pending_notif::DigestEvent::Transition {
+                        actor: actor_str.clone(),
+                        from_status: from_label.clone(),
+                        to_status: to_label.clone(),
+                        at: changed_at,
+                    },
+                )
+                .await
+                .ok();
+            }
         });
     }
 
@@ -1723,23 +1751,50 @@ pub async fn create(
                     .unwrap_or(key)
                     .to_string()
             };
+            // Split: email is deferred through the digest window; Telegram
+            // (per-user) stays immediate.
+            let (email_recipients2, other_recipients2): (Vec<_>, Vec<_>) =
+                recipients.into_iter().partition(|r| r.channel == "email");
+            let to_label2 = label(&to_key);
+            let actor_str2 = actor2.clone().unwrap_or_default();
+
             notifyd.issue_status_changed(
                 crate::notifyd::StatusNotice {
                     issue: crate::notifyd::IssueNotice {
-                        display_id: display_id2,
-                        title: title2,
-                        project_name: project_name2,
-                        actor: actor2,
+                        display_id: display_id2.clone(),
+                        title: title2.clone(),
+                        project_name: project_name2.clone(),
+                        actor: actor2.clone(),
                         issue_id: issue_id2,
                     },
                     from_status: String::new(),
-                    to_status: label(&to_key),
+                    to_status: to_label2.clone(),
                     last_comment: None,
                     changed_at: created_at,
                 },
-                recipients,
+                other_recipients2,
                 announce_room,
             );
+
+            // Deferred email digest (initial status on ticket creation).
+            for r in &email_recipients2 {
+                crate::pending_notif::queue_digest_event(
+                    &pool2,
+                    issue_id2,
+                    &display_id2,
+                    &title2,
+                    project_name2.as_deref(),
+                    &r.address,
+                    &crate::pending_notif::DigestEvent::Transition {
+                        actor: actor_str2.clone(),
+                        from_status: String::new(),
+                        to_status: to_label2.clone(),
+                        at: created_at,
+                    },
+                )
+                .await
+                .ok();
+            }
         });
     }
 

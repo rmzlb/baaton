@@ -437,21 +437,46 @@ pub async fn create(
                 return;
             }
 
+            // Split: email is deferred through the digest window; Telegram
+            // (per-user) stays immediate so chat notifications are not delayed.
+            let (email_recipients, other_recipients): (Vec<_>, Vec<_>) =
+                recipients.into_iter().partition(|r| r.channel == "email");
+
             notifyd.issue_commented(
                 crate::notifyd::CommentNotice {
                     issue: crate::notifyd::IssueNotice {
-                        display_id,
-                        title,
-                        project_name,
-                        actor: Some(comment_author),
+                        display_id: display_id.clone(),
+                        title: title.clone(),
+                        project_name: project_name.clone(),
+                        actor: Some(comment_author.clone()),
                         issue_id: iid,
                     },
-                    body: comment_body,
+                    body: comment_body.clone(),
                     comment_id,
                 },
-                recipients,
+                other_recipients,
                 announce_room,
             );
+
+            // Deferred email digest: batched over a 2-minute window.
+            let digest_at = chrono::Utc::now();
+            for r in &email_recipients {
+                crate::pending_notif::queue_digest_event(
+                    &pool2,
+                    iid,
+                    &display_id,
+                    &title,
+                    project_name.as_deref(),
+                    &r.address,
+                    &crate::pending_notif::DigestEvent::Comment {
+                        actor: comment_author.clone(),
+                        body: comment_body.clone(),
+                        at: digest_at,
+                    },
+                )
+                .await
+                .ok();
+            }
         });
     }
 

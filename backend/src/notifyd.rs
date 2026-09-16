@@ -377,7 +377,7 @@ impl NotifydClient {
         });
     }
 
-    async fn post_send(&self, body: serde_json::Value) {
+    pub(crate) async fn post_send(&self, body: serde_json::Value) {
         let endpoint = format!("{}/v1/send", self.base_url);
         match self
             .http
