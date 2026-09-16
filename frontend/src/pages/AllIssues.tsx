@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
@@ -11,10 +11,9 @@ import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   Layers, Kanban, List, Table2, Rows3, Rows4, StretchHorizontal,
-  ChevronDown, X, Circle,
-  ArrowUp, ArrowDown, Minus, OctagonAlert,
+  X, Circle,
   CheckCircle2,
-  User, Tag, Bookmark,
+  Bookmark,
 } from 'lucide-react';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { ProjectTabRail } from '@/components/shared/ProjectTabRail';
@@ -72,13 +71,6 @@ function customColumnKey(label: string): string {
   return `${CUSTOM_PREFIX}${normLabel(label)}`;
 }
 
-const PRIORITY_CONFIG = [
-  { key: 'urgent', label: 'Urgent', icon: OctagonAlert, color: '#ef4444', textColor: 'text-red-500' },
-  { key: 'high', label: 'High', icon: ArrowUp, color: '#f97316', textColor: 'text-orange-500' },
-  { key: 'medium', label: 'Medium', icon: Minus, color: '#eab308', textColor: 'text-yellow-500' },
-  { key: 'low', label: 'Low', icon: ArrowDown, color: '#6b7280', textColor: 'text-gray-400' },
-];
-
 type ViewMode = 'kanban' | 'list' | 'table';
 
 const PROJECT_FILTER_STORAGE_KEY = 'all-issues:project-filter:v1';
@@ -104,73 +96,51 @@ interface DashboardProjectIndexResponse {
   }>;
 }
 
-function FilterDropdown({
-  trigger,
-  children,
-  align = 'left',
-}: {
-  trigger: React.ReactNode;
-  children: React.ReactNode;
-  align?: 'left' | 'right';
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <div onClick={() => setOpen(!open)}>{trigger}</div>
-      {open && (
-        <div className={cn(
-          'absolute top-full mt-1.5 z-50 rounded-xl border border-border bg-surface shadow-2xl py-1.5 min-w-[200px] max-h-[320px] overflow-y-auto',
-          align === 'right' ? 'right-0' : 'left-0',
-        )}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DropdownItem({
+// ═══════════════════════════════════════════════
+// Filter Chip — toggleable pill (Linear-style)
+// ═══════════════════════════════════════════════
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function FilterChip({
   label,
-  selected,
+  active,
   onClick,
-  icon: Icon,
   color,
+  icon: Icon,
+  count,
 }: {
   label: string;
-  selected: boolean;
+  active: boolean;
   onClick: () => void;
-  icon?: typeof Circle;
   color?: string;
+  icon?: typeof Circle;
+  count?: number;
 }) {
   return (
     <button
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-2.5 px-3 py-2 text-xs transition-colors rounded-md mx-1',
-        selected ? 'bg-accent/8 text-primary' : 'text-secondary hover:bg-surface-hover hover:text-primary',
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all duration-150 border whitespace-nowrap select-none',
+        active
+          ? 'border-accent/40 bg-accent/10 text-accent shadow-sm shadow-accent/5'
+          : 'border-transparent bg-surface-hover/60 text-secondary hover:bg-surface-hover hover:text-primary',
       )}
-      style={{ width: 'calc(100% - 8px)' }}
     >
-      <span className={cn(
-        'h-4 w-4 rounded border flex items-center justify-center text-[10px] shrink-0 transition-all',
-        selected ? 'bg-accent border-accent text-black scale-105' : 'border-border',
-      )}>
-        {selected && '✓'}
-      </span>
-      {Icon && <Icon size={14} style={color ? { color } : undefined} />}
-      {!Icon && color && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />}
-      <span className="flex-1 text-left truncate">{label}</span>
+      {Icon && <Icon size={12} style={color && active ? { color } : undefined} className={active ? '' : 'text-muted'} />}
+      {!Icon && color && (
+        <span
+          className={cn('h-2 w-2 rounded-full shrink-0 transition-transform', active && 'scale-110')}
+          style={{ backgroundColor: color }}
+        />
+      )}
+      {label}
+      {count !== undefined && count > 0 && (
+        <span className={cn(
+          'rounded-full px-1.5 text-[9px] font-bold tabular-nums',
+          active ? 'bg-accent/20 text-accent' : 'bg-surface text-muted',
+        )}>
+          {count}
+        </span>
+      )}
     </button>
   );
 }
@@ -456,18 +426,19 @@ export function AllIssues() {
     [effectiveProjects, issueCountByProject],
   );
 
-  // ─── Unique tags + assignees for filters ────
-  const uniqueTags = useMemo(() => {
-    const tags = new Set<string>();
-    allIssuesRaw.forEach((i) => i.tags.forEach((t) => tags.add(t)));
-    return Array.from(tags).sort();
-  }, [allIssuesRaw]);
+  const issueCountByStatus = useMemo(() => {
+    const source = projectFilter.length > 0
+      ? allIssuesRaw.filter((i) => projectFilter.includes(i.project_id))
+      : allIssuesRaw;
+    const counts: Record<string, number> = {};
+    for (const i of source) {
+      const key = columnKeyFor(i);
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }, [allIssuesRaw, projectFilter, columnKeyFor]);
 
-  const uniqueAssigneeIds = useMemo(() => {
-    const ids = new Set<string>();
-    allIssuesRaw.forEach((i) => i.assignee_ids.forEach((a) => ids.add(a)));
-    return Array.from(ids);
-  }, [allIssuesRaw]);
+  // ─── Unique tags + assignees for filters ────
 
   // ─── Apply filters ─────────────────────────
   const filteredIssues = useMemo(() => {
@@ -633,7 +604,7 @@ export function AllIssues() {
             <Layers size={18} className="text-accent shrink-0 md:w-5 md:h-5" />
             {t('allIssues.title')}
           </h1>
-          <p className="text-[10px] md:text-xs text-secondary font-mono uppercase tracking-wider truncate">
+          <p className="text-[9px] text-secondary font-mono uppercase tracking-wider truncate">
             {filteredIssues.length} / {allIssuesRaw.length} issues · {effectiveProjects.length} projects
           </p>
         </div>
@@ -709,112 +680,19 @@ export function AllIssues() {
 
         {/* Row 2: Status chips + Priority dropdown + Active filter tokens */}
         <div className="flex items-center gap-2 px-3 md:px-6 pb-2 overflow-visible">
-          {/* Priority dropdown */}
-          <FilterDropdown
-            trigger={
-              <button className={cn(
-                'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium border transition-all whitespace-nowrap',
-                priorityFilter.length > 0
-                  ? 'border-accent/40 bg-accent/10 text-accent'
-                  : 'border-transparent bg-surface-hover/60 text-secondary hover:bg-surface-hover hover:text-primary',
-              )}>
-                <OctagonAlert size={12} />
-                Priority
-                {priorityFilter.length > 0 && (
-                  <span className="rounded-full bg-accent/20 px-1.5 text-[9px] font-bold text-accent">
-                    {priorityFilter.length}
-                  </span>
-                )}
-                <ChevronDown size={10} />
-              </button>
-            }
-          >
-            <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted">Priority</div>
-            {PRIORITY_CONFIG.map((p) => (
-              <DropdownItem
-                key={p.key}
-                label={p.label}
-                selected={priorityFilter.includes(p.key)}
-                onClick={() => toggleFilter(priorityFilter, p.key, setPriorityFilter)}
-                icon={p.icon}
-                color={p.color}
+          {/* Status chips */}
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+            {dynamicStatuses.map((s) => (
+              <FilterChip
+                key={s.key}
+                label={s.label}
+                active={statusFilter.includes(s.key)}
+                onClick={() => toggleFilter(statusFilter, s.key, setStatusFilter)}
+                color={s.color}
+                count={issueCountByStatus[s.key] || 0}
               />
             ))}
-          </FilterDropdown>
-
-          {/* Assignee dropdown */}
-          {uniqueAssigneeIds.length > 0 && (
-            <FilterDropdown
-              trigger={
-                <button className={cn(
-                  'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium border transition-all whitespace-nowrap',
-                  assigneeFilter.length > 0
-                    ? 'border-accent/40 bg-accent/10 text-accent'
-                    : 'border-transparent bg-surface-hover/60 text-secondary hover:bg-surface-hover hover:text-primary',
-                )}>
-                  <User size={12} />
-                  Assignee
-                  {assigneeFilter.length > 0 && (
-                    <span className="rounded-full bg-accent/20 px-1.5 text-[9px] font-bold text-accent">
-                      {assigneeFilter.length}
-                    </span>
-                  )}
-                  <ChevronDown size={10} />
-                </button>
-              }
-            >
-              <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted">Assignee</div>
-              {uniqueAssigneeIds.map((uid) => {
-                const avatar = resolveUserAvatar(uid);
-                return (
-                  <DropdownItem
-                    key={uid}
-                    label={resolveUserName(uid)}
-                    selected={assigneeFilter.includes(uid)}
-                    onClick={() => toggleFilter(assigneeFilter, uid, setAssigneeFilter)}
-                    icon={avatar ? undefined : User}
-                  />
-                );
-              })}
-            </FilterDropdown>
-          )}
-
-          {/* Tag dropdown */}
-          {uniqueTags.length > 0 && (
-            <FilterDropdown
-              trigger={
-                <button className={cn(
-                  'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium border transition-all whitespace-nowrap',
-                  tagFilter.length > 0
-                    ? 'border-accent/40 bg-accent/10 text-accent'
-                    : 'border-transparent bg-surface-hover/60 text-secondary hover:bg-surface-hover hover:text-primary',
-                )}>
-                  <Tag size={12} />
-                  Tags
-                  {tagFilter.length > 0 && (
-                    <span className="rounded-full bg-accent/20 px-1.5 text-[9px] font-bold text-accent">
-                      {tagFilter.length}
-                    </span>
-                  )}
-                  <ChevronDown size={10} />
-                </button>
-              }
-            >
-              <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted">Tags</div>
-              {uniqueTags.map((tag) => {
-                const tagObj = allTags.find((t) => t.name === tag);
-                return (
-                  <DropdownItem
-                    key={tag}
-                    label={tag}
-                    selected={tagFilter.includes(tag)}
-                    onClick={() => toggleFilter(tagFilter, tag, setTagFilter)}
-                    color={tagObj?.color || '#6b7280'}
-                  />
-                );
-              })}
-            </FilterDropdown>
-          )}
+          </div>
 
           {/* Clear all button */}
           {hasFilters && (
