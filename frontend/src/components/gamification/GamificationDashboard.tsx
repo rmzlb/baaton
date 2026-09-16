@@ -1,10 +1,9 @@
 import { useAuth } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { api } from '@/lib/api';
 import {
   Flame, TrendingUp, TrendingDown, Minus, Zap, Bot, User,
-  Target, ArrowRight, Circle, CheckCircle2, Clock, AlertTriangle,
+  Target, ArrowRight, Circle, Clock, AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { HeatmapCell } from '@/lib/types';

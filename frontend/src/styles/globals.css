@@ -53,12 +53,12 @@
 
   /* Semantic tokens (dark defaults) — overridden by html:not(.dark) */
   --color-bg: oklch(0.13 0 0);
-  --color-surface: oklch(0.17 0 0);
-  --color-surface-hover: oklch(0.22 0 0);
-  --color-border: oklch(1 0 0 / 10%);
+  --color-surface: oklch(0.20 0 0);
+  --color-surface-hover: oklch(0.26 0 0);
+  --color-border: oklch(1 0 0 / 18%);
   --color-primary: oklch(0.985 0 0);
   --color-secondary: oklch(0.708 0 0);
-  --color-muted: oklch(0.556 0 0);
+  --color-muted: oklch(0.62 0 0);
   --color-accent: oklch(0.78 0.14 75);
   --color-accent-hover: oklch(0.7 0.14 75);
 }
@@ -68,26 +68,26 @@
   /* Core oklch palette */
   --background: oklch(0.13 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.17 0 0);
+  --card: oklch(0.20 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.17 0 0);
   --popover-foreground: oklch(0.985 0 0);
   --primary-foreground: oklch(0.13 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.62 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.78 0.14 75);
   /* Sidebar */
-  --sidebar: oklch(0.15 0 0);
+  --sidebar: oklch(0.17 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.985 0 0);
   --sidebar-primary-foreground: oklch(0.13 0 0);
   --sidebar-accent: oklch(0.235 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-border: oklch(1 0 0 / 18%);
   --sidebar-ring: oklch(0.556 0 0);
 
   /* Legacy compat tokens — only vars NOT in @theme */

@@ -3,12 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import {
   Flame, TrendingUp, TrendingDown, Minus, Trophy, Zap,
-  Target, Bot, User, Plus, CheckCircle2, MessageSquare,
-  ArrowRight, Sparkles,
+  Target, Bot, User, CheckCircle2,
+  ArrowRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { UserActivityStats, HeatmapCell } from '@/lib/types';
-import { useTranslation } from 'react-i18next';
 
 // ─── Activity Heatmap (GitHub-style) ──────────────────
 
@@ -200,7 +199,6 @@ function MiniStat({
 
 export function GamificationWidget() {
   const { getToken } = useAuth();
-  const { t } = useTranslation();
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ['gamification-me'],

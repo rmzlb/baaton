@@ -152,7 +152,7 @@ function saveSessions(ss: StoredSession[]) {
   try {
     const trimmed = ss.slice(0, MAX_SESSIONS).map(s => ({
       ...s,
-      schema_version: SCHEMA_VERSION as const,
+      schema_version: SCHEMA_VERSION as 2,
       messages: s.messages.slice(-80).map(stripHeavyParts),
     }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
@@ -170,7 +170,7 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function makeSession(): StoredSession {
   const now = Date.now();
-  return { schema_version: SCHEMA_VERSION, id: uid(), title: '', messages: [], createdAt: now, updatedAt: now };
+  return { schema_version: SCHEMA_VERSION as 2, id: uid(), title: '', messages: [], createdAt: now, updatedAt: now };
 }
 
 // ─── Session list item ─────────────────────────
@@ -508,7 +508,7 @@ export function AIAssistant() {
               messages,
               title: s.title || extractTitle(messages),
               updatedAt: Date.now(),
-              schema_version: SCHEMA_VERSION as const,
+              schema_version: SCHEMA_VERSION as 2,
             }
           : s
       );
@@ -764,11 +764,11 @@ export function AIAssistant() {
                                         return <MessageResponse key={idx} isAnimating={isLast && status === 'streaming'}>{(part as any).text}</MessageResponse>;
                                       }
                                       if (isToolPart(part)) {
-                                        return <ToolPartRenderer key={idx} part={part} addToolOutput={addToolOutput} />;
+                                        return <ToolPartRenderer key={idx} part={part as any} addToolOutput={addToolOutput} />;
                                       }
                                       return null;
                                     })}
-                                    <BatchConfirmation parts={pending} addToolOutput={addToolOutput} />
+                                    <BatchConfirmation parts={pending as any} addToolOutput={addToolOutput} />
                                   </>
                                 );
                               }
@@ -799,7 +799,7 @@ export function AIAssistant() {
                                   if (writeName && msg.parts.some(p => p.type === `tool-${writeName}` && (p as any).state === 'output-available')) {
                                     return null;
                                   }
-                                  return <ToolPartRenderer key={idx} part={part} addToolOutput={addToolOutput} />;
+                                  return <ToolPartRenderer key={idx} part={part as any} addToolOutput={addToolOutput} />;
                                 }
                                 return null;
                               });
