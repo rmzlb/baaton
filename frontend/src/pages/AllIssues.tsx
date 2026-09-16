@@ -11,17 +11,17 @@ import { useUIStore, type BoardDensity } from '@/stores/ui';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   Layers, Kanban, List, Table2, Rows3, Rows4, StretchHorizontal,
-  ChevronDown, X, Search, SlidersHorizontal,
+  ChevronDown, X, Circle,
   ArrowUp, ArrowDown, Minus, OctagonAlert,
-  Circle, Clock, Eye, CheckCircle2, XCircle, Archive,
-  User, Tag, Bookmark, AlertTriangle,
+  CheckCircle2,
+  User, Tag, Bookmark,
 } from 'lucide-react';
 import { GlobalCreateIssueButton } from '@/components/issues/GlobalCreateIssue';
 import { ProjectTabRail } from '@/components/shared/ProjectTabRail';
 import { useCrossOrgMembers } from '@/hooks/useCrossOrgMembers';
 import { MemberResolutionProvider } from '@/contexts/MemberResolutionContext';
 import { cn } from '@/lib/utils';
-import { usePersistedState, oneOf, stringArray } from '@/lib/persistedState';
+import { usePersistedState, stringArray } from '@/lib/persistedState';
 import type { Issue, IssueStatus, ProjectStatus, ProjectTag, SavedView } from '@/lib/types';
 
 // ─── Statuses (global) ───────────────────────
@@ -72,16 +72,6 @@ function customColumnKey(label: string): string {
   return `${CUSTOM_PREFIX}${normLabel(label)}`;
 }
 
-const STATUS_ICONS: Record<string, typeof Circle> = {
-  backlog: Archive,
-  todo: Circle,
-  in_progress: Clock,
-  not_ok: AlertTriangle,
-  in_review: Eye,
-  done: CheckCircle2,
-  cancelled: XCircle,
-};
-
 const PRIORITY_CONFIG = [
   { key: 'urgent', label: 'Urgent', icon: OctagonAlert, color: '#ef4444', textColor: 'text-red-500' },
   { key: 'high', label: 'High', icon: ArrowUp, color: '#f97316', textColor: 'text-orange-500' },
@@ -92,8 +82,6 @@ const PRIORITY_CONFIG = [
 type ViewMode = 'kanban' | 'list' | 'table';
 
 const PROJECT_FILTER_STORAGE_KEY = 'all-issues:project-filter:v1';
-const SORT_MODES = ['manual', 'priority', 'created', 'updated'] as const;
-type SortMode = (typeof SORT_MODES)[number];
 
 interface CrossOrgProjectOption {
   id: string;
@@ -114,54 +102,6 @@ interface DashboardProjectIndexResponse {
       prefix: string;
     }>;
   }>;
-}
-
-// ═══════════════════════════════════════════════
-// Filter Chip — toggleable pill (Linear-style)
-// ═══════════════════════════════════════════════
-function FilterChip({
-  label,
-  active,
-  onClick,
-  color,
-  icon: Icon,
-  count,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  color?: string;
-  icon?: typeof Circle;
-  count?: number;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all duration-150 border whitespace-nowrap select-none',
-        active
-          ? 'border-accent/40 bg-accent/10 text-accent shadow-sm shadow-accent/5'
-          : 'border-transparent bg-surface-hover/60 text-secondary hover:bg-surface-hover hover:text-primary',
-      )}
-    >
-      {Icon && <Icon size={12} style={color && active ? { color } : undefined} className={active ? '' : 'text-muted'} />}
-      {!Icon && color && (
-        <span
-          className={cn('h-2 w-2 rounded-full shrink-0 transition-transform', active && 'scale-110')}
-          style={{ backgroundColor: color }}
-        />
-      )}
-      {label}
-      {count !== undefined && count > 0 && (
-        <span className={cn(
-          'rounded-full px-1.5 text-[9px] font-bold tabular-nums',
-          active ? 'bg-accent/20 text-accent' : 'bg-surface text-muted',
-        )}>
-          {count}
-        </span>
-      )}
-    </button>
-  );
 }
 
 function FilterDropdown({
@@ -284,14 +224,8 @@ export function AllIssues() {
     return localStorage.getItem('baaton-show-done-all-issues') === 'true';
   });
 
-  // View mode (persisted)
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const saved = localStorage.getItem('baaton-view-all-issues');
-    return (['kanban', 'list', 'table'].includes(saved ?? '') ? saved : 'kanban') as ViewMode;
-  });
-  useEffect(() => {
-    localStorage.setItem('baaton-view-all-issues', viewMode);
-  }, [viewMode]);
+  // View mode — always kanban by default
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
 
   useEffect(() => {
     localStorage.setItem('baaton-show-done-all-issues', String(showDone));
@@ -303,10 +237,6 @@ export function AllIssues() {
   const [priorityFilter, setPriorityFilter] = usePersistedState<string[]>('all-issues:priority-filter:v1', [], stringArray);
   const [assigneeFilter, setAssigneeFilter] = usePersistedState<string[]>('all-issues:assignee-filter:v1', [], stringArray);
   const [tagFilter, setTagFilter] = usePersistedState<string[]>('all-issues:tag-filter:v1', [], stringArray);
-  // Search stays ephemeral on purpose — a stale query would look like a bug.
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortMode, setSortMode] = usePersistedState<SortMode>('all-issues:sort:v1', 'created', oneOf(SORT_MODES));
-  const [searchFocused, setSearchFocused] = useState(false);
 
   // Toggle helpers
   const toggleFilter = (arr: string[], val: string, setter: (v: string[]) => void) =>
@@ -421,7 +351,6 @@ export function AllIssues() {
     if (view.filters.projects) setProjectFilter(view.filters.projects);
     if (view.filters.statuses) setStatusFilter(view.filters.statuses);
     if (view.filters.priorities) setPriorityFilter(view.filters.priorities);
-    if (view.filters.search) setSearchQuery(view.filters.search);
   }, [viewParam, savedViews]);
 
   const handleSaveView = () => {
@@ -432,9 +361,8 @@ export function AllIssues() {
         projects: projectFilter,
         statuses: statusFilter,
         priorities: priorityFilter,
-        search: searchQuery || undefined,
       },
-      sort: sortMode,
+      sort: 'created',
     });
   };
 
@@ -528,18 +456,6 @@ export function AllIssues() {
     [effectiveProjects, issueCountByProject],
   );
 
-  const issueCountByStatus = useMemo(() => {
-    const source = projectFilter.length > 0
-      ? allIssuesRaw.filter((i) => projectFilter.includes(i.project_id))
-      : allIssuesRaw;
-    const counts: Record<string, number> = {};
-    for (const i of source) {
-      const key = columnKeyFor(i);
-      counts[key] = (counts[key] || 0) + 1;
-    }
-    return counts;
-  }, [allIssuesRaw, projectFilter, columnKeyFor]);
-
   // ─── Unique tags + assignees for filters ────
   const uniqueTags = useMemo(() => {
     const tags = new Set<string>();
@@ -572,30 +488,8 @@ export function AllIssues() {
     if (tagFilter.length > 0) {
       result = result.filter((i) => i.tags.some((t) => tagFilter.includes(t)));
     }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (i) =>
-          i.title.toLowerCase().includes(q) ||
-          i.display_id.toLowerCase().includes(q) ||
-          i.tags.some((t) => t.toLowerCase().includes(q)),
-      );
-    }
-
-    const sorted = [...result];
-    switch (sortMode) {
-      case 'priority': {
-        const order: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
-        return sorted.sort((a, b) => (order[a.priority || 'low'] ?? 4) - (order[b.priority || 'low'] ?? 4));
-      }
-      case 'created':
-        return sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      case 'updated':
-        return sorted.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-      default:
-        return sorted;
-    }
-  }, [allIssuesRaw, projectFilter, statusFilter, priorityFilter, assigneeFilter, tagFilter, searchQuery, sortMode, columnKeyFor]);
+    return [...result].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [allIssuesRaw, projectFilter, statusFilter, priorityFilter, assigneeFilter, tagFilter, columnKeyFor]);
 
   // Route each issue to its column: synthetic custom key, or canonical column.
   // Never drops an issue; custom statuses now land in their own column.
@@ -608,7 +502,7 @@ export function AllIssues() {
     [filteredIssues, columnKeyFor],
   );
 
-  const hasFilters = projectFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || assigneeFilter.length > 0 || tagFilter.length > 0 || searchQuery.length > 0;
+  const hasFilters = projectFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || assigneeFilter.length > 0 || tagFilter.length > 0;
 
   const clearAllFilters = () => {
     setProjectFilter([]);
@@ -616,7 +510,6 @@ export function AllIssues() {
     setPriorityFilter([]);
     setAssigneeFilter([]);
     setTagFilter([]);
-    setSearchQuery('');
   };
 
   const setDoneVisibility = useCallback((next: boolean) => {
@@ -701,14 +594,6 @@ export function AllIssues() {
 
   const selectedIssue = allIssuesRaw.find((i) => i.id === selectedIssueId);
 
-  // ─── Sort options ──────────────────────────
-  const SORT_OPTIONS = [
-    { key: 'manual' as const, label: t('kanban.manual') || 'Manual' },
-    { key: 'priority' as const, label: t('kanban.priority') || 'Priority' },
-    { key: 'created' as const, label: t('kanban.created') || 'Created' },
-    { key: 'updated' as const, label: t('kanban.updated') || 'Updated' },
-  ];
-
   if (isLoading) {
     return (
       <div className="flex h-full flex-col">
@@ -744,7 +629,7 @@ export function AllIssues() {
       {/* ═══ Header ═══ */}
       <div className="flex items-center justify-between border-b border-border px-3 md:px-6 py-3 gap-2">
         <div className="min-w-0 flex-1">
-          <h1 className="text-base md:text-lg font-semibold text-primary truncate flex items-center gap-2">
+          <h1 className="text-sm font-medium text-primary truncate flex items-center gap-2">
             <Layers size={18} className="text-accent shrink-0 md:w-5 md:h-5" />
             {t('allIssues.title')}
           </h1>
@@ -810,34 +695,6 @@ export function AllIssues() {
       <div className="border-b border-border overflow-visible z-30">
         {/* Row 1: Search + Project chips + Sort */}
         <div className="flex items-center gap-2 px-3 md:px-6 py-2">
-          {/* Search */}
-          <div className={cn(
-            'relative shrink-0 transition-all duration-200',
-            searchFocused ? 'w-56' : 'w-36 sm:w-44',
-          )}>
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              placeholder="Search issues..."
-              className="h-8 w-full rounded-lg border border-border bg-surface pl-8 pr-3 text-xs text-primary placeholder-muted outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-primary"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-
-          {/* Separator */}
-          <div className="h-5 w-px bg-border shrink-0 hidden sm:block" />
-
           {/* Project switcher — flat tab rail, one click per project */}
           <ProjectTabRail
             projects={projectTabs}
@@ -848,56 +705,10 @@ export function AllIssues() {
             emptyLabel={t('allIssues.filters.noProjects')}
           />
 
-          {/* Sort dropdown — right aligned */}
-          <div className="shrink-0 ml-auto">
-            <FilterDropdown
-              align="right"
-              trigger={
-                <button className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary hover:text-primary hover:border-secondary transition-colors min-h-[32px]">
-                  <SlidersHorizontal size={12} />
-                  <span className="hidden sm:inline">
-                    {SORT_OPTIONS.find((o) => o.key === sortMode)?.label}
-                  </span>
-                  <ChevronDown size={10} />
-                </button>
-              }
-            >
-              <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted">Sort by</div>
-              {SORT_OPTIONS.map((opt) => (
-                <DropdownItem
-                  key={opt.key}
-                  label={opt.label}
-                  selected={sortMode === opt.key}
-                  onClick={() => setSortMode(opt.key)}
-                />
-              ))}
-            </FilterDropdown>
-          </div>
         </div>
 
         {/* Row 2: Status chips + Priority dropdown + Active filter tokens */}
         <div className="flex items-center gap-2 px-3 md:px-6 pb-2 overflow-visible">
-          {/* Status chips (always visible — most used filter) */}
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {dynamicStatuses.map((s) => {
-              const StatusIcon = STATUS_ICONS[s.key] || Circle;
-              return (
-                <FilterChip
-                  key={s.key}
-                  label={s.label}
-                  active={statusFilter.includes(s.key)}
-                  onClick={() => toggleFilter(statusFilter, s.key, setStatusFilter)}
-                  icon={StatusIcon}
-                  color={s.color}
-                  count={issueCountByStatus[s.key] || 0}
-                />
-              );
-            })}
-          </div>
-
-          {/* Separator */}
-          <div className="h-5 w-px bg-border shrink-0 hidden sm:block" />
-
           {/* Priority dropdown */}
           <FilterDropdown
             trigger={

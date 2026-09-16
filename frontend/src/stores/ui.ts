@@ -4,8 +4,7 @@ function getInitialTheme(): 'dark' | 'light' {
   if (typeof window === 'undefined') return 'light';
   const stored = localStorage.getItem('baaton-theme');
   if (stored === 'light' || stored === 'dark') return stored;
-  // Default: respect system preference, fallback to light
-  if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark';
+  // Default: always light
   return 'light';
 }
 

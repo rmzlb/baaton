@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import {
   Trash2, Copy, ExternalLink, CheckCircle2,
   ArrowUp, ArrowDown, Minus, OctagonAlert,
@@ -108,6 +108,28 @@ export function IssueContextMenu({
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const [showPriority, setShowPriority] = useState(false);
+
+  // Smart positioning: generous estimate on mount, refined to actual dimensions after render
+  const [pos, setPos] = useState(() => {
+    const w = 240, h = 560;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+    return {
+      x: Math.max(8, Math.min(position.x, vw - w - 8)),
+      y: Math.max(8, Math.min(position.y, vh - h - 8)),
+    };
+  });
+
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+    const { width, height } = menuRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    setPos({
+      x: Math.max(8, Math.min(position.x, vw - width - 8)),
+      y: Math.max(8, Math.min(position.y, vh - height - 8)),
+    });
+  }, [showPriority, position.x, position.y]);
   const doneStatus = statuses.find((s) => s.key === 'done')
     ?? statuses.find((s) => s.category === 'completed')
     ?? { key: 'done', label: 'Done', color: STATUS_COLORS.done, hidden: false };
@@ -128,21 +150,12 @@ export function IssueContextMenu({
     };
   }, [onClose]);
 
-  // Adjust position to stay in viewport
-  const adjusted = { ...position };
-  if (typeof window !== 'undefined') {
-    const w = 200, h = 400;
-    if (position.x + w > window.innerWidth) adjusted.x = window.innerWidth - w - 8;
-    if (position.y + h > window.innerHeight) adjusted.y = window.innerHeight - h - 8;
-    if (adjusted.x < 8) adjusted.x = 8;
-    if (adjusted.y < 8) adjusted.y = 8;
-  }
 
   return (
     <div
       ref={menuRef}
       className="fixed z-[100] min-w-[180px] rounded-lg border border-border bg-surface shadow-xl py-1 animate-in fade-in zoom-in-95 duration-100"
-      style={{ left: adjusted.x, top: adjusted.y }}
+      style={{ left: pos.x, top: pos.y }}
     >
       {/* Header */}
       <div className="px-3 py-1.5 border-b border-border">

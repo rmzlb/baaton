@@ -1286,7 +1286,7 @@ function MetadataSidebar({
             <span className="flex items-center gap-1.5">
               <TypeIcon size={12} className={typeColor} />
               <span className="text-xs text-primary">
-                {TYPE_CONFIG[issue.type]?.label || issue.type}
+                {TYPE_CONFIG[issue.type]?.label || issue.type || 'Issue'}
               </span>
             </span>
           )}

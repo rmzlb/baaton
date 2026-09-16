@@ -83,7 +83,7 @@ export function TopBar() {
           */}
           <nav
             aria-label={t('topbar.breadcrumb') || 'Breadcrumb'}
-            className="flex flex-nowrap items-center gap-1 text-sm min-w-0 overflow-hidden"
+            className="flex flex-nowrap items-center gap-1 text-[11px] font-mono min-w-0 overflow-hidden"
           >
             {breadcrumbs.map((crumb, i) => {
               const isLast = i === breadcrumbs.length - 1;

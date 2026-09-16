@@ -85,15 +85,8 @@ export function ProjectBoard() {
     return localStorage.getItem(`baaton-show-done-${slug}`) === 'true';
   });
 
-  // View mode with localStorage persistence
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const saved = localStorage.getItem(`baaton-view-${slug}`);
-    return (saved === 'list' ? 'list' : 'kanban') as ViewMode;
-  });
-
-  useEffect(() => {
-    localStorage.setItem(`baaton-view-${slug}`, viewMode);
-  }, [viewMode, slug]);
+  // View mode — always kanban by default
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
 
   useEffect(() => {
     localStorage.setItem(`baaton-show-done-${slug}`, String(showDone));
