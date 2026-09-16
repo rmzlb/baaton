@@ -407,7 +407,7 @@ pub async fn create(
             // Per-user routing (074) applies its own filter, so it is resolved
             // before the project gate below: a subscriber who asked for comments
             // still gets them when the project keeps the shared room quiet.
-            let recipients = crate::routes::notification_prefs::resolve_recipients(
+            let mut recipients = crate::routes::notification_prefs::resolve_recipients(
                 &pool2,
                 &notifyd,
                 project_id,
@@ -416,6 +416,26 @@ pub async fn create(
                 Some(&author_identity),
             )
             .await;
+
+            // Creator and assignees receive comment notifications by default
+            // (opt-out model). Uses iter() so assignee_ids / creator_id remain
+            // available for the others_on_ticket check below.
+            {
+                let mut parts: Vec<&str> =
+                    assignee_ids.iter().map(String::as_str).collect();
+                if let Some(ref cid) = creator_id {
+                    parts.push(cid.as_str());
+                }
+                crate::routes::notification_prefs::add_creator_to_recipients(
+                    &pool2,
+                    &notifyd,
+                    project_id,
+                    &mut recipients,
+                    &parts,
+                    Some(&author_identity),
+                )
+                .await;
+            }
 
             // The room only hears when someone else is involved in the ticket.
             // Per-user subscribers opted in independently and receive regardless:

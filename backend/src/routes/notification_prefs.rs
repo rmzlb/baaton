@@ -565,6 +565,150 @@ pub async fn resolve_recipients(
     recipients
 }
 
+/// Add the issue creator and assignees to the recipient list by default
+/// (opt-out model). Each identity is resolved to its human owner via
+/// `resolve_owner_identity` so API-key actors collapse to their creator.
+///
+/// Skips:
+/// - the actor (no self-notification),
+/// - identities already present in `recipients`,
+/// - users who are no longer org members.
+///
+/// Looks up verified non-telegram channels from `user_notification_channels`
+/// and Telegram routes from notifyd, matching the same contract as
+/// `resolve_recipients`.
+pub async fn add_creator_to_recipients(
+    pool: &PgPool,
+    notifyd: &crate::notifyd::NotifydClient,
+    project_id: Uuid,
+    recipients: &mut Vec<Recipient>,
+    participant_identities: &[&str],
+    actor_identity: Option<&str>,
+) {
+    let actor = match actor_identity {
+        Some(id) => crate::routes::comments::resolve_owner_identity(pool, id).await,
+        None => String::new(),
+    };
+
+    // Resolve the project's org for membership validation (same gate as
+    // resolve_recipients — a stored creator_id from a deleted membership must
+    // not receive project content).
+    let org_id: Option<String> =
+        sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
+            .bind(project_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    let Some(org_id) = org_id else { return; };
+
+    // Resolve each participant to their human owner and deduplicate.
+    let mut candidates: Vec<String> = Vec::new();
+    for identity in participant_identities {
+        let resolved = crate::routes::comments::resolve_owner_identity(pool, identity).await;
+        if resolved == actor { continue; }
+        if recipients.iter().any(|r| r.user_id == resolved) { continue; }
+        if candidates.contains(&resolved) { continue; }
+        candidates.push(resolved);
+    }
+    if candidates.is_empty() { return; }
+
+    // Revalidate org membership before adding anyone.
+    let mut authorized: Vec<String> = Vec::new();
+    for user_id in &candidates {
+        if fetch_user_org_ids(user_id)
+            .await
+            .is_ok_and(|ids| ids.contains(&org_id))
+        {
+            authorized.push(user_id.clone());
+        }
+    }
+    if authorized.is_empty() { return; }
+
+    // Non-telegram channels: look up directly from user_notification_channels.
+    for user_id in &authorized {
+        let channels: Vec<(String, String)> = sqlx::query_as(
+            "SELECT channel, address FROM user_notification_channels \
+             WHERE user_id = $1 \
+               AND channel <> 'telegram' \
+               AND (channel <> 'email' OR verified_at IS NOT NULL) \
+             ORDER BY channel",
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        for (channel, address) in channels {
+            // Skip if this user+channel is already covered (e.g. the user is
+            // also a subscriber and resolve_recipients already added them).
+            if recipients
+                .iter()
+                .any(|r| r.user_id == *user_id && r.channel == channel)
+            {
+                continue;
+            }
+            recipients.push(Recipient {
+                user_id: user_id.clone(),
+                channel,
+                address,
+                telegram_route_id: None,
+            });
+        }
+    }
+
+    // Telegram: resolve routes from notifyd for participants not yet covered.
+    let telegram_lookup: Vec<&str> = authorized
+        .iter()
+        .filter(|u| {
+            !recipients
+                .iter()
+                .any(|r| r.user_id == **u && r.channel == "telegram")
+        })
+        .map(String::as_str)
+        .collect();
+
+    if telegram_lookup.is_empty() { return; }
+
+    for chunk in telegram_lookup.chunks(100) {
+        match notifyd
+            .integration_request(
+                reqwest::Method::POST,
+                "/v1/telegram/lookup",
+                Some(json!({"owners": chunk})),
+                None,
+            )
+            .await
+        {
+            Ok(data) => {
+                match serde_json::from_value::<Vec<TelegramRoute>>(
+                    data.get("data").cloned().unwrap_or_default(),
+                ) {
+                    Ok(routes) => {
+                        for route in routes {
+                            if recipients.iter().any(|r| {
+                                r.user_id == route.owner && r.channel == "telegram"
+                            }) {
+                                continue;
+                            }
+                            recipients.push(Recipient {
+                                user_id: route.owner,
+                                channel: "telegram".to_string(),
+                                address: route.address,
+                                telegram_route_id: Some(route.route_id),
+                            });
+                        }
+                    }
+                    Err(_) => tracing::error!(
+                        "creator_notification.telegram.invalid_lookup_response"
+                    ),
+                }
+            }
+            Err(_) => tracing::error!("creator_notification.telegram.lookup_failed"),
+        }
+    }
+}
+
 
 #[cfg(test)]
 #[path = "notification_prefs/tests.rs"]

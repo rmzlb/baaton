@@ -188,6 +188,8 @@ fn on_status_changed(
         // move.
         let actor_identity = actor_id.to_string();
         let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
+        let creator_id_for_notif = issue.created_by_id.clone();
+        let assignee_ids_for_notif = issue.assignee_ids.clone();
         tokio::spawn(async move {
             let project: Option<(String, serde_json::Value, serde_json::Value)> =
                 sqlx::query_as("SELECT name, statuses, notify_statuses FROM projects WHERE id = $1")
@@ -209,7 +211,7 @@ fn on_status_changed(
             // asked before the project gate: a subscriber who explicitly wants
             // this transition must still hear about it when the project keeps the
             // shared room quiet.
-            let recipients = crate::routes::notification_prefs::resolve_recipients(
+            let mut recipients = crate::routes::notification_prefs::resolve_recipients(
                 &pool2,
                 &notifyd,
                 project_id,
@@ -218,6 +220,25 @@ fn on_status_changed(
                 Some(&actor_identity),
             )
             .await;
+
+            // Creator and assignees receive status notifications by default
+            // (opt-out model).
+            {
+                let mut parts: Vec<&str> =
+                    assignee_ids_for_notif.iter().map(String::as_str).collect();
+                if let Some(ref cid) = creator_id_for_notif {
+                    parts.push(cid.as_str());
+                }
+                crate::routes::notification_prefs::add_creator_to_recipients(
+                    &pool2,
+                    &notifyd,
+                    project_id,
+                    &mut recipients,
+                    &parts,
+                    Some(&actor_identity),
+                )
+                .await;
+            }
 
             let announce_room = notify_statuses
                 .as_array()
