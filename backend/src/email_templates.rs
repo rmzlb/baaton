@@ -258,7 +258,7 @@ mod tests {
         assert!(
             html.contains("/all-issues?issue=BAA-42"),
             "deep link must use display_id, got: {}",
-            &html[html.find("href").unwrap_or(0)..][..80.min(html.len())]
+            html.find("href").map_or_else(String::new, |i| html[i..].chars().take(80).collect::<String>())
         );
         assert!(
             !html.contains("/issues/"),
