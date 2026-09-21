@@ -98,7 +98,7 @@ pub async fn chat(
 ) -> Response {
     // ── AI quota check ──
     let org_id = auth.org_id.as_deref().unwrap_or("unknown");
-    let plan = crate::routes::admin::get_user_plan(&pool, &auth.user_id, Some(org_id)).await;
+    let plan = crate::entitlement::effective_plan(&pool, &auth, org_id).await;
     let limits = crate::routes::admin::plan_limits(&plan);
     let ai_limit: i64 = if limits.ai_limit < 0 { i64::MAX } else { limits.ai_limit };
 

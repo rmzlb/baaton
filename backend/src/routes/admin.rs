@@ -96,8 +96,12 @@ pub struct SetPlanBody {
     pub plan: String,
 }
 
-/// PATCH /admin/orgs/{id}/plan — set org plan
+/// PATCH /admin/orgs/{id}/plan — set the organization's plan.
 /// Superadmin: can set any plan. Org admin: can only set free/pro/enterprise on own org.
+/// The plan is the org's entitlement (entitlement.rs): every member and every
+/// API key of the org consume it. Nothing is copied onto members' own plans —
+/// that copy (migration 040 era) made a paid plan leak into members' other orgs
+/// and left later joiners on free.
 pub async fn set_plan(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
@@ -131,7 +135,6 @@ pub async fn set_plan(
         ));
     }
 
-    // Write to organizations (legacy compat) AND user_plans for all members
     sqlx::query(
         "INSERT INTO organizations (id, name, slug, plan) VALUES ($1, $1, $1, $2) ON CONFLICT (id) DO UPDATE SET plan = $2"
     )
@@ -140,26 +143,9 @@ pub async fn set_plan(
     .execute(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    ensure_org_name(&pool, &org_id).await;
 
-    // Also set user_plans for all org members (via Clerk)
-    let members = fetch_org_members(&org_id).await;
-    for member in &members {
-        if let Some(uid) = member.get("user_id").and_then(|u| u.as_str()) {
-            if !uid.is_empty() {
-                let _ = sqlx::query(
-                    "INSERT INTO user_plans (user_id, plan, updated_by) VALUES ($1, $2, $3) \
-                     ON CONFLICT (user_id) DO UPDATE SET plan = $2, updated_at = now(), updated_by = $3"
-                )
-                .bind(uid)
-                .bind(&body.plan)
-                .bind(&auth.user_id)
-                .execute(&pool)
-                .await;
-            }
-        }
-    }
-
-    audit_log(&pool, &auth, "set_plan", "organization", &org_id, json!({ "plan": body.plan, "members_updated": members.len() })).await;
+    audit_log(&pool, &auth, "set_plan", "organization", &org_id, json!({ "plan": body.plan })).await;
 
     tracing::info!(
         admin_user = %auth.user_id,
@@ -627,7 +613,9 @@ pub async fn get_billing(
         .or(org_ids.first().map(|s| s.as_str()))
         .unwrap_or("unknown");
 
-    let plan = get_user_plan(&pool, &auth.user_id, Some(current_org)).await;
+    // The plan and the counted usage are those of the current organization:
+    // that is what the org pays for, whoever is looking.
+    let plan = crate::entitlement::effective_plan(&pool, &auth, current_org).await;
 
     // Fetch org names from Clerk
     let org_names: std::collections::HashMap<String, String> = {
@@ -679,14 +667,17 @@ pub async fn get_billing(
     };
 
     let total_orgs = org_ids.len() as i64;
-    let total_projects: i64 = org_usage.iter().map(|o| o.project_count).sum();
-    let total_issues: i64 = org_usage.iter().map(|o| o.issue_count).sum();
+    let (total_projects, total_issues): (i64, i64) = org_usage
+        .iter()
+        .filter(|o| o.org_id == current_org)
+        .map(|o| (o.project_count, o.issue_count))
+        .next()
+        .unwrap_or((0, 0));
 
     let month = chrono::Utc::now().format("%Y-%m").to_string();
-    let api_count: i64 = if !org_ids.is_empty() {
-        sqlx::query_scalar("SELECT COALESCE(SUM(count), 0) FROM api_request_log WHERE org_id = ANY($1) AND month = $2")
-            .bind(&org_ids).bind(&month).fetch_optional(&pool).await.ok().flatten().unwrap_or(0)
-    } else { 0 };
+    let api_count: i64 =
+        sqlx::query_scalar("SELECT COALESCE(SUM(count), 0) FROM api_request_log WHERE org_id = $1 AND month = $2")
+            .bind(current_org).bind(&month).fetch_optional(&pool).await.ok().flatten().unwrap_or(0);
 
     let plan_config = plan_limits(&plan);
 
@@ -697,6 +688,7 @@ pub async fn get_billing(
     Ok(Json(json!({
         "data": {
             "plan": plan,
+            "plan_org_id": current_org,
             "organizations": org_usage,
             "usage": {
                 "orgs": { "current": total_orgs, "limit": plan_config.org_limit },
@@ -717,9 +709,11 @@ pub async fn get_billing(
     })))
 }
 
-// ─── User plan lookup (single source of truth) ──────────────────────────
+// ─── User plan lookup ────────────────────────────────────────────────────
 
-/// Get a user's plan from user_plans table. Plans are per-user, not per-org.
+/// Raw lookup of a human's `user_plans` row (free when absent). This is NOT the
+/// plan that governs an action: use `crate::entitlement::effective_plan`, which
+/// combines the organization's plan, its owner's plan and superadmin grants.
 /// This is the ONLY function that should determine a user's plan.
 pub async fn get_user_plan(pool: &PgPool, user_id: &str, _org_id: Option<&str>) -> String {
     let user_plan: Option<String> = sqlx::query_scalar(
@@ -853,13 +847,13 @@ pub async fn get_audit_log(
 
 /// Fetch org name from Clerk API and update DB if name is currently the org_id
 pub async fn ensure_org_name(pool: &PgPool, org_id: &str) {
-    // Skip if name is already resolved
-    let current_name: Option<String> = sqlx::query_scalar(
-        "SELECT name FROM organizations WHERE id = $1"
+    // Skip if name and owner are already resolved
+    let current: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT name, owner_user_id FROM organizations WHERE id = $1"
     ).bind(org_id).fetch_optional(pool).await.ok().flatten();
 
-    match current_name {
-        Some(ref name) if name != org_id && !name.is_empty() => return, // Already resolved
+    match current {
+        Some((ref name, Some(ref owner))) if name != org_id && !name.is_empty() && !owner.is_empty() => return,
         _ => {}
     }
 
@@ -877,16 +871,21 @@ pub async fn ensure_org_name(pool: &PgPool, org_id: &str) {
             let name = body.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let slug = body.get("slug").and_then(|s| s.as_str()).unwrap_or("");
             let logo = body.get("image_url").and_then(|u| u.as_str()).unwrap_or("");
+            // Clerk's `created_by` is the org owner: their plan raises the org's
+            // entitlement (entitlement.rs), so it is cached with the name.
+            let owner = body.get("created_by").and_then(|u| u.as_str()).unwrap_or("");
             if !name.is_empty() {
                 let _ = sqlx::query(
-                    "UPDATE organizations SET name = $2, slug = CASE WHEN slug = id THEN $3 ELSE slug END WHERE id = $1"
+                    "UPDATE organizations SET name = $2, slug = CASE WHEN slug = id THEN $3 ELSE slug END, \
+                     owner_user_id = COALESCE(NULLIF($4, ''), owner_user_id) WHERE id = $1"
                 )
                 .bind(org_id)
                 .bind(name)
                 .bind(if slug.is_empty() { name } else { slug })
+                .bind(owner)
                 .execute(pool)
                 .await;
-                tracing::info!(org_id = %org_id, name = %name, "Resolved org name from Clerk");
+                tracing::info!(org_id = %org_id, name = %name, owner = %owner, "Resolved org name and owner from Clerk");
             }
             // Also store logo URL if we have a column (future)
             let _ = logo;
@@ -894,7 +893,44 @@ pub async fn ensure_org_name(pool: &PgPool, org_id: &str) {
     }
 }
 
-/// Ensure org exists in DB with proper name. Fire-and-forget name resolution.
+/// Orgs created before migration 079 have no owner cached: resolve them once
+/// from Clerk at startup, one call per org, so an owner's plan applies to the
+/// orgs they already own. Best effort — a failed call is retried at next boot.
+pub async fn backfill_org_owners(pool: PgPool) {
+    let orgs: Vec<String> = sqlx::query_scalar(
+        "SELECT id FROM organizations WHERE (owner_user_id IS NULL OR owner_user_id = '') AND id LIKE 'org_%' ORDER BY created_at"
+    ).fetch_all(&pool).await.unwrap_or_default();
+    if orgs.is_empty() { return; }
+    tracing::info!(count = orgs.len(), "Backfilling organization owners from Clerk");
+    for org_id in orgs {
+        ensure_org_owner(&pool, &org_id).await;
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+}
+
+/// Resolve and cache the Clerk owner (`created_by`) of an org whose name is
+/// already known — `ensure_org_name` returns early in that case.
+async fn ensure_org_owner(pool: &PgPool, org_id: &str) {
+    let clerk_key = std::env::var("CLERK_SECRET_KEY").unwrap_or_default();
+    if clerk_key.is_empty() { return; }
+    let resp = reqwest::Client::new()
+        .get(format!("https://api.clerk.com/v1/organizations/{org_id}"))
+        .header("Authorization", format!("Bearer {clerk_key}"))
+        .send()
+        .await;
+    if let Ok(r) = resp {
+        if let Ok(body) = r.json::<serde_json::Value>().await {
+            let owner = body.get("created_by").and_then(|u| u.as_str()).unwrap_or("");
+            if !owner.is_empty() {
+                let _ = sqlx::query("UPDATE organizations SET owner_user_id = $2 WHERE id = $1")
+                    .bind(org_id).bind(owner).execute(pool).await;
+                tracing::info!(org_id = %org_id, owner = %owner, "Resolved org owner from Clerk");
+            }
+        }
+    }
+}
+
+/// Ensure org exists in DB with proper name and owner. Fire-and-forget resolution.
 pub fn upsert_org_background(pool: PgPool, org_id: String) {
     tokio::spawn(async move {
         // Upsert first

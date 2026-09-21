@@ -19,6 +19,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod ai_models;
 mod email_templates;
+mod entitlement;
 mod filter;
 mod github;
 mod middleware;
@@ -209,6 +210,10 @@ async fn main() -> anyhow::Result<()> {
             78,
             include_str!("../migrations/078_pending_notifications.sql"),
         ),
+        (
+            79,
+            include_str!("../migrations/079_plan_belongs_to_org.sql"),
+        ),
     ];
 
     for &(version, sql) in migrations {
@@ -263,6 +268,14 @@ async fn main() -> anyhow::Result<()> {
     let issuer_bg = clerk_issuer.clone();
     tokio::spawn(async move {
         jwks_refresh_task(jwks_bg, issuer_bg).await;
+    });
+
+    // Resolve org owners from Clerk for orgs that predate migration 079: the
+    // owner's plan raises the org plan (entitlement.rs), so this backfill is
+    // what turns an existing owner's plan into their orgs' entitlement.
+    let owners_pool = pool.clone();
+    tokio::spawn(async move {
+        routes::admin::backfill_org_owners(owners_pool).await;
     });
 
     // Start GitHub sync job runner

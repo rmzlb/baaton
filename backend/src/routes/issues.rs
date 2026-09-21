@@ -1284,10 +1284,11 @@ pub async fn create(
         ));
     }
 
-    // ── Plan enforcement: check issue limit (per-user, cross-org) ─────────
+    // ── Plan enforcement: the project's organization pays for its issues ──
     crate::middleware::plan_guard::enforce_quota(
         &pool,
         &auth,
+        &org_id,
         crate::middleware::plan_guard::QuotaKind::Issues,
     )
     .await?;

@@ -501,18 +501,19 @@ pub async fn create(
     };
     validate_project_scope(&pool, &body.project_ids, &scoped_org_ids).await?;
 
-    crate::middleware::plan_guard::enforce_quota(
-        &pool,
-        &auth,
-        crate::middleware::plan_guard::QuotaKind::ApiKeys,
-    )
-    .await?;
-
     let anchor_org_id = auth
         .org_id
         .clone()
         .filter(|id| scoped_org_ids.contains(id))
         .unwrap_or_else(|| scoped_org_ids[0].clone());
+    // The key lives in its anchor organization: that org's plan counts it.
+    crate::middleware::plan_guard::enforce_quota(
+        &pool,
+        &auth,
+        &anchor_org_id,
+        crate::middleware::plan_guard::QuotaKind::ApiKeys,
+    )
+    .await?;
     crate::routes::admin::upsert_org_background(pool.clone(), anchor_org_id.clone());
     for org_id in &scoped_org_ids {
         crate::routes::admin::upsert_org_background(pool.clone(), org_id.clone());

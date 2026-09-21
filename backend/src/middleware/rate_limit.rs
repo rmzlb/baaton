@@ -61,17 +61,8 @@ pub async fn check_and_increment(
         (StatusCode::INTERNAL_SERVER_ERROR, json!({"error": "Rate limit check failed"}))
     })?;
 
-    let plan: String = sqlx::query_scalar(
-        "SELECT COALESCE(plan, 'free') FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::warn!(error = %e, "rate_limit: plan lookup failed");
-        (StatusCode::INTERNAL_SERVER_ERROR, json!({"error": "Rate limit check failed"}))
-    })?
-    .unwrap_or_else(|| "free".to_string());
+    // The org's entitlement, raised by its owner's plan (entitlement.rs).
+    let plan = crate::entitlement::org_plan(pool, org_id).await;
 
     let reset = if now.month() == 12 {
         format!("{}-01-01T00:00:00Z", now.year() + 1)
