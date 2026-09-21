@@ -359,18 +359,32 @@ pub async fn list_users(
             ensure_org_name(&pool, org_id).await;
         }
     }
-    // Re-fetch after resolution to get updated names
-    let orgs = sqlx::query_as::<_, (String, String, String, String, chrono::DateTime<chrono::Utc>)>(
-        r#"SELECT o.id, COALESCE(o.name, o.id), o.slug, COALESCE(o.plan, 'free'), o.created_at
+    // Re-fetch after resolution to get updated names and owners
+    let orgs = sqlx::query_as::<_, (String, String, String, String, chrono::DateTime<chrono::Utc>, Option<String>)>(
+        r#"SELECT o.id, COALESCE(o.name, o.id), o.slug, COALESCE(o.plan, 'free'), o.created_at, o.owner_user_id
            FROM organizations o ORDER BY o.created_at DESC LIMIT $1 OFFSET $2"#
     ).bind(limit).bind(offset).fetch_all(&pool).await.unwrap_or_default();
 
     let mut org_list: Vec<Value> = Vec::new();
 
-    for (org_id, name, slug, plan, created_at) in &orgs {
-        // Apply plan filter
+    for (org_id, name, slug, plan, created_at, owner_user_id) in &orgs {
+        // The plan that actually governs the org: its own plan, raised to its
+        // owner's (entitlement.rs). The admin filters and reads on that one.
+        let owner_plan: Option<String> = match owner_user_id {
+            Some(owner) if !owner.is_empty() => Some(get_user_plan(&pool, owner, None).await),
+            _ => None,
+        };
+        let effective_plan = crate::entitlement::org_plan(&pool, org_id).await;
+        let plan_source = if effective_plan == "free" {
+            "none"
+        } else if crate::entitlement::plan_rank(plan) >= crate::entitlement::plan_rank(&effective_plan) {
+            "org"
+        } else {
+            "owner"
+        };
+        // Apply plan filter (on the effective plan)
         if let Some(ref filter_plan) = params.plan {
-            if plan != filter_plan { continue; }
+            if &effective_plan != filter_plan { continue; }
         }
 
         // Apply search filter
@@ -409,12 +423,24 @@ pub async fn list_users(
 
         // Fetch member count + emails from Clerk
         let member_info = fetch_org_members(org_id).await;
+        let owner_email = owner_user_id.as_deref().and_then(|owner| {
+            member_info.iter().find_map(|m| {
+                (m.get("user_id").and_then(|u| u.as_str()) == Some(owner))
+                    .then(|| m.get("email").and_then(|e| e.as_str()).map(|e| e.to_string()))
+                    .flatten()
+            })
+        });
 
         org_list.push(json!({
             "org_id": org_id,
             "name": name,
             "slug": slug,
             "plan": plan,
+            "effective_plan": effective_plan,
+            "plan_source": plan_source,
+            "owner_user_id": owner_user_id,
+            "owner_email": owner_email,
+            "owner_plan": owner_plan,
             "created_at": created_at.to_rfc3339(),
             "projects": project_count,
             "issues": issue_count,

@@ -1381,7 +1381,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 
 // ─── Facturation (BAA-1) ──────────────────
 'billing.title': 'Plan & Facturation',
-'billing.subtitle': 'Gérez votre plan et votre utilisation sur toutes les organisations',
+'billing.subtitle': 'Plan et utilisation de l\'organisation courante ; toutes vos organisations sont détaillées ci-dessous',
 'billing.currentUsage': 'Utilisation actuelle',
 'billing.organizations': 'Organisations',
 'billing.projects': 'Projets',
@@ -1979,6 +1979,9 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'admin.allPlans': 'Tous les plans',
   'admin.orgsFound': 'organisations',
   'admin.members': 'membres',
+  'admin.viaOwner': 'via le propriétaire',
+  'admin.orgPlan': 'Plan de cette organisation',
+  'admin.owner': 'Propriétaire',
   'admin.projects': 'Projets',
   'admin.issues': 'Issues',
   'admin.apiKeysShort': 'Clés API',

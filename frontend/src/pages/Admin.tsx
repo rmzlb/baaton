@@ -24,7 +24,14 @@ interface OrgEntry {
   org_id: string;
   name: string;
   slug: string;
+  /** The org's own plan (what PATCH /admin/orgs/{id}/plan sets). */
   plan: string;
+  /** The plan that governs the org: its own plan, raised to its owner's. */
+  effective_plan: string;
+  plan_source: 'org' | 'owner' | 'none';
+  owner_user_id: string | null;
+  owner_email: string | null;
+  owner_plan: string | null;
   created_at: string;
   projects: number;
   issues: number;
@@ -385,7 +392,10 @@ export default function Admin() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-primary truncate">{org.name}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PLAN_COLORS[org.plan] || PLAN_COLORS.free}`}>{org.plan}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PLAN_COLORS[org.effective_plan] || PLAN_COLORS.free}`}>{org.effective_plan}</span>
+                        {org.plan_source === 'owner' && (
+                          <span className="text-[10px] text-muted">{t('admin.viaOwner')} {org.owner_email ?? org.owner_user_id}</span>
+                        )}
                       </div>
                       <div className="text-xs text-muted mt-1">{org.slug} · {org.members.length} {t('admin.members')}</div>
                     </div>
@@ -395,10 +405,18 @@ export default function Admin() {
                       <span>{org.api_keys}k</span>
                       <span>{org.ai_messages_this_month} AI</span>
                     </div>
-                    {/* Plan badge (plans are per-user now, this shows legacy org plan) */}
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border border-border ${
-                      org.plan === 'pro' ? 'text-blue-400' : org.plan === 'enterprise' ? 'text-purple-400' : org.plan === 'partner' ? 'text-amber-400' : 'text-muted'
-                    }`}>{org.plan}</span>
+                    {/* The org's own plan: what the superadmin sets. The badge on the left is what applies. */}
+                    <select
+                      value={org.plan}
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => { e.stopPropagation(); setPlanMut.mutate({ orgId: org.org_id, plan: e.target.value }); }}
+                      title={t('admin.orgPlan')}
+                      className={`rounded-md border border-border bg-bg px-2 py-1 text-xs font-medium ${PLAN_TEXT_COLORS[org.plan] || 'text-primary'} cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent`}
+                    >
+                      {PLAN_OPTIONS.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
                     <ChevronDown size={16} className={`text-muted transition-transform ${expandedOrg === org.org_id ? 'rotate-180' : ''}`} />
                   </div>
 
@@ -420,6 +438,12 @@ export default function Admin() {
                             <div className="text-xs text-muted">{s.label}</div>
                           </div>
                         ))}
+                      </div>
+
+                      {/* Owner: the human whose plan raises the org's */}
+                      <div className="text-xs text-muted">
+                        {t('admin.owner')} : {org.owner_email ?? org.owner_user_id ?? '—'}
+                        {org.owner_plan ? ` · ${org.owner_plan}` : ''}
                       </div>
 
                       {/* Members */}

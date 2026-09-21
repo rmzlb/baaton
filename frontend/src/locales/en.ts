@@ -1381,7 +1381,7 @@ As a [user], I want to [action] so that [benefit].
 
 // ─── Billing (BAA-1) ──────────────────
 'billing.title': 'Plan & Billing',
-'billing.subtitle': 'Manage your plan and usage across all organizations',
+'billing.subtitle': 'Plan and usage of the current organization; every organization you belong to is listed below',
 'billing.currentUsage': 'Current Usage',
 'billing.organizations': 'Organizations',
 'billing.projects': 'Projects',
@@ -1979,6 +1979,9 @@ As a [user], I want to [action] so that [benefit].
   'admin.allPlans': 'All plans',
   'admin.orgsFound': 'organizations',
   'admin.members': 'members',
+  'admin.viaOwner': 'via owner',
+  'admin.orgPlan': 'Plan of this organization',
+  'admin.owner': 'Owner',
   'admin.projects': 'Projects',
   'admin.issues': 'Issues',
   'admin.apiKeysShort': 'API Keys',
