@@ -370,18 +370,10 @@ pub async fn list_users(
     for (org_id, name, slug, plan, created_at, owner_user_id) in &orgs {
         // The plan that actually governs the org: its own plan, raised to its
         // owner's (entitlement.rs). The admin filters and reads on that one.
-        let owner_plan: Option<String> = match owner_user_id {
-            Some(owner) if !owner.is_empty() => Some(get_user_plan(&pool, owner, None).await),
-            _ => None,
-        };
-        let effective_plan = crate::entitlement::org_plan(&pool, org_id).await;
-        let plan_source = if effective_plan == "free" {
-            "none"
-        } else if crate::entitlement::plan_rank(plan) >= crate::entitlement::plan_rank(&effective_plan) {
-            "org"
-        } else {
-            "owner"
-        };
+        let ent = crate::entitlement::org_entitlement(&pool, org_id).await;
+        let owner_plan = ent.owner_plan.clone();
+        let effective_plan = ent.effective_plan.clone();
+        let plan_source = ent.plan_source;
         // Apply plan filter (on the effective plan)
         if let Some(ref filter_plan) = params.plan {
             if &effective_plan != filter_plan { continue; }
@@ -622,7 +614,13 @@ pub async fn list_super_admins(
     Ok(Json(json!({ "data": list })))
 }
 
-// ─── GET /billing — user billing (unchanged, available to all users) ────
+// ─── GET /billing — plan and usage of the current organization ──────────
+//
+// Read like Vercel or Supabase: the plan belongs to the organization, the
+// page shows the current org (plan, where it comes from, usage, per project)
+// and lists every organization the caller belongs to with its own plan. The
+// free allowance is one pool across the owner's free organizations, so the
+// counted usage says which orgs it spans.
 
 pub async fn get_billing(
     Extension(auth): Extension<AuthUser>,
@@ -630,101 +628,147 @@ pub async fn get_billing(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     use crate::routes::issues::resolve_user_org_ids_from_auth;
 
-    let org_ids = resolve_user_org_ids_from_auth(&auth).await.map_err(|e| {
+    let mut org_ids = resolve_user_org_ids_from_auth(&auth).await.map_err(|e| {
         tracing::error!(error = %e, "billing: failed to fetch org memberships");
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to resolve organizations"})))
     })?;
+    if let Some(ref current) = auth.org_id {
+        if !org_ids.contains(current) {
+            org_ids.push(current.clone());
+        }
+    }
 
     let current_org = auth.org_id.as_deref()
         .or(org_ids.first().map(|s| s.as_str()))
         .unwrap_or("unknown");
+    let human = crate::entitlement::human_actor(&auth).map(|s| s.to_string());
 
-    // The plan and the counted usage are those of the current organization:
-    // that is what the org pays for, whoever is looking.
+    let entitlement = crate::entitlement::org_entitlement(&pool, current_org).await;
     let plan = crate::entitlement::effective_plan(&pool, &auth, current_org).await;
+    let plan_config = plan_limits(&plan);
+    let scope = crate::entitlement::quota_scope(&pool, current_org, &plan).await;
 
-    // Fetch org names from Clerk
-    let org_names: std::collections::HashMap<String, String> = {
-        let mut map = std::collections::HashMap::new();
-        let clerk_key = std::env::var("CLERK_SECRET_KEY").unwrap_or_default();
-        if !clerk_key.is_empty() {
-            let client = reqwest::Client::new();
-            for oid in &org_ids {
-                if let Ok(resp) = client
-                    .get(format!("https://api.clerk.com/v1/organizations/{oid}"))
-                    .header("Authorization", format!("Bearer {clerk_key}"))
-                    .send()
-                    .await
-                {
-                    if let Ok(body) = resp.json::<Value>().await {
-                        if let Some(name) = body.get("name").and_then(|n| n.as_str()) {
-                            map.insert(oid.clone(), name.to_string());
-                        }
-                    }
-                }
-            }
-        }
-        map
+    // Names come from the organizations table (resolved from Clerk when the
+    // org was first seen); an unresolved org shows its id.
+    #[derive(sqlx::FromRow)]
+    struct OrgRow { id: String, name: String }
+    let org_rows: Vec<OrgRow> = if org_ids.is_empty() { Vec::new() } else {
+        sqlx::query_as::<_, OrgRow>(
+            "SELECT id, COALESCE(name, id) AS name FROM organizations WHERE id = ANY($1)"
+        ).bind(&org_ids).fetch_all(&pool).await.unwrap_or_default()
+    };
+    let org_name = |id: &str| -> String {
+        org_rows.iter().find(|o| o.id == id).map(|o| o.name.clone()).unwrap_or_else(|| id.to_string())
     };
 
     #[derive(sqlx::FromRow)]
-    struct OrgUsageRow { org_id: String, org_name: String, project_count: i64, issue_count: i64 }
-    #[derive(serde::Serialize)]
-    struct OrgUsage { org_id: String, org_name: String, project_count: i64, issue_count: i64 }
-
-    let org_usage: Vec<OrgUsage> = if !org_ids.is_empty() {
-        sqlx::query_as::<_, OrgUsageRow>(
-            r#"SELECT p.org_id, COALESCE(o.name, p.org_id) AS org_name,
-                COUNT(DISTINCT p.id) AS project_count, COUNT(i.id) AS issue_count
-               FROM projects p LEFT JOIN organizations o ON o.id = p.org_id
-               LEFT JOIN issues i ON i.project_id = p.id WHERE p.org_id = ANY($1)
-               GROUP BY p.org_id, o.name ORDER BY issue_count DESC"#
+    struct CountRow { org_id: String, project_count: i64, issue_count: i64 }
+    let counts: Vec<CountRow> = if org_ids.is_empty() { Vec::new() } else {
+        sqlx::query_as::<_, CountRow>(
+            r#"SELECT p.org_id, COUNT(DISTINCT p.id) AS project_count, COUNT(i.id) AS issue_count
+               FROM projects p LEFT JOIN issues i ON i.project_id = p.id
+               WHERE p.org_id = ANY($1) GROUP BY p.org_id"#
         ).bind(&org_ids).fetch_all(&pool).await.unwrap_or_default()
-        .into_iter().map(|r| {
-            let name = org_names.get(&r.org_id).cloned().unwrap_or(r.org_name);
-            OrgUsage { org_id: r.org_id, org_name: name, project_count: r.project_count, issue_count: r.issue_count }
-        }).collect()
-    } else {
-        org_ids.iter().map(|oid| OrgUsage {
-            org_id: oid.clone(),
-            org_name: org_names.get(oid).cloned().unwrap_or_else(|| oid.clone()),
-            project_count: 0, issue_count: 0,
-        }).collect()
+    };
+    let count_of = |id: &str| -> (i64, i64) {
+        counts.iter().find(|c| c.org_id == id).map(|c| (c.project_count, c.issue_count)).unwrap_or((0, 0))
     };
 
-    let total_orgs = org_ids.len() as i64;
-    let (total_projects, total_issues): (i64, i64) = org_usage
-        .iter()
-        .filter(|o| o.org_id == current_org)
-        .map(|o| (o.project_count, o.issue_count))
-        .next()
-        .unwrap_or((0, 0));
+    // Every organization the caller belongs to, each with the plan that governs it.
+    let mut organizations: Vec<Value> = Vec::with_capacity(org_ids.len());
+    for oid in &org_ids {
+        let ent = if oid == current_org { entitlement.clone() } else { crate::entitlement::org_entitlement(&pool, oid).await };
+        let (project_count, issue_count) = count_of(oid);
+        organizations.push(json!({
+            "org_id": oid,
+            "org_name": org_name(oid),
+            "plan": ent.plan,
+            "effective_plan": ent.effective_plan,
+            "plan_source": ent.plan_source,
+            "owner_is_me": human.as_deref().is_some() && ent.owner_user_id.as_deref() == human.as_deref(),
+            "is_current": oid == current_org,
+            "project_count": project_count,
+            "issue_count": issue_count,
+        }));
+    }
+    organizations.sort_by(|a, b| {
+        let cur = |v: &Value| v.get("is_current").and_then(|x| x.as_bool()).unwrap_or(false);
+        cur(b).cmp(&cur(a)).then_with(|| {
+            let issues = |v: &Value| v.get("issue_count").and_then(|x| x.as_i64()).unwrap_or(0);
+            issues(b).cmp(&issues(a))
+        })
+    });
 
+    // Usage counted on the quota scope: the org alone on a paid plan, every
+    // free org of the owner on the free plan.
+    let (scoped_projects, scoped_issues): (i64, i64) = sqlx::query_as(
+        r#"SELECT COUNT(DISTINCT p.id), COUNT(i.id)
+           FROM projects p LEFT JOIN issues i ON i.project_id = p.id WHERE p.org_id = ANY($1)"#
+    ).bind(&scope).fetch_one(&pool).await.unwrap_or((0, 0));
+    let scoped_keys: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_keys WHERE org_id = ANY($1)")
+        .bind(&scope).fetch_one(&pool).await.unwrap_or(0);
+    let scoped_automations: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM automation_rules ar JOIN projects p ON p.id = ar.project_id WHERE p.org_id = ANY($1)"
+    ).bind(&scope).fetch_one(&pool).await.unwrap_or(0);
     let month = chrono::Utc::now().format("%Y-%m").to_string();
     let api_count: i64 =
-        sqlx::query_scalar("SELECT COALESCE(SUM(count), 0) FROM api_request_log WHERE org_id = $1 AND month = $2")
-            .bind(current_org).bind(&month).fetch_optional(&pool).await.ok().flatten().unwrap_or(0);
+        sqlx::query_scalar("SELECT COALESCE(SUM(count), 0) FROM api_request_log WHERE org_id = ANY($1) AND month = $2")
+            .bind(&scope).bind(&month).fetch_optional(&pool).await.ok().flatten().unwrap_or(0);
+    let ai_count: i64 = match human.as_deref() {
+        Some(user_id) => sqlx::query_scalar(
+            "SELECT COUNT(*) FROM ai_usage WHERE user_id = $1 AND created_at >= date_trunc('month', now())"
+        ).bind(user_id).fetch_one(&pool).await.unwrap_or(0),
+        None => 0,
+    };
 
-    let plan_config = plan_limits(&plan);
+    // The current organization, project by project.
+    #[derive(sqlx::FromRow)]
+    struct ProjectRow { id: uuid::Uuid, name: String, prefix: String, issue_count: i64, open_count: i64 }
+    let projects: Vec<Value> = sqlx::query_as::<_, ProjectRow>(
+        r#"SELECT p.id, p.name, p.prefix,
+                  COUNT(i.id) AS issue_count,
+                  COUNT(i.id) FILTER (WHERE i.status NOT IN ('done', 'cancelled')) AS open_count
+           FROM projects p LEFT JOIN issues i ON i.project_id = p.id
+           WHERE p.org_id = $1 GROUP BY p.id, p.name, p.prefix ORDER BY issue_count DESC, p.name"#
+    ).bind(current_org).fetch_all(&pool).await.unwrap_or_default()
+    .into_iter().map(|r| json!({
+        "project_id": r.id, "name": r.name, "prefix": r.prefix,
+        "issue_count": r.issue_count, "open_count": r.open_count,
+    })).collect();
 
-    let ai_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM ai_usage WHERE user_id = $1 AND created_at >= date_trunc('month', now())"
-    ).bind(&auth.user_id).fetch_one(&pool).await.unwrap_or(0);
+    let owner_is_me = human.as_deref().is_some() && entitlement.owner_user_id.as_deref() == human.as_deref();
+    let free_pool: Option<Value> = if scope.len() > 1 {
+        Some(json!({
+            "org_ids": scope,
+            "org_names": scope.iter().map(|id| org_name(id)).collect::<Vec<_>>(),
+        }))
+    } else { None };
 
     Ok(Json(json!({
         "data": {
             "plan": plan,
             "plan_org_id": current_org,
-            "organizations": org_usage,
+            "current_org": {
+                "org_id": current_org,
+                "org_name": org_name(current_org),
+                "plan": entitlement.plan,
+                "effective_plan": entitlement.effective_plan,
+                "plan_source": entitlement.plan_source,
+                "owner_user_id": entitlement.owner_user_id,
+                "owner_is_me": owner_is_me,
+                "projects": projects,
+            },
+            "free_pool": free_pool,
+            "organizations": organizations,
             "usage": {
-                "orgs": { "current": total_orgs, "limit": plan_config.org_limit },
-                "projects": { "current": total_projects, "limit": plan_config.project_limit },
-                "issues": { "current": total_issues, "limit": plan_config.issue_limit },
+                "orgs": { "current": org_ids.len() as i64, "limit": plan_config.org_limit },
+                "projects": { "current": scoped_projects, "limit": plan_config.project_limit },
+                "issues": { "current": scoped_issues, "limit": plan_config.issue_limit },
                 "api_requests": { "current": api_count, "limit": plan_config.api_limit, "month": month },
                 "ai_messages": { "current": ai_count, "limit": plan_config.ai_limit, "month": month },
-                "users": { "limit": plan_config.user_limit },
-                "api_keys": { "limit": plan_config.key_limit },
-                "automations": { "limit": plan_config.auto_limit }
+                "api_keys": { "current": scoped_keys, "limit": plan_config.key_limit },
+                "automations": { "current": scoped_automations, "limit": plan_config.auto_limit },
+                "users": { "limit": plan_config.user_limit }
             },
             "pricing": {
                 "free": { "price": 0, "label": "$0/mo", "users_included": 2 },

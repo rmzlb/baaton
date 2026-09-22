@@ -56,9 +56,21 @@ pub async fn is_super_admin_actor(pool: &PgPool, auth: &AuthUser) -> bool {
     }
 }
 
-/// The plan an organization is entitled to: its own plan, raised to its
-/// owner's plan. Unknown org → free.
-pub async fn org_plan(pool: &PgPool, org_id: &str) -> String {
+/// Everything the plan of an organization is made of, for the guard, the
+/// billing page and the admin list to read the same thing.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct OrgEntitlement {
+    /// `organizations.plan`: what an admin set on the org itself.
+    pub plan: String,
+    /// The plan that governs the org: `plan` raised to the owner's plan.
+    pub effective_plan: String,
+    /// Where `effective_plan` comes from: "org", "owner", or "none" (free).
+    pub plan_source: &'static str,
+    pub owner_user_id: Option<String>,
+    pub owner_plan: Option<String>,
+}
+
+pub async fn org_entitlement(pool: &PgPool, org_id: &str) -> OrgEntitlement {
     let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT o.plan, o.owner_user_id FROM organizations o WHERE o.id = $1",
     )
@@ -72,13 +84,64 @@ pub async fn org_plan(pool: &PgPool, org_id: &str) -> String {
         Some((plan, owner)) => (plan.unwrap_or_else(|| "free".to_string()), owner),
         None => ("free".to_string(), None),
     };
-    match owner {
-        Some(ref owner_id) if !owner_id.is_empty() => {
-            let owner_plan = get_user_plan(pool, owner_id, None).await;
-            higher(&plan, &owner_plan).to_string()
-        }
-        _ => plan,
+    let owner_user_id = owner.filter(|id| !id.is_empty());
+    let owner_plan = match owner_user_id.as_deref() {
+        Some(owner_id) => Some(get_user_plan(pool, owner_id, None).await),
+        None => None,
+    };
+    let effective_plan = match owner_plan.as_deref() {
+        Some(owner_plan) => higher(&plan, owner_plan).to_string(),
+        None => plan.clone(),
+    };
+    let plan_source = if plan_rank(&effective_plan) == 0 {
+        "none"
+    } else if plan_rank(&plan) >= plan_rank(&effective_plan) {
+        "org"
+    } else {
+        "owner"
+    };
+    OrgEntitlement { plan, effective_plan, plan_source, owner_user_id, owner_plan }
+}
+
+/// The plan an organization is entitled to: its own plan, raised to its
+/// owner's plan. Unknown org → free.
+pub async fn org_plan(pool: &PgPool, org_id: &str) -> String {
+    org_entitlement(pool, org_id).await.effective_plan
+}
+
+/// The organizations whose usage is counted together for a quota.
+///
+/// A paid or granted plan is counted inside its org. The **free** allowance is
+/// counted in total across every free organization the same owner has (as
+/// Supabase or Vercel do): creating a second free org never doubles the free
+/// quota. An org without a resolved owner is counted alone.
+pub async fn quota_scope(pool: &PgPool, org_id: &str, effective_plan: &str) -> Vec<String> {
+    if plan_rank(effective_plan) > 0 {
+        return vec![org_id.to_string()];
     }
+    let owner: Option<String> = sqlx::query_scalar(
+        "SELECT NULLIF(owner_user_id, '') FROM organizations WHERE id = $1",
+    )
+    .bind(org_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .flatten();
+    let Some(owner) = owner else {
+        return vec![org_id.to_string()];
+    };
+    let mut pool_orgs: Vec<String> = sqlx::query_scalar(
+        "SELECT id FROM organizations WHERE owner_user_id = $1 AND COALESCE(plan, 'free') = 'free' ORDER BY created_at",
+    )
+    .bind(&owner)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    if !pool_orgs.iter().any(|id| id == org_id) {
+        pool_orgs.push(org_id.to_string());
+    }
+    pool_orgs
 }
 
 /// The plan that governs `auth` acting inside `org_id`: the org's plan, raised

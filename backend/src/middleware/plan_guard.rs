@@ -1,9 +1,10 @@
 //! Plan enforcement guard — reusable quota checks for all create endpoints.
 //!
 //! The plan belongs to the organization the action targets (see
-//! `crate::entitlement`): quotas count **inside that org**, whoever clicks —
-//! a member, or an API key created by a member. Superadmins bypass everything,
-//! including through their API keys.
+//! `crate::entitlement`): a paid or granted plan is counted **inside that
+//! org**, the free allowance in total across the owner's free orgs — whoever
+//! clicks, a member or an API key created by a member. Superadmins bypass
+//! everything, including through their API keys.
 //!
 //! Usage:
 //! ```rust
@@ -14,7 +15,7 @@ use axum::http::StatusCode;
 use serde_json::json;
 use sqlx::PgPool;
 
-use crate::entitlement::{effective_plan, human_actor, is_super_admin_actor};
+use crate::entitlement::{effective_plan, human_actor, is_super_admin_actor, quota_scope};
 use crate::middleware::AuthUser;
 use crate::routes::admin::plan_limits;
 use crate::routes::issues::fetch_user_org_ids;
@@ -62,6 +63,9 @@ pub async fn enforce_quota(
 
     let plan = effective_plan(pool, auth, org_id).await;
     let limits = plan_limits(&plan);
+    // A free allowance is shared by every free org of the same owner; a paid
+    // or granted plan is counted inside its org.
+    let scope = quota_scope(pool, org_id, &plan).await;
 
     let (limit, current) = match kind {
         QuotaKind::Orgs => {
@@ -72,8 +76,8 @@ pub async fn enforce_quota(
             (limits.org_limit, count)
         }
         QuotaKind::Projects => {
-            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects WHERE org_id = $1")
-                .bind(org_id)
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects WHERE org_id = ANY($1)")
+                .bind(&scope)
                 .fetch_one(pool)
                 .await
                 .unwrap_or(0);
@@ -81,17 +85,17 @@ pub async fn enforce_quota(
         }
         QuotaKind::Issues => {
             let count: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = $1",
+                "SELECT COUNT(*) FROM issues i JOIN projects p ON p.id = i.project_id WHERE p.org_id = ANY($1)",
             )
-            .bind(org_id)
+            .bind(&scope)
             .fetch_one(pool)
             .await
             .unwrap_or(0);
             (limits.issue_limit, count)
         }
         QuotaKind::ApiKeys => {
-            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_keys WHERE org_id = $1")
-                .bind(org_id)
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_keys WHERE org_id = ANY($1)")
+                .bind(&scope)
                 .fetch_one(pool)
                 .await
                 .unwrap_or(0);
@@ -99,9 +103,9 @@ pub async fn enforce_quota(
         }
         QuotaKind::Automations => {
             let count: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM automation_rules ar JOIN projects p ON p.id = ar.project_id WHERE p.org_id = $1",
+                "SELECT COUNT(*) FROM automation_rules ar JOIN projects p ON p.id = ar.project_id WHERE p.org_id = ANY($1)",
             )
-            .bind(org_id)
+            .bind(&scope)
             .fetch_one(pool)
             .await
             .unwrap_or(0);
@@ -136,6 +140,8 @@ pub async fn enforce_quota(
                 "current": current,
                 "plan": plan,
                 "org_id": org_id,
+                // On the free plan the count spans every free org of the owner.
+                "counted_orgs": scope,
                 "upgrade_url": "https://baaton.dev/#pricing"
             })),
         ));
