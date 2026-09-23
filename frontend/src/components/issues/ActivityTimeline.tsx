@@ -25,7 +25,9 @@ interface ActivityEntry {
 }
 
 /// Label an activity actor as "Human (via key)" when an agent acted for someone.
-function actorLabel(entry: ActivityEntry): string {
+/// `reporter` credits the person an integration filed the issue for, on the
+/// creation row only: later moves by the same key are the agent's, not theirs.
+function actorLabel(entry: ActivityEntry, reporter?: string | null): string {
   const actorType = entry.actor_type
     ?? (entry.user_id?.startsWith('apikey:')
       ? 'api_key'
@@ -38,7 +40,8 @@ function actorLabel(entry: ActivityEntry): string {
     || (actorType === 'api_key' ? 'agent' : null)
     || 'System';
 
-  const human = entry.on_behalf_of_name?.replace(/^@/, '');
+  const human = entry.on_behalf_of_name?.replace(/^@/, '')
+    || (entry.action === 'issue_created' ? reporter?.trim() : null);
   if (actorType === 'api_key') {
     return human ? `${human} (${acting})` : `${acting} (API)`;
   }
@@ -126,7 +129,7 @@ function RelativeTime({ date }: { date: string }) {
   return <span className="text-[10px] text-muted shrink-0" title={d.toLocaleString()}>{text}</span>;
 }
 
-export function ActivityTimeline({ issueId }: { issueId: string }) {
+export function ActivityTimeline({ issueId, reporterName }: { issueId: string; reporterName?: string | null }) {
   const apiClient = useApi();
 
   const { data: activities = [], isLoading } = useQuery({
@@ -195,7 +198,7 @@ export function ActivityTimeline({ issueId }: { issueId: string }) {
               <div className="flex-1 min-w-0 pt-0.5">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[11px] font-medium text-primary">
-                    {actorLabel(first)}
+                    {actorLabel(first, reporterName)}
                   </span>
 
                   {group.entries.map(entry => {

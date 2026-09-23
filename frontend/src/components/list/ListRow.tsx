@@ -8,6 +8,7 @@ import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { useMemberResolutionContext } from '@/contexts/MemberResolutionContext';
 import { CopyableId } from '@/components/shared/CopyableId';
 import { evaluateIssueSla, evaluateDueDate } from '@/lib/sla';
+import { creatorIdentity } from '@/lib/creator';
 import type { Issue, IssuePriority, IssueType, ProjectStatus, ProjectTag } from '@/lib/types';
 
 const typeConfig: Record<IssueType, { icon: typeof Bug; color: string; bg: string; label: string }> = {
@@ -75,7 +76,8 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
   };
 
   const categories = issue.category || [];
-  const creatorName = resolveUserName(issue.created_by_id, issue.created_by_name);
+  const { name: creatorName, via: creatorVia } = creatorIdentity(issue, resolveUserName);
+  const creatorTitle = creatorVia ? `${creatorName} · via ${creatorVia}` : creatorName;
   const sla = evaluateIssueSla(issue);
   const dueDate = evaluateDueDate(issue);
 
@@ -184,9 +186,9 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
         </span>
 
         {/* Created by */}
-        <span className="flex items-center gap-1 overflow-hidden">
+        <span className="flex items-center gap-1 overflow-hidden" title={creatorTitle}>
           {(issue.created_by_id || issue.created_by_name) ? (() => {
-            const avatar = resolveUserAvatar(issue.created_by_id);
+            const avatar = creatorVia ? null : resolveUserAvatar(issue.created_by_id);
             return (
               <>
                 <img
@@ -237,7 +239,7 @@ export function ListRow({ issue, statuses, projectTags = [], onClick, onContextM
             <span className="text-[10px] text-secondary">{statusLabel}</span>
           </span>
           {(issue.created_by_id || issue.created_by_name) && (
-            <span className="text-[10px] text-muted flex items-center gap-0.5">
+            <span className="text-[10px] text-muted flex items-center gap-0.5" title={creatorTitle}>
               <User size={9} />
               {creatorName.split(' ')[0]}
             </span>

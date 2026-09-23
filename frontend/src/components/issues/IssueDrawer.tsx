@@ -23,6 +23,7 @@ import { evaluateIssueSla } from '@/lib/sla';
 import { NotionEditor } from '@/components/shared/NotionEditor';
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 import { ActivityTimeline } from '@/components/issues/ActivityTimeline';
+import { creatorIdentity } from '@/lib/creator';
 import { ApprovalCard } from '@/components/issues/ApprovalCard';
 import { IssueRelations } from '@/components/issues/IssueRelations';
 import { GitHubSection } from '@/components/github/GitHubSection';
@@ -712,9 +713,12 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
             <CopyableId id={issue.display_id} className="text-[11px] sm:text-sm font-semibold text-accent shrink-0" iconSize={12} />
             <span className="hidden sm:inline text-[10px] text-muted shrink-0">· {timeAgo(issue.created_at)}</span>
             {(issue.created_by_name || issue.created_by_id) && (() => {
-              const creatorName = resolveUserName(issue.created_by_id, issue.created_by_name);
+              const { name: creatorName, via: creatorVia } = creatorIdentity(issue, resolveUserName);
               return (
-                <div className="hidden sm:flex items-center gap-1.5 min-w-0">
+                <div
+                  className="hidden sm:flex items-center gap-1.5 min-w-0"
+                  title={creatorVia ? `${creatorName} · via ${creatorVia}` : creatorName}
+                >
                   <span className="text-[10px] text-muted shrink-0">by</span>
                   <div className="h-5 w-5 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-[8px] font-mono font-bold text-accent">
                     {creatorName.slice(0, 2).toUpperCase()}
@@ -722,6 +726,9 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                   <span className="text-[11px] text-secondary font-medium truncate max-w-[120px]">
                     {creatorName}
                   </span>
+                  {creatorVia && (
+                    <span className="text-[10px] text-muted truncate max-w-[110px]">via {creatorVia}</span>
+                  )}
                 </div>
               );
             })()}
@@ -824,7 +831,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     onDeleteComment={(commentId) => deleteCommentMutation.mutate(commentId)}
                   />
                 ) : (
-                  <ActivityTimeline issueId={issue.id} />
+                  <ActivityTimeline issueId={issue.id} reporterName={issue.reporter_name || issue.reporter_email} />
                 )}
               </div>
 
