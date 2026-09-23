@@ -2516,6 +2516,21 @@ pub async fn update(
         }
     }
 
+    // Every other field the drawer shows leaves a row too, attributed to the
+    // caller (and to the human behind an API key).
+    let changes = field_changes(&existing, &issue, &body);
+    if !changes.is_empty() {
+        let pool2 = pool.clone();
+        let auth2 = auth.clone();
+        let oid = target_org_id.clone();
+        let project_id = existing.project_id;
+        tokio::spawn(async move {
+            for change in changes {
+                log_field_change(&pool2, &auth2, &oid, project_id, id, change).await;
+            }
+        });
+    }
+
     // ── Novu notifications (fire-and-forget) ─────────────
     if let Some(ref novu) = novu {
         let actor_name = auth
@@ -3860,4 +3875,257 @@ pub async fn unarchive(
     );
 
     Ok(Json(ApiResponse::new(issue)))
+}
+
+// ─── Field-change activity ───────────────────────────────────────────────
+
+/// One field the update changed, as the activity log records it.
+#[derive(Debug, PartialEq)]
+struct FieldChange {
+    action: &'static str,
+    field: &'static str,
+    old: Option<String>,
+    new: Option<String>,
+    metadata: Option<serde_json::Value>,
+}
+
+impl FieldChange {
+    fn new(action: &'static str, field: &'static str, old: Option<String>, new: Option<String>) -> Self {
+        Self { action, field, old, new, metadata: None }
+    }
+}
+
+/// Description edits keep a short preview, not the whole text.
+const DESCRIPTION_PREVIEW_CHARS: usize = 140;
+/// Auto-save writes the description every few seconds; one editing session
+/// within this window stays one row.
+const DESCRIPTION_MERGE_MINUTES: i32 = 10;
+
+fn attachment_names(value: &serde_json::Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| {
+                    item.get("name")
+                        .and_then(|name| name.as_str())
+                        .unwrap_or("file")
+                        .to_string()
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Items of `a` missing from `b`, one occurrence each (duplicate file names count).
+fn missing_from(a: &[String], b: &[String]) -> Vec<String> {
+    let mut remaining: Vec<&String> = b.iter().collect();
+    let mut missing = Vec::new();
+    for item in a {
+        match remaining.iter().position(|other| *other == item) {
+            Some(index) => {
+                remaining.swap_remove(index);
+            }
+            None => missing.push(item.clone()),
+        }
+    }
+    missing
+}
+
+/// Fields changed by an update, beyond status, priority and assignees, which
+/// already log their own rows. Only fields present in the request count, so a
+/// client echoing an unchanged value writes nothing.
+fn field_changes(existing: &Issue, issue: &Issue, body: &UpdateIssue) -> Vec<FieldChange> {
+    let mut changes = Vec::new();
+
+    if body.title.is_some() && existing.title != issue.title {
+        changes.push(FieldChange::new(
+            "title_changed",
+            "title",
+            Some(existing.title.clone()),
+            Some(issue.title.clone()),
+        ));
+    }
+
+    if body.description.is_some() && existing.description != issue.description {
+        let new_text = issue.description.clone().unwrap_or_default();
+        let preview: String = new_text.chars().take(DESCRIPTION_PREVIEW_CHARS).collect();
+        changes.push(FieldChange {
+            action: "description_changed",
+            field: "description",
+            old: None,
+            new: None,
+            metadata: Some(json!({
+                "preview": preview,
+                "old_length": existing.description.as_deref().map_or(0, |d| d.chars().count()),
+                "new_length": new_text.chars().count(),
+            })),
+        });
+    }
+
+    if body.issue_type.is_some() && existing.issue_type != issue.issue_type {
+        changes.push(FieldChange::new(
+            "type_changed",
+            "type",
+            Some(existing.issue_type.clone()),
+            Some(issue.issue_type.clone()),
+        ));
+    }
+
+    if body.tags.is_some() {
+        for tag in missing_from(&issue.tags, &existing.tags) {
+            changes.push(FieldChange::new("tag_added", "tags", None, Some(tag)));
+        }
+        for tag in missing_from(&existing.tags, &issue.tags) {
+            changes.push(FieldChange::new("tag_removed", "tags", Some(tag), None));
+        }
+    }
+
+    if body.category.is_some() && existing.category != issue.category {
+        changes.push(FieldChange::new(
+            "category_changed",
+            "category",
+            Some(existing.category.join(", ")).filter(|s| !s.is_empty()),
+            Some(issue.category.join(", ")).filter(|s| !s.is_empty()),
+        ));
+    }
+
+    if body.due_date.is_some() && existing.due_date != issue.due_date {
+        changes.push(FieldChange::new(
+            "due_date_changed",
+            "due_date",
+            existing.due_date.map(|d| d.to_string()),
+            issue.due_date.map(|d| d.to_string()),
+        ));
+    }
+
+    if body.estimate.is_some() && existing.estimate != issue.estimate {
+        changes.push(FieldChange::new(
+            "estimate_changed",
+            "estimate",
+            existing.estimate.map(|e| e.to_string()),
+            issue.estimate.map(|e| e.to_string()),
+        ));
+    }
+
+    if body.sprint_id.is_some() && existing.sprint_id != issue.sprint_id {
+        changes.push(FieldChange::new(
+            "sprint_changed",
+            "sprint_id",
+            existing.sprint_id.map(|v| v.to_string()),
+            issue.sprint_id.map(|v| v.to_string()),
+        ));
+    }
+
+    if body.milestone_id.is_some() && existing.milestone_id != issue.milestone_id {
+        changes.push(FieldChange::new(
+            "milestone_changed",
+            "milestone_id",
+            existing.milestone_id.map(|v| v.to_string()),
+            issue.milestone_id.map(|v| v.to_string()),
+        ));
+    }
+
+    if body.parent_id.is_some() && existing.parent_id != issue.parent_id {
+        changes.push(FieldChange::new(
+            "parent_changed",
+            "parent_id",
+            existing.parent_id.map(|v| v.to_string()),
+            issue.parent_id.map(|v| v.to_string()),
+        ));
+    }
+
+    if body.snoozed_until.is_some() && existing.snoozed_until != issue.snoozed_until {
+        let action = if issue.snoozed_until.is_some() { "snoozed" } else { "unsnoozed" };
+        changes.push(FieldChange::new(
+            action,
+            "snoozed_until",
+            existing.snoozed_until.map(|d| d.to_string()),
+            issue.snoozed_until.map(|d| d.to_string()),
+        ));
+    }
+
+    if body.attachments.is_some() {
+        let before = attachment_names(&existing.attachments);
+        let after = attachment_names(&issue.attachments);
+        for name in missing_from(&after, &before) {
+            changes.push(FieldChange::new("attachment_added", "attachments", None, Some(name)));
+        }
+        for name in missing_from(&before, &after) {
+            changes.push(FieldChange::new("attachment_removed", "attachments", Some(name), None));
+        }
+    }
+
+    changes
+}
+
+/// Write one field change. A description edit refreshes the caller's recent
+/// description row instead of stacking one row per auto-save.
+async fn log_field_change(
+    pool: &PgPool,
+    auth: &AuthUser,
+    org_id: &str,
+    project_id: Uuid,
+    issue_id: Uuid,
+    change: FieldChange,
+) {
+    if change.action == "description_changed" {
+        let merged = sqlx::query(
+            "UPDATE activity_log SET metadata = $1, created_at = now() \
+             WHERE id = (SELECT id FROM activity_log \
+                         WHERE issue_id = $2 AND user_id = $3 AND action = 'description_changed' \
+                           AND created_at > now() - make_interval(mins => $4) \
+                         ORDER BY created_at DESC LIMIT 1)",
+        )
+        .bind(change.metadata.clone().unwrap_or_else(|| json!({})))
+        .bind(issue_id)
+        .bind(&auth.user_id)
+        .bind(DESCRIPTION_MERGE_MINUTES)
+        .execute(pool)
+        .await;
+        match merged {
+            Ok(result) if result.rows_affected() > 0 => return,
+            Ok(_) => {}
+            Err(e) => tracing::warn!(error = %e, %issue_id, "description activity merge failed"),
+        }
+    }
+
+    crate::routes::activity::log_activity_as(
+        pool,
+        auth,
+        org_id,
+        Some(project_id),
+        Some(issue_id),
+        change.action,
+        Some(change.field),
+        change.old.as_deref(),
+        change.new.as_deref(),
+        change.metadata,
+    )
+    .await;
+}
+
+#[cfg(test)]
+mod field_change_tests {
+    use super::missing_from;
+
+    fn s(items: &[&str]) -> Vec<String> {
+        items.iter().map(|i| i.to_string()).collect()
+    }
+
+    #[test]
+    fn missing_from_reports_added_and_removed_items() {
+        let before = s(&["finance", "assistant"]);
+        let after = s(&["finance", "assistant", "auto:status:in_review"]);
+        assert_eq!(missing_from(&after, &before), s(&["auto:status:in_review"]));
+        assert!(missing_from(&before, &after).is_empty());
+    }
+
+    #[test]
+    fn missing_from_counts_duplicate_names() {
+        let before = s(&["capture.png"]);
+        let after = s(&["capture.png", "capture.png"]);
+        assert_eq!(missing_from(&after, &before), s(&["capture.png"]));
+    }
 }

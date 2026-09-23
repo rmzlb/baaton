@@ -3,7 +3,11 @@ import { useApi } from '@/hooks/useApi';
 import {
   ArrowRight, MessageSquare, Plus, UserCheck, Flag,
   AlertCircle, Tag, Clock, Archive, RefreshCw,
+  Pencil, FileText, Calendar, Paperclip, Layers, Target, GitBranch, BellOff, Shapes,
 } from 'lucide-react';
+
+/** Fields whose values are ids: the row says what changed, not the raw uuid. */
+const ID_FIELDS = new Set(['sprint_id', 'milestone_id', 'parent_id']);
 
 interface ActivityEntry {
   id: string;
@@ -57,6 +61,18 @@ const ACTION_CONFIG: Record<string, { icon: React.ElementType; label: string; co
   tag_added: { icon: Tag, label: 'added tag', color: 'text-teal-400' },
   tag_removed: { icon: Tag, label: 'removed tag', color: 'text-gray-400' },
   estimate_changed: { icon: Clock, label: 'changed estimate', color: 'text-yellow-400' },
+  title_changed: { icon: Pencil, label: 'renamed', color: 'text-secondary' },
+  description_changed: { icon: FileText, label: 'edited the description', color: 'text-secondary' },
+  type_changed: { icon: Shapes, label: 'changed type', color: 'text-indigo-400' },
+  category_changed: { icon: Tag, label: 'changed category', color: 'text-teal-400' },
+  due_date_changed: { icon: Calendar, label: 'changed due date', color: 'text-red-400' },
+  sprint_changed: { icon: Layers, label: 'moved to another sprint', color: 'text-blue-400' },
+  milestone_changed: { icon: Target, label: 'changed milestone', color: 'text-blue-400' },
+  parent_changed: { icon: GitBranch, label: 'changed parent issue', color: 'text-purple-400' },
+  attachment_added: { icon: Paperclip, label: 'attached', color: 'text-cyan-400' },
+  attachment_removed: { icon: Paperclip, label: 'removed attachment', color: 'text-gray-400' },
+  snoozed: { icon: BellOff, label: 'snoozed until', color: 'text-gray-400' },
+  unsnoozed: { icon: BellOff, label: 'unsnoozed', color: 'text-green-400' },
   archived: { icon: Archive, label: 'archived', color: 'text-gray-500' },
   unarchived: { icon: RefreshCw, label: 'unarchived', color: 'text-green-400' },
 };
@@ -206,6 +222,21 @@ export function ActivityTimeline({ issueId, reporterName }: { issueId: string; r
                     const fieldType = entry.field === 'status' ? 'status' as const
                       : entry.field === 'priority' ? 'priority' as const
                       : 'text' as const;
+                    if (entry.field && ID_FIELDS.has(entry.field)) {
+                      return (
+                        <span key={entry.id} className="inline-flex items-center gap-1 text-[11px] text-secondary">
+                          <span>{entryConfig.label}</span>
+                        </span>
+                      );
+                    }
+                    if (!entry.new_value && entry.old_value && entry.action.endsWith('_removed')) {
+                      return (
+                        <span key={entry.id} className="inline-flex items-center gap-1 text-[11px] text-secondary">
+                          <span>{entryConfig.label}</span>
+                          <span className="text-[11px] text-muted line-through">{entry.old_value}</span>
+                        </span>
+                      );
+                    }
 
                     return (
                       <span key={entry.id} className="inline-flex items-center gap-1 text-[11px] text-secondary">
@@ -228,6 +259,11 @@ export function ActivityTimeline({ issueId, reporterName }: { issueId: string; r
                 </div>
 
                 {/* Comment preview from metadata */}
+                {first.action === 'description_changed' && first.metadata && (
+                  <p className="mt-0.5 text-[11px] text-muted truncate max-w-md">
+                    {String((first.metadata as Record<string, unknown>).preview || '')}
+                  </p>
+                )}
                 {first.action === 'comment_added' && first.metadata && (
                   <p className="mt-0.5 text-[11px] text-muted truncate max-w-md">
                     {String((first.metadata as Record<string, unknown>).preview || '')}
