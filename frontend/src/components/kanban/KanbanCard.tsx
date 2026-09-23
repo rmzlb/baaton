@@ -5,7 +5,8 @@ import {
   ArrowUp, ArrowDown, Minus, OctagonAlert,
   Clock, MoreHorizontal, CheckCircle2,
 } from 'lucide-react';
-import { cn, timeAgo } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { formatDuration } from '@/lib/statusTime';
 import { useUIStore } from '@/stores/ui';
 import { useClerkMembers } from '@/hooks/useClerkMembers';
 import { useMemberResolutionContext } from '@/contexts/MemberResolutionContext';
@@ -197,7 +198,8 @@ function StatusAge({ issue }: { issue: Issue }) {
   const ts = isDone ? issue.closed_at : issue.status_changed_at;
   if (!ts) return null;
 
-  const age = timeAgo(ts);
+  const age = formatDuration(Date.now() - new Date(ts).getTime());
+  const statusName = issue.status_label ?? issue.status.replace('_', ' ');
   const isStale = (() => {
     const days = (Date.now() - new Date(ts).getTime()) / (1000 * 60 * 60 * 24);
     if (issue.status === 'in_progress' && days > 7) return true;
@@ -208,11 +210,11 @@ function StatusAge({ issue }: { issue: Issue }) {
 
   return (
     <span className={cn(
-      'inline-flex items-center gap-0.5 text-[9px] tabular-nums whitespace-nowrap shrink-0',
-      isDone ? 'text-emerald-500/70' : isStale ? 'text-orange-400' : 'text-muted',
-    )} title={`${isDone ? 'Closed' : `In ${issue.status.replace('_', ' ')}`} since ${new Date(ts).toLocaleDateString()}`}>
-      <Clock size={9} />
-      {age}
+      'inline-flex items-center gap-1 rounded px-1 py-px text-[10px] font-medium tabular-nums whitespace-nowrap shrink-0',
+      isDone ? 'text-emerald-500/80' : isStale ? 'bg-orange-400/10 text-orange-400' : 'bg-surface-hover text-secondary',
+    )} title={`${isDone ? 'Closed' : `In ${statusName}`} since ${new Date(ts).toLocaleString()}`}>
+      <Clock size={10} />
+      {isDone ? age : `${statusName} · ${age}`}
     </span>
   );
 }

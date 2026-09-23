@@ -24,6 +24,7 @@ import { NotionEditor } from '@/components/shared/NotionEditor';
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 import { ActivityTimeline } from '@/components/issues/ActivityTimeline';
 import { creatorIdentity } from '@/lib/creator';
+import { StatusTime } from '@/components/issues/StatusTime';
 import { ApprovalCard } from '@/components/issues/ApprovalCard';
 import { IssueRelations } from '@/components/issues/IssueRelations';
 import { GitHubSection } from '@/components/github/GitHubSection';
@@ -1247,6 +1248,15 @@ function MetadataSidebar({
               </span>
             </span>
           )}
+        />
+        <StatusTime
+          issueId={issue.id}
+          status={issue.status}
+          statusChangedAt={issue.status_changed_at}
+          createdAt={issue.created_at}
+          closedAt={issue.closed_at ?? null}
+          labelFor={(key) => availableStatuses.find((s) => s.key === key)?.label ?? key}
+          t={t}
         />
       </SidebarField>
 

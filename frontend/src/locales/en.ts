@@ -386,6 +386,7 @@ const en = {
   'issueDrawer.createdTime': 'Created {{time}}',
   'issueDrawer.updatedTime': 'Updated {{time}}',
   'issueDrawer.qualifiedTime': 'Qualified {{time}}',
+  'issueDrawer.inStatusFor': '{{status}} for {{duration}} (since {{date}})',
   'issueDrawer.contributors': 'Contributors',
   'issueDrawer.timeline': 'Timeline',
   'issueDrawer.firstResponse': 'First response:',
