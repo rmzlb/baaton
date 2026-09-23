@@ -1,5 +1,6 @@
 import { resolveApiOrigin } from './api-origin';
 import { getClientId } from './clientId';
+import { mirrorIssueType } from './wire';
 import type { UserActivityStats, HeatmapData } from './types';
 
 const API_BASE = `${resolveApiOrigin()}/api/v1`;
@@ -111,7 +112,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     throw new ApiError(res.status, code, message, remediation, callerFault);
   }
 
-  return json.data as T;
+  return mirrorIssueType(json.data) as T;
 }
 
 export const api = {

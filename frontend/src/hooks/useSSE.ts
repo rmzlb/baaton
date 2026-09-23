@@ -4,6 +4,7 @@ import { useAuth, useUser } from '@clerk/clerk-react';
 import { useNotificationStore } from '@/stores/notifications';
 import { useIssuesStore } from '@/stores/issues';
 import { getClientId } from '@/lib/clientId';
+import { mirrorIssueType } from '@/lib/wire';
 import type { Issue } from '@/lib/types';
 
 import { resolveApiOrigin } from '@/lib/api-origin';
@@ -48,7 +49,7 @@ export function useSSE() {
         // Named events never reach `onmessage`, so each needs its own listener.
         const parse = <T,>(event: Event): T | null => {
           try {
-            return JSON.parse((event as MessageEvent).data) as T;
+            return mirrorIssueType(JSON.parse((event as MessageEvent).data)) as T;
           } catch {
             return null;
           }
