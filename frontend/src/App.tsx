@@ -11,6 +11,7 @@ import { PageLoader } from '@/components/shared/PageLoader';
 const Landing = lazy(() => import('./pages/Landing'));
 const Privacy = lazy(() => import('./pages/Privacy'));
 const Terms = lazy(() => import('./pages/Terms'));
+const Compare = lazy(() => import('./pages/Compare'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const ProjectBoard = lazy(() => import('./pages/ProjectBoard'));
 const ProjectList = lazy(() => import('./pages/ProjectList'));
@@ -121,7 +122,7 @@ export function App() {
   const host = window.location.hostname;
   const isAppHost = host === 'app.baaton.dev';
   const path = window.location.pathname;
-  const isPublicPath = path === '/' || path.startsWith('/docs') || path.startsWith('/submit/') || path.startsWith('/s/') || path.startsWith('/r/') || path.startsWith('/integrations/github/callback');
+  const isPublicPath = path === '/' || path === '/compare' || path.startsWith('/docs') || path.startsWith('/submit/') || path.startsWith('/s/') || path.startsWith('/r/') || path.startsWith('/integrations/github/callback');
 
   if (!isAppHost && !isPublicPath) {
     const target = `https://app.baaton.dev${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -154,6 +155,7 @@ export function App() {
         <Route path="/integrations/github/callback" element={<GithubInstallCallback />} />
         <Route path="/privacy" element={<Suspense fallback={<PageLoader />}><Privacy /></Suspense>} />
         <Route path="/terms" element={<Suspense fallback={<PageLoader />}><Terms /></Suspense>} />
+        <Route path="/compare" element={<Suspense fallback={<PageLoader />}><Compare /></Suspense>} />
 
         {/* Auth routes */}
         <Route

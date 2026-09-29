@@ -74,7 +74,9 @@ commentaires, TLDR et agent runs, il n'y a pas de fil unifié client-visible.
 3. **Contre qui** — personne d'autre n'émet d'artefact signé
 4. **La mécanique** — API, 198 endpoints, contexte projet, TLDR → **en preuve, jamais en titre**
 
-Ordre appliqué sur la home : hero → demo → use cases → features → compare → workflow → stats → pricing.
+Ordre appliqué sur la home (v2, validé par rmzlb le 2026-09-29) : hero → l'écart → pourquoi (3 principes + citation fondateur) → démarrer (UI / agent / API) → démo + 3 passages de relais → ce que font les agents (dont le receipt signé) → pour qui → preuve (compteur + attribution) → prix → CTA.
+Hero v2 : « The client writes. Your agent ships. You decide. » / « Client work, rebuilt for the age of agents. » — le créneau client → agent → humain, porté par l'ère des agents ; le claim générique « board for the age of agents » est écarté (cf. §1, « teams and agents » est pris).
+Comparatif et limites vivent sur `/compare`, pas sur la home.
 
 ## 5. Preuves autorisées
 Uniquement ce qui est mesurable dans le code, testé, ou vérifiable par un tiers.
