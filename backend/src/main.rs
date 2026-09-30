@@ -388,10 +388,6 @@ async fn main() -> anyhow::Result<()> {
                 .with_state(pool.clone())
                 .layer(axum::Extension(jwks_state.clone())),
         )
-        .route(
-            "/mcp/oauth-callback",
-            get(routes::mcp::oauth_test_callback),
-        )
         // ── OAuth 2.1 / OpenAI well-known endpoints ────────────────────────
         .route(
             "/.well-known/oauth-protected-resource",
