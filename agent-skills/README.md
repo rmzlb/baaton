@@ -59,6 +59,17 @@ Your agent can now read tickets, create issues, update statuses, and post TLDRs 
 7. Human reviews and marks done         ✅
 ```
 
+## Codex plugin
+
+This folder is also a Codex plugin, listed in the repository marketplace
+(`.agents/plugins/marketplace.json`):
+
+```bash
+codex plugin marketplace add rmzlb/baaton
+codex plugin add baaton@baaton
+export BAATON_API_KEY=baa_your_key_here   # Baaton → API Keys
+```
+
 ## Compatible Agents
 
 - **Claude Code** — `.claude/skills/`
@@ -70,7 +81,9 @@ Your agent can now read tickets, create issues, update statuses, and post TLDRs 
 ## Package Contents
 
 ```
-baaton-project-management/
+plugin.json                     # Codex / Agent Plugins manifest
+assets/                         # Plugin icon and logo
+skills/baaton-pm/
 ├── SKILL.md                    # Core instructions (loaded into agent context)
 ├── scripts/
 │   ├── baaton-api.sh           # API helper (curl wrapper with auth)
@@ -88,7 +101,7 @@ If you prefer copy-paste over `npx skills add`, see [CLAUDE_SNIPPET.md](./CLAUDE
 ## Links
 
 - 🌐 [baaton.dev](https://baaton.dev) — Dashboard
-- 📖 [API Reference](./baaton-project-management/references/api-reference.md) — Full endpoint docs
+- 📖 [API Reference](./skills/baaton-pm/references/api-reference.md) — Full endpoint docs
 - 🐛 [Issues](https://github.com/baaton-dev/agent-skills/issues) — Report bugs
 
 ## License

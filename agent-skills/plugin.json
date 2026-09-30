@@ -1,0 +1,33 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "baaton",
+  "version": "0.1.0",
+  "description": "Baaton for coding agents: read tickets, move them through statuses, post comments and TLDRs on baaton.dev through its API.",
+  "author": { "name": "Baaton", "url": "https://baaton.dev" },
+  "homepage": "https://baaton.dev",
+  "repository": "https://github.com/rmzlb/baaton",
+  "license": "MIT",
+  "keywords": ["project-management", "kanban", "issues", "tickets", "agents", "baaton"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Baaton",
+        "shortDescription": "Tickets, statuses and work summaries on your Baaton board",
+        "longDescription": "Work from your Baaton board without leaving Codex: find the ticket to pick up, move it to In Progress, comment while you work, post a TLDR of what changed and hand it over for review. Uses a Baaton API key (BAATON_API_KEY).",
+        "developerName": "Baaton",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://baaton.dev",
+        "privacyPolicyURL": "https://baaton.dev/privacy",
+        "termsOfServiceURL": "https://baaton.dev/terms",
+        "defaultPrompt": [
+          "Use Baaton to show the open tickets of my project, highest priority first.",
+          "Use Baaton to move the ticket I just finished to In Review with a TLDR of the changes."
+        ],
+        "brandColor": "#f59e0b",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      }
+    }
+  }
+}
