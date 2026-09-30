@@ -47,7 +47,7 @@ export function PublicSubmit() {
     // /s/:token route — resolve project from token
     if (params.token && !params.slug) {
       setResolving(true);
-      api.public.get<{ slug: string; name: string; token: string }>(`/public/resolve/${params.token}`)
+      api.public.resolveToken(params.token)
         .then((data) => {
           setResolvedSlug(data.slug);
           setResolvedToken(data.token);

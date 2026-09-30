@@ -309,6 +309,15 @@ export function Landing() {
 
       {/* ══ 05 — Every open ticket, the agent at work, then the real recordings ══ */}
       <section id="how-it-works" className="scroll-mt-24 py-16 sm:py-28 bg-[#F3EFE7] dark:bg-[#080808] border-t border-black/5 dark:border-white/5 transition-colors relative z-20">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 mb-20 sm:mb-28">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-black dark:text-white text-center mb-6">{t('landing.film.title')}</h2>
+          <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 bg-black">
+            <video className="w-full block aspect-video" controls preload="none" playsInline poster="/film/baaton-film.jpg" aria-label={t('landing.film.alt')}>
+              <source src="/film/baaton-film.mp4" type="video/mp4" />
+            </video>
+          </div>
+          <p className="mt-4 text-sm text-neutral-500 text-center max-w-2xl mx-auto">{t('landing.film.note')}</p>
+        </div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <LiveBoard />
           <div className="mt-20 sm:mt-28"><AgentTerminal /></div>

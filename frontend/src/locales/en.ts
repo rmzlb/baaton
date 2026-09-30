@@ -1245,6 +1245,9 @@ As a [user], I want to [action] so that [benefit].
 'landing.nav.login': 'Log in',
 
 // Block 3
+'landing.film.title': 'Watch the film (50 s)',
+'landing.film.alt': 'Baaton film: a client request goes from a public form to Done, handled by an agent',
+'landing.film.note': 'Real Baaton screens, filmed on a test workspace. People, projects and tickets are fictional.',
 'landing.demo.badge': 'What actually happens',
 'landing.demo.note': "The public form is live on 2 of our 17 projects. The video rebuilds the board with fictional data; the capture below is our own board.",
 'landing.demo.raw': 'See the raw API calls',
