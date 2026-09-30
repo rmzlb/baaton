@@ -169,6 +169,39 @@ async fn fetch_clerk_profile(user_id: &str) -> Option<(Option<String>, Option<St
     Some((display_name, email))
 }
 
+/// The Clerk account owning `email`, when exactly one does.
+///
+/// Used to recognise the requester an integration names on an issue it files
+/// through its own key. The caller still has to check org membership.
+pub async fn find_user_id_by_email(email: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct ClerkUserId {
+        id: String,
+    }
+
+    let secret = std::env::var("CLERK_SECRET_KEY").ok()?;
+    let url = reqwest::Url::parse_with_params(
+        "https://api.clerk.com/v1/users",
+        &[("email_address", email.trim().to_lowercase()), ("limit", "2".to_string())],
+    )
+    .ok()?;
+    let users: Vec<ClerkUserId> = reqwest::Client::new()
+        .get(url)
+        .bearer_auth(secret)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    match users.as_slice() {
+        [user] => Some(user.id.clone()),
+        _ => None,
+    }
+}
+
 /// Resolve a Clerk user's display name / email, memoised for `PROFILE_TTL`.
 ///
 /// Public so audit views can name the human behind an API key without adding a

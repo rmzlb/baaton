@@ -565,6 +565,23 @@ pub async fn resolve_recipients(
     recipients
 }
 
+/// The member a key-filed issue was reported for.
+///
+/// An integration files through its own key and names the requester in
+/// `reporter_email`. When that address is a Baaton account, the requester
+/// follows the issue as its creator would; `add_creator_to_recipients` still
+/// checks their membership of the project's org.
+pub async fn reporter_member(
+    created_by_id: Option<&str>,
+    reporter_email: Option<&str>,
+) -> Option<String> {
+    if !created_by_id.is_some_and(|id| id.starts_with("apikey:")) {
+        return None;
+    }
+    let email = reporter_email.map(str::trim).filter(|e| !e.is_empty())?;
+    crate::middleware::find_user_id_by_email(email).await
+}
+
 /// Add the issue creator and assignees to the recipient list by default
 /// (opt-out model). Each identity is resolved to its human owner via
 /// `resolve_owner_identity` so API-key actors collapse to their creator.
@@ -623,6 +640,17 @@ pub async fn add_creator_to_recipients(
             authorized.push(user_id.clone());
         }
     }
+    // Default-on is opt-out: an explicit unsubscribe from the project mutes it.
+    let muted: Vec<String> = sqlx::query_scalar(
+        "SELECT user_id FROM project_notification_subscriptions \
+         WHERE project_id = $1 AND NOT enabled AND user_id = ANY($2)",
+    )
+    .bind(project_id)
+    .bind(&authorized)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    authorized.retain(|u| !muted.contains(u));
     if authorized.is_empty() { return; }
 
     // Non-telegram channels: look up directly from user_notification_channels.
@@ -654,6 +682,34 @@ pub async fn add_creator_to_recipients(
                 address,
                 telegram_route_id: None,
             });
+        }
+
+        // Nobody configures an email channel to be told about their own
+        // tickets, so without one the account's primary email (verified by
+        // Clerk) is used. Any email row, even unconfirmed, is the user's choice
+        // and wins.
+        let has_email_row: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM user_notification_channels \
+             WHERE user_id = $1 AND channel = 'email')",
+        )
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(true);
+        let covered = recipients
+            .iter()
+            .any(|r| r.user_id == *user_id && r.channel == "email");
+        if !has_email_row && !covered {
+            if let Some((_, Some(address))) =
+                crate::middleware::resolve_profile_cached(user_id).await
+            {
+                recipients.push(Recipient {
+                    user_id: user_id.clone(),
+                    channel: "email".to_string(),
+                    address,
+                    telegram_route_id: None,
+                });
+            }
         }
     }
 

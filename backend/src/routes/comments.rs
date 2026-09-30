@@ -379,11 +379,11 @@ pub async fn create(
         let comment_body = comment.body.clone();
         let author_identity = comment.author_id.clone();
         tokio::spawn(async move {
-            type Row = (Uuid, String, String, Option<String>, bool, Option<String>, Vec<String>, Uuid);
+            type Row = (Uuid, String, String, Option<String>, bool, Option<String>, Vec<String>, Uuid, Option<String>);
             let row: Option<Row> = sqlx::query_as(
                 r#"
                 SELECT i.id, i.display_id, i.title, p.name, p.notify_comments,
-                       i.created_by_id, i.assignee_ids, i.project_id
+                       i.created_by_id, i.assignee_ids, i.project_id, i.reporter_email
                 FROM issues i
                 JOIN projects p ON p.id = i.project_id
                 WHERE i.id = $1
@@ -404,6 +404,7 @@ pub async fn create(
                 creator_id,
                 assignee_ids,
                 project_id,
+                reporter_email,
             )) = row
             else {
                 return;
@@ -426,10 +427,18 @@ pub async fn create(
             // (opt-out model). Uses iter() so assignee_ids / creator_id remain
             // available for the others_on_ticket check below.
             {
+                let reporter = crate::routes::notification_prefs::reporter_member(
+                    creator_id.as_deref(),
+                    reporter_email.as_deref(),
+                )
+                .await;
                 let mut parts: Vec<&str> =
                     assignee_ids.iter().map(String::as_str).collect();
                 if let Some(ref cid) = creator_id {
                     parts.push(cid.as_str());
+                }
+                if let Some(ref rid) = reporter {
+                    parts.push(rid.as_str());
                 }
                 crate::routes::notification_prefs::add_creator_to_recipients(
                     &pool2,

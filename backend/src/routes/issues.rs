@@ -189,6 +189,7 @@ fn on_status_changed(
         let actor_identity = actor_id.to_string();
         let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
         let creator_id_for_notif = issue.created_by_id.clone();
+        let reporter_email_for_notif = issue.reporter_email.clone();
         let assignee_ids_for_notif = issue.assignee_ids.clone();
         tokio::spawn(async move {
             let project: Option<(String, serde_json::Value, serde_json::Value)> =
@@ -224,10 +225,18 @@ fn on_status_changed(
             // Creator and assignees receive status notifications by default
             // (opt-out model).
             {
+                let reporter = crate::routes::notification_prefs::reporter_member(
+                    creator_id_for_notif.as_deref(),
+                    reporter_email_for_notif.as_deref(),
+                )
+                .await;
                 let mut parts: Vec<&str> =
                     assignee_ids_for_notif.iter().map(String::as_str).collect();
                 if let Some(ref cid) = creator_id_for_notif {
                     parts.push(cid.as_str());
+                }
+                if let Some(ref rid) = reporter {
+                    parts.push(rid.as_str());
                 }
                 crate::routes::notification_prefs::add_creator_to_recipients(
                     &pool2,
