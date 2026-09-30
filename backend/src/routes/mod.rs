@@ -58,6 +58,7 @@ pub mod project_templates;
 mod dashboard;
 pub mod notification_prefs;
 pub mod notification_roles;
+pub mod mcp;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()

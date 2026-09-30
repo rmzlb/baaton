@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "baaton",
-  "version": "0.1.0",
-  "description": "Baaton for coding agents: read tickets, move them through statuses, post comments and TLDRs on baaton.dev through its API.",
+  "version": "0.2.0",
+  "description": "Baaton for coding agents: read tickets, move them through statuses, post comments and TLDRs on baaton.dev — via API key or OAuth.",
   "author": { "name": "Baaton", "url": "https://baaton.dev" },
   "homepage": "https://baaton.dev",
   "repository": "https://github.com/rmzlb/baaton",
@@ -12,12 +12,13 @@
     "com.openai": {
       "interface": {
         "displayName": "Baaton",
-        "shortDescription": "Tickets, statuses and work summaries on your Baaton board",
-        "longDescription": "Work from your Baaton board without leaving Codex: find the ticket to pick up, move it to In Progress, comment while you work, post a TLDR of what changed and hand it over for review. Uses a Baaton API key (BAATON_API_KEY).",
+        "shortDescription": "Tickets, statuses and work summaries",
+        "longDescription": "Work from your Baaton board without leaving Codex or ChatGPT: find the ticket to pick up, move it to In Progress, comment while you work, post a TLDR of what changed and hand it over for review. Connects via OAuth — no manual key setup. Also accepts a Baaton API key (BAATON_API_KEY) for CLI/dev use.",
         "developerName": "Baaton",
         "category": "Productivity",
-        "capabilities": ["Read", "Write"],
+        "capabilities": ["Read issues", "Create issues", "Update status", "Add comments", "Post TLDRs", "Search"],
         "websiteURL": "https://baaton.dev",
+        "supportURL": "https://baaton.dev",
         "privacyPolicyURL": "https://baaton.dev/privacy",
         "termsOfServiceURL": "https://baaton.dev/terms",
         "defaultPrompt": [
@@ -27,6 +28,62 @@
         "brandColor": "#f59e0b",
         "composerIcon": "./assets/icon.png",
         "logo": "./assets/logo.png"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "List open tickets in my project",
+              "prompt": "Use Baaton to show me the open tickets in my project, highest priority first.",
+              "tools_triggered": "list_projects, list_issues",
+              "expected_behavior": "Lists open tickets sorted by priority in the connected org's project."
+            },
+            {
+              "description": "Create a new issue",
+              "prompt": "Create a Baaton ticket titled 'Fix login redirect' with high priority.",
+              "tools_triggered": "list_projects, create_issue",
+              "expected_behavior": "Creates an issue in the first accessible project and returns the display_id."
+            },
+            {
+              "description": "Move issue to In Review",
+              "prompt": "Mark Baaton issue BAA-1 as in_review.",
+              "tools_triggered": "update_issue",
+              "expected_behavior": "Updates the issue status to 'in_review' and returns the updated fields."
+            },
+            {
+              "description": "Post a TLDR after completing work",
+              "prompt": "Post a TLDR on Baaton issue BAA-1 saying 'Fixed the auth redirect bug, changed src/auth.ts, tests passed'.",
+              "tools_triggered": "get_issue, post_tldr",
+              "expected_behavior": "Creates a TLDR record on the issue and returns the TLDR id."
+            },
+            {
+              "description": "Search for a ticket",
+              "prompt": "Search Baaton for issues about authentication.",
+              "tools_triggered": "search_issues",
+              "expected_behavior": "Returns relevant issues matching 'authentication' from the connected org."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Cannot delete issues",
+              "prompt": "Delete all issues in my Baaton project."
+            },
+            {
+              "description": "Cannot access billing",
+              "prompt": "Show me my Baaton billing information."
+            },
+            {
+              "description": "Cannot access other orgs",
+              "prompt": "Show issues from a Baaton organization I am not a member of."
+            }
+          ]
+        },
+        "demo_recording_url": "https://baaton.dev/demo",
+        "commerce": false,
+        "commerce_description": "Baaton is a SaaS product with its own billing. This plugin does not process payments or purchases."
+      },
+      "publication": {
+        "release_notes": "v0.2.0: Remote MCP server (Streamable HTTP) with OAuth 2.1 via Clerk. Tools: get_profile, list_projects, list_issues, search_issues, get_issue, create_issue, update_issue, add_comment, post_tldr."
       }
     }
   }

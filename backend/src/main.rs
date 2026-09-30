@@ -379,6 +379,24 @@ async fn main() -> anyhow::Result<()> {
     // Router
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
+        // ── MCP Streamable HTTP (ChatGPT/Codex plugin) ────────────────────
+        // Mounted outside /api/v1 auth middleware; the MCP handler validates
+        // Clerk JWT or baa_ API keys internally.
+        .route(
+            "/mcp",
+            axum::routing::post(routes::mcp::handle_mcp)
+                .with_state(pool.clone())
+                .layer(axum::Extension(jwks_state.clone())),
+        )
+        // ── OAuth 2.1 / OpenAI well-known endpoints ────────────────────────
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(routes::mcp::oauth_protected_resource),
+        )
+        .route(
+            "/.well-known/openai-apps-challenge",
+            get(routes::mcp::openai_apps_challenge),
+        )
         // Static file serving for legacy uploaded images (pre-S3 migration).
         // Kept so existing markdown URLs (`/uploads/<file>`) still resolve.
         .nest_service("/uploads", ServeDir::new(&upload_dir))

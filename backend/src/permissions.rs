@@ -766,6 +766,10 @@ mod tests {
             // The caller's own state: in-app notifications and, since 074, their
             // notification channels and project subscriptions.
             "me",
+            // MCP endpoint — handles its own auth internally.
+            "mcp",
+            // well-known endpoints (OAuth protected-resource, OpenAI domain challenge).
+            ".well-known",
             // Top-level public SSR surfaces: run cards (`r`) and shared
             // issue/project links (`i`, `p`). Single-letter on purpose, they are
             // pasted into chat clients.
