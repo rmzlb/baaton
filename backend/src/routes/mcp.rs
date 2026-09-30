@@ -39,7 +39,7 @@ fn skill_md_digest() -> String {
 
 fn mcp_resource() -> String {
     std::env::var("MCP_PUBLIC_URL")
-        .unwrap_or_else(|_| "https://api.baaton.dev".to_string())
+        .unwrap_or_else(|_| "https://api.baaton.dev/mcp".to_string())
 }
 
 // ── JSON-RPC types ───────────────────────────────────────────────────────────
@@ -276,23 +276,17 @@ async fn validate_clerk_jwt(token: &str, jwks: &JwksKeys) -> McpAuth {
 // ── WWW-Authenticate challenge ────────────────────────────────────────────────
 
 fn www_authenticate_header() -> String {
-    let resource = mcp_resource();
-    format!(
-        "Bearer resource_metadata=\"{}/.well-known/oauth-protected-resource\"",
-        resource
-    )
+    // resource_metadata points to the well-known endpoint at the server root.
+    // The resource identifier is https://api.baaton.dev/mcp (the MCP endpoint).
+    "Bearer resource_metadata=\"https://api.baaton.dev/.well-known/oauth-protected-resource\"".to_string()
 }
 
 fn auth_required_tool_result() -> Value {
-    let resource = mcp_resource();
     json!({
         "content": [{"type": "text", "text": "Authentication required. Please connect your Baaton account."}],
         "_meta": {
             "mcp/www_authenticate": [
-                format!(
-                    "Bearer resource_metadata=\"{}/.well-known/oauth-protected-resource\", error=\"invalid_token\", error_description=\"Authentication required\"",
-                    resource
-                )
+                "Bearer resource_metadata=\"https://api.baaton.dev/.well-known/oauth-protected-resource\", error=\"invalid_token\", error_description=\"Authentication required\""
             ]
         },
         "isError": true

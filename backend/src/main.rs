@@ -393,6 +393,11 @@ async fn main() -> anyhow::Result<()> {
             "/.well-known/oauth-protected-resource",
             get(routes::mcp::oauth_protected_resource),
         )
+        // Path-suffixed form per RFC 9728 §2.2 for resource https://api.baaton.dev/mcp
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(routes::mcp::oauth_protected_resource),
+        )
         .route(
             "/.well-known/openai-apps-challenge",
             get(routes::mcp::openai_apps_challenge),
