@@ -979,7 +979,7 @@ async fn tool_create_issue(auth: &AuthUser, pool: &PgPool, args: &Value) -> Resu
     .bind(priority)
     .bind(&assignee_ids)
     .bind(default_pos)
-    .bind("mcp")
+    .bind("api")
     .bind(&creator_id)
     .bind(&creator_name)
     .fetch_one(pool)
