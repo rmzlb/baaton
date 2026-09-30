@@ -10,6 +10,8 @@ type RequestOptions = {
   body?: unknown;
   token?: string | null;
   isPublic?: boolean;
+  /** false: return the JSON body as is, for the few routes that do not wrap it in `data`. */
+  unwrap?: boolean;
 };
 
 /// A failed API call.
@@ -33,7 +35,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, token, isPublic = false } = opts;
+  const { method = 'GET', body, token, isPublic = false, unwrap = true } = opts;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -112,6 +114,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     throw new ApiError(res.status, code, message, remediation, callerFault);
   }
 
+  if (!unwrap) return json as T;
   return mirrorIssueType(json.data) as T;
 }
 
@@ -144,5 +147,9 @@ export const api = {
 
     get: <T>(path: string) =>
       request<T>(path, { isPublic: true }),
+
+    /** GET /public/resolve/{token} answers `{ slug, name, token }` without a `data` envelope. */
+    resolveToken: (token: string) =>
+      request<{ slug: string; name: string; token: string }>(`/public/resolve/${encodeURIComponent(token)}`, { isPublic: true, unwrap: false }),
   },
 };
