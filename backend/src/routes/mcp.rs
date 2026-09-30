@@ -1250,7 +1250,26 @@ fn handle_resources_read(params: Value) -> Value {
     }
 }
 
-// ── OAuth Protected Resource Metadata ────────────────────────────────────────
+// ── OAuth PKCE test callback (E2E testing only) ──────────────────────────────
+// Returns the authorization code as JSON for the token exchange step.
+// Only active when OAUTH_TEST_CALLBACK_ENABLED=true (never in production).
+
+pub async fn oauth_test_callback(
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    // Only enabled for E2E testing
+    if std::env::var("OAUTH_TEST_CALLBACK_ENABLED").as_deref() != Ok("true") {
+        return (StatusCode::NOT_FOUND, "Not enabled").into_response();
+    }
+    let code = params.get("code").cloned().unwrap_or_default();
+    let state = params.get("state").cloned().unwrap_or_default();
+    let error = params.get("error").cloned().unwrap_or_default();
+    (
+        StatusCode::OK,
+        [("content-type", "application/json")],
+        axum::Json(serde_json::json!({"code": code, "state": state, "error": error})),
+    ).into_response()
+}
 
 pub async fn oauth_protected_resource() -> impl IntoResponse {
     let resource = mcp_resource();
