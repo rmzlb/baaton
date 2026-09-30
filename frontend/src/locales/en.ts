@@ -1246,7 +1246,7 @@ As a [user], I want to [action] so that [benefit].
 
 // Block 3
 'landing.demo.badge': 'What actually happens',
-'landing.demo.note': 'The public form is live on 2 of our 17 projects. Both captures are our own board, not a mockup.',
+'landing.demo.note': "The public form is live on 2 of our 17 projects. The video rebuilds the board with fictional data; the capture below is our own board.",
 'landing.demo.raw': 'See the raw API calls',
 
 // Block 4
@@ -1422,7 +1422,7 @@ As a [user], I want to [action] so that [benefit].
 'landing.features.automations': 'Rules and notifications',
 'landing.features.automationsDesc': 'Rules set status, priority, assignee or tags on their own. Updates reach you on Slack, Discord, Telegram or email.',
 'landing.mock.trailHead': 'ACM-124 · history',
-'landing.mock.demoAlt': 'Baaton board: the agent picks up the ticket, works, writes its summary and hands it back',
+'landing.mock.demoAlt': "Baaton demo: a ticket goes from Draft to Done, with the agent’s proof and a Not OK round from the client",
 'landing.mock.agentDemoAlt': 'Claude Code on the Baaton API: reads the ticket, fixes it, writes its summary, moves it to review',
 'landing.comparePage.back': 'Back to home',
 'landing.comparePage.ctaTitle': 'Try it on one real client.',

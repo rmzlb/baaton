@@ -1246,7 +1246,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 
 // Bloc 3 — la demande devient un ticket
 'landing.demo.badge': 'Ce qui se passe vraiment',
-'landing.demo.note': 'Le formulaire public est actif sur 2 de nos 17 projets. Ces deux captures sont notre propre board, pas une maquette.',
+'landing.demo.note': "Le formulaire public est actif sur 2 de nos 17 projets. La vidéo reconstitue le board avec des données fictives ; la capture en dessous est notre propre board.",
 'landing.demo.raw': 'Voir les appels API bruts',
 
 // Bloc 4 — le compteur
@@ -1422,7 +1422,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.features.automations': 'Règles et notifications',
 'landing.features.automationsDesc': 'Des règles changent seules le statut, la priorité, l’assigné ou les tags. Les mises à jour vous arrivent sur Slack, Discord, Telegram ou par email.',
 'landing.mock.trailHead': 'ACM-124 · historique',
-'landing.mock.demoAlt': 'Board Baaton : l’agent prend le ticket, travaille, écrit son résumé, repasse la main',
+'landing.mock.demoAlt': "Démo Baaton : un ticket passe de Draft à Done, avec les preuves de l’agent et un retour Not OK du client",
 'landing.mock.agentDemoAlt': 'Claude Code sur l’API Baaton : lit le ticket, corrige, écrit son résumé, passe en review',
 'landing.comparePage.back': 'Retour à l’accueil',
 'landing.comparePage.ctaTitle': 'Essayez-le sur un vrai client.',

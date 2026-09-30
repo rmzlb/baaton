@@ -142,7 +142,8 @@ const navLinks = [
 
 export function Landing() {
   const { dark, toggle } = useLandingTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const demoLang = i18n.language?.startsWith('en') ? 'en' : 'fr';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -314,7 +315,9 @@ export function Landing() {
         </div>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 mt-20 sm:mt-28">
           <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mb-8">
-            <img src="/demo.gif" alt={t('landing.mock.demoAlt')} className="w-full" loading="lazy" />
+            <video key={demoLang} className="w-full block" autoPlay muted loop playsInline preload="metadata" poster={`/demo-${demoLang}.jpg`} aria-label={t('landing.mock.demoAlt')}>
+              <source src={`/demo-${demoLang}.mp4`} type="video/mp4" />
+            </video>
           </div>
           <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mt-8">
             <img src="/agent-demo.png" alt={t('landing.mock.agentDemoAlt')} className="w-full" loading="lazy" />
