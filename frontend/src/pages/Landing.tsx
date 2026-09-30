@@ -1,8 +1,8 @@
 import { useRef, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight, Sun, Moon, LayoutDashboard, Bot, User, Check,
-  MoreHorizontal, Loader, Inbox, Cpu, Copy, Menu, X, Rocket, Users, Layers,
+  ArrowRight, Sun, Moon, Bot, User, Check,
+  Inbox, Cpu, Copy, Menu, X, Rocket, Users, Layers,
   MessageCircle, KeyRound, ArrowLeftRight, ListChecks, FileCheck2, Workflow,
   MousePointerClick, Terminal, Quote,
 } from 'lucide-react';
@@ -10,6 +10,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useLandingTheme } from '@/hooks/useLandingTheme';
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
 import { LandingFooter } from '@/components/landing/LandingFooter';
+import { HeroFlow, LiveBoard, AgentTerminal } from '@/components/landing/Flow';
 
 /* ─── Code Tabs Component ──────────────────── */
 const codeSnippets: Record<string, string> = {
@@ -151,12 +152,13 @@ export function Landing() {
       {/* ── Navbar ──────────────────────────────── */}
       <nav className="fixed top-0 w-full z-40 border-b border-black/5 dark:border-white/10 bg-[#F3EFE7]/90 dark:bg-[#080808]/90 backdrop-blur-md transition-colors duration-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
-          <div className="flex gap-3 sm:gap-4 items-center cursor-pointer group">
-            <Link to="/" className="font-display text-2xl sm:text-4xl leading-none text-black dark:text-white uppercase tracking-wide group-hover:scale-105 transition-transform duration-300 relative">
+          <Link to="/" className="flex items-center gap-2.5 sm:gap-3 group" aria-label="Baaton">
+            <img src="/favicon.svg" alt="" className="w-7 h-7 sm:w-9 sm:h-9 [image-rendering:pixelated]" />
+            <span className="font-display text-2xl sm:text-4xl leading-none text-black dark:text-white uppercase tracking-wide group-hover:scale-105 transition-transform duration-300 relative">
               Baaton
-              <div className="absolute -right-2 -top-1 w-2 h-2 bg-amber-500 rounded-full" />
-            </Link>
-          </div>
+              <span className="absolute -right-2 -top-1 w-2 h-2 bg-amber-500 rounded-full" />
+            </span>
+          </Link>
           <div className="hidden md:flex items-center gap-8 text-sm font-semibold text-neutral-600 dark:text-neutral-400">
             {navLinks.map((l) => (
               <a key={l.href} href={l.href} className="hover:text-black dark:hover:text-white transition-colors">{t(l.key)}</a>
@@ -204,172 +206,9 @@ export function Landing() {
         )}
       </nav>
 
-      {/* ══ 01 — Hero: the niche, carried by the era ══ */}
-      <main className="sm:pt-44 sm:pb-32 overflow-hidden pt-28 pb-16 relative">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-glow-light dark:bg-glow-dark opacity-100 pointer-events-none transition-opacity duration-700" />
-        <div className="absolute inset-0 bg-grid-pattern-light dark:bg-grid-pattern bg-[size:4rem_4rem] opacity-[0.04] dark:opacity-[0.03] pointer-events-none" />
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#F3EFE7] dark:to-[#080808] pointer-events-none" />
-
-        <div className="max-w-7xl mx-auto px-6 text-center relative z-10 flex flex-col items-center">
-          <h1 className="font-display leading-[0.95] text-black dark:text-white mb-6 sm:mb-8 opacity-0 animate-reveal-up-delay tracking-tight max-w-5xl">
-            <span className="block text-[9vw] sm:text-[6vw] md:text-[4.4rem] lg:text-[5rem]">{t('landing.heroLine1')}</span>
-            <span className="block text-[7vw] sm:text-[4.6vw] md:text-[3.4rem] lg:text-[3.8rem] text-neutral-400 dark:text-neutral-500">{t('landing.heroLine2')}</span>
-          </h1>
-
-          <p className="text-lg md:text-xl text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto leading-relaxed mb-6 opacity-0 animate-reveal-up-delay-2 font-medium">
-            {t('landing.heroSub')}
-          </p>
-
-          <p className="text-sm md:text-[15px] text-neutral-500 dark:text-neutral-500 max-w-xl mx-auto leading-relaxed mb-10 opacity-0 animate-reveal-up-delay-2 border-l-2 border-amber-500/60 pl-4 text-left">
-            {t('landing.heroName')}
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 opacity-0 animate-reveal-up-delay-3">
-            <Link to="/sign-up" className="h-14 px-10 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-lg transition-all shadow-[0_4px_0_0_#d97706] hover:shadow-[0_2px_0_0_#d97706] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] flex items-center gap-2 w-full sm:w-auto justify-center group">
-              <span className="tracking-tight">{t('landing.cta')}</span>
-              <ArrowRight className="w-5 h-5" strokeWidth={2.5} />
-            </Link>
-            <a href="#start" className="h-14 px-10 rounded-lg bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-black dark:text-white font-semibold transition-all flex items-center gap-2 w-full sm:w-auto justify-center text-sm shadow-[0_4px_0_0_rgba(0,0,0,0.1)] hover:shadow-[0_2px_0_0_rgba(0,0,0,0.1)] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] dark:shadow-[0_4px_0_0_rgba(255,255,255,0.1)] dark:hover:shadow-[0_2px_0_0_rgba(255,255,255,0.1)]">
-              <Terminal className="w-4 h-4" />
-              {t('landing.ctaSecondary')}
-            </a>
-          </div>
-
-          {/* Agent compatibility — not a customer logo wall */}
-          <div className="mt-10 flex flex-col items-center gap-4 opacity-0 animate-reveal-up-delay-3">
-            <span className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">{t('landing.socialProof')}</span>
-            <div className="flex items-center gap-6 md:gap-10 opacity-60 hover:opacity-90 transition-opacity">
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M4.709 15.955l4.486-2.591a.6.6 0 0 0 .3-.52V7.156a.6.6 0 0 0-.3-.52L4.709 4.045a.6.6 0 0 0-.6 0L.3 6.636a.6.6 0 0 0-.3.52v5.688a.6.6 0 0 0 .3.52l3.809 2.591a.6.6 0 0 0 .6 0z" transform="scale(1.7) translate(3, 3)"/></svg>
-                <span className="text-xs font-semibold hidden sm:inline">Claude Code</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>
-                <span className="text-xs font-semibold hidden sm:inline">Codex</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
-                <span className="text-xs font-semibold hidden sm:inline">Cursor</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <span className="text-base">🦞</span>
-                <span className="text-xs font-semibold hidden sm:inline">OpenClaw</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <Bot className="w-4 h-4" />
-                <span className="text-xs font-semibold hidden sm:inline">{t('landing.anyAgent')}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Board mockup ──────────────────────── */}
-        <div className="mt-16 sm:mt-32 max-w-6xl mx-auto px-4 perspective-container relative z-10 opacity-0 animate-fade-in-delay">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] h-[90%] bg-amber-500/10 blur-[80px] rounded-full pointer-events-none" />
-          <div className="tilted-board bg-[#FAFAFA] dark:bg-[#0C0C0C] border border-black/5 dark:border-amber-500/10 rounded-xl shadow-2xl dark:shadow-[0_0_80px_-20px_rgba(245,158,11,0.15)] overflow-hidden ring-1 ring-black/5 dark:ring-amber-500/10">
-            <div className="h-14 border-b border-neutral-200 dark:border-white/8 flex items-center px-5 justify-between bg-white dark:bg-[#111]">
-              <div className="flex items-center gap-4">
-                <div className="flex gap-2">
-                  <div className="w-3 h-3 rounded-full bg-neutral-300 dark:bg-neutral-800 border border-black/5" />
-                  <div className="w-3 h-3 rounded-full bg-neutral-300 dark:bg-neutral-800 border border-black/5" />
-                  <div className="w-3 h-3 rounded-full bg-neutral-300 dark:bg-neutral-800 border border-black/5" />
-                </div>
-                <div className="h-5 w-[1px] bg-neutral-200 dark:bg-white/10 mx-2" />
-                <span className="text-xs font-bold text-neutral-900 dark:text-neutral-400 flex items-center gap-2 tracking-wide uppercase font-display">
-                  <LayoutDashboard className="w-4 h-4 text-amber-500" />
-                  Board / Acme
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex -space-x-3 hover:space-x-1 transition-all">
-                  <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 border-2 border-white dark:border-[#0A0A0A] flex items-center justify-center text-[10px] font-bold text-black dark:text-white">JD</div>
-                  <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/50 border-2 border-white dark:border-[#0A0A0A] flex items-center justify-center text-[10px] text-amber-600 dark:text-amber-200"><Bot className="w-4 h-4" /></div>
-                </div>
-                <button className="px-3 py-1.5 rounded bg-black dark:bg-white text-white dark:text-black text-xs font-bold shadow-md hover:opacity-90 transition-opacity">{t('landing.mock.newIssue')}</button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-neutral-200 dark:divide-white/8 md:h-[550px] bg-[#F8F8F8] dark:bg-[#0C0C0C]">
-              {/* Backlog */}
-              <div className="p-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-black text-black dark:text-white uppercase tracking-wider flex items-center gap-2 font-display text-lg">Backlog</h3>
-                  <span className="px-2 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-[10px] text-black dark:text-white font-mono font-bold tabular-nums">3</span>
-                </div>
-                <KanbanCard id="ACM-129" title={t('landing.mock.card129')} tag={t('landing.mock.tagClient')} />
-                <KanbanCard id="ACM-130" title={t('landing.mock.card130')} tag={t('landing.mock.tagClient')} />
-              </div>
-
-              {/* Agent at work */}
-              <div className="p-5 flex flex-col gap-4 bg-amber-50/50 dark:bg-neutral-900/20 relative">
-                <div className="flex items-center justify-between mb-2 relative z-10">
-                  <h3 className="text-xs font-black text-amber-600 dark:text-amber-500 uppercase tracking-wider flex items-center gap-2 font-display text-lg">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
-                    </span>
-                    {t('landing.mock.agentColumn')}
-                  </h3>
-                  <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/50 text-[10px] text-amber-700 dark:text-amber-500 font-mono font-bold tabular-nums">1</span>
-                </div>
-                <div className="p-4 rounded-lg border-2 border-amber-500 dark:border-amber-500/50 bg-white dark:bg-[#15120b] shadow-[0_8px_30px_-5px_rgba(245,158,11,0.15)] relative overflow-hidden z-10">
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="text-[10px] text-amber-600 dark:text-amber-500/70 font-mono font-bold">ACM-124</span>
-                    <span className="text-[10px] text-amber-600 dark:text-amber-500 font-mono font-bold animate-pulse flex items-center gap-1 uppercase">
-                      <Loader className="w-3 h-3 animate-spin" /> {t('landing.mock.reading')}
-                    </span>
-                  </div>
-                  <p className="text-sm text-black dark:text-white mb-3 font-bold leading-snug">{t('landing.mock.card124')}</p>
-                  <div className="space-y-2 mb-4 text-left">
-                    <div className="p-2.5 rounded-md bg-neutral-50 dark:bg-black/30 border border-black/5 dark:border-white/5">
-                      <p className="text-[10px] uppercase tracking-wide font-bold text-neutral-400 mb-1">{t('landing.gap.leftHead')}</p>
-                      <p className="text-[11px] text-neutral-700 dark:text-neutral-300 leading-relaxed">{t('landing.gap.l1')}</p>
-                    </div>
-                    <div className="p-2.5 rounded-md bg-neutral-50 dark:bg-black/30 border border-black/5 dark:border-white/5">
-                      <p className="text-[10px] uppercase tracking-wide font-bold text-neutral-400 mb-1">{t('landing.mock.checkHead')}</p>
-                      <div className="space-y-1 text-[11px] text-neutral-700 dark:text-neutral-300">
-                        <div>☑ {t('landing.mock.check1')}</div>
-                        <div>☑ {t('landing.mock.check2')}</div>
-                        <div>☐ {t('landing.mock.check3')}</div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="h-10 rounded-md bg-amber-100 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center text-[10px] font-bold text-amber-700 dark:text-amber-400">{t('landing.mock.file')}</div>
-                      <div className="h-10 rounded-md bg-neutral-100 dark:bg-neutral-900 border border-black/5 dark:border-white/5 flex items-center justify-center text-[10px] font-bold text-neutral-500">{t('landing.mock.context')}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="px-2 py-1 rounded bg-amber-100 dark:bg-amber-950/30 text-[10px] font-bold text-amber-700 dark:text-amber-500 uppercase tracking-tight">{t('landing.mock.intact')}</span>
-                    <div className="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center text-white dark:text-black shadow-lg shadow-amber-500/30">
-                      <Bot className="w-3.5 h-3.5" strokeWidth={2.5} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Review */}
-              <div className="p-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-black text-black dark:text-white uppercase tracking-wider flex items-center gap-2 font-display text-lg">Review</h3>
-                  <span className="px-2 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-[10px] text-black dark:text-white font-mono font-bold tabular-nums">2</span>
-                </div>
-                <div className="group p-4 rounded-lg border border-black/5 dark:border-white/5 bg-white dark:bg-[#111] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] hover:shadow-md transition-all cursor-pointer opacity-70 hover:opacity-100">
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="text-[10px] text-neutral-400 font-mono font-bold">ACM-112</span>
-                    <div className="px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/20 text-[10px] font-bold text-green-700 dark:text-green-500 border border-green-200 dark:border-green-500/20 font-mono uppercase">{t('landing.mock.toCheck')}</div>
-                  </div>
-                  <p className="text-sm text-neutral-500 dark:text-neutral-500 mb-4 font-medium line-through">{t('landing.mock.card112')}</p>
-                  <div className="flex items-center justify-between">
-                    <span className="px-2 py-1 rounded bg-neutral-100 dark:bg-neutral-800 text-[10px] font-bold text-neutral-600 dark:text-neutral-400 uppercase tracking-tight">{t('landing.mock.viaKey')}</span>
-                    <div className="w-6 h-6 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
-                      <Check className="w-3.5 h-3.5 text-green-600" strokeWidth={3} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* ══ 01 — Hero: the promise, then one request through the real statuses ══ */}
+      <main className="pt-24 sm:pt-32 pb-16 sm:pb-24 overflow-hidden relative">
+        <HeroFlow />
       </main>
 
       {/* ══ 02 — The pain, right after the promise ══ */}
@@ -467,23 +306,13 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ══ 05 — Demo + the three handovers, merged ══ */}
+      {/* ══ 05 — Every open ticket, the agent at work, then the real recordings ══ */}
       <section id="how-it-works" className="scroll-mt-24 py-16 sm:py-28 bg-[#F3EFE7] dark:bg-[#080808] border-t border-black/5 dark:border-white/5 transition-colors relative z-20">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <div className="text-center mb-12">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.demo.badge')}</p>
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.workflow.title1')}<br />{t('landing.workflow.title2')}</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium max-w-2xl mx-auto">{t('landing.demo.sub')}</p>
-          </div>
-          <ol className="grid grid-cols-1 md:grid-cols-3 gap-px bg-black/10 dark:bg-white/10 border border-black/10 dark:border-white/10 rounded-xl overflow-hidden mb-10">
-            {(['step1', 'step2', 'step3'] as const).map((s, i) => (
-              <li key={s} className={`p-6 ${i === 1 ? 'bg-amber-50 dark:bg-[#15120b]' : 'bg-white dark:bg-[#0C0C0C]'}`}>
-                <span className={`inline-flex w-8 h-8 rounded text-sm font-mono font-bold items-center justify-center tabular-nums ${i === 1 ? 'bg-amber-500 text-black' : 'bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white'}`}>{i + 1}</span>
-                <h3 className="mt-4 text-lg font-display uppercase tracking-wide text-black dark:text-white mb-2">{t(`landing.workflow.${s}`)}</h3>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t(`landing.workflow.${s}Desc`)}</p>
-              </li>
-            ))}
-          </ol>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <LiveBoard />
+          <div className="mt-20 sm:mt-28"><AgentTerminal /></div>
+        </div>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 mt-20 sm:mt-28">
           <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mb-8">
             <img src="/demo.gif" alt={t('landing.mock.demoAlt')} className="w-full" loading="lazy" />
           </div>
@@ -717,24 +546,6 @@ export function Landing() {
 }
 
 /* ── Sub-components ──────────────────────────── */
-
-function KanbanCard({ id, title, tag }: { id: string; title: string; tag: string }) {
-  return (
-    <div className="group p-4 rounded-lg border border-black/5 dark:border-white/10 bg-white dark:bg-[#151515] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] hover:shadow-md hover:border-black/10 dark:hover:border-white/15 transition-all cursor-pointer">
-      <div className="flex justify-between items-start mb-3">
-        <span className="text-[10px] text-neutral-400 font-mono font-bold">{id}</span>
-        <MoreHorizontal className="w-4 h-4 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-      </div>
-      <p className="text-sm text-black dark:text-neutral-200 mb-4 font-semibold leading-snug">{title}</p>
-      <div className="flex items-center justify-between">
-        <span className="px-2 py-1 rounded bg-neutral-100 dark:bg-neutral-800 text-[10px] font-bold text-neutral-600 dark:text-neutral-400 uppercase tracking-tight">{tag}</span>
-        <div className="w-6 h-6 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
-          <User className="w-3.5 h-3.5 text-neutral-500" />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function FeatureCard({ icon, title, desc, glow }: { icon: React.ReactNode; title: string; desc: string; glow?: boolean }) {
   return (
