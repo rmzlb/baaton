@@ -1245,6 +1245,9 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.nav.login': 'Connexion',
 
 // Bloc 3 — la demande devient un ticket
+'landing.film.title': 'Voir le film (50 s, en anglais)',
+'landing.film.alt': 'Film Baaton : une demande client passe du formulaire public à Done, traitée par un agent',
+'landing.film.note': 'Vrais écrans de Baaton, filmés sur un espace de test. Les personnes, projets et tickets sont fictifs.',
 'landing.demo.badge': 'Ce qui se passe vraiment',
 'landing.demo.note': "Le formulaire public est actif sur 2 de nos 17 projets. La vidéo reconstitue le board avec des données fictives ; la capture en dessous est notre propre board.",
 'landing.demo.raw': 'Voir les appels API bruts',

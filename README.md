@@ -23,6 +23,11 @@
 </p>
 
 <p align="center">
+  <a href="https://baaton.dev/film/baaton-film.mp4"><img src="frontend/public/film/baaton-film.jpg" alt="Watch the Baaton film (50 s): a client request, handled by your agents" width="100%" /></a>
+  <br/><sub>▶ <a href="https://baaton.dev/film/baaton-film.mp4">Watch the film (50 s)</a> · real Baaton screens, fictional people and tickets</sub>
+</p>
+
+<p align="center">
   <img src="assets/board-preview.png" alt="Baaton Board" width="100%" />
 </p>
 
