@@ -1113,7 +1113,8 @@ async fn tool_add_comment(auth: &AuthUser, pool: &PgPool, args: &Value) -> Resul
     }
 
     let comment_id = Uuid::new_v4();
-    let creator_name = auth.display_name.clone();
+    let creator_name = auth.display_name.clone()
+        .unwrap_or_else(|| auth.responsible_user_id().chars().take(20).collect::<String>());
     let creator_id = auth.responsible_user_id().to_string();
     let actor_key_id: Option<Uuid> = auth.actor_key_id;
     let on_behalf_of: Option<String> = auth.on_behalf_of.clone();
