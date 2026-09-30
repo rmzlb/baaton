@@ -366,8 +366,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "type": "OBJECT",
                 "properties": {
                     "issue_id": {"type": "STRING", "description": "UUID or display_id of the issue to comment on (e.g. 'HLM-42' or full UUID). Required."},
-                    "content": {"type": "STRING", "description": "Comment body in Markdown. Supports headings, lists, code blocks. Required."},
-                    "author_name": {"type": "STRING", "description": "Display name shown as comment author. Defaults to 'Baaton AI' if omitted. Optional."}
+                    "content": {"type": "STRING", "description": "Comment body in Markdown. Supports headings, lists, code blocks. Required."}
                 },
                 "required": ["issue_id", "content"]
             }),
@@ -3086,7 +3085,7 @@ pub async fn execute_tool(
         "create_issue" => create_issue_real(pool, org_ids, user_id, user_display_name, &args).await,
         "update_issue" => update_issue_real(pool, org_ids, user_id, &args).await,
         "bulk_update_issues" => bulk_update_issues_real(pool, org_ids, user_id, &args).await,
-        "add_comment" => add_comment_real(pool, org_ids, user_id, &args).await,
+        "add_comment" => add_comment_real(pool, org_ids, user_id, user_display_name, &args).await,
         "generate_prd" => match ai_generate_prd(pool, org_ids, &args).await {
             Ok(r) => Ok(r),
             Err(e) => {
@@ -4190,6 +4189,7 @@ async fn add_comment_real(
     pool: &PgPool,
     org_ids: &[String],
     user_id: &str,
+    user_display_name: Option<&str>,
     args: &Value,
 ) -> Result<ToolResult, String> {
     let raw_issue_id = args
@@ -4214,10 +4214,9 @@ async fn add_comment_real(
                 .to_string()
         })?;
 
-    let author_name = args
-        .get("author_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Baaton AI");
+    // The chat writes for the person using it, as any other client would: the
+    // comment carries their name, not a model-chosen label.
+    let author_name = user_display_name.unwrap_or(user_id);
 
     // Verify issue belongs to org
     let exists: bool = sqlx::query_scalar(

@@ -978,6 +978,56 @@ pub async fn backfill_org_owners(pool: PgPool) {
     }
 }
 
+/// Replace the names stored for humans before the server named every write
+/// itself: drawer comments sent as "Anonymous", chat-filed issues with no name.
+/// A row holding the user's own email or id as its name is upgraded once the
+/// profile carries a real name. Idempotent: only rows whose stored name is still
+/// a placeholder or a fallback of that same user are touched.
+pub async fn backfill_placeholder_names(pool: PgPool) {
+    const PLACEHOLDER: &str = "IS NULL OR {c} IN ('', 'Anonymous') OR {c} = {id} OR {c} LIKE '%@%'";
+    let comment_filter = PLACEHOLDER.replace("{c}", "author_name").replace("{id}", "author_id");
+    let issue_filter = PLACEHOLDER.replace("{c}", "created_by_name").replace("{id}", "created_by_id");
+    let users: Vec<String> = sqlx::query_scalar(&format!(
+        "SELECT author_id FROM comments WHERE author_id LIKE 'user_%' AND (author_name {comment_filter}) \
+         UNION \
+         SELECT created_by_id FROM issues WHERE created_by_id LIKE 'user_%' AND (created_by_name {issue_filter})"
+    ))
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+    if users.is_empty() { return; }
+
+    for user_id in users {
+        let Some((name, email)) = crate::middleware::resolve_profile_cached(&user_id).await else {
+            continue;
+        };
+        let Some(label) = name.or_else(|| email.clone()) else { continue };
+        let email = email.unwrap_or_default();
+        let comments = sqlx::query(
+            "UPDATE comments SET author_name = $2 \
+             WHERE author_id = $1 AND author_name <> $2 \
+               AND (author_name IN ('', 'Anonymous') OR author_name = author_id \
+                    OR (author_name = $3 AND $3 <> ''))",
+        )
+        .bind(&user_id).bind(&label).bind(&email)
+        .execute(&pool).await
+        .map(|r| r.rows_affected()).unwrap_or(0);
+        let issues = sqlx::query(
+            "UPDATE issues SET created_by_name = $2 \
+             WHERE created_by_id = $1 AND created_by_name IS DISTINCT FROM $2 \
+               AND (created_by_name IS NULL OR created_by_name IN ('', 'Anonymous') \
+                    OR created_by_name = created_by_id OR (created_by_name = $3 AND $3 <> ''))",
+        )
+        .bind(&user_id).bind(&label).bind(&email)
+        .execute(&pool).await
+        .map(|r| r.rows_affected()).unwrap_or(0);
+        if comments + issues > 0 {
+            tracing::info!(user_id = %user_id, comments, issues, "Backfilled placeholder author names");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+}
+
 /// Resolve and cache the Clerk owner (`created_by`) of an org whose name is
 /// already known — `ensure_org_name` returns early in that case.
 async fn ensure_org_owner(pool: &PgPool, org_id: &str) {

@@ -278,6 +278,13 @@ async fn main() -> anyhow::Result<()> {
         routes::admin::backfill_org_owners(owners_pool).await;
     });
 
+    // Names stored as "Anonymous" (or left empty) before the server named
+    // every human write itself.
+    let names_pool = pool.clone();
+    tokio::spawn(async move {
+        routes::admin::backfill_placeholder_names(names_pool).await;
+    });
+
     // Start GitHub sync job runner
     let job_pool = pool.clone();
     tokio::spawn(async move {

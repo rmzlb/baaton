@@ -149,11 +149,16 @@ pub async fn create(
     }
 
     let author_id = body.author_id.unwrap_or_else(|| auth.user_id.clone());
-    let author_name = body.author_name.unwrap_or_else(|| {
-        auth.display_name.clone()
-            .or(auth.email.clone())
-            .unwrap_or_else(|| auth.user_id.clone())
-    });
+    let resolved_name = auth.display_name.clone()
+        .or(auth.email.clone())
+        .unwrap_or_else(|| auth.user_id.clone());
+    // A signed-in human is named by their identity, never by the client: the
+    // drawer used to send "Anonymous" for a profile without a name and it was
+    // stored as is. Agents may still label their comment.
+    let author_name = match auth.actor_kind {
+        crate::middleware::ActorKind::Human => resolved_name,
+        _ => body.author_name.unwrap_or(resolved_name),
+    };
     let actor = crate::routes::activity::ActorContext::from_auth(&auth);
     let on_behalf_of = auth.on_behalf_of.clone();
 

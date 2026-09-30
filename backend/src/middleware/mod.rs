@@ -848,6 +848,12 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         }
     }
 
+    // One naming rule for every write a human makes: first + last name, else
+    // username, else email. A profile holding only an email used to leave the
+    // name empty, and each path filled the gap differently ("Anonymous", the
+    // email, nothing).
+    let display_name = display_name.or_else(|| email.clone());
+
     let auth_user = AuthUser {
         user_id: claims.sub,
         scoped_org_ids: org_id.iter().cloned().collect(),

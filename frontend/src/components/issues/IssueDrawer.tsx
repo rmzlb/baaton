@@ -220,12 +220,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   });
 
   const commentMutation = useMutation({
-    mutationFn: (body: string) =>
-      apiClient.comments.create(issueId, {
-        author_id: user?.id || 'anonymous',
-        author_name: user?.fullName || user?.firstName || 'Anonymous',
-        body,
-      }),
+    mutationFn: (body: string) => apiClient.comments.create(issueId, { body }),
     onSuccess: () => {
       setCommentText('');
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });

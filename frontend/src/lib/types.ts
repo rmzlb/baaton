@@ -607,8 +607,6 @@ export interface ProjectTag {
 }
 
 export interface CreateCommentRequest {
-  author_id: string;
-  author_name: string;
   body: string;
 }
 
