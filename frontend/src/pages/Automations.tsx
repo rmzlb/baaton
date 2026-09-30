@@ -747,26 +747,46 @@ function NotificationRolesSection({ project }: { project: Project }) {
     retry: false,
   });
 
-  const onSaved = (next: ProjectNotificationRoles) => {
+  // Optimistic: the screen changes on click, the server answer is reconciled by
+  // a refetch, and a failure puts the previous state back with a message.
+  const optimistic = (apply: (current: ProjectNotificationRoles) => ProjectNotificationRoles) => async () => {
     setError(null);
-    queryClient.setQueryData(queryKey, next);
+    await queryClient.cancelQueries({ queryKey });
+    const previous = queryClient.getQueryData<ProjectNotificationRoles>(queryKey);
+    if (previous) queryClient.setQueryData(queryKey, apply(previous));
+    return { previous };
   };
-  const onFailed = (err: unknown) => setError(err instanceof ApiError && err.message
-    ? err.message
-    : t('notificationRoles.saveError', { defaultValue: 'Could not save. Your previous settings are unchanged.' }));
+  const rollback = (err: unknown, _vars: unknown, context?: { previous?: ProjectNotificationRoles }) => {
+    if (context?.previous) queryClient.setQueryData(queryKey, context.previous);
+    setError(err instanceof ApiError && err.message
+      ? err.message
+      : t('notificationRoles.saveError', { defaultValue: 'Could not save. Your previous settings are unchanged.' }));
+  };
+  const settle = () => queryClient.invalidateQueries({ queryKey });
 
   const rolesMutation = useMutation({
     mutationFn: (roles: NotificationRole[]) => apiClient.projects.updateNotificationRoles(project.id, roles),
-    onSuccess: onSaved,
-    onError: onFailed,
+    onMutate: (roles) => optimistic((current) => ({
+      ...current,
+      roles,
+      assignments: current.assignments.filter((a) => roles.some((r) => r.key === a.role)),
+    }))(),
+    onError: rollback,
+    onSettled: settle,
   });
   const assignMutation = useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: string | null }) =>
       apiClient.projects.assignNotificationRole(project.id, userId, role),
-    onSuccess: onSaved,
-    onError: onFailed,
+    onMutate: ({ userId, role }) => optimistic((current) => ({
+      ...current,
+      assignments: [
+        ...current.assignments.filter((a) => a.user_id !== userId),
+        ...(role ? [{ user_id: userId, role }] : []),
+      ],
+    }))(),
+    onError: rollback,
+    onSettled: settle,
   });
-  const busy = rolesMutation.isPending || assignMutation.isPending;
 
   const roleLabel = (role: NotificationRole) => DEFAULT_ROLE_LABELS[role.key] === role.label
     ? t(`notificationRoles.default.${role.key}`, { defaultValue: role.label })
@@ -810,11 +830,16 @@ function NotificationRolesSection({ project }: { project: Project }) {
     rolesMutation.mutate(data.roles.filter((r) => r.key !== role.key));
   };
 
-  const chip = (active: boolean) => cn(
-    'rounded-full border px-2.5 py-1 text-[11px] transition-[transform,colors,background-color,border-color] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]',
-    'active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed',
-    active ? 'border-accent bg-accent/10 text-accent' : 'border-border text-secondary hover:bg-surface-hover',
+  // Same chip as the chat notification statuses above, so both read as one page.
+  const chip = (active: boolean, locked = false) => cn(
+    'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150',
+    'active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 disabled:cursor-not-allowed',
+    locked && 'opacity-60',
+    active
+      ? 'border-accent/40 bg-accent/10 text-accent'
+      : 'border-border bg-transparent text-muted hover:border-border hover:text-secondary',
   );
+  const check = (active: boolean) => active && <CheckCircle size={11} className="text-accent ml-0.5" />;
 
   const header = (
     <div className="flex items-center gap-2 mb-4">
@@ -872,7 +897,7 @@ function NotificationRolesSection({ project }: { project: Project }) {
               <select
                 aria-label={t('notificationRoles.roleFor', { name: resolveUserName(userId), defaultValue: 'Role for {{name}}' })}
                 value={roleOf(userId)}
-                disabled={busy}
+               
                 onChange={(e) => assignMutation.mutate({ userId, role: e.target.value || null })}
                 className="rounded-md border border-border bg-bg px-2 py-1 text-xs text-primary focus:outline-none focus:ring-2 focus:ring-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -907,34 +932,40 @@ function NotificationRolesSection({ project }: { project: Project }) {
                     })}
                   </span>
                 </span>
-                <button type="button" disabled={busy} onClick={() => removeRole(role)}
+                <button type="button" onClick={() => removeRole(role)}
                   aria-label={t('notificationRoles.remove', { defaultValue: 'Remove role' })}
                   className="rounded-md p-1 text-muted hover:text-danger hover:bg-surface-hover active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed">
                   <Trash2 size={13} />
                 </button>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                <button type="button" aria-pressed={role.notify_statuses.includes(ALL_STATUSES)} disabled={busy}
+                <button type="button" aria-pressed={role.notify_statuses.includes(ALL_STATUSES)}
                   onClick={() => toggleStatus(role, ALL_STATUSES)} className={chip(role.notify_statuses.includes(ALL_STATUSES))}>
                   {t('notificationRoles.allStatuses', { defaultValue: 'Every status' })}
+                  {check(role.notify_statuses.includes(ALL_STATUSES))}
                 </button>
                 {project.statuses.map((status) => {
-                  const active = role.notify_statuses.includes(ALL_STATUSES) || role.notify_statuses.includes(status.key);
+                  const all = role.notify_statuses.includes(ALL_STATUSES);
+                  const active = all || role.notify_statuses.includes(status.key);
                   return (
-                    <button key={status.key} type="button" aria-pressed={active}
-                      disabled={busy || role.notify_statuses.includes(ALL_STATUSES)}
-                      onClick={() => toggleStatus(role, status.key)} className={chip(active)}>
+                    <button key={status.key} type="button" aria-pressed={active} disabled={all}
+                      onClick={() => toggleStatus(role, status.key)} className={chip(active, all)}>
+                      <span className="h-2 w-2 rounded-full shrink-0"
+                        style={{ backgroundColor: active ? (status.color || '#64748b') : '#64748b' }} />
                       {status.label}
+                      {check(active && !all)}
                     </button>
                   );
                 })}
-                <button type="button" aria-pressed={role.notify_comments} disabled={busy}
+                <button type="button" aria-pressed={role.notify_comments}
                   onClick={() => saveRole(role.key, { notify_comments: !role.notify_comments })} className={chip(role.notify_comments)}>
                   {t('notificationRoles.comments', { defaultValue: 'All comments' })}
+                  {check(role.notify_comments)}
                 </button>
-                <button type="button" aria-pressed={role.notify_issue_created} disabled={busy}
+                <button type="button" aria-pressed={role.notify_issue_created}
                   onClick={() => saveRole(role.key, { notify_issue_created: !role.notify_issue_created })} className={chip(role.notify_issue_created)}>
                   {t('notificationRoles.created', { defaultValue: 'New tickets' })}
+                  {check(role.notify_issue_created)}
                 </button>
               </div>
             </div>
@@ -944,7 +975,7 @@ function NotificationRolesSection({ project }: { project: Project }) {
           <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} maxLength={40}
             placeholder={t('notificationRoles.newPlaceholder', { defaultValue: 'New role name' })}
             className="flex-1 rounded-md border border-border bg-bg px-2.5 py-1.5 text-xs text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-amber-500/30" />
-          <button type="submit" disabled={busy || !slugifyRoleKey(newLabel)}
+          <button type="submit" disabled={rolesMutation.isPending || !slugifyRoleKey(newLabel)}
             className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-secondary hover:bg-surface-hover active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed">
             <Plus size={12} />
             {t('notificationRoles.add', { defaultValue: 'Add role' })}
