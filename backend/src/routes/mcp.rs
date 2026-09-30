@@ -28,7 +28,7 @@ use crate::middleware::{fetch_jwks_keys, AuthUser, JwksKeys};
 // ── Embedded skill ───────────────────────────────────────────────────────────
 
 const SKILL_MD: &str =
-    include_str!("../../../agent-skills/skills/baaton-pm/SKILL.md");
+    include_str!("../mcp_skill.md");
 
 fn skill_md_digest() -> String {
     let hash = Sha256::digest(SKILL_MD.as_bytes());
