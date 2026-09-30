@@ -193,7 +193,7 @@ pub fn required_permission(method: &Method, path: &str) -> Requirement {
                         rw(method, "automations:read", "automations:write")
                     }
                     "context" | "memory" => rw(method, "context:read", "context:write"),
-                    "custom-fields" | "public-submit" | "auto-assign" => {
+                    "custom-fields" | "public-submit" | "auto-assign" | "notification-roles" => {
                         rw(method, "projects:read", "projects:write")
                     }
                     "statuses" | "refresh-github" | "import" => {

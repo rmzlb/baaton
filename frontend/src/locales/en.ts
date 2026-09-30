@@ -2367,6 +2367,30 @@ As a [user], I want to [action] so that [benefit].
   'shortcut.toggleFilter': 'Toggle filters',
   'shortcut.refresh': 'Refresh data',
 
+  // Notification roles (project Members & notifications)
+  'notificationRoles.title': "Members & notifications",
+  'notificationRoles.desc': "Give each member a role: they receive what the role asks for, by email and Telegram, without configuring anything. Their own notification settings still win.",
+  'notificationRoles.members': "Members",
+  'notificationRoles.noMembers': "No members found in this organization.",
+  'notificationRoles.roleFor': "Role for {{name}}",
+  'notificationRoles.none': "No role",
+  'notificationRoles.roles': "Roles",
+  'notificationRoles.rolesDesc': "What each role hears on this project. Creators and assignees are always told about their own tickets.",
+  'notificationRoles.holders': "{{count}} member(s)",
+  'notificationRoles.remove': "Remove role",
+  'notificationRoles.removeConfirm': "Remove this role? {{count}} member(s) will stop receiving its notifications.",
+  'notificationRoles.allStatuses': "Every status",
+  'notificationRoles.comments': "All comments",
+  'notificationRoles.created': "New tickets",
+  'notificationRoles.newPlaceholder': "New role name",
+  'notificationRoles.add': "Add role",
+  'notificationRoles.duplicate': "A role with this name already exists.",
+  'notificationRoles.saveError': "Could not save. Your previous settings are unchanged.",
+  'notificationRoles.loadError': "Could not load notification roles. Reopen this page to retry.",
+  'notificationRoles.default.reviewer': "Reviewer",
+  'notificationRoles.default.dev': "Dev",
+  'notificationRoles.default.everything': "Everything",
+
 } as const;
 
 export default en;

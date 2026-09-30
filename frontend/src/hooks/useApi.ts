@@ -6,6 +6,8 @@ import type {
   ProjectStatus,
   ProjectAutoAssignSettings,
   ProjectNotificationSettings,
+  NotificationRole,
+  ProjectNotificationRoles,
   PublicSubmitSettings,
   Issue,
   IssueDetail,
@@ -266,6 +268,28 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.get<ProjectNotificationSettings>(`/projects/${id}/notifications`, token);
+        }),
+
+      getNotificationRoles: async (id: string): Promise<ProjectNotificationRoles> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<ProjectNotificationRoles>(`/projects/${id}/notification-roles`, token);
+        }),
+
+      updateNotificationRoles: async (id: string, roles: NotificationRole[]): Promise<ProjectNotificationRoles> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.put<ProjectNotificationRoles>(`/projects/${id}/notification-roles`, { roles }, token);
+        }),
+
+      assignNotificationRole: async (id: string, userId: string, role: string | null): Promise<ProjectNotificationRoles> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.put<ProjectNotificationRoles>(
+            `/projects/${id}/notification-roles/members/${encodeURIComponent(userId)}`,
+            { role },
+            token,
+          );
         }),
 
       updateNotifications: async (

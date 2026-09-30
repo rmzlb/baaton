@@ -156,6 +156,21 @@ export interface ProjectNotificationSettings {
   notify_issue_created: boolean;
 }
 
+export interface NotificationRole {
+  key: string;
+  label: string;
+  /** Status keys; "*" means every status, including ones added later. */
+  notify_statuses: string[];
+  notify_comments: boolean;
+  notify_issue_created: boolean;
+}
+
+export interface ProjectNotificationRoles {
+  project_id: string;
+  roles: NotificationRole[];
+  assignments: { user_id: string; role: string }[];
+}
+
 export interface PublicSubmitSettings {
   enabled: boolean;
   token: string | null;

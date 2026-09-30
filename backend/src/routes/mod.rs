@@ -57,6 +57,7 @@ pub mod memory;
 pub mod project_templates;
 mod dashboard;
 pub mod notification_prefs;
+pub mod notification_roles;
 
 pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
     let routes = Router::new()
@@ -65,6 +66,8 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/projects/{id}", get(projects::get_one).patch(projects::update).delete(projects::remove))
         .route("/projects/{id}/auto-assign", get(projects::get_auto_assign_settings).patch(projects::update_auto_assign_settings))
         .route("/projects/{id}/notifications", get(projects::get_notification_settings).patch(projects::update_notification_settings))
+        .route("/projects/{id}/notification-roles", get(notification_roles::get_roles).put(notification_roles::update_roles))
+        .route("/projects/{id}/notification-roles/members/{user_id}", put(notification_roles::assign_role))
         .route("/projects/{id}/statuses", axum::routing::put(projects::update_statuses))
         .route("/projects/{id}/refresh-github", post(projects::refresh_github))
         .route("/projects/{id}/issues", get(issues::list_by_project))

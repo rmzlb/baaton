@@ -2367,6 +2367,30 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'shortcut.toggleFilter': 'Basculer les filtres',
   'shortcut.refresh': 'Rafraîchir les données',
 
+  // Notification roles (project Members & notifications)
+  'notificationRoles.title': "Membres & notifications",
+  'notificationRoles.desc': "Donnez un rôle à chaque membre : il reçoit ce que son rôle prévoit, par e-mail et Telegram, sans rien configurer. Ses propres réglages de notification restent prioritaires.",
+  'notificationRoles.members': "Membres",
+  'notificationRoles.noMembers': "Aucun membre trouvé dans cette organisation.",
+  'notificationRoles.roleFor': "Rôle de {{name}}",
+  'notificationRoles.none': "Aucun rôle",
+  'notificationRoles.roles': "Rôles",
+  'notificationRoles.rolesDesc': "Ce que chaque rôle reçoit sur ce projet. Le créateur et les assignés sont toujours prévenus pour leurs propres tickets.",
+  'notificationRoles.holders': "{{count}} membre(s)",
+  'notificationRoles.remove': "Supprimer le rôle",
+  'notificationRoles.removeConfirm': "Supprimer ce rôle ? {{count}} membre(s) ne recevront plus ses notifications.",
+  'notificationRoles.allStatuses': "Tous les statuts",
+  'notificationRoles.comments': "Tous les commentaires",
+  'notificationRoles.created': "Nouveaux tickets",
+  'notificationRoles.newPlaceholder': "Nom du nouveau rôle",
+  'notificationRoles.add': "Ajouter un rôle",
+  'notificationRoles.duplicate': "Un rôle porte déjà ce nom.",
+  'notificationRoles.saveError': "Enregistrement impossible. Vos réglages précédents sont conservés.",
+  'notificationRoles.loadError': "Impossible de charger les rôles de notification. Rouvrez la page pour réessayer.",
+  'notificationRoles.default.reviewer': "Reviewer / demandeur",
+  'notificationRoles.default.dev': "Dev",
+  'notificationRoles.default.everything': "Suivi complet",
+
 } as const;
 
 export default fr;

@@ -214,6 +214,10 @@ async fn main() -> anyhow::Result<()> {
             79,
             include_str!("../migrations/079_plan_belongs_to_org.sql"),
         ),
+        (
+            80,
+            include_str!("../migrations/080_project_notification_roles.sql"),
+        ),
     ];
 
     for &(version, sql) in migrations {

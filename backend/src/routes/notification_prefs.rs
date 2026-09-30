@@ -440,27 +440,55 @@ async fn user_org_ids(auth: &AuthUser, user_id: &str) -> Result<Vec<String>, Api
 
 // ───────────────────── recipient resolution ─────────────────────
 
+// Members reach this list two ways: their own subscription, or a role a
+// project editor gave them (080). Each preference resolves field by field: the
+// member's own value, else their role's, else the project default. An
+// unsubscribe (`enabled = false`) mutes a role too; a role key no longer
+// defined on the project grants nothing. `"*"` in statuses means every status.
+//
+// A role holder with no email row at all gets an email row with an empty
+// address: `resolve_recipients` fills it from the account's primary email, so
+// nobody has to configure a channel to hear what their role asks for. Plain
+// subscribers keep exactly the channels they set up themselves.
 const RECIPIENTS_SQL: &str = "\
-        SELECT s.user_id, c.channel, c.address \
-        FROM project_notification_subscriptions s \
-        JOIN projects p ON p.id = s.project_id \
+        SELECT m.user_id, c.channel, c.address \
+        FROM ( \
+          SELECT user_id FROM project_notification_subscriptions WHERE project_id = $1 \
+          UNION SELECT user_id FROM project_member_roles WHERE project_id = $1 \
+        ) m \
+        JOIN projects p ON p.id = $1 \
+        LEFT JOIN project_notification_subscriptions s \
+          ON s.project_id = $1 AND s.user_id = m.user_id \
+        LEFT JOIN project_member_roles mr \
+          ON mr.project_id = $1 AND mr.user_id = m.user_id \
+        LEFT JOIN LATERAL ( \
+          SELECT r FROM jsonb_array_elements(p.notification_roles) r \
+           WHERE r->>'key' = mr.role LIMIT 1 \
+        ) ro ON true \
         CROSS JOIN LATERAL ( \
           SELECT channel, address FROM user_notification_channels \
-           WHERE user_id = s.user_id AND channel <> 'telegram' \
+           WHERE user_id = m.user_id AND channel <> 'telegram' \
              AND (channel <> 'email' OR verified_at IS NOT NULL) \
+          UNION ALL SELECT 'email'::text, ''::text \
+           WHERE ro.r IS NOT NULL \
+             AND NOT EXISTS (SELECT 1 FROM user_notification_channels \
+                              WHERE user_id = m.user_id AND channel = 'email') \
           UNION ALL SELECT 'telegram'::text, ''::text \
         ) c \
-        WHERE s.project_id = $1 \
-          AND s.enabled \
-          AND ($2 <> 'comment_added' OR s.user_id <> $4) \
-          AND (cardinality(s.channels) = 0 OR c.channel = ANY(s.channels)) \
+        CROSS JOIN LATERAL ( \
+          SELECT COALESCE(s.notify_statuses, ro.r->'notify_statuses', p.notify_statuses) AS statuses \
+        ) st \
+        WHERE (s.enabled IS TRUE OR (s.user_id IS NULL AND ro.r IS NOT NULL)) \
+          AND ($2 <> 'comment_added' OR m.user_id <> $4) \
+          AND (cardinality(COALESCE(s.channels, '{}')) = 0 OR c.channel = ANY(s.channels)) \
           AND CASE $2 \
                 WHEN 'status_changed' THEN \
-                  COALESCE(s.notify_statuses, p.notify_statuses) @> to_jsonb($3::text) \
+                  st.statuses @> to_jsonb($3::text) OR st.statuses @> '\"*\"'::jsonb \
                 WHEN 'comment_added' THEN \
-                  COALESCE(s.notify_comments, p.notify_comments) \
+                  COALESCE(s.notify_comments, (ro.r->>'notify_comments')::boolean, p.notify_comments) \
                 WHEN 'issue_created' THEN \
-                  COALESCE(s.notify_issue_created, p.notify_issue_created) \
+                  COALESCE(s.notify_issue_created, (ro.r->>'notify_issue_created')::boolean, \
+                           p.notify_issue_created) \
                 ELSE false \
               END";
 
@@ -540,6 +568,20 @@ pub async fn resolve_recipients(
         }
     }
     recipients.retain(|r| authorized.contains(&r.user_id));
+
+    // Email rows the SQL left without an address: the member has no email
+    // channel, so their primary account email stands in.
+    let mut filled = Vec::with_capacity(recipients.len());
+    for mut r in recipients {
+        if r.channel == "email" && r.address.is_empty() {
+            match crate::middleware::resolve_profile_cached(&r.user_id).await {
+                Some((_, Some(email))) => r.address = email,
+                _ => continue,
+            }
+        }
+        filled.push(r);
+    }
+    let mut recipients = filled;
 
     let owners: Vec<_> = recipients.iter().filter(|r| r.channel == "telegram")
         .map(|r| r.user_id.clone()).collect();
