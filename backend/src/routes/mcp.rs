@@ -940,29 +940,36 @@ async fn tool_create_issue(auth: &AuthUser, pool: &PgPool, args: &Value) -> Resu
         .unwrap_or_else(|| "todo".to_string());
 
     // Get next sequence number
-    let seq: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) + 1 FROM issues WHERE project_id = $1",
+    // Get next display_id number — same query as routes/issues.rs
+    let next_number: (i64,) = sqlx::query_as(
+        "SELECT COALESCE(MAX((SPLIT_PART(display_id, '-', 2))::bigint), 0) + 1
+         FROM issues
+         WHERE project_id = $1
+           AND display_id ~ ('^' || $2 || '-[0-9]+$')",
     )
     .bind(project_id)
+    .bind(&proj.prefix)
     .fetch_one(pool)
     .await
-    .map_err(|e| format!("DB error: {}", e))?;
+    .unwrap_or((1i64,));
 
-    let display_id = format!("{}-{}", proj.prefix, seq);
-    let id = Uuid::new_v4();
+    let display_id = format!("{}-{}", proj.prefix, next_number.0);
     let creator_id = auth.responsible_user_id().to_string();
     let creator_name = auth.display_name.clone();
-    let source = if auth.is_api_key() { "mcp" } else { "mcp" };
-    let default_pos: f64 = seq as f64 * 1000.0;
+    let default_pos: f64 = next_number.0 as f64 * 1000.0;
 
-    sqlx::query(
-        "INSERT INTO issues (id, org_id, project_id, display_id, title, description, type, status, priority,
-                             assignee_ids, tags, category, attachments, position, source,
-                             created_by_id, created_by_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, '{}', '{}', '[]', $11, $12, $13, $14)",
+    #[derive(sqlx::FromRow)]
+    struct NewIssue { id: Uuid, display_id: String }
+
+    let issue = sqlx::query_as::<_, NewIssue>(
+        "INSERT INTO issues (
+            project_id, display_id, title, description, type, status, priority,
+            assignee_ids, tags, category, attachments, position, source,
+            created_by_id, created_by_name
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '{}', '{}', '[]', $9, $10, $11, $12)
+         RETURNING id, display_id",
     )
-    .bind(id)
-    .bind(&org_id)
     .bind(project_id)
     .bind(&display_id)
     .bind(title)
@@ -972,16 +979,16 @@ async fn tool_create_issue(auth: &AuthUser, pool: &PgPool, args: &Value) -> Resu
     .bind(priority)
     .bind(&assignee_ids)
     .bind(default_pos)
-    .bind(source)
+    .bind("mcp")
     .bind(&creator_id)
     .bind(&creator_name)
-    .execute(pool)
+    .fetch_one(pool)
     .await
     .map_err(|e| format!("DB error creating issue: {}", e))?;
 
     Ok(json!({
-        "id": id,
-        "display_id": display_id,
+        "id": issue.id,
+        "display_id": issue.display_id,
         "title": title,
         "status": initial_status,
         "priority": priority,
@@ -1108,22 +1115,36 @@ async fn tool_add_comment(auth: &AuthUser, pool: &PgPool, args: &Value) -> Resul
     let comment_id = Uuid::new_v4();
     let creator_name = auth.display_name.clone();
     let creator_id = auth.responsible_user_id().to_string();
+    let actor_key_id: Option<Uuid> = auth.actor_key_id;
+    let on_behalf_of: Option<String> = auth.on_behalf_of.clone();
 
-    sqlx::query(
-        "INSERT INTO comments (id, issue_id, body, created_by_id, created_by_name, actor_type)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+    #[derive(sqlx::FromRow)]
+    struct NewComment { id: Uuid }
+
+    let c = sqlx::query_as::<_, NewComment>(
+        "INSERT INTO comments (
+            issue_id, author_id, author_name, body, actor_type, actor_key_id, on_behalf_of,
+            on_behalf_of_name, on_behalf_of_email
+         )
+         VALUES ($1, $2, $3, $4, $5, $6,
+                 COALESCE($7, (SELECT created_by FROM api_keys WHERE id = $6)),
+                 $8, $9)
+         RETURNING id",
     )
-    .bind(comment_id)
     .bind(issue_id)
-    .bind(body)
     .bind(&creator_id)
     .bind(&creator_name)
+    .bind(body)
     .bind(auth.actor_kind.as_str())
-    .execute(pool)
+    .bind(actor_key_id)
+    .bind(&on_behalf_of)
+    .bind(None::<String>)
+    .bind(None::<String>)
+    .fetch_one(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;
 
-    Ok(json!({"id": comment_id, "issue_id": issue_id, "ok": true}))
+    Ok(json!({"id": c.id, "issue_id": issue_id, "ok": true}))
 }
 
 // ── post_tldr ─────────────────────────────────────────────────────────────────
@@ -1155,26 +1176,26 @@ async fn tool_post_tldr(auth: &AuthUser, pool: &PgPool, args: &Value) -> Result<
         return Err("Access denied".into());
     }
 
-    let tldr_id = Uuid::new_v4();
-    let creator_id = auth.responsible_user_id().to_string();
-    let creator_name = auth.display_name.clone();
+    let agent_name = auth.display_name.clone().unwrap_or_else(|| "MCP Agent".to_string());
 
-    sqlx::query(
-        "INSERT INTO tldrs (id, issue_id, summary, files_changed, tests_status, created_by_id, created_by_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    #[derive(sqlx::FromRow)]
+    struct NewTldr { id: Uuid }
+
+    let tldr = sqlx::query_as::<_, NewTldr>(
+        "INSERT INTO tldrs (issue_id, agent_name, summary, files_changed, tests_status)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id",
     )
-    .bind(tldr_id)
     .bind(issue_id)
+    .bind(&agent_name)
     .bind(summary)
     .bind(&files_changed)
     .bind(tests_status)
-    .bind(&creator_id)
-    .bind(&creator_name)
-    .execute(pool)
+    .fetch_one(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;
 
-    Ok(json!({"id": tldr_id, "issue_id": issue_id, "ok": true}))
+    Ok(json!({"id": tldr.id, "issue_id": issue_id, "ok": true}))
 }
 
 // ── Skills (MCP skills extension) ────────────────────────────────────────────
