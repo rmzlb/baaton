@@ -1,31 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight, Sun, Moon, LayoutDashboard, Bot, User, Check,
-  MoreHorizontal, Loader, Inbox, Cpu, Gavel, Copy,
-  Menu, X, Rocket, Users, Layers, MessageCircle, KeyRound, ArrowLeftRight,
+  ArrowRight, Sun, Moon, Bot, User, Check,
+  Inbox, Cpu, Copy, Menu, X, Rocket, Users, Layers,
+  MessageCircle, KeyRound, ArrowLeftRight, ListChecks, FileCheck2, Workflow,
+  MousePointerClick, Terminal, Quote,
 } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useLandingTheme } from '@/hooks/useLandingTheme';
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
-
-function useTheme() {
-  const [dark, setDark] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    if (localStorage.theme === 'dark') return true;
-    if (localStorage.theme === 'light') return false;
-    return false; // Light mode by default
-  });
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-    localStorage.theme = dark ? 'dark' : 'light';
-  }, [dark]);
-  return { dark, toggle: () => setDark(d => !d) };
-}
+import { LandingFooter } from '@/components/landing/LandingFooter';
+import { HeroFlow, LiveBoard, AgentTerminal } from '@/components/landing/Flow';
 
 /* ─── Code Tabs Component ──────────────────── */
 const codeSnippets: Record<string, string> = {
   cURL: `curl -X POST https://api.baaton.dev/api/v1/issues \\
-  -H "Authorization: Bearer baa_your_key" \\
+  -H "Authorization: Bearer ***" \\
   -H "Content-Type: application/json" \\
   -d '{
     "project_id": "your-project-id",
@@ -37,7 +27,7 @@ const codeSnippets: Record<string, string> = {
 
 resp = requests.post(
     "https://api.baaton.dev/api/v1/issues",
-    headers={"Authorization": "Bearer baa_your_key"},
+    headers={"Authorization": "Bearer ***"},
     json={
         "project_id": "your-project-id",
         "title": "Fix auth timeout bug",
@@ -51,7 +41,7 @@ print(resp.json()["data"]["display_id"])`,
   {
     method: "POST",
     headers: {
-      "Authorization": "Bearer baa_your_key",
+      "Authorization": "Bearer ***",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -101,7 +91,34 @@ function CodeTabs() {
   );
 }
 
-/* ─── Use Cases Data ───────────────────────── */
+/* ─── "Hand it to your agent" one-liner ────── */
+function AgentPrompt() {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const prompt = t('landing.start.agentPrompt');
+  const handleCopy = () => {
+    navigator.clipboard.writeText(prompt);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="rounded-lg bg-[#1a1a1a] dark:bg-black border border-black/10 dark:border-white/10 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+        <span className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">{t('landing.start.agentPromptLabel')}</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 px-2 py-1 rounded text-xs text-neutral-400 hover:text-white active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-[transform,colors] duration-150"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? t('landing.start.copied') : t('landing.start.copy')}
+        </button>
+      </div>
+      <p className="px-3 py-3 font-mono text-[12.5px] leading-relaxed text-emerald-300/90 break-words">{prompt}</p>
+    </div>
+  );
+}
+
+/* ─── Section data ─────────────────────────── */
 const useCasesConfig = [
   { icon: Rocket, titleKey: 'landing.useCases.coding', descKey: 'landing.useCases.codingDesc', color: 'text-blue-400', bg: 'bg-blue-500/10 dark:bg-blue-500/10' },
   { icon: Users, titleKey: 'landing.useCases.qa', descKey: 'landing.useCases.qaDesc', color: 'text-green-400', bg: 'bg-green-500/10 dark:bg-green-500/10' },
@@ -109,9 +126,24 @@ const useCasesConfig = [
   { icon: MessageCircle, titleKey: 'landing.useCases.support', descKey: 'landing.useCases.supportDesc', color: 'text-orange-400', bg: 'bg-orange-500/10 dark:bg-orange-500/10' },
 ];
 
+const featuresConfig = [
+  { icon: Inbox, titleKey: 'landing.features.collect', descKey: 'landing.features.collectDesc' },
+  { icon: Cpu, titleKey: 'landing.features.api', descKey: 'landing.features.apiDesc', glow: true },
+  { icon: ListChecks, titleKey: 'landing.features.status', descKey: 'landing.features.statusDesc' },
+  { icon: FileCheck2, titleKey: 'landing.features.proof', descKey: 'landing.features.proofDesc', glow: true },
+  { icon: Layers, titleKey: 'landing.features.multi', descKey: 'landing.features.multiDesc' },
+  { icon: Workflow, titleKey: 'landing.features.automations', descKey: 'landing.features.automationsDesc', glow: true },
+];
+
+const navLinks = [
+  { href: '#how-it-works', key: 'landing.nav.features' },
+  { href: '#pricing', key: 'landing.nav.pricing' },
+];
+
 export function Landing() {
-  const { dark, toggle } = useTheme();
-  const { t } = useTranslation();
+  const { dark, toggle } = useLandingTheme();
+  const { t, i18n } = useTranslation();
+  const demoLang = i18n.language?.startsWith('en') ? 'en' : 'fr';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -121,17 +153,18 @@ export function Landing() {
       {/* ── Navbar ──────────────────────────────── */}
       <nav className="fixed top-0 w-full z-40 border-b border-black/5 dark:border-white/10 bg-[#F3EFE7]/90 dark:bg-[#080808]/90 backdrop-blur-md transition-colors duration-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
-          <div className="flex gap-3 sm:gap-4 items-center cursor-pointer group">
-            <Link to="/" className="font-display text-2xl sm:text-4xl leading-none text-black dark:text-white uppercase tracking-wide group-hover:scale-105 transition-transform duration-300 relative">
+          <Link to="/" className="flex items-center gap-2.5 sm:gap-3 group" aria-label="Baaton">
+            <img src="/favicon.svg" alt="" className="w-7 h-7 sm:w-9 sm:h-9 [image-rendering:pixelated]" />
+            <span className="font-display text-2xl sm:text-4xl leading-none text-black dark:text-white uppercase tracking-wide group-hover:scale-105 transition-transform duration-300 relative">
               Baaton
-              <div className="absolute -right-2 -top-1 w-2 h-2 bg-amber-500 rounded-full" />
-            </Link>
-
-          </div>
+              <span className="absolute -right-2 -top-1 w-2 h-2 bg-amber-500 rounded-full" />
+            </span>
+          </Link>
           <div className="hidden md:flex items-center gap-8 text-sm font-semibold text-neutral-600 dark:text-neutral-400">
-            <a href="#features" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.features')}</a>
-            <a href="#how-it-works" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.methodology')}</a>
-            <a href="#pricing" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.pricing')}</a>
+            {navLinks.map((l) => (
+              <a key={l.href} href={l.href} className="hover:text-black dark:hover:text-white transition-colors">{t(l.key)}</a>
+            ))}
+            <Link to="/compare" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.methodology')}</Link>
             <Link to="/docs" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.docs')}</Link>
             <Link to="/docs#api-reference" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.api')}</Link>
           </div>
@@ -146,7 +179,6 @@ export function Landing() {
               <span>{t('landing.cta')}</span>
               <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
             </Link>
-            {/* Mobile hamburger */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="md:hidden p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-neutral-900 dark:text-white transition-colors"
@@ -156,12 +188,12 @@ export function Landing() {
             </button>
           </div>
         </div>
-        {/* Mobile menu dropdown */}
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-black/5 dark:border-white/10 bg-[#F3EFE7] dark:bg-[#080808] px-4 py-4 space-y-3">
-            <a href="#features" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.features')}</a>
-            <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.methodology')}</a>
-            <a href="#pricing" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.pricing')}</a>
+            {navLinks.map((l) => (
+              <a key={l.href} href={l.href} onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t(l.key)}</a>
+            ))}
+            <Link to="/compare" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.methodology')}</Link>
             <Link to="/docs" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.docs')}</Link>
             <Link to="/docs#api-reference" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.api')}</Link>
             <div className="border-t border-black/5 dark:border-white/10 pt-3 flex flex-col gap-2">
@@ -175,294 +207,13 @@ export function Landing() {
         )}
       </nav>
 
-      {/* ══ BLOC 01 — Hero (5B) ══════════════════ */}
-      <main className="sm:pt-44 sm:pb-32 overflow-hidden pt-28 pb-16 relative">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-glow-light dark:bg-glow-dark opacity-100 pointer-events-none transition-opacity duration-700" />
-        <div className="absolute inset-0 bg-grid-pattern-light dark:bg-grid-pattern bg-[size:4rem_4rem] opacity-[0.04] dark:opacity-[0.03] pointer-events-none" />
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#F3EFE7] dark:to-[#080808] pointer-events-none" />
-
-        <div className="max-w-7xl mx-auto px-6 text-center relative z-10 flex flex-col items-center">
-          {/* Headline — one promise, two asymmetric beats */}
-          <h1 className="font-display leading-[0.95] text-black dark:text-white mb-6 sm:mb-8 opacity-0 animate-reveal-up-delay tracking-tight max-w-5xl">
-            <span className="block text-[9vw] sm:text-[6vw] md:text-[4.4rem] lg:text-[5rem]">{t('landing.heroLine1')}</span>
-            <span className="block text-[7vw] sm:text-[4.6vw] md:text-[3.4rem] lg:text-[3.8rem] text-neutral-400 dark:text-neutral-500">{t('landing.heroLine2')}</span>
-          </h1>
-
-          <p className="text-lg md:text-xl text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto leading-relaxed mb-6 opacity-0 animate-reveal-up-delay-2 font-medium">
-            {t('landing.heroSub')}
-          </p>
-
-          {/* ══ BLOC 02 — Signature de nom (6C) ══ */}
-          <p className="text-sm md:text-[15px] text-neutral-500 dark:text-neutral-500 max-w-xl mx-auto leading-relaxed mb-10 opacity-0 animate-reveal-up-delay-2 border-l-2 border-amber-500/60 pl-4 text-left">
-            {t('landing.heroName')}
-          </p>
-
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 opacity-0 animate-reveal-up-delay-3">
-            <Link to="/sign-up" className="h-14 px-10 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-lg transition-all shadow-[0_4px_0_0_#d97706] hover:shadow-[0_2px_0_0_#d97706] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] flex items-center gap-2 w-full sm:w-auto justify-center group">
-              <span className="tracking-tight">{t('landing.cta')}</span>
-              <ArrowRight className="w-5 h-5" strokeWidth={2.5} />
-            </Link>
-            <a href="#in-action" className="h-14 px-10 rounded-lg bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-black dark:text-white font-semibold transition-all flex items-center gap-2 w-full sm:w-auto justify-center text-sm shadow-[0_4px_0_0_rgba(0,0,0,0.1)] hover:shadow-[0_2px_0_0_rgba(0,0,0,0.1)] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] dark:shadow-[0_4px_0_0_rgba(255,255,255,0.1)] dark:hover:shadow-[0_2px_0_0_rgba(255,255,255,0.1)]">
-              {t('landing.ctaSecondary')}
-            </a>
-          </div>
-
-          {/* Agent compatibility — not a customer logo wall */}
-          <div className="mt-10 flex flex-col items-center gap-4 opacity-0 animate-reveal-up-delay-3">
-            <span className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">{t('landing.socialProof')}</span>
-            <div className="flex items-center gap-6 md:gap-10 opacity-60 hover:opacity-90 transition-opacity">
-              {/* Claude */}
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M4.709 15.955l4.486-2.591a.6.6 0 0 0 .3-.52V7.156a.6.6 0 0 0-.3-.52L4.709 4.045a.6.6 0 0 0-.6 0L.3 6.636a.6.6 0 0 0-.3.52v5.688a.6.6 0 0 0 .3.52l3.809 2.591a.6.6 0 0 0 .6 0z" transform="scale(1.7) translate(3, 3)"/></svg>
-                <span className="text-xs font-semibold hidden sm:inline">Claude Code</span>
-              </div>
-              {/* Codex */}
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>
-                <span className="text-xs font-semibold hidden sm:inline">Codex</span>
-              </div>
-              {/* Cursor */}
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
-                <span className="text-xs font-semibold hidden sm:inline">Cursor</span>
-              </div>
-              {/* OpenClaw */}
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <span className="text-base">🦞</span>
-                <span className="text-xs font-semibold hidden sm:inline">OpenClaw</span>
-              </div>
-              {/* Any agent */}
-              <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                <Bot className="w-4 h-4" />
-                <span className="text-xs font-semibold hidden sm:inline">Any agent</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Board mockup ──────────────────────── */}
-        <div className="mt-16 sm:mt-32 max-w-6xl mx-auto px-4 perspective-container relative z-10 opacity-0 animate-fade-in-delay">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] h-[90%] bg-amber-500/10 blur-[80px] rounded-full pointer-events-none" />
-          <div className="tilted-board bg-[#FAFAFA] dark:bg-[#0C0C0C] border border-black/5 dark:border-amber-500/10 rounded-xl shadow-2xl dark:shadow-[0_0_80px_-20px_rgba(245,158,11,0.15)] overflow-hidden ring-1 ring-black/5 dark:ring-amber-500/10">
-            {/* Toolbar */}
-            <div className="h-14 border-b border-neutral-200 dark:border-white/8 flex items-center px-5 justify-between bg-white dark:bg-[#111]">
-              <div className="flex items-center gap-4">
-                <div className="flex gap-2">
-                  <div className="w-3 h-3 rounded-full bg-neutral-300 dark:bg-neutral-800 border border-black/5" />
-                  <div className="w-3 h-3 rounded-full bg-neutral-300 dark:bg-neutral-800 border border-black/5" />
-                  <div className="w-3 h-3 rounded-full bg-neutral-300 dark:bg-neutral-800 border border-black/5" />
-                </div>
-                <div className="h-5 w-[1px] bg-neutral-200 dark:bg-white/10 mx-2" />
-                <span className="text-xs font-bold text-neutral-900 dark:text-neutral-400 flex items-center gap-2 tracking-wide uppercase font-display">
-                  <LayoutDashboard className="w-4 h-4 text-amber-500" />
-                  Board / Acme
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex -space-x-3 hover:space-x-1 transition-all">
-                  <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 border-2 border-white dark:border-[#0A0A0A] flex items-center justify-center text-[10px] font-bold text-black dark:text-white">JD</div>
-                  <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/50 border-2 border-white dark:border-[#0A0A0A] flex items-center justify-center text-[10px] text-amber-600 dark:text-amber-200"><Bot className="w-4 h-4" /></div>
-                </div>
-                <button className="px-3 py-1.5 rounded bg-black dark:bg-white text-white dark:text-black text-xs font-bold shadow-md hover:opacity-90 transition-opacity">New Issue</button>
-              </div>
-            </div>
-
-            {/* Kanban Columns */}
-            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-neutral-200 dark:divide-white/8 md:h-[550px] bg-[#F8F8F8] dark:bg-[#0C0C0C]">
-              {/* Backlog */}
-              <div className="p-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-black text-black dark:text-white uppercase tracking-wider flex items-center gap-2 font-display text-lg">Backlog</h3>
-                  <span className="px-2 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-[10px] text-black dark:text-white font-mono font-bold">3</span>
-                </div>
-                <KanbanCard id="ACM-129" title="Le PDF doit partir au comptable, pas au client" tag="Client" />
-                <KanbanCard id="ACM-130" title="Garder le login par email en plus du SSO" tag="Client" />
-              </div>
-
-              {/* AI Active */}
-              <div className="p-5 flex flex-col gap-4 bg-amber-50/50 dark:bg-neutral-900/20 relative">
-                <div className="flex items-center justify-between mb-2 relative z-10">
-                  <h3 className="text-xs font-black text-amber-600 dark:text-amber-500 uppercase tracking-wider flex items-center gap-2 font-display text-lg">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
-                    </span>
-                    Agent au travail
-                  </h3>
-                  <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/50 text-[10px] text-amber-700 dark:text-amber-500 font-mono font-bold">1</span>
-                </div>
-                <div className="p-4 rounded-lg border-2 border-amber-500 dark:border-amber-500/50 bg-white dark:bg-[#15120b] shadow-[0_8px_30px_-5px_rgba(245,158,11,0.15)] relative overflow-hidden z-10">
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="text-[10px] text-amber-600 dark:text-amber-500/70 font-mono font-bold">ACM-124</span>
-                    <span className="text-[10px] text-amber-600 dark:text-amber-500 font-mono font-bold animate-pulse flex items-center gap-1">
-                      <Loader className="w-3 h-3 animate-spin" /> LECTURE
-                    </span>
-                  </div>
-                  <p className="text-sm text-black dark:text-white mb-3 font-bold leading-snug">Le client veut le SSO Google sur son portail</p>
-                  <div className="space-y-2 mb-4 text-left">
-                    <div className="p-2.5 rounded-md bg-neutral-50 dark:bg-black/30 border border-black/5 dark:border-white/5">
-                      <p className="text-[10px] uppercase tracking-wide font-bold text-neutral-400 mb-1">Ce que le client a écrit</p>
-                      <p className="text-[11px] text-neutral-700 dark:text-neutral-300 leading-relaxed">« En fait garde le login par email aussi, on a des clients qui n’ont pas de compte Google. »</p>
-                    </div>
-                    <div className="p-2.5 rounded-md bg-neutral-50 dark:bg-black/30 border border-black/5 dark:border-white/5">
-                      <p className="text-[10px] uppercase tracking-wide font-bold text-neutral-400 mb-1">Avant de fermer</p>
-                      <div className="space-y-1 text-[11px] text-neutral-700 dark:text-neutral-300">
-                        <div>☑ Email login conservé</div>
-                        <div>☑ Capture jointe par le client</div>
-                        <div>☐ Résumé posté avant review</div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="h-10 rounded-md bg-amber-100 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-500/20 flex items-center justify-center text-[10px] font-bold text-amber-700 dark:text-amber-400">ecran-client.png</div>
-                      <div className="h-10 rounded-md bg-neutral-100 dark:bg-neutral-900 border border-black/5 dark:border-white/5 flex items-center justify-center text-[10px] font-bold text-neutral-500">contexte projet</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="px-2 py-1 rounded bg-amber-100 dark:bg-amber-950/30 text-[10px] font-bold text-amber-700 dark:text-amber-500 uppercase tracking-tight">Demande intacte</span>
-                    <div className="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center text-white dark:text-black shadow-lg shadow-amber-500/30">
-                      <Bot className="w-3.5 h-3.5" strokeWidth={2.5} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Review */}
-              <div className="p-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-black text-black dark:text-white uppercase tracking-wider flex items-center gap-2 font-display text-lg">Review</h3>
-                  <span className="px-2 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 text-[10px] text-black dark:text-white font-mono font-bold">2</span>
-                </div>
-                <div className="group p-4 rounded-lg border border-black/5 dark:border-white/5 bg-white dark:bg-[#111] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] hover:shadow-md transition-all cursor-pointer opacity-70 hover:opacity-100">
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="text-[10px] text-neutral-400 font-mono font-bold">ACM-112</span>
-                    <div className="px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/20 text-[10px] font-bold text-green-700 dark:text-green-500 border border-green-200 dark:border-green-500/20 font-mono uppercase">À valider</div>
-                  </div>
-                  <p className="text-sm text-neutral-500 dark:text-neutral-500 mb-4 font-medium line-through">Export PDF vers le comptable</p>
-                  <div className="flex items-center justify-between">
-                    <span className="px-2 py-1 rounded bg-neutral-100 dark:bg-neutral-800 text-[10px] font-bold text-neutral-600 dark:text-neutral-400 uppercase tracking-tight">Ramzi (via clé)</span>
-                    <div className="w-6 h-6 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
-                      <Check className="w-3.5 h-3.5 text-green-600" strokeWidth={3} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
+      {/* ══ 01 — Hero: the promise, then one request through the real statuses ══ */}
+      <main className="pt-24 sm:pt-32 pb-16 sm:pb-24 overflow-hidden relative">
+        <HeroFlow />
       </main>
 
-      {/* ══ BLOC 03 — Ce qui se passe vraiment ══ */}
-      <section id="in-action" className="py-16 sm:py-24 bg-white dark:bg-[#060606] border-t border-black/5 dark:border-white/5 transition-colors relative z-20">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <div className="text-center mb-12">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.demo.badge')}</p>
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.demo.title')}</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium max-w-2xl mx-auto">{t('landing.demo.sub')}</p>
-          </div>
-          {/* Board demo */}
-          <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mb-8">
-            <img src="/demo.gif" alt="Board Baaton : l'agent prend le ticket, travaille, écrit son résumé, repasse la main" className="w-full" loading="lazy" />
-          </div>
-          {/* Agent-side view */}
-          <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mt-8">
-            <img src="/agent-demo.png" alt="Claude Code sur l'API Baaton : lit le ticket, corrige, écrit son résumé, passe en review" className="w-full" loading="lazy" />
-          </div>
-          <p className="mt-6 text-sm text-neutral-500 text-center max-w-2xl mx-auto">{t('landing.demo.note')}</p>
-          {/* Raw API calls */}
-          <details className="group mt-4">
-            <summary className="cursor-pointer text-sm text-neutral-500 hover:text-neutral-300 transition-colors flex items-center gap-2 justify-center py-4">
-              <span>{t('landing.demo.raw')}</span>
-              <svg className="w-4 h-4 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-            </summary>
-            <ApiDemo />
-            <CodeTabs />
-          </details>
-        </div>
-      </section>
-
-      {/* ══ BLOC 04 — Le compteur (notre propre instance) ══ */}
-      <section className="py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="max-w-3xl mb-12">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.counter.badge')}</p>
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.counter.title')}</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.counter.sub')}</p>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-black/10 dark:bg-white/10 border border-black/10 dark:border-white/10 rounded-xl overflow-hidden">
-            {[
-              { v: 'landing.counter.n1', l: 'landing.counter.n1Label', hi: true },
-              { v: 'landing.counter.n2', l: 'landing.counter.n2Label', hi: false },
-              { v: 'landing.counter.n3', l: 'landing.counter.n3Label', hi: true },
-              { v: 'landing.counter.n4', l: 'landing.counter.n4Label', hi: false },
-            ].map((s) => (
-              <div key={s.v} className="bg-white dark:bg-[#0C0C0C] p-6 sm:p-8">
-                <div className={`font-mono text-3xl md:text-4xl font-bold mb-3 tracking-tight ${s.hi ? 'text-amber-600 dark:text-amber-500' : 'text-black dark:text-white'}`}>{t(s.v)}</div>
-                <div className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t(s.l)}</div>
-              </div>
-            ))}
-          </div>
-          <p className="mt-6 text-sm text-neutral-500 max-w-2xl">{t('landing.counter.asof')}</p>
-        </div>
-      </section>
-
-      {/* ══ BLOC 05 — Attribution ══════════════ */}
-      <section className="py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-          <div>
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.attrib.badge')}</p>
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-6">{t('landing.attrib.title')}</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium mb-8">{t('landing.attrib.sub')}</p>
-            <div className="flex flex-wrap gap-8">
-              <div>
-                <div className="font-mono text-3xl font-bold text-black dark:text-white mb-1">{t('landing.attrib.p1')}</div>
-                <div className="text-sm text-neutral-500 max-w-[15rem]">{t('landing.attrib.p1Label')}</div>
-              </div>
-              <div>
-                <div className="font-mono text-3xl font-bold text-black dark:text-white mb-1">{t('landing.attrib.p2')}</div>
-                <div className="text-sm text-neutral-500 max-w-[15rem]">{t('landing.attrib.p2Label')}</div>
-              </div>
-            </div>
-          </div>
-          {/* Activity trail */}
-          <div className="rounded-xl border border-black/10 dark:border-white/10 bg-[#FAFAFA] dark:bg-[#0C0C0C] overflow-hidden shadow-xl">
-            <div className="px-5 py-3 border-b border-black/5 dark:border-white/10 bg-white dark:bg-[#111] flex items-center gap-2">
-              <ArrowLeftRight className="w-4 h-4 text-amber-500" />
-              <span className="font-mono text-xs uppercase tracking-widest text-neutral-500">ACM-124 · historique</span>
-            </div>
-            <div className="divide-y divide-black/5 dark:divide-white/5">
-              <div className="px-5 py-4 flex items-start gap-3">
-                <div className="w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <Bot className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-black dark:text-white font-semibold">{t('landing.attrib.rowAgent')}</p>
-                  <p className="text-sm text-neutral-500">{t('landing.attrib.rowAgentAction')}</p>
-                </div>
-              </div>
-              <div className="px-5 py-4 flex items-start gap-3">
-                <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <User className="w-3.5 h-3.5 text-neutral-500" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-black dark:text-white font-semibold">{t('landing.attrib.rowHuman')}</p>
-                  <p className="text-sm text-neutral-500">{t('landing.attrib.rowHumanAction')}</p>
-                </div>
-              </div>
-              <div className="px-5 py-4 flex items-start gap-3 bg-neutral-50 dark:bg-black/30">
-                <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <KeyRound className="w-3.5 h-3.5 text-neutral-500" />
-                </div>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('landing.attrib.revoke')}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ══ BLOC 06 — L'écart ══════════════════ */}
-      <section className="py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
+      {/* ══ 02 — The pain, right after the promise ══ */}
+      <section id="problem" className="py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="max-w-3xl mb-10">
             <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.gap.badge')}</p>
@@ -485,8 +236,128 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ── Pour qui ─────────────────────────── */}
-      <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
+      {/* ══ 03 — Why: the conviction, three principles, the founder ══ */}
+      <section id="why" className="py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="max-w-3xl mb-12">
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.manifesto.title')}</p>
+            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-6">{t('landing.why.title')}</h2>
+            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium leading-relaxed">{t('landing.manifesto.body')}</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-black/10 dark:bg-white/10 border border-black/10 dark:border-white/10 rounded-xl overflow-hidden mb-12">
+            {(['p1', 'p2', 'p3'] as const).map((p, i) => (
+              <div key={p} className="bg-white dark:bg-[#0C0C0C] p-6 sm:p-8">
+                <span className="font-mono text-xs font-bold text-amber-600 dark:text-amber-500 tabular-nums">0{i + 1}</span>
+                <h3 className="mt-3 text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t(`landing.why.${p}`)}</h3>
+                <p className="text-[15px] text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t(`landing.why.${p}Desc`)}</p>
+              </div>
+            ))}
+          </div>
+          <figure className="max-w-3xl">
+            <Quote className="w-6 h-6 text-amber-500 mb-4" />
+            <blockquote className="text-xl sm:text-2xl text-black dark:text-white leading-[1.45] font-medium border-l-2 border-amber-500 pl-6">
+              {t('landing.why.quote')}
+            </blockquote>
+            <figcaption className="mt-5 pl-6 text-sm text-neutral-500 font-mono">{t('landing.why.quoteSign')}</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      {/* ══ 04 — Start: three ways in, before any feature list ══ */}
+      <section id="start" className="scroll-mt-24 py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="max-w-3xl mb-12">
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.start.badge')}</p>
+            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.start.title')}</h2>
+            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.start.sub')}</p>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* 1 — interface */}
+            <div className="p-6 sm:p-8 rounded-xl border border-black/10 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900/20 flex flex-col">
+              <MousePointerClick className="w-6 h-6 text-black dark:text-white mb-6" strokeWidth={1.75} />
+              <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t('landing.start.ui')}</h3>
+              <p className="text-[15px] text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium mb-8 flex-1">{t('landing.start.uiDesc')}</p>
+              <Link to="/sign-up" className="h-11 px-5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold flex items-center justify-center gap-2 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-[transform,colors] duration-150">
+                {t('landing.cta')} <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+              </Link>
+            </div>
+            {/* 2 — agent */}
+            <div className="p-6 sm:p-8 rounded-xl border-2 border-amber-500/70 bg-white dark:bg-[#111] flex flex-col shadow-xl shadow-amber-500/5">
+              <Terminal className="w-6 h-6 text-amber-600 dark:text-amber-500 mb-6" strokeWidth={1.75} />
+              <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t('landing.start.agent')}</h3>
+              <p className="text-[15px] text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium mb-6">{t('landing.start.agentDesc')}</p>
+              <AgentPrompt />
+              <p className="mt-4 text-xs text-neutral-500 leading-relaxed">{t('landing.start.agentNote')}</p>
+            </div>
+            {/* 3 — API / self-host */}
+            <div className="p-6 sm:p-8 rounded-xl border border-black/10 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900/20 flex flex-col">
+              <Cpu className="w-6 h-6 text-black dark:text-white mb-6" strokeWidth={1.75} />
+              <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t('landing.start.api')}</h3>
+              <p className="text-[15px] text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium mb-8 flex-1">{t('landing.start.apiDesc')}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Link to="/docs#api-reference" className="h-11 px-4 rounded-lg border border-black/10 dark:border-white/10 text-sm font-bold text-black dark:text-white hover:bg-white dark:hover:bg-neutral-800 flex items-center justify-center active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-[transform,colors] duration-150">
+                  {t('landing.nav.api')}
+                </Link>
+                <a href="https://github.com/rmzlb/baaton" target="_blank" rel="noopener noreferrer" className="h-11 px-4 rounded-lg border border-black/10 dark:border-white/10 text-sm font-bold text-black dark:text-white hover:bg-white dark:hover:bg-neutral-800 flex items-center justify-center active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-[transform,colors] duration-150">
+                  GitHub
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ══ 05 — Every open ticket, the agent at work, then the real recordings ══ */}
+      <section id="how-it-works" className="scroll-mt-24 py-16 sm:py-28 bg-[#F3EFE7] dark:bg-[#080808] border-t border-black/5 dark:border-white/5 transition-colors relative z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <LiveBoard />
+          <div className="mt-20 sm:mt-28"><AgentTerminal /></div>
+        </div>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 mt-20 sm:mt-28">
+          <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mb-8">
+            <video key={demoLang} className="w-full block" autoPlay muted loop playsInline preload="metadata" poster={`/demo-${demoLang}.jpg`} aria-label={t('landing.mock.demoAlt')}>
+              <source src={`/demo-${demoLang}.mp4`} type="video/mp4" />
+            </video>
+          </div>
+          <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mt-8">
+            <img src="/agent-demo.png" alt={t('landing.mock.agentDemoAlt')} className="w-full" loading="lazy" />
+          </div>
+          <p className="mt-6 text-sm text-neutral-500 text-center max-w-2xl mx-auto">{t('landing.demo.note')}</p>
+          <details className="group mt-4">
+            <summary className="cursor-pointer text-sm text-neutral-500 hover:text-neutral-300 transition-colors flex items-center gap-2 justify-center py-4">
+              <span>{t('landing.demo.raw')}</span>
+              <svg className="w-4 h-4 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </summary>
+            <ApiDemo />
+            <CodeTabs />
+          </details>
+        </div>
+      </section>
+
+      {/* ══ 06 — What the agents do in it ══ */}
+      <section id="features" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="mb-12 sm:mb-20 md:text-center max-w-3xl mx-auto">
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.features.badge')}</p>
+            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.features.title1')}<br />{t('landing.features.title2')}</h2>
+            <p className="text-xl text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.features.sub')}</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {featuresConfig.map((f) => (
+              <FeatureCard
+                key={f.titleKey}
+                icon={<f.icon className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />}
+                title={t(f.titleKey)}
+                desc={t(f.descKey)}
+                glow={f.glow}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══ 07 — Who it is for, by profile ══ */}
+      <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="mb-12 sm:mb-16 max-w-3xl">
             <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.useCases.badge')}</p>
@@ -494,7 +365,7 @@ export function Landing() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {useCasesConfig.map((uc) => (
-              <div key={uc.titleKey} className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-neutral-50 dark:bg-neutral-900/20 hover:shadow-xl transition-all group">
+              <div key={uc.titleKey} className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-white dark:bg-neutral-900/20 hover:shadow-xl transition-all group">
                 <div className={`w-12 h-12 rounded-lg ${uc.bg} flex items-center justify-center mb-6`}>
                   <uc.icon className={`w-6 h-6 ${uc.color}`} strokeWidth={1.5} />
                 </div>
@@ -506,137 +377,81 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ── Le mécanisme ─────────────────────── */}
-      <section id="features" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="mb-12 sm:mb-20 md:text-center max-w-3xl mx-auto">
-            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.features.title1')}<br />{t('landing.features.title2')}</h2>
-            <p className="text-xl text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.features.sub')}</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <FeatureCard icon={<Inbox className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.collect')} desc={t('landing.features.collectDesc')} />
-            <FeatureCard icon={<Cpu className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.api')} desc={t('landing.features.apiDesc')} glow />
-            <FeatureCard icon={<Gavel className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.human')} desc={t('landing.features.humanDesc')} />
-            <FeatureCard icon={<Rocket className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />} title={t('landing.features.hints')} desc={t('landing.features.hintsDesc')} glow />
-          </div>
-        </div>
-      </section>
-
-      {/* ── Déroulé ──────────────────────────── */}
-      <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
+      {/* ══ 08 — Proof: our own board, told as a story ══ */}
+      <section id="proof" className="py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-10 md:gap-16">
-            <div className="md:w-1/2">
-              <h2 className="font-display text-4xl sm:text-5xl md:text-6xl text-black dark:text-white mb-8 md:mb-10 uppercase tracking-tight">{t('landing.workflow.title1')}<br />{t('landing.workflow.title2')}</h2>
-              <ul className="space-y-10 relative">
-                <div className="absolute top-4 bottom-4 left-4 w-[2px] bg-black/5 dark:bg-white/10 -z-10" />
-                <Step n="1" title={t('landing.workflow.step1')} desc={t('landing.workflow.step1Desc')} />
-                <Step n="2" title={t('landing.workflow.step2')} desc={t('landing.workflow.step2Desc')} active />
-                <Step n="3" title={t('landing.workflow.step3')} desc={t('landing.workflow.step3Desc')} />
-              </ul>
-            </div>
-            <div className="md:w-1/2 w-full">
-              <div className="rounded-xl border border-black/10 dark:border-white/10 bg-[#1a1a1a] dark:bg-[#0A0A0A] p-6 font-mono text-sm shadow-2xl relative overflow-hidden">
-                <div className="flex items-center gap-2 mb-6 border-b border-white/10 pb-4">
-                  <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
-                  <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
-                  <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
-                  <span className="ml-4 text-neutral-500 text-xs">ACM-124</span>
-                </div>
-                <div className="space-y-3 text-xs md:text-sm">
-                  <LogLine time="10:42:01" level="LU" color="text-blue-400" text="Contexte projet + demande du client" dim />
-                  <LogLine time="10:42:05" level="STATUT" color="text-blue-400" text="→ en cours" />
-                  <LogLine time="10:42:23" level="RÉSUMÉ" color="text-green-400" text="3 fichiers, email login conservé, tests passés" />
-                  <div className="flex gap-3 mt-4 p-3 bg-white/5 rounded border-l-2 border-amber-500 animate-pulse">
-                    <span className="text-neutral-500">10:43:45</span>
-                    <span className="text-purple-400 font-bold">MAIN</span>
-                    <span className="text-white font-bold">→ review. Ramzi (via clé Sextan).</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="max-w-3xl mb-12">
+            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.counter.badge')}</p>
+            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.counter.title')}</h2>
+            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.counter.sub')}</p>
           </div>
-        </div>
-      </section>
-
-      {/* ── Comparaison ──────────────────────── */}
-      <section id="how-it-works" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="mb-12 sm:mb-16 max-w-3xl">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.compare.badge')}</p>
-            <h2 className="font-display text-4xl sm:text-5xl md:text-6xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.compare.title1')}<br />{t('landing.compare.title2')}</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.compare.sub')}</p>
-          </div>
-
-          <div className="overflow-x-auto -mx-4 px-4">
-            <div className="min-w-[700px] rounded-xl border border-black/10 dark:border-white/10 overflow-hidden bg-white dark:bg-[#0C0C0C]">
-              {/* Header */}
-              <div className="grid grid-cols-5 border-b border-black/5 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900/40">
-                <div className="p-4 text-xs font-bold text-neutral-500 uppercase tracking-wider">{t('landing.compare.capability')}</div>
-                <div className="p-4 text-xs font-bold text-amber-500 uppercase tracking-wider text-center">Baaton</div>
-                <div className="p-4 text-xs font-bold text-neutral-400 uppercase tracking-wider text-center">{t('landing.compare.whatsapp')}</div>
-                <div className="p-4 text-xs font-bold text-neutral-400 uppercase tracking-wider text-center">Linear</div>
-                <div className="p-4 text-xs font-bold text-neutral-400 uppercase tracking-wider text-center">Moxo</div>
-              </div>
-              {[
-                [t('landing.compare.row.intake'), true, true, false, true],
-                [t('landing.compare.row.retrieve'), true, false, true, true],
-                [t('landing.compare.row.silo'), true, false, false, true],
-                [t('landing.compare.row.agentwrite'), true, false, true, true],
-                [t('landing.compare.row.attrib'), true, false, false, false],
-                [t('landing.compare.row.revoke'), true, false, true, true],
-                [t('landing.compare.row.solo'), true, true, true, false],
-                [t('landing.compare.row.selfhost'), true, false, false, false],
-              ].map(([label, ...vals], i) => (
-                <div key={i} className={`grid grid-cols-5 border-b border-black/5 dark:border-white/5 last:border-0 ${i % 2 === 0 ? 'bg-white dark:bg-[#0C0C0C]' : 'bg-neutral-50/50 dark:bg-neutral-900/20'}`}>
-                  <div className="p-4 text-sm font-semibold text-black dark:text-white">{label as string}</div>
-                  {(vals as boolean[]).map((v, j) => (
-                    <div key={j} className="p-4 flex items-center justify-center">
-                      {v ? (
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${j === 0 ? 'bg-amber-500/15 text-amber-500' : 'bg-green-500/10 text-green-500'}`}>
-                          <Check className="w-3.5 h-3.5" strokeWidth={3} />
-                        </div>
-                      ) : (
-                        <div className="w-6 h-6 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
-                          <X className="w-3 h-3 text-neutral-400" strokeWidth={2} />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <p className="mt-8 text-sm text-neutral-500 max-w-3xl">
-            {t('landing.compare.note')}
-          </p>
-        </div>
-      </section>
-
-      {/* ══ BLOC 07 — Ce que Baaton ne fait pas ══ */}
-      <section className="py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <div className="max-w-3xl mb-10">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.not.badge')}</p>
-            <h2 className="font-display text-4xl sm:text-5xl md:text-6xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.not.title')}</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.not.sub')}</p>
-          </div>
-          <div className="border-t border-black/10 dark:border-white/10">
-            {[['landing.not.i1', 'landing.not.i1Desc'], ['landing.not.i2', 'landing.not.i2Desc'], ['landing.not.i3', 'landing.not.i3Desc'], ['landing.not.i4', 'landing.not.i4Desc']].map(([k, d]) => (
-              <div key={k} className="grid grid-cols-1 md:grid-cols-[1fr_1.4fr] gap-2 md:gap-10 py-6 border-b border-black/10 dark:border-white/10">
-                <div className="flex items-start gap-3">
-                  <X className="w-4 h-4 text-neutral-400 flex-shrink-0 mt-1" strokeWidth={2.5} />
-                  <p className="text-base font-semibold text-black dark:text-white leading-snug">{t(k)}</p>
-                </div>
-                <p className="text-[15px] text-neutral-600 dark:text-neutral-400 leading-relaxed md:pl-0 pl-7">{t(d)}</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-black/10 dark:bg-white/10 border border-black/10 dark:border-white/10 rounded-xl overflow-hidden">
+            {[
+              { v: 'landing.counter.n1', l: 'landing.counter.n1Label', hi: true },
+              { v: 'landing.counter.n2', l: 'landing.counter.n2Label', hi: false },
+              { v: 'landing.counter.n3', l: 'landing.counter.n3Label', hi: true },
+              { v: 'landing.counter.n4', l: 'landing.counter.n4Label', hi: false },
+            ].map((s) => (
+              <div key={s.v} className="bg-white dark:bg-[#0C0C0C] p-6 sm:p-8">
+                <div className={`font-mono text-3xl md:text-4xl font-bold mb-3 tracking-tight tabular-nums ${s.hi ? 'text-amber-600 dark:text-amber-500' : 'text-black dark:text-white'}`}>{t(s.v)}</div>
+                <div className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t(s.l)}</div>
               </div>
             ))}
           </div>
+
+          <div className="mt-16 grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+            <div>
+              <h3 className="font-display text-2xl sm:text-3xl text-black dark:text-white uppercase tracking-tight mb-5">{t('landing.attrib.title')}</h3>
+              <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium mb-8">{t('landing.attrib.sub')}</p>
+              <div className="flex flex-wrap gap-8">
+                <div>
+                  <div className="font-mono text-3xl font-bold text-black dark:text-white mb-1 tabular-nums">{t('landing.attrib.p1')}</div>
+                  <div className="text-sm text-neutral-500 max-w-[15rem]">{t('landing.attrib.p1Label')}</div>
+                </div>
+                <div>
+                  <div className="font-mono text-3xl font-bold text-black dark:text-white mb-1 tabular-nums">{t('landing.attrib.p2')}</div>
+                  <div className="text-sm text-neutral-500 max-w-[15rem]">{t('landing.attrib.p2Label')}</div>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-black/10 dark:border-white/10 bg-[#FAFAFA] dark:bg-[#0C0C0C] overflow-hidden shadow-xl">
+              <div className="px-5 py-3 border-b border-black/5 dark:border-white/10 bg-white dark:bg-[#111] flex items-center gap-2">
+                <ArrowLeftRight className="w-4 h-4 text-amber-500" />
+                <span className="font-mono text-xs uppercase tracking-widest text-neutral-500">{t('landing.mock.trailHead')}</span>
+              </div>
+              <div className="divide-y divide-black/5 dark:divide-white/5">
+                <div className="px-5 py-4 flex items-start gap-3">
+                  <div className="w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Bot className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm text-black dark:text-white font-semibold">{t('landing.attrib.rowAgent')}</p>
+                    <p className="text-sm text-neutral-500">{t('landing.attrib.rowAgentAction')}</p>
+                  </div>
+                </div>
+                <div className="px-5 py-4 flex items-start gap-3">
+                  <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <User className="w-3.5 h-3.5 text-neutral-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm text-black dark:text-white font-semibold">{t('landing.attrib.rowHuman')}</p>
+                    <p className="text-sm text-neutral-500">{t('landing.attrib.rowHumanAction')}</p>
+                  </div>
+                </div>
+                <div className="px-5 py-4 flex items-start gap-3 bg-neutral-50 dark:bg-black/30">
+                  <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <KeyRound className="w-3.5 h-3.5 text-neutral-500" />
+                  </div>
+                  <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('landing.attrib.revoke')}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="mt-10 text-sm text-neutral-500 max-w-2xl">{t('landing.counter.asof')}</p>
         </div>
       </section>
 
-      {/* ══ BLOC 08 — Prix ═════════════════════ */}
+      {/* ══ 09 — Pricing ══ */}
       <section id="pricing" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="mb-12 sm:mb-16 text-center max-w-3xl mx-auto">
@@ -721,60 +536,19 @@ export function Landing() {
             <Link to="/sign-up" className="h-14 px-10 rounded-lg bg-black dark:bg-white text-white dark:text-black text-lg font-bold hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors flex items-center gap-2 w-full sm:w-auto justify-center shadow-xl transform hover:-translate-y-1">
               {t('landing.cta')} <ArrowRight className="w-5 h-5" strokeWidth={2} />
             </Link>
-            <Link to="/docs" className="h-14 px-10 rounded-lg border border-black/10 dark:border-white/10 text-black dark:text-white text-lg font-bold hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors flex items-center gap-2 w-full sm:w-auto justify-center">
-              {t('landing.nav.docs')}
-            </Link>
+            <a href="#start" className="h-14 px-10 rounded-lg border border-black/10 dark:border-white/10 text-black dark:text-white text-lg font-bold hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors flex items-center gap-2 w-full sm:w-auto justify-center">
+              <Terminal className="w-5 h-5" /> {t('landing.ctaSecondary')}
+            </a>
           </div>
         </div>
       </section>
 
-      {/* ══ BLOC 09 — Manifeste ════════════════ */}
-      <section className="py-16 sm:py-24 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6">
-          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-500 mb-6">{t('landing.manifesto.title')}</p>
-          <p className="text-xl sm:text-2xl text-black dark:text-white leading-[1.45] font-medium border-l-2 border-amber-500 pl-6">
-            {t('landing.manifesto.body')}
-          </p>
-          <p className="mt-6 pl-6 text-sm text-neutral-500 font-mono">{t('landing.manifesto.sign')}</p>
-        </div>
-      </section>
-
-      {/* ── Footer ──────────────────────────────── */}
-      <footer className="py-12 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] text-sm transition-colors z-20">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-          <Link to="/" className="font-display text-2xl text-black dark:text-white uppercase tracking-wide">Baaton</Link>
-          <div className="flex gap-8 text-neutral-600 dark:text-neutral-500 font-bold uppercase tracking-wider text-xs">
-            <Link to="/docs" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.docs')}</Link>
-            <Link to="/docs#api-reference" className="hover:text-black dark:hover:text-white transition-colors">{t('landing.nav.api')}</Link>
-            <a href="https://github.com/rmzlb/baaton" target="_blank" rel="noopener noreferrer" className="hover:text-black dark:hover:text-white transition-colors">GitHub</a>
-            <a href="https://x.com/rmzlb" target="_blank" rel="noopener noreferrer" className="hover:text-black dark:hover:text-white transition-colors">Twitter</a>
-          </div>
-          <div className="text-neutral-500 font-medium">© 2026 Baaton Inc.</div>
-        </div>
-      </footer>
+      <LandingFooter />
     </div>
   );
 }
 
 /* ── Sub-components ──────────────────────────── */
-
-function KanbanCard({ id, title, tag }: { id: string; title: string; tag: string }) {
-  return (
-    <div className="group p-4 rounded-lg border border-black/5 dark:border-white/10 bg-white dark:bg-[#151515] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] hover:shadow-md hover:border-black/10 dark:hover:border-white/15 transition-all cursor-pointer">
-      <div className="flex justify-between items-start mb-3">
-        <span className="text-[10px] text-neutral-400 font-mono font-bold">{id}</span>
-        <MoreHorizontal className="w-4 h-4 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-      </div>
-      <p className="text-sm text-black dark:text-neutral-200 mb-4 font-semibold leading-snug">{title}</p>
-      <div className="flex items-center justify-between">
-        <span className="px-2 py-1 rounded bg-neutral-100 dark:bg-neutral-800 text-[10px] font-bold text-neutral-600 dark:text-neutral-400 uppercase tracking-tight">{tag}</span>
-        <div className="w-6 h-6 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
-          <User className="w-3.5 h-3.5 text-neutral-500" />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function FeatureCard({ icon, title, desc, glow }: { icon: React.ReactNode; title: string; desc: string; glow?: boolean }) {
   return (
@@ -785,32 +559,6 @@ function FeatureCard({ icon, title, desc, glow }: { icon: React.ReactNode; title
       </div>
       <h3 className="text-2xl font-display uppercase tracking-wide text-black dark:text-white mb-4">{title}</h3>
       <p className="text-base text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{desc}</p>
-    </div>
-  );
-}
-
-function Step({ n, title, desc, active }: { n: string; title: string; desc: string; active?: boolean }) {
-  return (
-    <li className="flex gap-8">
-      <span className={`flex-shrink-0 w-8 h-8 rounded text-sm font-mono font-bold flex items-center justify-center z-10 ${
-        active
-          ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/30 transform scale-110'
-          : 'bg-white dark:bg-neutral-800 border border-black/10 dark:border-white/10 text-black dark:text-white shadow-sm'
-      }`}>{n}</span>
-      <div>
-        <h4 className="text-xl font-bold text-black dark:text-white mb-2 font-display uppercase tracking-wide">{title}</h4>
-        <p className="text-neutral-600 dark:text-neutral-500 font-medium leading-relaxed">{desc}</p>
-      </div>
-    </li>
-  );
-}
-
-function LogLine({ time, level, color, text, dim }: { time: string; level: string; color: string; text: string; dim?: boolean }) {
-  return (
-    <div className={`flex gap-3 ${dim ? 'opacity-50' : ''}`}>
-      <span className="text-neutral-500 shrink-0">{time}</span>
-      <span className={`${color} font-bold shrink-0`}>{level}</span>
-      <span className="text-neutral-200 dark:text-neutral-300">{text}</span>
     </div>
   );
 }

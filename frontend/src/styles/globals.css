@@ -3,6 +3,9 @@
 @source "../node_modules/streamdown/dist/*.js";
 @plugin "@tailwindcss/typography";
 
+/* `dark:` follows the .dark class set by ThemeProvider and the landing toggle, not the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ─── Design System Tokens ─────────────────────────── */
 /* oklch-based semantic tokens — perceptually uniform, alpha-composable */
 @theme inline {
