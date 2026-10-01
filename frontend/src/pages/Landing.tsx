@@ -1,18 +1,14 @@
-import { useRef, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  ArrowRight, Sun, Moon, Bot, User, Check,
-  Inbox, Cpu, Copy, Menu, X, Rocket, Users, Layers,
-  MessageCircle, KeyRound, ArrowLeftRight, ListChecks, FileCheck2, Workflow,
-  MousePointerClick, Terminal, Quote,
-} from 'lucide-react';
+import { ArrowRight, Sun, Moon, Menu, X } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useLandingTheme } from '@/hooks/useLandingTheme';
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
 import { LandingFooter } from '@/components/landing/LandingFooter';
-import { HeroFlow, LiveBoard, AgentTerminal } from '@/components/landing/Flow';
+import { HeroFlow, LiveBoard, AgentTerminal, StatusMark, type StatusKey } from '@/components/landing/Flow';
+import '@/components/landing/landing.css';
 
-/* ─── Code Tabs Component ──────────────────── */
+/* ─── Raw API calls, shown under "See the raw API calls" ─── */
 const codeSnippets: Record<string, string> = {
   cURL: `curl -X POST https://api.baaton.dev/api/v1/issues \\
   -H "Authorization: Bearer ***" \\
@@ -55,85 +51,155 @@ print(resp.json()["data"]["display_id"])`,
 const { data } = await resp.json();`,
 };
 
-function CodeTabs() {
-  const [tab, setTab] = useState<string>('cURL');
+const API_LINES: { tone: 'u' | 'o' | 'h'; text: string }[] = [
+  { tone: 'u', text: '$ curl -X POST api.baaton.dev/v1/issues \\' },
+  { tone: 'u', text: '    -H "Authorization: Bearer ***" \\' },
+  { tone: 'u', text: '    -d \'{"title": "Fix auth timeout on mobile Safari", "priority": "high", "issue_type": "bug"}\'' },
+  { tone: 'o', text: '{"data": {"display_id": "CRAIE-52", "status": "backlog", "due_date": null}}' },
+  { tone: 'h', text: '→ _hint: {action: "add_description", reason: "Add detailed description to help triage"}' },
+  { tone: 'h', text: '→ _hint: {action: "add_tldr", reason: "Add TLDR summary of work to be done"}' },
+  { tone: 'u', text: '$ curl -X PATCH api.baaton.dev/v1/issues/CRAIE-52 \\' },
+  { tone: 'u', text: '    -d \'{"status": "in_progress"}\'' },
+  { tone: 'o', text: '{"data": {"status": "in_progress", "status_changed_at": "2026-05-17T21:11:45Z"}}' },
+  { tone: 'h', text: '→ _hint: {action: "add_comment", reason: "Status changed. Explain why."}' },
+  { tone: 'u', text: '$ # ... agent works: reads context, fixes code, runs tests (47s) ...' },
+  { tone: 'u', text: '$ curl -X POST api.baaton.dev/v1/issues/CRAIE-52/tldr \\' },
+  { tone: 'u', text: '    -d \'{"agent_name": "claude-code", "summary": "Fixed auth timeout. Root cause: token refresh race condition.", "tests_status": "passed"}\'' },
+  { tone: 'o', text: '{"data": {"agent_name": "claude-code", "summary": "Fixed auth timeout..."}}' },
+  { tone: 'h', text: '→ _hint: {action: "move_to_review", reason: "TLDR posted. Move to in_review for human verification."}' },
+  { tone: 'u', text: '$ curl -X PATCH api.baaton.dev/v1/issues/CRAIE-52 -d \'{"status": "in_review"}\'' },
+  { tone: 'o', text: '{"data": {"status": "in_review", "actor": "Ramzi (via Sextan key)"}}' },
+  { tone: 'h', text: '→ _hint: {action: "review_context", reason: "Check if project context needs updating."}' },
+  { tone: 'o', text: '✓ Done. Human notified. 47 seconds. Zero UI opened.' },
+];
+
+function useCopy(text: string) {
   const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard.writeText(codeSnippets[tab]);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copy = () => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
+  return { copied, copy };
+}
+
+function CodeTabs() {
+  const { t } = useTranslation();
+  const [tab, setTab] = useState<string>('cURL');
+  const { copied, copy } = useCopy(codeSnippets[tab]);
   return (
-    <div className="w-full max-w-2xl mx-auto mt-12 rounded-xl border border-black/10 dark:border-white/10 bg-[#1a1a1a] dark:bg-[#0A0A0A] overflow-hidden text-left opacity-0 animate-fade-in-delay shadow-2xl">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-black/20">
-        <div className="flex gap-1">
-          {Object.keys(codeSnippets).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${
-                tab === t ? 'bg-amber-500/15 text-amber-500' : 'text-neutral-500 hover:text-neutral-300'
-              }`}
-            >
-              {t}
-            </button>
+    <div className="term codetabs">
+      <div className="tbar">
+        <div role="tablist" aria-label="API">
+          {Object.keys(codeSnippets).map((k) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : undefined} onClick={() => setTab(k)}>{k}</button>
           ))}
         </div>
-        <button onClick={handleCopy} className="flex items-center gap-1 px-2 py-1 rounded text-xs text-neutral-500 hover:text-white transition-colors">
-          {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? 'Copied' : 'Copy'}
-        </button>
+        <button type="button" className="cbtn" onClick={copy}>{copied ? t('landing.start.copied') : t('landing.start.copy')}</button>
       </div>
-      <pre className="p-4 overflow-x-auto text-[13px] leading-relaxed">
-        <code className="text-emerald-300/90 font-mono">{codeSnippets[tab]}</code>
-      </pre>
+      <pre>{codeSnippets[tab]}</pre>
     </div>
   );
 }
 
-/* ─── "Hand it to your agent" one-liner ────── */
 function AgentPrompt() {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
   const prompt = t('landing.start.agentPrompt');
-  const handleCopy = () => {
-    navigator.clipboard.writeText(prompt);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const { copied, copy } = useCopy(prompt);
   return (
-    <div className="rounded-lg bg-[#1a1a1a] dark:bg-black border border-black/10 dark:border-white/10 overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">{t('landing.start.agentPromptLabel')}</span>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 px-2 py-1 rounded text-xs text-neutral-400 hover:text-white active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-[transform,colors] duration-150"
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? t('landing.start.copied') : t('landing.start.copy')}
-        </button>
+    <div className="prompt">
+      <div className="prompt-h">
+        <span>{t('landing.start.agentPromptLabel')}</span>
+        <button type="button" onClick={copy}>{copied ? t('landing.start.copied') : t('landing.start.copy')}</button>
       </div>
-      <p className="px-3 py-3 font-mono text-[12.5px] leading-relaxed text-emerald-300/90 break-words">{prompt}</p>
+      <p>{prompt}</p>
     </div>
   );
 }
 
-/* ─── Section data ─────────────────────────── */
-const useCasesConfig = [
-  { icon: Rocket, titleKey: 'landing.useCases.coding', descKey: 'landing.useCases.codingDesc', color: 'text-blue-400', bg: 'bg-blue-500/10 dark:bg-blue-500/10' },
-  { icon: Users, titleKey: 'landing.useCases.qa', descKey: 'landing.useCases.qaDesc', color: 'text-green-400', bg: 'bg-green-500/10 dark:bg-green-500/10' },
-  { icon: Layers, titleKey: 'landing.useCases.devops', descKey: 'landing.useCases.devopsDesc', color: 'text-purple-400', bg: 'bg-purple-500/10 dark:bg-purple-500/10' },
-  { icon: MessageCircle, titleKey: 'landing.useCases.support', descKey: 'landing.useCases.supportDesc', color: 'text-orange-400', bg: 'bg-orange-500/10 dark:bg-orange-500/10' },
+/* ─── Film: poster first, the video only loads on click ─── */
+const FILM_MOMENTS: { title: string; status: StatusKey }[] = [
+  { title: 'landing.flow.l1Title', status: 'draft' },
+  { title: 'landing.flow.l2Title', status: 'progress' },
+  { title: 'landing.flow.l3Title', status: 'review' },
+  { title: 'landing.flow.l4Title', status: 'done' },
 ];
 
-const featuresConfig = [
-  { icon: Inbox, titleKey: 'landing.features.collect', descKey: 'landing.features.collectDesc' },
-  { icon: Cpu, titleKey: 'landing.features.api', descKey: 'landing.features.apiDesc', glow: true },
-  { icon: ListChecks, titleKey: 'landing.features.status', descKey: 'landing.features.statusDesc' },
-  { icon: FileCheck2, titleKey: 'landing.features.proof', descKey: 'landing.features.proofDesc', glow: true },
-  { icon: Layers, titleKey: 'landing.features.multi', descKey: 'landing.features.multiDesc' },
-  { icon: Workflow, titleKey: 'landing.features.automations', descKey: 'landing.features.automationsDesc', glow: true },
-];
+function Film() {
+  const { t } = useTranslation();
+  const [playing, setPlaying] = useState(false);
+  const play = () => setPlaying(true);
+  return (
+    <>
+      <ul className="rows">
+        <li>
+          <button type="button" className="row feat" onClick={play}>
+            <span className="l">{t('landing.film.featured')}</span>
+            <span className="t">{t('landing.film.alt')}</span>
+            <span className="r">{t('landing.film.duration')}</span>
+          </button>
+        </li>
+      </ul>
+      <div className="player">
+        <div className="frame">
+          {playing ? (
+            <video src="/film/baaton-film.mp4" controls autoPlay playsInline aria-label={t('landing.film.alt')} />
+          ) : (
+            <>
+              <img src="/film/baaton-film.jpg" alt={t('landing.film.alt')} />
+              <button type="button" className="play" onClick={play}><span>{t('landing.film.play')}</span></button>
+            </>
+          )}
+        </div>
+        <div className="bar"><span>{t('landing.film.bar')}</span><span className="track" /><span>{t('landing.film.duration')}</span></div>
+      </div>
+      <p className="trail-h" style={{ marginTop: 28 }}>{t('landing.film.journey')}</p>
+      <ul className="rows tight moments num">
+        {FILM_MOMENTS.map((m, i) => (
+          <li key={m.title} className="row">
+            <span className="l">0{i + 1}</span>
+            <div className="t">{t(m.title)}</div>
+            <span className="r"><StatusMark status={m.status} /></span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/* ─── Shared section frame: sticky title on the left, rows on the right ─── */
+function Side({ kicker, title, lede, as: Tag = 'h2' }: { kicker: string; title: [string, string]; lede?: string; as?: 'h2' | 'h3' }) {
+  return (
+    <div className="sec-left">
+      <p className="kicker">{kicker}</p>
+      <Tag>{title[0]} <em>{title[1]}</em></Tag>
+      {lede && <p className="lede">{lede}</p>}
+    </div>
+  );
+}
+
+function NumRows({ items }: { items: { title: string; desc: string }[] }) {
+  return (
+    <ul className="rows num">
+      {items.map((it, i) => (
+        <li key={it.title} className="row">
+          <span className="l">0{i + 1}</span>
+          <div><div className="t">{it.title}</div><div className="d">{it.desc}</div></div>
+          <span className="r" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const FEATURES = ['collect', 'api', 'status', 'proof', 'multi', 'automations'];
+const USE_CASES = ['coding', 'qa', 'devops', 'support'];
+const PLANS = [
+  { key: 'free', features: ['freeF1', 'freeF2', 'freeF3', 'freeF4', 'freeF5'] },
+  { key: 'pro', features: ['proF1', 'proF2', 'proF3', 'proF4', 'proF5'] },
+  { key: 'enterprise', features: ['enterpriseF1', 'enterpriseF2', 'enterpriseF3', 'enterpriseF4', 'enterpriseF5'] },
+] as const;
 
 const navLinks = [
   { href: '#how-it-works', key: 'landing.nav.features' },
@@ -147,9 +213,7 @@ export function Landing() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className={`min-h-screen ${dark ? 'bg-[#080808]' : 'bg-[#F3EFE7]'} transition-colors duration-500`}>
-      <div className="noise" />
-
+    <div className="lp">
       {/* ── Navbar ──────────────────────────────── */}
       <nav className="fixed top-0 w-full z-40 border-b border-black/5 dark:border-white/10 bg-[#F3EFE7]/90 dark:bg-[#080808]/90 backdrop-blur-md transition-colors duration-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
@@ -207,461 +271,229 @@ export function Landing() {
         )}
       </nav>
 
-      {/* ══ 01 — Hero: the promise, then one request through the real statuses ══ */}
-      <main className="pt-24 sm:pt-32 pb-16 sm:pb-24 overflow-hidden relative">
-        <HeroFlow />
+      <main className="lp-main" id="top">
+        <div className="lp-wrap">
+          {/* ══ 01 — Hero, then one request through the real statuses ══ */}
+          <HeroFlow />
+
+          {/* ══ 01b — The film, right under the promise ══ */}
+          <section className="sec" id="film">
+            <div className="sec-grid">
+              <Side kicker={t('landing.film.kicker')} title={[t('landing.film.title1'), t('landing.film.title2')]} lede={t('landing.film.note')} />
+              <div className="sec-right"><Film /></div>
+            </div>
+          </section>
+
+          {/* ══ 02 — The gap ══ */}
+          <section className="sec" id="problem">
+            <div className="sec-grid">
+              <Side kicker={t('landing.gap.badge')} title={[t('landing.gap.title1'), t('landing.gap.title2')]} lede={t('landing.gap.sub')} />
+              <div className="sec-right">
+                <div className="gap-table">
+                  <div className="gap-h"><div>{t('landing.gap.leftHead')}</div><div>{t('landing.gap.rightHead')}</div></div>
+                  {(['1', '2', '3'] as const).map((i) => (
+                    <div key={i} className="gap-p"><div>{t(`landing.gap.l${i}`)}</div><div>{t(`landing.gap.r${i}`)}</div></div>
+                  ))}
+                </div>
+                <p className="note" style={{ marginTop: 16 }}>{t('landing.gap.note')}</p>
+              </div>
+            </div>
+          </section>
+
+          {/* ══ 03 — Why: the conviction, three principles, the founder ══ */}
+          <section className="sec" id="why">
+            <div className="sec-grid">
+              <Side kicker={t('landing.manifesto.title')} title={[t('landing.why.title1'), t('landing.why.title2')]} lede={t('landing.manifesto.body')} />
+              <div className="sec-right">
+                <NumRows items={(['p1', 'p2', 'p3'] as const).map((p) => ({ title: t(`landing.why.${p}`), desc: t(`landing.why.${p}Desc`) }))} />
+                <figure className="quote">
+                  <blockquote>{t('landing.why.quote')}</blockquote>
+                  <figcaption>{t('landing.why.quoteSign')}</figcaption>
+                </figure>
+              </div>
+            </div>
+          </section>
+
+          {/* ══ 04 — Start: three ways in ══ */}
+          <section className="sec" id="start">
+            <div className="sec-grid">
+              <Side kicker={t('landing.start.badge')} title={[t('landing.start.title1'), t('landing.start.title2')]} lede={t('landing.start.sub')} />
+              <div className="sec-right">
+                <ul className="rows num">
+                  <li className="row">
+                    <span className="l">01</span>
+                    <div>
+                      <div className="t">{t('landing.start.ui')}</div>
+                      <div className="d">{t('landing.start.uiDesc')}</div>
+                      <div className="act"><Link to="/sign-up" className="cta amber">{t('landing.cta')} <span aria-hidden="true">→</span></Link></div>
+                    </div>
+                    <span className="r" />
+                  </li>
+                  <li className="row">
+                    <span className="l">02</span>
+                    <div>
+                      <div className="t">{t('landing.start.agent')}</div>
+                      <div className="d">{t('landing.start.agentDesc')}</div>
+                      <AgentPrompt />
+                      <p className="note" style={{ marginTop: 10 }}>{t('landing.start.agentNote')}</p>
+                    </div>
+                    <span className="r" />
+                  </li>
+                  <li className="row">
+                    <span className="l">03</span>
+                    <div>
+                      <div className="t">{t('landing.start.api')}</div>
+                      <div className="d">{t('landing.start.apiDesc')}</div>
+                      <div className="act">
+                        <Link to="/docs#api-reference" className="ulink">{t('landing.nav.api')}</Link>
+                        <a href="https://github.com/rmzlb/baaton" target="_blank" rel="noopener noreferrer" className="ulink">GitHub</a>
+                      </div>
+                    </div>
+                    <span className="r" />
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          {/* ══ 05 — Every open ticket, the agent at work, then the real recordings ══ */}
+          <section className="sec" id="how-it-works">
+            <div className="sec-grid">
+              <Side kicker={t('landing.demo.badge')} title={[t('landing.board.title1'), t('landing.board.title2')]} lede={t('landing.board.sub')} />
+              <div className="sec-right"><LiveBoard /></div>
+            </div>
+            <div className="sec-grid">
+              <Side as="h3" kicker={t('landing.agentUse.badge')} title={[t('landing.agentUse.title1'), t('landing.agentUse.title2')]} lede={t('landing.agentUse.sub')} />
+              <div className="sec-right">
+                <AgentTerminal />
+                <div className="demo">
+                  <video key={demoLang} controls muted loop playsInline preload="none" poster={`/demo-${demoLang}.jpg`} aria-label={t('landing.mock.demoAlt')}>
+                    <source src={`/demo-${demoLang}.mp4`} type="video/mp4" />
+                  </video>
+                  <img src="/agent-demo.png" alt={t('landing.mock.agentDemoAlt')} loading="lazy" />
+                  <p className="note">{t('landing.demo.note')}</p>
+                  <details className="raw">
+                    <summary><span className="ulink">{t('landing.demo.raw')}</span></summary>
+                    <div className="term">
+                      <div className="tbar"><span>agent-workflow.sh · 47s from issue to review</span></div>
+                      <pre>
+                        {API_LINES.map((l, i) => (
+                          <span key={i} className={l.tone}>{l.text}{i < API_LINES.length - 1 ? '\n' : ''}</span>
+                        ))}
+                      </pre>
+                    </div>
+                    <div style={{ marginTop: 16 }}><CodeTabs /></div>
+                  </details>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* ══ 06 — What the agents do in it ══ */}
+          <section className="sec" id="features">
+            <div className="sec-grid">
+              <Side kicker={t('landing.features.badge')} title={[t('landing.features.title1'), t('landing.features.title2')]} lede={t('landing.features.sub')} />
+              <div className="sec-right">
+                <NumRows items={FEATURES.map((f) => ({ title: t(`landing.features.${f}`), desc: t(`landing.features.${f}Desc`) }))} />
+              </div>
+            </div>
+          </section>
+
+          {/* ══ 07 — Who it is for ══ */}
+          <section className="sec" id="for-who">
+            <div className="sec-grid">
+              <Side kicker={t('landing.useCases.badge')} title={[t('landing.useCases.title1'), t('landing.useCases.title2')]} />
+              <div className="sec-right">
+                <NumRows items={USE_CASES.map((u) => ({ title: t(`landing.useCases.${u}`), desc: t(`landing.useCases.${u}Desc`) }))} />
+              </div>
+            </div>
+          </section>
+
+          {/* ══ 08 — Proof: our own board ══ */}
+          <section className="sec" id="proof">
+            <div className="sec-grid">
+              <Side kicker={t('landing.counter.badge')} title={[t('landing.counter.title1'), t('landing.counter.title2')]} lede={t('landing.counter.sub')} />
+              <div className="sec-right">
+                <div className="nums">
+                  {(['n1', 'n2', 'n3', 'n4'] as const).map((n) => (
+                    <div key={n}><b>{t(`landing.counter.${n}`)}</b><span>{t(`landing.counter.${n}Label`)}</span></div>
+                  ))}
+                </div>
+                <div className="attrib">
+                  <h3>{t('landing.attrib.title')}</h3>
+                  <p>{t('landing.attrib.sub')}</p>
+                  <div className="pp">
+                    <div><b>{t('landing.attrib.p1')}</b><span>{t('landing.attrib.p1Label')}</span></div>
+                    <div><b>{t('landing.attrib.p2')}</b><span>{t('landing.attrib.p2Label')}</span></div>
+                  </div>
+                  <p className="trail-h">{t('landing.mock.trailHead')} · <span className="ex">{t('landing.flow.example')}</span></p>
+                  <ul className="rows trail">
+                    <li className="row"><span className="l">{t('landing.attrib.rowAgent')}</span><div className="t">{t('landing.attrib.rowAgentAction')}</div></li>
+                    <li className="row"><span className="l">{t('landing.attrib.rowHuman')}</span><div className="t">{t('landing.attrib.rowHumanAction')}</div></li>
+                    <li className="row"><span className="l">—</span><div className="t dim">{t('landing.attrib.revoke')}</div></li>
+                  </ul>
+                </div>
+                <p className="note asof">{t('landing.counter.asof')}</p>
+              </div>
+            </div>
+          </section>
+
+          {/* ══ 09 — Pricing ══ */}
+          <section className="sec" id="pricing">
+            <div className="sec-grid">
+              <Side kicker={t('landing.pricing.badge')} title={[t('landing.pricing.title1'), t('landing.pricing.title2')]} />
+              <div className="sec-right">
+                <ul className="rows prices">
+                  {PLANS.map((p) => {
+                    const period = t(`landing.pricing.${p.key}Period`);
+                    return (
+                      <li key={p.key} className="row">
+                        <div>
+                          <div className="pname">{t(`landing.pricing.${p.key}`)}</div>
+                          <div className="pprice">{t(`landing.pricing.${p.key}Price`)}{period && <small>{period}</small>}</div>
+                        </div>
+                        <div>
+                          <div className="d">{t(`landing.pricing.${p.key}Desc`)}</div>
+                          <ul>{p.features.map((f) => <li key={f}>{t(`landing.pricing.${f}`)}</li>)}</ul>
+                        </div>
+                        <div className="r">
+                          {p.key === 'free' && <Link to="/sign-up" className="ulink">{t('landing.pricing.freeCta')}</Link>}
+                          {p.key === 'pro' && (
+                            <>
+                              <span className="pop">{t('landing.pricing.popular')}</span>
+                              <Link to="/sign-up" className="cta amber">{t('landing.pricing.proCta')} <span aria-hidden="true">→</span></Link>
+                            </>
+                          )}
+                          {p.key === 'enterprise' && <a href="mailto:haros@agentmail.to?subject=Baaton%20Enterprise" className="ulink">{t('landing.pricing.enterpriseCta')}</a>}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="more"><span>{t('landing.readDocs')}</span><Link to="/docs" className="ulink">{t('landing.nav.docs')}</Link></div>
+              </div>
+            </div>
+          </section>
+
+          {/* ══ 10 — Final CTA ══ */}
+          <section className="sec final" id="cta">
+            <div className="sec-grid">
+              <Side kicker={t('landing.ctaBadge')} title={[t('landing.ctaTitle1'), t('landing.ctaTitle2')]} />
+              <div className="sec-right">
+                <p className="lede">{t('landing.ctaSub')}</p>
+                <div className="btns">
+                  <Link to="/sign-up" className="cta amber">{t('landing.cta')} <span aria-hidden="true">→</span></Link>
+                  <a className="ulink" href="#start">{t('landing.ctaSecondary')}</a>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
       </main>
-
-      {/* ══ 01b — The film, right under the promise ══ */}
-      <section id="film" className="scroll-mt-24 pb-16 sm:pb-24 relative z-20">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-black dark:text-white text-center mb-6">{t('landing.film.title')}</h2>
-          <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 bg-black">
-            <video className="w-full block aspect-video" controls preload="none" playsInline poster="/film/baaton-film.jpg" aria-label={t('landing.film.alt')}>
-              <source src="/film/baaton-film.mp4" type="video/mp4" />
-            </video>
-          </div>
-          <p className="mt-4 text-sm text-neutral-500 text-center max-w-2xl mx-auto">{t('landing.film.note')}</p>
-        </div>
-      </section>
-
-      {/* ══ 02 — The pain, right after the promise ══ */}
-      <section id="problem" className="py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <div className="max-w-3xl mb-10">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.gap.badge')}</p>
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.gap.title')}</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.gap.sub')}</p>
-          </div>
-          <div className="border border-black/10 dark:border-white/10 rounded-xl overflow-hidden bg-white dark:bg-[#0C0C0C]">
-            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-black/10 dark:divide-white/10 bg-neutral-50 dark:bg-neutral-900/40">
-              <div className="px-5 py-3 font-mono text-[11px] uppercase tracking-widest text-neutral-500">{t('landing.gap.leftHead')}</div>
-              <div className="px-5 py-3 font-mono text-[11px] uppercase tracking-widest text-neutral-500">{t('landing.gap.rightHead')}</div>
-            </div>
-            {[['landing.gap.l1', 'landing.gap.r1'], ['landing.gap.l2', 'landing.gap.r2'], ['landing.gap.l3', 'landing.gap.r3']].map(([l, r]) => (
-              <div key={l} className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-black/10 dark:divide-white/10 border-t border-black/10 dark:border-white/10">
-                <div className="px-5 py-5 text-[15px] text-black dark:text-white leading-relaxed">{t(l)}</div>
-                <div className="px-5 py-5 text-[15px] text-neutral-400 dark:text-neutral-500 leading-relaxed font-medium">{t(r)}</div>
-              </div>
-            ))}
-          </div>
-          <p className="mt-5 text-sm text-neutral-500">{t('landing.gap.note')}</p>
-        </div>
-      </section>
-
-      {/* ══ 03 — Why: the conviction, three principles, the founder ══ */}
-      <section id="why" className="py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="max-w-3xl mb-12">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.manifesto.title')}</p>
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-6">{t('landing.why.title')}</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium leading-relaxed">{t('landing.manifesto.body')}</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-black/10 dark:bg-white/10 border border-black/10 dark:border-white/10 rounded-xl overflow-hidden mb-12">
-            {(['p1', 'p2', 'p3'] as const).map((p, i) => (
-              <div key={p} className="bg-white dark:bg-[#0C0C0C] p-6 sm:p-8">
-                <span className="font-mono text-xs font-bold text-amber-600 dark:text-amber-500 tabular-nums">0{i + 1}</span>
-                <h3 className="mt-3 text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t(`landing.why.${p}`)}</h3>
-                <p className="text-[15px] text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t(`landing.why.${p}Desc`)}</p>
-              </div>
-            ))}
-          </div>
-          <figure className="max-w-3xl">
-            <Quote className="w-6 h-6 text-amber-500 mb-4" />
-            <blockquote className="text-xl sm:text-2xl text-black dark:text-white leading-[1.45] font-medium border-l-2 border-amber-500 pl-6">
-              {t('landing.why.quote')}
-            </blockquote>
-            <figcaption className="mt-5 pl-6 text-sm text-neutral-500 font-mono">{t('landing.why.quoteSign')}</figcaption>
-          </figure>
-        </div>
-      </section>
-
-      {/* ══ 04 — Start: three ways in, before any feature list ══ */}
-      <section id="start" className="scroll-mt-24 py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="max-w-3xl mb-12">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.start.badge')}</p>
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.start.title')}</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.start.sub')}</p>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* 1 — interface */}
-            <div className="p-6 sm:p-8 rounded-xl border border-black/10 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900/20 flex flex-col">
-              <MousePointerClick className="w-6 h-6 text-black dark:text-white mb-6" strokeWidth={1.75} />
-              <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t('landing.start.ui')}</h3>
-              <p className="text-[15px] text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium mb-8 flex-1">{t('landing.start.uiDesc')}</p>
-              <Link to="/sign-up" className="h-11 px-5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold flex items-center justify-center gap-2 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-[transform,colors] duration-150">
-                {t('landing.cta')} <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
-              </Link>
-            </div>
-            {/* 2 — agent */}
-            <div className="p-6 sm:p-8 rounded-xl border-2 border-amber-500/70 bg-white dark:bg-[#111] flex flex-col shadow-xl shadow-amber-500/5">
-              <Terminal className="w-6 h-6 text-amber-600 dark:text-amber-500 mb-6" strokeWidth={1.75} />
-              <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t('landing.start.agent')}</h3>
-              <p className="text-[15px] text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium mb-6">{t('landing.start.agentDesc')}</p>
-              <AgentPrompt />
-              <p className="mt-4 text-xs text-neutral-500 leading-relaxed">{t('landing.start.agentNote')}</p>
-            </div>
-            {/* 3 — API / self-host */}
-            <div className="p-6 sm:p-8 rounded-xl border border-black/10 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900/20 flex flex-col">
-              <Cpu className="w-6 h-6 text-black dark:text-white mb-6" strokeWidth={1.75} />
-              <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t('landing.start.api')}</h3>
-              <p className="text-[15px] text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium mb-8 flex-1">{t('landing.start.apiDesc')}</p>
-              <div className="grid grid-cols-2 gap-3">
-                <Link to="/docs#api-reference" className="h-11 px-4 rounded-lg border border-black/10 dark:border-white/10 text-sm font-bold text-black dark:text-white hover:bg-white dark:hover:bg-neutral-800 flex items-center justify-center active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-[transform,colors] duration-150">
-                  {t('landing.nav.api')}
-                </Link>
-                <a href="https://github.com/rmzlb/baaton" target="_blank" rel="noopener noreferrer" className="h-11 px-4 rounded-lg border border-black/10 dark:border-white/10 text-sm font-bold text-black dark:text-white hover:bg-white dark:hover:bg-neutral-800 flex items-center justify-center active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-[transform,colors] duration-150">
-                  GitHub
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ══ 05 — Every open ticket, the agent at work, then the real recordings ══ */}
-      <section id="how-it-works" className="scroll-mt-24 py-16 sm:py-28 bg-[#F3EFE7] dark:bg-[#080808] border-t border-black/5 dark:border-white/5 transition-colors relative z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <LiveBoard />
-          <div className="mt-20 sm:mt-28"><AgentTerminal /></div>
-        </div>
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 mt-20 sm:mt-28">
-          <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mb-8">
-            <video key={demoLang} className="w-full block" autoPlay muted loop playsInline preload="metadata" poster={`/demo-${demoLang}.jpg`} aria-label={t('landing.mock.demoAlt')}>
-              <source src={`/demo-${demoLang}.mp4`} type="video/mp4" />
-            </video>
-          </div>
-          <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden shadow-2xl shadow-black/20 mt-8">
-            <img src="/agent-demo.png" alt={t('landing.mock.agentDemoAlt')} className="w-full" loading="lazy" />
-          </div>
-          <p className="mt-6 text-sm text-neutral-500 text-center max-w-2xl mx-auto">{t('landing.demo.note')}</p>
-          <details className="group mt-4">
-            <summary className="cursor-pointer text-sm text-neutral-500 hover:text-neutral-300 transition-colors flex items-center gap-2 justify-center py-4">
-              <span>{t('landing.demo.raw')}</span>
-              <svg className="w-4 h-4 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-            </summary>
-            <ApiDemo />
-            <CodeTabs />
-          </details>
-        </div>
-      </section>
-
-      {/* ══ 06 — What the agents do in it ══ */}
-      <section id="features" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="mb-12 sm:mb-20 md:text-center max-w-3xl mx-auto">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.features.badge')}</p>
-            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.features.title1')}<br />{t('landing.features.title2')}</h2>
-            <p className="text-xl text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.features.sub')}</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {featuresConfig.map((f) => (
-              <FeatureCard
-                key={f.titleKey}
-                icon={<f.icon className="w-6 h-6 text-black dark:text-white" strokeWidth={2} />}
-                title={t(f.titleKey)}
-                desc={t(f.descKey)}
-                glow={f.glow}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ══ 07 — Who it is for, by profile ══ */}
-      <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="mb-12 sm:mb-16 max-w-3xl">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.useCases.badge')}</p>
-            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.useCases.title1')}<br />{t('landing.useCases.title2')}</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {useCasesConfig.map((uc) => (
-              <div key={uc.titleKey} className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-white dark:bg-neutral-900/20 hover:shadow-xl transition-all group">
-                <div className={`w-12 h-12 rounded-lg ${uc.bg} flex items-center justify-center mb-6`}>
-                  <uc.icon className={`w-6 h-6 ${uc.color}`} strokeWidth={1.5} />
-                </div>
-                <h3 className="text-xl font-display uppercase tracking-wide text-black dark:text-white mb-3">{t(uc.titleKey)}</h3>
-                <p className="text-base text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t(uc.descKey)}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ══ 08 — Proof: our own board, told as a story ══ */}
-      <section id="proof" className="py-16 sm:py-28 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#060606] transition-colors relative z-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="max-w-3xl mb-12">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.counter.badge')}</p>
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl text-black dark:text-white uppercase tracking-tight mb-4">{t('landing.counter.title')}</h2>
-            <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium">{t('landing.counter.sub')}</p>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-black/10 dark:bg-white/10 border border-black/10 dark:border-white/10 rounded-xl overflow-hidden">
-            {[
-              { v: 'landing.counter.n1', l: 'landing.counter.n1Label', hi: true },
-              { v: 'landing.counter.n2', l: 'landing.counter.n2Label', hi: false },
-              { v: 'landing.counter.n3', l: 'landing.counter.n3Label', hi: true },
-              { v: 'landing.counter.n4', l: 'landing.counter.n4Label', hi: false },
-            ].map((s) => (
-              <div key={s.v} className="bg-white dark:bg-[#0C0C0C] p-6 sm:p-8">
-                <div className={`font-mono text-3xl md:text-4xl font-bold mb-3 tracking-tight tabular-nums ${s.hi ? 'text-amber-600 dark:text-amber-500' : 'text-black dark:text-white'}`}>{t(s.v)}</div>
-                <div className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t(s.l)}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-16 grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-            <div>
-              <h3 className="font-display text-2xl sm:text-3xl text-black dark:text-white uppercase tracking-tight mb-5">{t('landing.attrib.title')}</h3>
-              <p className="text-lg text-neutral-600 dark:text-neutral-400 font-medium mb-8">{t('landing.attrib.sub')}</p>
-              <div className="flex flex-wrap gap-8">
-                <div>
-                  <div className="font-mono text-3xl font-bold text-black dark:text-white mb-1 tabular-nums">{t('landing.attrib.p1')}</div>
-                  <div className="text-sm text-neutral-500 max-w-[15rem]">{t('landing.attrib.p1Label')}</div>
-                </div>
-                <div>
-                  <div className="font-mono text-3xl font-bold text-black dark:text-white mb-1 tabular-nums">{t('landing.attrib.p2')}</div>
-                  <div className="text-sm text-neutral-500 max-w-[15rem]">{t('landing.attrib.p2Label')}</div>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-xl border border-black/10 dark:border-white/10 bg-[#FAFAFA] dark:bg-[#0C0C0C] overflow-hidden shadow-xl">
-              <div className="px-5 py-3 border-b border-black/5 dark:border-white/10 bg-white dark:bg-[#111] flex items-center gap-2">
-                <ArrowLeftRight className="w-4 h-4 text-amber-500" />
-                <span className="font-mono text-xs uppercase tracking-widest text-neutral-500">{t('landing.mock.trailHead')}</span>
-              </div>
-              <div className="divide-y divide-black/5 dark:divide-white/5">
-                <div className="px-5 py-4 flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Bot className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm text-black dark:text-white font-semibold">{t('landing.attrib.rowAgent')}</p>
-                    <p className="text-sm text-neutral-500">{t('landing.attrib.rowAgentAction')}</p>
-                  </div>
-                </div>
-                <div className="px-5 py-4 flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <User className="w-3.5 h-3.5 text-neutral-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm text-black dark:text-white font-semibold">{t('landing.attrib.rowHuman')}</p>
-                    <p className="text-sm text-neutral-500">{t('landing.attrib.rowHumanAction')}</p>
-                  </div>
-                </div>
-                <div className="px-5 py-4 flex items-start gap-3 bg-neutral-50 dark:bg-black/30">
-                  <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <KeyRound className="w-3.5 h-3.5 text-neutral-500" />
-                  </div>
-                  <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('landing.attrib.revoke')}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <p className="mt-10 text-sm text-neutral-500 max-w-2xl">{t('landing.counter.asof')}</p>
-        </div>
-      </section>
-
-      {/* ══ 09 — Pricing ══ */}
-      <section id="pricing" className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 bg-[#F3EFE7] dark:bg-[#080808] transition-colors relative z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="mb-12 sm:mb-16 text-center max-w-3xl mx-auto">
-            <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-3">{t('landing.pricing.badge')}</p>
-            <h2 className="font-display text-4xl sm:text-5xl md:text-7xl text-black dark:text-white mb-6 uppercase tracking-tight">{t('landing.pricing.title1')}<br />{t('landing.pricing.title2')}</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {/* Free */}
-            <div className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-white dark:bg-neutral-900/20 hover:shadow-xl transition-all flex flex-col">
-              <h3 className="text-lg font-display uppercase tracking-wide text-black dark:text-white mb-2">{t('landing.pricing.free')}</h3>
-              <div className="flex items-baseline gap-1 mb-2">
-                <span className="text-4xl font-display font-bold text-black dark:text-white">{t('landing.pricing.freePrice')}</span>
-                <span className="text-sm text-neutral-500">{t('landing.pricing.freePeriod')}</span>
-              </div>
-              <p className="text-sm text-neutral-500 mb-6">{t('landing.pricing.freeDesc')}</p>
-              <ul className="space-y-3 mb-8 flex-1">
-                {['freeF1', 'freeF2', 'freeF3', 'freeF4', 'freeF5'].map(k => (
-                  <li key={k} className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-                    <Check className="w-4 h-4 text-green-500 flex-shrink-0" /> {t(`landing.pricing.${k}`)}
-                  </li>
-                ))}
-              </ul>
-              <Link to="/sign-up" className="w-full py-3 rounded-lg border border-black/10 dark:border-white/10 text-center text-sm font-bold text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
-                {t('landing.pricing.freeCta')}
-              </Link>
-            </div>
-            {/* Pro — highlighted */}
-            <div className="p-8 rounded-xl border-2 border-amber-500 bg-white dark:bg-[#111] shadow-xl shadow-amber-500/10 hover:shadow-2xl transition-all flex flex-col relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-amber-500 text-black text-xs font-bold uppercase tracking-wider">{t('landing.pricing.popular')}</div>
-              <h3 className="text-lg font-display uppercase tracking-wide text-black dark:text-white mb-2">{t('landing.pricing.pro')}</h3>
-              <div className="flex items-baseline gap-1 mb-2">
-                <span className="text-4xl font-display font-bold text-black dark:text-white">{t('landing.pricing.proPrice')}</span>
-                <span className="text-sm text-neutral-500">{t('landing.pricing.proPeriod')}</span>
-              </div>
-              <p className="text-sm text-neutral-500 mb-6">{t('landing.pricing.proDesc')}</p>
-              <ul className="space-y-3 mb-8 flex-1">
-                {['proF1', 'proF2', 'proF3', 'proF4', 'proF5'].map(k => (
-                  <li key={k} className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-                    <Check className="w-4 h-4 text-amber-500 flex-shrink-0" /> {t(`landing.pricing.${k}`)}
-                  </li>
-                ))}
-              </ul>
-              <Link to="/sign-up" className="w-full py-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-center text-sm font-bold text-black transition-colors shadow-lg shadow-amber-500/20">
-                {t('landing.pricing.proCta')}
-              </Link>
-            </div>
-            {/* Enterprise */}
-            <div className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-white dark:bg-neutral-900/20 hover:shadow-xl transition-all flex flex-col">
-              <h3 className="text-lg font-display uppercase tracking-wide text-black dark:text-white mb-2">{t('landing.pricing.enterprise')}</h3>
-              <div className="flex items-baseline gap-1 mb-2">
-                <span className="text-4xl font-display font-bold text-black dark:text-white">{t('landing.pricing.enterprisePrice')}</span>
-                {t('landing.pricing.enterprisePeriod') && <span className="text-sm text-neutral-500">{t('landing.pricing.enterprisePeriod')}</span>}
-              </div>
-              <p className="text-sm text-neutral-500 mb-6">{t('landing.pricing.enterpriseDesc')}</p>
-              <ul className="space-y-3 mb-8 flex-1">
-                {['enterpriseF1', 'enterpriseF2', 'enterpriseF3', 'enterpriseF4', 'enterpriseF5'].map(k => (
-                  <li key={k} className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-                    <Check className="w-4 h-4 text-green-500 flex-shrink-0" /> {t(`landing.pricing.${k}`)}
-                  </li>
-                ))}
-              </ul>
-              <a href="mailto:haros@agentmail.to?subject=Baaton%20Enterprise" className="w-full py-3 rounded-lg border border-black/10 dark:border-white/10 text-center text-sm font-bold text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
-                {t('landing.pricing.enterpriseCta')}
-              </a>
-            </div>
-          </div>
-          <p className="text-center text-sm text-neutral-500 mt-8">{t('landing.readDocs')} → <Link to="/docs" className="text-amber-500 hover:underline">{t('landing.nav.docs')}</Link></p>
-        </div>
-      </section>
-
-      {/* ── CTA final ────────────────────────── */}
-      <section className="py-16 sm:py-32 border-t border-black/5 dark:border-white/5 relative overflow-hidden bg-white dark:bg-[#050505] transition-colors z-20">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/5 blur-[120px] rounded-full pointer-events-none" />
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center relative z-10">
-          <h2 className="font-display text-[10vw] sm:text-7xl font-black text-black dark:text-white tracking-tight mb-8 leading-[0.85] uppercase">
-            {t('landing.ctaTitle1')}<br />{t('landing.ctaTitle2')}
-          </h2>
-          <p className="text-xl text-neutral-600 dark:text-neutral-400 mb-12 max-w-2xl mx-auto font-medium">
-            {t('landing.ctaSub')}
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-            <Link to="/sign-up" className="h-14 px-10 rounded-lg bg-black dark:bg-white text-white dark:text-black text-lg font-bold hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors flex items-center gap-2 w-full sm:w-auto justify-center shadow-xl transform hover:-translate-y-1">
-              {t('landing.cta')} <ArrowRight className="w-5 h-5" strokeWidth={2} />
-            </Link>
-            <a href="#start" className="h-14 px-10 rounded-lg border border-black/10 dark:border-white/10 text-black dark:text-white text-lg font-bold hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors flex items-center gap-2 w-full sm:w-auto justify-center">
-              <Terminal className="w-5 h-5" /> {t('landing.ctaSecondary')}
-            </a>
-          </div>
-        </div>
-      </section>
 
       <LandingFooter />
     </div>
   );
 }
 
-/* ── Sub-components ──────────────────────────── */
-
-function FeatureCard({ icon, title, desc, glow }: { icon: React.ReactNode; title: string; desc: string; glow?: boolean }) {
-  return (
-    <div className="p-8 rounded-xl border border-black/5 dark:border-white/5 bg-white dark:bg-neutral-900/20 hover:bg-white dark:hover:bg-neutral-900/40 hover:shadow-xl dark:hover:shadow-none transition-all group relative overflow-hidden">
-      {glow && <div className="absolute -right-12 -top-12 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-colors" />}
-      <div className="w-12 h-12 rounded-lg bg-white dark:bg-neutral-800 flex items-center justify-center mb-8 border border-black/5 dark:border-white/5 shadow-sm">
-        {icon}
-      </div>
-      <h3 className="text-2xl font-display uppercase tracking-wide text-black dark:text-white mb-4">{title}</h3>
-      <p className="text-base text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{desc}</p>
-    </div>
-  );
-}
-
-/* ── Animated API Demo Terminal ─────────────── */
-const DEMO_LINES: { type: 'cmd' | 'response' | 'hint' | 'pause'; text: string; color?: string; delay: number }[] = [
-  { type: 'cmd', text: '$ curl -X POST api.baaton.dev/v1/issues \\', delay: 0 },
-  { type: 'cmd', text: '    -H "Authorization: Bearer baa_2d70...c9a4" \\', delay: 300 },
-  { type: 'cmd', text: '    -d \'{"title": "Fix auth timeout on mobile Safari", "priority": "high", "issue_type": "bug"}\'', delay: 600 },
-  { type: 'pause', text: '', delay: 800 },
-  { type: 'response', text: '{"data": {"display_id": "CRAIE-52", "status": "backlog", "due_date": null}}', color: 'text-green-400', delay: 400 },
-  { type: 'hint', text: '→ _hint: {action: "add_description", reason: "Add detailed description to help triage"}', color: 'text-amber-400', delay: 600 },
-  { type: 'hint', text: '→ _hint: {action: "add_tldr", reason: "Add TLDR summary of work to be done"}', color: 'text-amber-400', delay: 400 },
-  { type: 'pause', text: '', delay: 1200 },
-  { type: 'cmd', text: '$ curl -X PATCH api.baaton.dev/v1/issues/CRAIE-52 \\', delay: 0 },
-  { type: 'cmd', text: '    -d \'{"status": "in_progress"}\'', delay: 500 },
-  { type: 'response', text: '{"data": {"status": "in_progress", "status_changed_at": "2026-05-17T21:11:45Z"}}', color: 'text-green-400', delay: 400 },
-  { type: 'hint', text: '→ _hint: {action: "add_comment", reason: "Status changed. Explain why."}', color: 'text-amber-400', delay: 500 },
-  { type: 'pause', text: '', delay: 1400 },
-  { type: 'cmd', text: '$ # ... agent works: reads context, fixes code, runs tests (47s) ...', delay: 0 },
-  { type: 'pause', text: '', delay: 1200 },
-  { type: 'cmd', text: '$ curl -X POST api.baaton.dev/v1/issues/CRAIE-52/tldr \\', delay: 0 },
-  { type: 'cmd', text: '    -d \'{"agent_name": "claude-code", "summary": "Fixed auth timeout. Root cause: token refresh race condition.", "tests_status": "passed"}\'', delay: 600 },
-  { type: 'response', text: '{"data": {"agent_name": "claude-code", "summary": "Fixed auth timeout..."}}', color: 'text-green-400', delay: 400 },
-  { type: 'hint', text: '→ _hint: {action: "move_to_review", reason: "TLDR posted. Move to in_review for human verification."}', color: 'text-amber-400', delay: 600 },
-  { type: 'pause', text: '', delay: 1000 },
-  { type: 'cmd', text: '$ curl -X PATCH api.baaton.dev/v1/issues/CRAIE-52 -d \'{"status": "in_review"}\'', delay: 0 },
-  { type: 'response', text: '{"data": {"status": "in_review", "actor": "Ramzi (via Sextan key)"}}', color: 'text-green-400', delay: 400 },
-  { type: 'hint', text: '→ _hint: {action: "review_context", reason: "Check if project context needs updating."}', color: 'text-amber-400', delay: 500 },
-  { type: 'pause', text: '', delay: 800 },
-  { type: 'response', text: '✓ Done. Human notified. 47 seconds. Zero UI opened.', color: 'text-emerald-400', delay: 500 },
-];
-
-function ApiDemo() {
-  const [visibleLines, setVisibleLines] = useState(0);
-  const [started, setStarted] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting && !started) setStarted(true); },
-      { threshold: 0.3 }
-    );
-    if (containerRef.current) observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, [started]);
-
-  useEffect(() => {
-    if (!started) return;
-    let totalDelay = 0;
-    const timers: NodeJS.Timeout[] = [];
-    DEMO_LINES.forEach((l, i) => {
-      totalDelay += l.delay + (l.type === 'cmd' ? 400 : 200);
-      timers.push(setTimeout(() => setVisibleLines(i + 1), totalDelay));
-    });
-    // Loop after completion
-    timers.push(setTimeout(() => { setVisibleLines(0); setStarted(false); setTimeout(() => setStarted(true), 2000); }, totalDelay + 3000));
-    return () => timers.forEach(clearTimeout);
-  }, [started]);
-
-  return (
-    <div ref={containerRef} className="rounded-xl border border-black/10 dark:border-white/10 bg-[#0a0a0a] overflow-hidden shadow-2xl shadow-black/20">
-      {/* Terminal header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10 bg-black/40">
-        <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
-        <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
-        <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
-        <span className="ml-3 text-xs text-neutral-500 font-mono">agent-workflow.sh · 47s from issue to review</span>
-      </div>
-      {/* Terminal content */}
-      <div className="p-5 sm:p-6 font-mono text-xs sm:text-sm space-y-1.5 min-h-[320px] overflow-hidden">
-        {DEMO_LINES.slice(0, visibleLines).filter(l => l.type !== 'pause').map((line, i) => (
-          <div
-            key={i}
-            className={`transition-opacity duration-300 ${
-              line.type === 'cmd' ? 'text-neutral-300' :
-              line.type === 'hint' ? `${line.color} text-xs opacity-80 pl-2 border-l-2 border-amber-500/30` :
-              line.color || 'text-green-400'
-            }`}
-          >
-            {line.text}
-          </div>
-        ))}
-        {visibleLines < DEMO_LINES.length && visibleLines > 0 && (
-          <span className="inline-block w-2 h-4 bg-amber-500 animate-pulse" />
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default Landing;
-// build: 1774440000
