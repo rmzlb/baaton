@@ -492,6 +492,23 @@ const RECIPIENTS_SQL: &str = "\
                 ELSE false \
               END";
 
+/// Ticket participants the opt-out default must leave alone, among `$2`.
+///
+/// Default-on is opt-out: an explicit unsubscribe from the project mutes it.
+/// A member holding a role the project defines is routed by that role on every
+/// ticket, their own included (`RECIPIENTS_SQL`): adding them again here would
+/// send what the role leaves out, such as every transition of a reviewer's
+/// tickets when the role asks only for `in_review`.
+const DEFAULT_ROUTING_EXCLUDED_SQL: &str = "\
+        SELECT user_id FROM project_notification_subscriptions \
+         WHERE project_id = $1 AND NOT enabled AND user_id = ANY($2) \
+        UNION \
+        SELECT mr.user_id FROM project_member_roles mr \
+          JOIN projects p ON p.id = mr.project_id \
+         WHERE mr.project_id = $1 AND mr.user_id = ANY($2) \
+           AND EXISTS (SELECT 1 FROM jsonb_array_elements(p.notification_roles) r \
+                        WHERE r->>'key' = mr.role)";
+
 /// One delivery: a person, a channel, an address.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Recipient {
@@ -682,16 +699,12 @@ pub async fn add_creator_to_recipients(
             authorized.push(user_id.clone());
         }
     }
-    // Default-on is opt-out: an explicit unsubscribe from the project mutes it.
-    let muted: Vec<String> = sqlx::query_scalar(
-        "SELECT user_id FROM project_notification_subscriptions \
-         WHERE project_id = $1 AND NOT enabled AND user_id = ANY($2)",
-    )
-    .bind(project_id)
-    .bind(&authorized)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let muted: Vec<String> = sqlx::query_scalar(DEFAULT_ROUTING_EXCLUDED_SQL)
+        .bind(project_id)
+        .bind(&authorized)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
     authorized.retain(|u| !muted.contains(u));
     if authorized.is_empty() { return; }
 

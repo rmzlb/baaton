@@ -1,4 +1,4 @@
-use super::{Recipient, RECIPIENTS_SQL};
+use super::{Recipient, DEFAULT_ROUTING_EXCLUDED_SQL, RECIPIENTS_SQL};
 use sqlx::{Connection, PgConnection};
 use uuid::Uuid;
 
@@ -206,5 +206,45 @@ async fn recipient_sql_postgres_regression() {
             ("follower".into(), "telegram".into()),
         ]
     );
+
+    // ── Ticket participants (creator, reporter, assignees) ──
+    // The opt-out default must leave alone anyone whose project preferences
+    // already decide: an unsubscribed member, and a role holder, whose role
+    // `RECIPIENTS_SQL` applies to every ticket, their own included. A role key
+    // the project no longer defines grants nothing, so the default still applies.
+    let excluded = |project: Uuid, participants: &'static [&'static str]| {
+        let participants: Vec<String> = participants.iter().map(|p| p.to_string()).collect();
+        sqlx::query_scalar::<_, String>(DEFAULT_ROUTING_EXCLUDED_SQL)
+            .bind(project)
+            .bind(participants)
+    };
+    let mut out = excluded(
+        roles_project,
+        &[
+            "reviewer",
+            "overrides",
+            "muted",
+            "ghost",
+            "follower",
+            "plain",
+        ],
+    )
+    .fetch_all(&mut conn)
+    .await
+    .unwrap();
+    out.sort();
+    assert_eq!(out, vec!["follower", "muted", "overrides", "reviewer"]);
+    let mut out = excluded(project, &["disabled", "watcher", "plain"])
+        .fetch_all(&mut conn)
+        .await
+        .unwrap();
+    out.sort();
+    assert_eq!(out, vec!["disabled"]);
+    // Roles are per project: the same user holds none elsewhere.
+    assert!(excluded(other_project, &["reviewer"])
+        .fetch_all(&mut conn)
+        .await
+        .unwrap()
+        .is_empty());
     conn.close().await.unwrap();
 }
