@@ -86,7 +86,7 @@ export function HeroFlow() {
         </div>
         <div className="opacity-0 animate-reveal-up-delay-2">
           <p className="text-lg text-neutral-600 dark:text-neutral-400 leading-relaxed font-medium">{t('landing.hero.sub')}</p>
-          <div className="flex flex-col sm:flex-row gap-3 mt-7">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 mt-7">
             <Link to="/sign-up" className="h-14 px-7 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-[17px] transition-all shadow-[0_4px_0_0_#d97706] hover:shadow-[0_2px_0_0_#d97706] hover:translate-y-[2px] active:shadow-none active:translate-y-[4px] flex items-center gap-2 justify-center whitespace-nowrap">
               {t('landing.cta')} <ArrowRight className="w-5 h-5" strokeWidth={2.5} />
             </Link>

@@ -267,7 +267,7 @@ export function Landing() {
               <span className="absolute -right-2 -top-1 w-2 h-2 bg-amber-500 rounded-full" />
             </span>
           </Link>
-          <div className="hidden md:flex items-center gap-8 text-sm font-semibold text-neutral-600 dark:text-neutral-400">
+          <div className="hidden xl:flex items-center gap-8 whitespace-nowrap text-sm font-semibold text-neutral-600 dark:text-neutral-400">
             {navLinks.map((l) => (
               <a key={l.href} href={l.href} className="hover:text-black dark:hover:text-white transition-colors">{t(l.key)}</a>
             ))}
@@ -288,7 +288,7 @@ export function Landing() {
             </Link>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-neutral-900 dark:text-white transition-colors"
+              className="xl:hidden p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-neutral-900 dark:text-white transition-colors"
               aria-label="Toggle menu"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -296,7 +296,7 @@ export function Landing() {
           </div>
         </div>
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-black/5 dark:border-white/10 bg-[#F3EFE7] dark:bg-[#080808] px-4 py-4 space-y-3">
+          <div className="xl:hidden border-t border-black/5 dark:border-white/10 bg-[#F3EFE7] dark:bg-[#080808] px-4 py-4 space-y-3">
             {navLinks.map((l) => (
               <a key={l.href} href={l.href} onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t(l.key)}</a>
             ))}
