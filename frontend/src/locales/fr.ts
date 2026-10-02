@@ -1245,6 +1245,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.nav.docs': 'Docs',
 'landing.nav.api': 'Référence API',
 'landing.nav.login': 'Connexion',
+'landing.nav.openApp': "Accéder à l'app",
 
 // Bloc 3 — la demande devient un ticket
 'landing.film.title1': "Voir le film",

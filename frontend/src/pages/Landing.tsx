@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '@clerk/clerk-react';
 import { ArrowRight, Sun, Moon, Menu, X } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useLandingTheme } from '@/hooks/useLandingTheme';
@@ -254,6 +255,8 @@ export function Landing() {
   const { t, i18n } = useTranslation();
   const demoLang = i18n.language?.startsWith('en') ? 'en' : 'fr';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // The Clerk session is shared between baaton.dev and app.baaton.dev.
+  const { isSignedIn } = useAuth();
 
   return (
     <div className="lp">
@@ -281,11 +284,20 @@ export function Landing() {
             </button>
             <LanguageSwitcher variant="compact" />
             <div className="h-4 w-[1px] bg-black/10 dark:bg-white/10 hidden sm:block" />
-            <Link to="/sign-in" className="text-sm font-semibold text-neutral-900 dark:text-white hover:opacity-70 transition-opacity hidden sm:block">{t('landing.nav.login')}</Link>
-            <Link to="/sign-up" className="hidden sm:flex px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-all items-center gap-2 shadow-xl shadow-black/10 dark:shadow-white/5 transform hover:-translate-y-0.5">
-              <span>{t('landing.cta')}</span>
-              <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
-            </Link>
+            {isSignedIn ? (
+              <a href="/dashboard" className="hidden sm:flex px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-all items-center gap-2 shadow-xl shadow-black/10 dark:shadow-white/5 transform hover:-translate-y-0.5">
+                <span>{t('landing.nav.openApp')}</span>
+                <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+              </a>
+            ) : (
+              <>
+                <Link to="/sign-in" className="text-sm font-semibold text-neutral-900 dark:text-white hover:opacity-70 transition-opacity hidden sm:block">{t('landing.nav.login')}</Link>
+                <Link to="/sign-up" className="hidden sm:flex px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-all items-center gap-2 shadow-xl shadow-black/10 dark:shadow-white/5 transform hover:-translate-y-0.5">
+                  <span>{t('landing.cta')}</span>
+                  <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+                </Link>
+              </>
+            )}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="xl:hidden p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-neutral-900 dark:text-white transition-colors"
@@ -305,10 +317,18 @@ export function Landing() {
             <Link to="/docs#api-reference" onClick={() => setMobileMenuOpen(false)} className="block text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:text-black dark:hover:text-white py-2">{t('landing.nav.api')}</Link>
             <div className="border-t border-black/5 dark:border-white/10 pt-3 flex flex-col gap-2">
               <LanguageSwitcher variant="full" className="py-1" />
-              <Link to="/sign-in" onClick={() => setMobileMenuOpen(false)} className="text-sm font-semibold text-neutral-900 dark:text-white py-2">{t('landing.nav.login')}</Link>
-              <Link to="/sign-up" onClick={() => setMobileMenuOpen(false)} className="px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-lg text-center">
-                {t('landing.cta')}
-              </Link>
+              {isSignedIn ? (
+                <a href="/dashboard" className="px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-lg text-center">
+                  {t('landing.nav.openApp')}
+                </a>
+              ) : (
+                <>
+                  <Link to="/sign-in" onClick={() => setMobileMenuOpen(false)} className="text-sm font-semibold text-neutral-900 dark:text-white py-2">{t('landing.nav.login')}</Link>
+                  <Link to="/sign-up" onClick={() => setMobileMenuOpen(false)} className="px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-lg text-center">
+                    {t('landing.cta')}
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         )}
