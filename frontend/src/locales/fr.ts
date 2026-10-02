@@ -1200,7 +1200,6 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.flow.return': "Not OK : retour chez l’agent",
 'landing.flow.timesHead': "Temps passé dans chaque statut, affiché sur la carte",
 'landing.flow.example': "exemple",
-'landing.flow.replay': "Rejouer",
 'landing.flow.tv1': "4 min",
 'landing.flow.t1': "en Draft",
 'landing.flow.tv2': "38 min",

@@ -1200,7 +1200,6 @@ As a [user], I want to [action] so that [benefit].
 'landing.flow.return': "Not OK: back to the agent",
 'landing.flow.timesHead': "Time spent in each status, shown on the card",
 'landing.flow.example': "example",
-'landing.flow.replay': "Replay",
 'landing.flow.tv1': "4 min",
 'landing.flow.t1': "in Draft",
 'landing.flow.tv2': "38 min",
