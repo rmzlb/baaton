@@ -1252,7 +1252,7 @@ As a [user], I want to [action] so that [benefit].
 'landing.film.title2': "(50\u00a0s)",
 'landing.film.kicker': "The film",
 'landing.film.featured': "Featured",
-'landing.film.play': "Watch the film",
+'landing.film.play': "Watch with sound",
 'landing.film.journey': "The journey",
 'landing.film.duration': "50\u00a0s",
 'landing.film.bar': "Baaton · film",

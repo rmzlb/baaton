@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Sun, Moon, Menu, X } from 'lucide-react';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -118,7 +118,35 @@ function AgentPrompt() {
   );
 }
 
-/* ─── Film: poster first, the video only loads on click ─── */
+/* ─── Videos start muted once half on screen and load nothing before ─── */
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function useScrollPlay(ref: RefObject<HTMLVideoElement | null>) {
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || prefersReducedMotion()) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) video.pause();
+      else if (!video.ended) video.play().catch(() => {});
+    }, { threshold: 0.5 });
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, [ref]);
+}
+
+/* The "how it works" recording behaves like an animated GIF: muted, looping, no controls. */
+function DemoVideo({ lang, label }: { lang: 'fr' | 'en'; label: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useScrollPlay(ref);
+  return (
+    <video ref={ref} muted loop playsInline preload="none" controls={prefersReducedMotion()} poster={`/demo-${lang}.jpg`} aria-label={label}>
+      <source src={`/demo-${lang}.mp4`} type="video/mp4" />
+    </video>
+  );
+}
+
+/* ─── Film: plays muted on scroll; the button restarts it with sound ─── */
 const FILM_MOMENTS: { title: string; status: StatusKey }[] = [
   { title: 'landing.flow.l1Title', status: 'draft' },
   { title: 'landing.flow.l2Title', status: 'progress' },
@@ -128,13 +156,22 @@ const FILM_MOMENTS: { title: string; status: StatusKey }[] = [
 
 function Film() {
   const { t } = useTranslation();
-  const [playing, setPlaying] = useState(false);
-  const play = () => setPlaying(true);
+  const video = useRef<HTMLVideoElement>(null);
+  const [muted, setMuted] = useState(true);
+  useScrollPlay(video);
+  const playWithSound = () => {
+    const v = video.current;
+    if (!v) return;
+    v.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    v.muted = false;
+    v.currentTime = 0;
+    v.play().catch(() => {});
+  };
   return (
     <>
       <ul className="rows">
         <li>
-          <button type="button" className="row feat" onClick={play}>
+          <button type="button" className="row feat" onClick={playWithSound}>
             <span className="l">{t('landing.film.featured')}</span>
             <span className="t">{t('landing.film.alt')}</span>
             <span className="r">{t('landing.film.duration')}</span>
@@ -143,13 +180,19 @@ function Film() {
       </ul>
       <div className="player">
         <div className="frame">
-          {playing ? (
-            <video src="/film/baaton-film.mp4" controls autoPlay playsInline aria-label={t('landing.film.alt')} />
-          ) : (
-            <>
-              <img src="/film/baaton-film.jpg" alt={t('landing.film.alt')} />
-              <button type="button" className="play" onClick={play}><span>{t('landing.film.play')}</span></button>
-            </>
+          <video
+            ref={video}
+            src="/film/baaton-film.mp4"
+            poster="/film/baaton-film.jpg"
+            muted
+            controls
+            playsInline
+            preload="none"
+            onVolumeChange={(e) => setMuted(e.currentTarget.muted)}
+            aria-label={t('landing.film.alt')}
+          />
+          {muted && (
+            <button type="button" className="play" onClick={playWithSound}><span>{t('landing.film.play')}</span></button>
           )}
         </div>
         <div className="bar"><span>{t('landing.film.bar')}</span><span className="track" /><span>{t('landing.film.duration')}</span></div>
@@ -367,9 +410,7 @@ export function Landing() {
               <div className="sec-right">
                 <AgentTerminal />
                 <div className="demo">
-                  <video key={demoLang} controls muted loop playsInline preload="none" poster={`/demo-${demoLang}.jpg`} aria-label={t('landing.mock.demoAlt')}>
-                    <source src={`/demo-${demoLang}.mp4`} type="video/mp4" />
-                  </video>
+                  <DemoVideo key={demoLang} lang={demoLang} label={t('landing.mock.demoAlt')} />
                   <img src="/agent-demo.png" alt={t('landing.mock.agentDemoAlt')} loading="lazy" />
                   <p className="note">{t('landing.demo.note')}</p>
                   <details className="raw">

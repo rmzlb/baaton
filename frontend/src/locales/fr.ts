@@ -1252,7 +1252,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 'landing.film.title2': "(50\u00a0s, en anglais)",
 'landing.film.kicker': "Le film",
 'landing.film.featured': "À la une",
-'landing.film.play': "Voir le film",
+'landing.film.play': "Voir avec le son",
 'landing.film.journey': "Le parcours",
 'landing.film.duration': "50\u00a0s",
 'landing.film.bar': "Baaton · film",
