@@ -1245,6 +1245,7 @@ As a [user], I want to [action] so that [benefit].
 'landing.nav.docs': 'Docs',
 'landing.nav.api': 'API reference',
 'landing.nav.login': 'Log in',
+'landing.nav.openApp': 'Open app',
 
 // Block 3
 'landing.film.title1': "Watch the film",
