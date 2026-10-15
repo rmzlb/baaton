@@ -36,10 +36,8 @@ export interface UseFileUploadOptions {
   maxFileSizeBytes?: number;
   /** Max dimension for image resize. Default 1920 */
   maxDimension?: number;
-  /** WebP quality. Default 0.82 */
+  /** First lossy quality tried (WebP, or JPEG when WebP encoding is unavailable). Default 0.82 */
   webpQuality?: number;
-  /** PNG quality. Default 0.9 */
-  pngQuality?: number;
 }
 
 interface UseFileUploadReturn {
@@ -123,12 +121,24 @@ export function validateFiles(
 
 /* ── Image compression ─────────────────────────── */
 
+// Attachments travel as base64 data URLs inside the issue JSON, and the API
+// caps a request at 20 MB. 1 MB per image keeps 10 images (~13.4 MB once
+// base64-encoded) well below that ceiling.
+const IMAGE_BYTE_BUDGET = 1024 * 1024;
+// Bounded fallback ladder: first lower the quality, then the dimension.
+const FALLBACK_QUALITIES = [0.7, 0.55];
+const FALLBACK_DIMENSIONS = [1600, 1280, 1024];
+
+function dataUrlBytes(dataUrl: string): number {
+  const comma = dataUrl.indexOf(',');
+  return Math.round((dataUrl.length - comma - 1) * 0.75);
+}
+
 function compressImageFile(
   file: File | Blob,
   fileName: string,
   maxDim: number,
   webpQuality: number,
-  pngQuality: number,
 ): Promise<{ dataUrl: string; size: number; name: string; mime: string }> {
   return new Promise((resolve) => {
     const img = new window.Image();
@@ -137,57 +147,54 @@ function compressImageFile(
     img.onload = () => {
       URL.revokeObjectURL(url);
 
-      let { width, height } = img;
-      if (width > maxDim || height > maxDim) {
-        const ratio = Math.min(maxDim / width, maxDim / height);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-      }
-
       const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
       const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0, width, height);
+      const draw = (dim: number, background: string | null) => {
+        const ratio = Math.min(1, dim / img.width, dim / img.height);
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        if (background) {
+          ctx.fillStyle = background;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      };
 
-      // Determine output format
       const inputType = (file as File).type || '';
-      const isPng = inputType === 'image/png';
       const isGif = inputType === 'image/gif';
       const isSvg = inputType === 'image/svg+xml';
 
-      // Keep PNG (transparency), GIF (animation — though canvas strips it), SVG as-is for small files
-      // Everything else → WebP
+      let dataUrl: string;
       let mime: string;
-      let quality: number;
 
-      if (isPng) {
-        // Try WebP first, but if the source is PNG with transparency, keep PNG
-        // We always convert to WebP for PNGs too — WebP supports transparency
-        mime = 'image/webp';
-        quality = webpQuality;
-      } else if (isGif || isSvg) {
-        // For GIFs and SVGs, read as-is (canvas can't preserve animation)
+      if (isGif || isSvg) {
+        // Unchanged behavior: a single canvas pass (canvas cannot keep GIF animation).
+        draw(maxDim, null);
         mime = inputType;
-        quality = 1;
+        dataUrl = canvas.toDataURL(mime, 1);
       } else {
-        // JPEG, HEIC, HEIF, BMP, AVIF, etc → WebP
-        mime = 'image/webp';
-        quality = webpQuality;
+        // Safari cannot encode WebP from a canvas (toDataURL falls back to
+        // lossless PNG). Use lossy JPEG there, on a white background because
+        // JPEG has no transparency.
+        const probe = document.createElement('canvas');
+        probe.width = probe.height = 1;
+        const supportsWebP = probe.toDataURL('image/webp', 0.5).startsWith('data:image/webp');
+        mime = supportsWebP ? 'image/webp' : 'image/jpeg';
+        const background = supportsWebP ? null : '#ffffff';
+
+        const qualities = [webpQuality, ...FALLBACK_QUALITIES.filter((q) => q < webpQuality)];
+        const dimensions = [maxDim, ...FALLBACK_DIMENSIONS.filter((d) => d < maxDim)];
+        dataUrl = '';
+        search: for (const dim of dimensions) {
+          draw(dim, background);
+          for (const quality of qualities) {
+            dataUrl = canvas.toDataURL(mime, quality);
+            if (dataUrlBytes(dataUrl) <= IMAGE_BYTE_BUDGET) break search;
+          }
+        }
       }
 
-      // Check if browser supports WebP encoding
-      const testUrl = canvas.toDataURL('image/webp', 0.5);
-      const supportsWebP = testUrl.startsWith('data:image/webp');
-      if (!supportsWebP && mime === 'image/webp') {
-        // Fallback to JPEG
-        mime = isPng ? 'image/png' : 'image/jpeg';
-        quality = isPng ? pngQuality : 0.8;
-      }
-
-      const dataUrl = canvas.toDataURL(mime, quality);
-      const header = `data:${mime};base64,`;
-      const sizeBytes = Math.round((dataUrl.length - header.length) * 0.75);
+      const sizeBytes = dataUrlBytes(dataUrl);
 
       // Fix extension in name
       const extMap: Record<string, string> = {
@@ -243,7 +250,6 @@ export function useFileUpload(options: UseFileUploadOptions = {}): UseFileUpload
     maxFileSizeBytes = 5 * 1024 * 1024,
     maxDimension = 1920,
     webpQuality = 0.82,
-    pngQuality = 0.9,
   } = options;
 
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -286,7 +292,6 @@ export function useFileUpload(options: UseFileUploadOptions = {}): UseFileUpload
             file.name || `paste-${Date.now()}.webp`,
             maxDimension,
             webpQuality,
-            pngQuality,
           );
           updateFile(pendingId, {
             status: 'saving',
@@ -327,7 +332,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}): UseFileUpload
         return null;
       }
     },
-    [maxDimension, webpQuality, pngQuality, updateFile],
+    [maxDimension, webpQuality, updateFile],
   );
 
   const processFiles = useCallback(
