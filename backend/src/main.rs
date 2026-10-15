@@ -446,12 +446,8 @@ async fn main() -> anyhow::Result<()> {
         // `text/plain` bodies, so a caller parsing JSON hit a parse error on top
         // of the real error. See `middleware::error_envelope`.
         .layer(axum_mw::from_fn(middleware::error_envelope::error_envelope))
-        .layer(cors)
-        // The Notion-style issue description can contain compressed inline images
-        // (base64 data:image/*) so create/update requests need the same ceiling as
-        // attachment payloads.
-        .layer(RequestBodyLimitLayer::new(20 * 1024 * 1024))
-        .layer(TraceLayer::new_for_http());
+        .layer(cors);
+    let app = with_request_body_limit(app).layer(TraceLayer::new_for_http());
 
     // Serve
     let port: u16 = std::env::var("PORT")
@@ -468,6 +464,20 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Baaton API shut down gracefully");
     Ok(())
+}
+
+/// Largest request body the API accepts on any route.
+const MAX_REQUEST_BODY_BYTES: usize = 20 * 1024 * 1024;
+
+/// Issue create/update requests carry attachments and inline images as base64
+/// data URLs, so they need the same ceiling as upload payloads.
+///
+/// `RequestBodyLimitLayer` alone does not lift axum's own 2 MB default applied
+/// by body extractors (`Json`, `Bytes`), so that default is disabled here and
+/// this layer stays the single global ceiling.
+fn with_request_body_limit(app: Router) -> Router {
+    app.layer(axum::extract::DefaultBodyLimit::disable())
+        .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BODY_BYTES))
 }
 
 async fn shutdown_signal() {
@@ -514,5 +524,40 @@ async fn gh_install_states_gc(pool: sqlx::PgPool) {
                 tracing::warn!("gh_install_states_gc: delete failed: {}", e);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod body_limit_tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::routing::post;
+    use tower::ServiceExt;
+
+    async fn status_for_json_body(bytes: usize) -> StatusCode {
+        let app = with_request_body_limit(Router::new().route(
+            "/issues",
+            post(|_: axum::Json<serde_json::Value>| async { StatusCode::OK }),
+        ));
+        let body = format!("{{\"data\":\"{}\"}}", "a".repeat(bytes));
+        let request = Request::post("/issues")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        app.oneshot(request).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn accepts_json_bodies_above_axum_default_two_megabytes() {
+        assert_eq!(status_for_json_body(5 * 1024 * 1024).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn rejects_json_bodies_above_twenty_megabytes() {
+        assert_eq!(
+            status_for_json_body(MAX_REQUEST_BODY_BYTES + 1).await,
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
     }
 }
