@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, AppendContextField, ProjectContext, UpdateProjectContext};
+use crate::routes::issue_scope;
 
 // ─── GET /projects/{id}/context ───────────────────────
 
@@ -13,22 +14,9 @@ pub async fn get_or_create(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ProjectContext>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // Verify project belongs to org
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
-    }
+    // The owning org, not the caller's home org: a multi-org key would
+    // otherwise get 404 on every project outside its first org.
+    let org_id = issue_scope::require_project(&pool, &auth, project_id).await?;
 
     // Get or create empty context
     let ctx = sqlx::query_as::<_, ProjectContext>(
@@ -56,22 +44,7 @@ pub async fn update(
     Path(project_id): Path<Uuid>,
     Json(body): Json<UpdateProjectContext>,
 ) -> Result<Json<ApiResponse<ProjectContext>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // Verify project belongs to org
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
-    }
+    let org_id = issue_scope::require_project(&pool, &auth, project_id).await?;
 
     // Upsert context with partial update
     let ctx = sqlx::query_as::<_, ProjectContext>(
@@ -114,9 +87,6 @@ pub async fn append(
     Path(project_id): Path<Uuid>,
     Json(body): Json<AppendContextField>,
 ) -> Result<Json<ApiResponse<ProjectContext>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
     const VALID_FIELDS: &[&str] = &["stack", "conventions", "architecture", "constraints", "current_focus", "learnings"];
 
     if !VALID_FIELDS.contains(&body.field_name.as_str()) {
@@ -127,19 +97,7 @@ pub async fn append(
         }))));
     }
 
-    // Verify project belongs to org
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
-    }
+    let org_id = issue_scope::require_project(&pool, &auth, project_id).await?;
 
     // Ensure context exists
     sqlx::query(
