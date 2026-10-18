@@ -3,7 +3,10 @@ use regex::Regex;
 use serde_json::json;
 
 lazy_static! {
-    static ref MENTION_RE: Regex = Regex::new(r"@(user_[a-zA-Z0-9]+)").unwrap();
+    /// `@[Display Name](user_xxx)` (what the comment box inserts) or a bare
+    /// `@user_xxx` (what agents have always been able to write).
+    static ref MENTION_RE: Regex =
+        Regex::new(r"@\[([^\]\n]{1,100})\]\((user_[a-zA-Z0-9]+)\)|@(user_[a-zA-Z0-9]+)").unwrap();
 }
 
 #[derive(Clone)]
@@ -117,12 +120,23 @@ impl NovuClient {
     }
 }
 
-/// Extract `@user_xxx` mentions from text.
+/// Extract mentioned user ids from text, in either mention form.
 pub fn parse_mentions(text: &str) -> Vec<String> {
     MENTION_RE
         .captures_iter(text)
-        .map(|c| c[1].to_string())
+        .filter_map(|c| c.get(2).or_else(|| c.get(3)).map(|m| m.as_str().to_string()))
         .collect()
+}
+
+/// Rewrite `@[Name](user_xxx)` as `@Name` for plain-text channels (email,
+/// Telegram). Bare `@user_xxx` mentions carry no name and stay as written.
+pub fn mentions_to_text(text: &str) -> String {
+    MENTION_RE
+        .replace_all(text, |c: &regex::Captures| match c.get(1) {
+            Some(name) => format!("@{}", name.as_str()),
+            None => c[0].to_string(),
+        })
+        .into_owned()
 }
 
 #[cfg(test)]
@@ -134,6 +148,13 @@ mod tests {
         let text = "Hey @user_abc123 and @user_XYZ789, check this out!";
         let mentions = parse_mentions(text);
         assert_eq!(mentions, vec!["user_abc123", "user_XYZ789"]);
+    }
+
+    #[test]
+    fn test_parse_mentions_named_form() {
+        let text = "cc @[Jane Doe](user_abc123) and @user_XYZ789";
+        assert_eq!(parse_mentions(text), vec!["user_abc123", "user_XYZ789"]);
+        assert_eq!(mentions_to_text(text), "cc @Jane Doe and @user_XYZ789");
     }
 
     #[test]

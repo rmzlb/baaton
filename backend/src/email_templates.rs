@@ -229,13 +229,25 @@ pub fn digest_email_html(
     public_url: &str,
 ) -> (String, String) {
     let count = events.len();
-    let subject = format!(
-        "[Baaton] {} \u{00b7} {} \u{2014} {} mise{} \u{00e0} jour",
-        project_name.unwrap_or("Baaton"),
-        he(display_id),
-        count,
-        if count > 1 { "s" } else { "" },
-    );
+    let mention_actor = events.iter().find_map(|ev| match ev {
+        crate::pending_notif::DigestEvent::Mention { actor, .. } => Some(actor.as_str()),
+        _ => None,
+    });
+    let subject = match mention_actor {
+        Some(actor) => format!(
+            "[Baaton] {} \u{00b7} {} \u{2014} {} vous a mentionn\u{00e9}",
+            project_name.unwrap_or("Baaton"),
+            display_id,
+            actor,
+        ),
+        None => format!(
+            "[Baaton] {} \u{00b7} {} \u{2014} {} mise{} \u{00e0} jour",
+            project_name.unwrap_or("Baaton"),
+            he(display_id),
+            count,
+            if count > 1 { "s" } else { "" },
+        ),
+    };
 
     let issue_url = format!(
         "{}/all-issues?issue={}",
@@ -250,6 +262,14 @@ pub fn digest_email_html(
                 let excerpt: String = body.chars().take(200).collect();
                 format!(
                     r#"<div style="margin:8px 0;background:#f6f5f3;border-radius:6px;padding:10px 12px;font-size:12px;color:#3d3d3a;font-family:Arial,Helvetica,sans-serif;"><span style="font-weight:700;">{}</span> a commenté&nbsp;:<br><span style="margin-top:4px;display:block;color:#5c5c57;">{}</span></div>"#,
+                    he(actor),
+                    he(&excerpt),
+                )
+            }
+            crate::pending_notif::DigestEvent::Mention { actor, body, .. } => {
+                let excerpt: String = body.chars().take(200).collect();
+                format!(
+                    r#"<div style="margin:8px 0;background:#fdf6e7;border-left:3px solid #f59e0b;border-radius:6px;padding:10px 12px;font-size:12px;color:#3d3d3a;font-family:Arial,Helvetica,sans-serif;"><span style="font-weight:700;">{}</span> vous a mentionné&nbsp;:<br><span style="margin-top:4px;display:block;color:#5c5c57;">{}</span></div>"#,
                     he(actor),
                     he(&excerpt),
                 )

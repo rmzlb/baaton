@@ -34,6 +34,9 @@ import { ImageAnnotator } from '@/components/shared/ImageAnnotator';
 import { IssueDrawerSkeleton } from '@/components/shared/Skeleton';
 import { CopyableId } from '@/components/shared/CopyableId';
 import { AgentRunCard } from '@/components/issues/AgentRunCard';
+import { MentionTextarea } from '@/components/issues/MentionTextarea';
+import { splitMentions } from '@/lib/mentions';
+import type { OrgMember } from '@/hooks/useOrgMembers';
 import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment, Milestone, Sprint } from '@/lib/types';
 
 /* ── Constants ─────────────────────────────────── */
@@ -219,12 +222,27 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     },
   });
 
+  // A failed comment write must be seen: the draft stays in the box and the
+  // reason is shown under it (BAA-33 — failures used to vanish silently).
+  const commentFailure = useCallback(
+    (err: unknown) => {
+      const reason = err instanceof Error && err.message ? err.message : '';
+      addNotification({
+        type: 'warning',
+        title: t('issueDrawer.commentError', { defaultValue: 'Comment not saved' }),
+        message: reason || t('issueDrawer.commentErrorDesc', { defaultValue: 'Check your connection and try again.' }),
+      });
+    },
+    [addNotification, t],
+  );
+
   const commentMutation = useMutation({
     mutationFn: (body: string) => apiClient.comments.create(issueId, { body }),
     onSuccess: () => {
       setCommentText('');
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
     },
+    onError: commentFailure,
   });
 
   const updateCommentMutation = useMutation({
@@ -233,6 +251,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
     },
+    onError: commentFailure,
   });
 
   const deleteCommentMutation = useMutation({
@@ -240,6 +259,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['issue', issueId] });
     },
+    onError: commentFailure,
   });
 
   const createTagMutation = useMutation({
@@ -425,7 +445,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
   }, [newTagName, createTagMutation, issue?.tags, handleFieldUpdate]);
 
   const handleSubmitComment = useCallback(() => {
-    if (!commentText.trim()) return;
+    if (!commentText.trim() || commentMutation.isPending) return;
     commentMutation.mutate(commentText.trim());
   }, [commentText, commentMutation]);
 
@@ -819,6 +839,8 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
                     onCommentTextChange={setCommentText}
                     onSubmit={handleSubmitComment}
                     isPending={commentMutation.isPending}
+                    error={commentMutation.isError ? (commentMutation.error instanceof Error ? commentMutation.error.message : '') || t('issueDrawer.commentErrorDesc', { defaultValue: 'Check your connection and try again.' }) : null}
+                    members={orgMembers}
                     t={t}
                     issueId={issue.id}
                     currentUserId={currentUserId}
@@ -1937,6 +1959,9 @@ interface CommentSectionProps {
   onCommentTextChange: (v: string) => void;
   onSubmit: () => void;
   isPending: boolean;
+  /** Why the last send failed; the draft is kept so it can be retried. */
+  error: string | null;
+  members: OrgMember[];
   t: (key: string, vars?: Record<string, string | number>) => string;
   issueId: string;
   currentUserId?: string;
@@ -1945,7 +1970,7 @@ interface CommentSectionProps {
   onDeleteComment: (commentId: string) => void;
 }
 
-function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, isPending, t, issueId, currentUserId, isAdmin, onEditComment, onDeleteComment }: CommentSectionProps) {
+function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, isPending, error, members, t, issueId, currentUserId, isAdmin, onEditComment, onDeleteComment }: CommentSectionProps) {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -1973,6 +1998,7 @@ function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, 
               canDelete={(!!currentUserId && comment.author_id === currentUserId) || !!isAdmin}
               onEdit={(body) => onEditComment(comment.id, body)}
               onDelete={() => onDeleteComment(comment.id)}
+              members={members}
               t={t}
             />
           )
@@ -1981,15 +2007,22 @@ function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, 
 
       {/* Comment input */}
       <div className="mt-2 rounded-lg border border-border bg-surface p-2.5">
-        <textarea
+        <MentionTextarea
           value={commentText}
-          onChange={(e) => onCommentTextChange(e.target.value)}
-          placeholder={t('issueDrawer.addComment')}
-          aria-label={t('issueDrawer.addComment') || 'Write a comment'}
+          onChange={onCommentTextChange}
+          members={members}
+          placeholder={t('issueDrawer.addCommentMention', { defaultValue: 'Add a comment… type @ to mention someone' })}
+          ariaLabel={t('issueDrawer.addComment', { defaultValue: 'Write a comment' })}
           rows={2}
           className="w-full bg-transparent text-xs text-primary placeholder-muted outline-none resize-none"
           onKeyDown={handleKeyDown}
         />
+        {error && (
+          <p role="alert" className="mt-1 flex items-start gap-1 text-[11px] text-red-400">
+            <AlertCircle size={11} className="mt-px shrink-0" aria-hidden="true" />
+            <span>{t('issueDrawer.commentError', { defaultValue: 'Comment not saved' })} — {error}</span>
+          </p>
+        )}
         <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border">
           <span className="text-[9px] text-muted">{t('issueDrawer.submitHint')}</span>
           <button
@@ -2160,6 +2193,7 @@ function CommentCard({
   canDelete = false,
   onEdit,
   onDelete,
+  members,
   t,
 }: {
   comment: Comment;
@@ -2167,6 +2201,7 @@ function CommentCard({
   canDelete?: boolean;
   onEdit?: (body: string) => void;
   onDelete?: () => void;
+  members: OrgMember[];
   t?: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -2240,13 +2275,15 @@ function CommentCard({
       </div>
       {isEditing ? (
         <div>
-          <textarea
+          <MentionTextarea
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={setDraft}
+            members={members}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave();
               if (e.key === 'Escape') handleCancel();
             }}
+            ariaLabel={tr('issueDrawer.editComment', 'Edit comment')}
             rows={3}
             autoFocus
             className="w-full bg-transparent text-xs text-primary placeholder-muted outline-none resize-none border border-border rounded-md p-1.5"
@@ -2271,10 +2308,33 @@ function CommentCard({
         </div>
       ) : (
         <p className="text-xs text-primary/90 leading-relaxed whitespace-pre-wrap">
-          {comment.body}
+          <CommentBody body={comment.body} members={members} />
         </p>
       )}
     </div>
+  );
+}
+
+/** Comment text with `@[Name](user_xxx)` / `@user_xxx` shown as a name chip. */
+function CommentBody({ body, members }: { body: string; members: OrgMember[] }) {
+  return (
+    <>
+      {splitMentions(body).map((seg, i) => {
+        if (seg.kind === 'text') return <span key={i}>{seg.text}</span>;
+        const member = members.find((m) => m.user_id === seg.userId);
+        const current = member ? `${member.first_name || ''} ${member.last_name || ''}`.trim() || member.email : '';
+        const name = current || seg.name || seg.userId.slice(0, 12);
+        return (
+          <span
+            key={i}
+            title={member?.email || undefined}
+            className="rounded-md bg-accent/10 px-1 py-px font-medium text-accent"
+          >
+            @{name}
+          </span>
+        );
+      })}
+    </>
   );
 }
 

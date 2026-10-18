@@ -275,6 +275,8 @@ Add a comment to an issue.
 | `author_id` | string | — | Auto-filled from API key if omitted |
 | `author_name` | string | — | Auto-filled from API key name if omitted |
 
+**Mentions.** Write `@[Display Name](user_xxx)` (or a bare `@user_xxx`) in `body` to mention a member of the issue's organization; `GET /orgs/{org_id}/members` lists their `user_id`s (API keys need the `members:read` scope). Each mentioned member except the author receives an email (batched with the issue's other updates over 2 minutes). Ids that are not members of the issue's organization are ignored.
+
 #### DELETE /issues/{issue_id}/comments/{comment_id}
 Delete a comment.
 

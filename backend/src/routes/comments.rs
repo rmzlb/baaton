@@ -66,6 +66,39 @@ pub(crate) async fn resolve_owner_identity(pool: &PgPool, identity: &str) -> Str
     identity.to_string()
 }
 
+/// Who a comment's mentions notify: members of the issue's org only, each
+/// once, never the author. A mention of anyone else is ignored rather than
+/// rejected, so a stale or foreign id cannot reveal whether that user exists,
+/// and it never reaches a person outside the tenant.
+pub(crate) fn mention_recipients(
+    body: &str,
+    author_owner: &str,
+    org_members: &std::collections::HashSet<String>,
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for id in crate::novu::parse_mentions(body) {
+        if id != author_owner && org_members.contains(&id) && !out.contains(&id) {
+            out.push(id);
+        }
+    }
+    out
+}
+
+/// `mention_recipients` against the live membership of `org_id`. Skips the
+/// Clerk lookup when the body mentions nobody.
+async fn mentioned_members(pool: &PgPool, org_id: &str, body: &str, author_identity: &str) -> Vec<String> {
+    if crate::novu::parse_mentions(body).is_empty() {
+        return Vec::new();
+    }
+    let members: std::collections::HashSet<String> = crate::routes::admin::fetch_org_members(org_id)
+        .await
+        .iter()
+        .filter_map(|m| m.get("user_id").and_then(|v| v.as_str()).map(str::to_string))
+        .collect();
+    let author_owner = resolve_owner_identity(pool, author_identity).await;
+    mention_recipients(body, &author_owner, &members)
+}
+
 
 pub async fn list_by_issue(
     Extension(auth): Extension<AuthUser>,
@@ -218,6 +251,7 @@ pub async fn create(
         let commenter_id = author_id.clone();
         let commenter_name = author_name.clone();
         let comment_body = body.body.clone();
+        let mention_org = org_id.to_string();
 
         tokio::spawn(async move {
             let issue = sqlx::query_as::<_, (String, String, Vec<String>)>(
@@ -232,6 +266,8 @@ pub async fn create(
                 _ => return,
             };
 
+            let mentioned = mentioned_members(&pool, &mention_org, &comment_body, &commenter_id).await;
+            let comment_body = crate::novu::mentions_to_text(&comment_body);
             let preview = if comment_body.chars().count() > 120 {
                 crate::text::truncate_ascii_ellipsis(&comment_body, 120)
             } else {
@@ -262,13 +298,7 @@ pub async fn create(
                 );
             }
 
-            // Notify @mentioned users (exclude commenter)
-            let mentioned = crate::novu::parse_mentions(&comment_body);
-            let mentioned: Vec<String> = mentioned
-                .into_iter()
-                .filter(|id| *id != commenter_id)
-                .collect();
-
+            // Notify @mentioned org members (author and non-members excluded)
             if !mentioned.is_empty() {
                 let subs: Vec<crate::novu::Subscriber> = mentioned
                     .into_iter()
@@ -376,8 +406,10 @@ pub async fn create(
         let notifyd = notifyd.clone();
         let comment_id = comment.id;
         let comment_author = comment.author_name.clone();
-        let comment_body = comment.body.clone();
+        let raw_body = comment.body.clone();
+        let comment_body = crate::novu::mentions_to_text(&comment.body);
         let author_identity = comment.author_id.clone();
+        let mention_org = org_id.to_string();
         tokio::spawn(async move {
             type Row = (Uuid, String, String, Option<String>, bool, Option<String>, Vec<String>, Uuid, Option<String>);
             let row: Option<Row> = sqlx::query_as(
@@ -467,7 +499,11 @@ pub async fn create(
             // other party: a solo-ticket comment must not spam the shared channel.
             let announce_room = notify_comments && others_on_ticket;
 
-            if !announce_room && recipients.is_empty() {
+            // A mention is addressed to someone: it emails them whatever their
+            // subscription, which is why it is resolved before the early return.
+            let mentioned = mentioned_members(&pool2, &mention_org, &raw_body, &author_identity).await;
+
+            if !announce_room && recipients.is_empty() && mentioned.is_empty() {
                 return;
             }
 
@@ -476,37 +512,74 @@ pub async fn create(
             let (email_recipients, other_recipients): (Vec<_>, Vec<_>) =
                 recipients.into_iter().partition(|r| r.channel == "email");
 
-            notifyd.issue_commented(
-                crate::notifyd::CommentNotice {
-                    issue: crate::notifyd::IssueNotice {
-                        display_id: display_id.clone(),
-                        title: title.clone(),
-                        project_name: project_name.clone(),
-                        actor: Some(comment_author.clone()),
-                        issue_id: iid,
+            if announce_room || !other_recipients.is_empty() {
+                notifyd.issue_commented(
+                    crate::notifyd::CommentNotice {
+                        issue: crate::notifyd::IssueNotice {
+                            display_id: display_id.clone(),
+                            title: title.clone(),
+                            project_name: project_name.clone(),
+                            actor: Some(comment_author.clone()),
+                            issue_id: iid,
+                        },
+                        body: comment_body.clone(),
+                        comment_id,
                     },
-                    body: comment_body.clone(),
-                    comment_id,
-                },
-                other_recipients,
-                announce_room,
-            );
+                    other_recipients,
+                    announce_room,
+                );
+            }
 
-            // Deferred email digest: batched over a 2-minute window.
+            // Deferred email digest: batched over a 2-minute window. A mentioned
+            // recipient gets the mention instead of the plain comment line, so
+            // the same comment never appears twice in one digest.
             let digest_at = chrono::Utc::now();
+            let mut queued: Vec<(String, crate::pending_notif::DigestEvent)> = Vec::new();
             for r in &email_recipients {
+                let event = if mentioned.contains(&r.user_id) {
+                    crate::pending_notif::DigestEvent::Mention {
+                        actor: comment_author.clone(),
+                        body: comment_body.clone(),
+                        at: digest_at,
+                    }
+                } else {
+                    crate::pending_notif::DigestEvent::Comment {
+                        actor: comment_author.clone(),
+                        body: comment_body.clone(),
+                        at: digest_at,
+                    }
+                };
+                queued.push((r.address.clone(), event));
+            }
+            for uid in &mentioned {
+                if email_recipients.iter().any(|r| &r.user_id == uid) {
+                    continue;
+                }
+                let Some((_, Some(address))) = crate::middleware::resolve_profile_cached(uid).await else {
+                    tracing::warn!(user_id = %uid, "comment.mention.no_email");
+                    continue;
+                };
+                if queued.iter().any(|(a, _)| a.eq_ignore_ascii_case(&address)) {
+                    continue;
+                }
+                queued.push((
+                    address,
+                    crate::pending_notif::DigestEvent::Mention {
+                        actor: comment_author.clone(),
+                        body: comment_body.clone(),
+                        at: digest_at,
+                    },
+                ));
+            }
+            for (address, event) in &queued {
                 crate::pending_notif::queue_digest_event(
                     &pool2,
                     iid,
                     &display_id,
                     &title,
                     project_name.as_deref(),
-                    &r.address,
-                    &crate::pending_notif::DigestEvent::Comment {
-                        actor: comment_author.clone(),
-                        body: comment_body.clone(),
-                        at: digest_at,
-                    },
+                    address,
+                    event,
                 )
                 .await
                 .ok();
@@ -715,4 +788,38 @@ pub async fn remove(
     broadcast_event(&sse_tx, org_id, "comment.deleted", &format!(r#"{{"id":"{}","issue_id":"{}"}}"#, comment_id, issue_id));
 
     Ok(Json(ApiResponse::new(())))
+}
+
+#[cfg(test)]
+mod mention_tests {
+    use super::mention_recipients;
+    use std::collections::HashSet;
+
+    fn org(ids: &[&str]) -> HashSet<String> {
+        ids.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_user_outside_the_issue_org_is_never_notified() {
+        let body = "@[Alice](user_alice) @[Mallory](user_mallory) @user_ghost";
+        assert_eq!(mention_recipients(body, "user_author", &org(&["user_alice", "user_author"])), vec!["user_alice"]);
+    }
+
+    #[test]
+    fn the_author_mentioning_themselves_is_not_notified() {
+        assert!(mention_recipients("@[Me](user_author)", "user_author", &org(&["user_author"])).is_empty());
+    }
+
+    #[test]
+    fn a_member_mentioned_twice_is_notified_once() {
+        let body = "@[Alice](user_alice) and again @user_alice";
+        assert_eq!(mention_recipients(body, "user_author", &org(&["user_alice"])), vec!["user_alice"]);
+    }
+
+    #[test]
+    fn an_unknown_membership_notifies_nobody() {
+        // `fetch_org_members` answers an empty list when Clerk is unreachable:
+        // that must fail closed, not fall back to the raw ids in the body.
+        assert!(mention_recipients("@[Alice](user_alice)", "user_author", &HashSet::new()).is_empty());
+    }
 }

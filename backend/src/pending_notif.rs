@@ -21,6 +21,12 @@ pub enum DigestEvent {
         body: String,
         at: DateTime<Utc>,
     },
+    /// The recipient was @mentioned in this comment.
+    Mention {
+        actor: String,
+        body: String,
+        at: DateTime<Utc>,
+    },
     Transition {
         actor: String,
         from_status: String,
@@ -177,6 +183,11 @@ fn digest_plain_text(events: &[DigestEvent], display_id: &str, title: &str) -> S
         match ev {
             DigestEvent::Comment { actor, body, .. } => {
                 lines.push(format!("{} commented:", actor));
+                let excerpt: String = body.chars().take(200).collect();
+                lines.push(format!("  \"{}\"", excerpt));
+            }
+            DigestEvent::Mention { actor, body, .. } => {
+                lines.push(format!("{} mentioned you:", actor));
                 let excerpt: String = body.chars().take(200).collect();
                 lines.push(format!("  \"{}\"", excerpt));
             }

@@ -13,10 +13,16 @@ pub async fn list_members(
     Extension(auth): Extension<AuthUser>,
     Path(org_id): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    // Verify the user belongs to the requested org
-    let user_orgs = crate::routes::issues::fetch_user_org_ids(&auth.user_id)
-        .await
-        .unwrap_or_default();
+    // Verify the caller belongs to the requested org. An API key has no Clerk
+    // memberships; its org scope is the authority (agents need the ids to
+    // write `@[Name](user_xxx)` mentions).
+    let user_orgs = if auth.user_id.starts_with("apikey:") {
+        auth.scoped_org_ids.clone()
+    } else {
+        crate::routes::issues::fetch_user_org_ids(&auth.user_id)
+            .await
+            .unwrap_or_default()
+    };
 
     if !user_orgs.contains(&org_id) {
         return Err((
