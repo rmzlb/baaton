@@ -524,8 +524,10 @@ pub async fn get_project_gamification(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    // Resolve the org that owns the project and check the caller's org and
+    // project scope against it (BAA-34).
+    let owner_org = crate::routes::issue_scope::require_project(&pool, &auth, project_id).await?;
+    let org_id = owner_org.as_str();
 
     let today     = Utc::now().date_naive();
     let since_7d  = today - chrono::Duration::days(7);
