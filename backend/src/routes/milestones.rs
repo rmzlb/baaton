@@ -6,6 +6,7 @@ use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
+use crate::routes::issue_scope;
 use crate::models::{ApiResponse, Issue};
 
 // ─── Models ───────────────────────────────────────────
@@ -206,8 +207,8 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateMilestone>,
 ) -> Result<Json<ApiResponse<MilestoneWithCounts>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let owner_org = require_milestone(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let target_date_provided = body.target_date.is_some();
     let target_date_value = body.target_date.flatten();
@@ -223,8 +224,7 @@ pub async fn update(
             status = COALESCE($6, status),
             "order" = COALESCE($7, "order"),
             estimated_days = CASE WHEN $8::boolean THEN $9 ELSE estimated_days END
-        FROM projects p
-        WHERE milestones.id = $1 AND milestones.project_id = p.id AND p.org_id = $10
+        WHERE milestones.id = $1
         RETURNING milestones.id, milestones.project_id, milestones.name, milestones.description,
                   milestones.target_date, milestones.status, milestones."order", milestones.estimated_days,
                   milestones.org_id, milestones.created_at
@@ -239,7 +239,6 @@ pub async fn update(
     .bind(body.order)
     .bind(estimated_days_provided)
     .bind(estimated_days_value)
-    .bind(org_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -328,8 +327,8 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let owner_org = require_milestone(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let result = sqlx::query(
         "DELETE FROM milestones WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = $2)"
@@ -353,8 +352,8 @@ pub async fn get_one(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<MilestoneDetail>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let owner_org = require_milestone(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let row = sqlx::query_as::<_, MilestoneRow>(
         r#"
@@ -400,5 +399,28 @@ pub async fn get_one(
             Ok(Json(ApiResponse::new(detail)))
         }
         None => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Milestone not found"})))),
+    }
+}
+
+/// Org owning milestone `id` (through its project), or 404 when it is
+/// missing or outside the caller's org/project scope.
+async fn require_milestone(
+    pool: &PgPool,
+    auth: &AuthUser,
+    id: Uuid,
+) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
+    let row: Option<(String, Uuid)> = sqlx::query_as(
+        "SELECT p.org_id, p.id FROM milestones r JOIN projects p ON p.id = r.project_id WHERE r.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, %id, "milestones scope lookup failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"})))
+    })?;
+    match row {
+        Some((org_id, project_id)) if issue_scope::entitled(auth, &org_id, project_id).await => Ok(org_id),
+        _ => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Milestone not found"})))),
     }
 }

@@ -6,6 +6,7 @@ use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
+use crate::routes::issue_scope;
 use crate::models::{ApiResponse, Issue};
 
 // ─── Structs ──────────────────────────────────────────
@@ -136,8 +137,8 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateAutomationRule>,
 ) -> Result<Json<ApiResponse<AutomationRule>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let owner_org = require_automation(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     if let Some(ref trigger) = body.trigger {
         if !VALID_TRIGGERS.contains(&trigger.as_str()) {
@@ -183,8 +184,8 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let owner_org = require_automation(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let result = sqlx::query(
         "DELETE FROM automation_rules WHERE id = $1 AND org_id = $2"
@@ -321,5 +322,28 @@ pub async fn evaluate_automations(
                 }
             }
         }
+    }
+}
+
+/// Org owning automation rule `id` (through its project), or 404 when it is
+/// missing or outside the caller's org/project scope.
+async fn require_automation(
+    pool: &PgPool,
+    auth: &AuthUser,
+    id: Uuid,
+) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
+    let row: Option<(String, Uuid)> = sqlx::query_as(
+        "SELECT p.org_id, p.id FROM automation_rules r JOIN projects p ON p.id = r.project_id WHERE r.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, %id, "automation_rules scope lookup failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"})))
+    })?;
+    match row {
+        Some((org_id, project_id)) if issue_scope::entitled(auth, &org_id, project_id).await => Ok(org_id),
+        _ => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Automation rule not found"})))),
     }
 }

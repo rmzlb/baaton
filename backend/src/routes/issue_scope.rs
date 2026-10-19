@@ -109,7 +109,7 @@ pub fn is_admin_of(auth: &AuthUser, org_id: &str) -> bool {
 /// The Clerk lookup runs only when the synchronous rule refuses a human, and
 /// goes through the 5-minute membership cache of `fetch_user_org_ids`. A failed
 /// lookup refuses (fail closed).
-async fn entitled(auth: &AuthUser, org_id: &str, project_id: Uuid) -> bool {
+pub(crate) async fn entitled(auth: &AuthUser, org_id: &str, project_id: Uuid) -> bool {
     if is_entitled(auth, org_id, project_id) {
         return true;
     }

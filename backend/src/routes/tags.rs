@@ -4,6 +4,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
+use crate::routes::issue_scope;
 use crate::models::{ApiResponse, CreateProjectTag, ProjectTag};
 
 pub async fn list_by_project(
@@ -69,8 +70,8 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(tag_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let owner_org = require_tag(&pool, &auth, tag_id).await?;
+    let org_id = owner_org.as_str();
 
     // Verify tag belongs to a project in user's org
     let result = sqlx::query(
@@ -86,5 +87,28 @@ pub async fn remove(
         Ok(Json(ApiResponse::new(())))
     } else {
         Err((StatusCode::NOT_FOUND, Json(json!({"error": "Tag not found"}))))
+    }
+}
+
+/// Org owning tag `id` (through its project), or 404 when it is
+/// missing or outside the caller's org/project scope.
+async fn require_tag(
+    pool: &PgPool,
+    auth: &AuthUser,
+    id: Uuid,
+) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
+    let row: Option<(String, Uuid)> = sqlx::query_as(
+        "SELECT p.org_id, p.id FROM project_tags r JOIN projects p ON p.id = r.project_id WHERE r.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, %id, "project_tags scope lookup failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"})))
+    })?;
+    match row {
+        Some((org_id, project_id)) if issue_scope::entitled(auth, &org_id, project_id).await => Ok(org_id),
+        _ => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Tag not found"})))),
     }
 }
