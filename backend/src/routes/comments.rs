@@ -755,7 +755,9 @@ pub async fn remove(
     let author_id = author_id
         .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Comment not found"}))))?;
 
-    if !auth.is_admin() {
+    // The admin role is the active org's; it does not carry over to another
+    // org the caller can now write in as a member (BAA-33).
+    if !issue_scope::is_admin_of(&auth, org_id) {
         let caller_owner = auth.responsible_user_id().to_string();
         let comment_owner = resolve_owner_identity(&pool, &author_id).await;
         if comment_owner != caller_owner {

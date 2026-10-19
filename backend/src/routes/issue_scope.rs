@@ -71,6 +71,60 @@ pub fn is_entitled(auth: &AuthUser, org_id: &str, project_id: Uuid) -> bool {
     auth.has_project_access(project_id)
 }
 
+/// `is_entitled`, widened for a human to every org they belong to in Clerk.
+///
+/// A human's JWT carries one *active* org, so `scoped_org_ids` holds only that
+/// org. Reads already span every membership (`resolve_user_org_ids`), so a
+/// human could open an issue of another org of theirs and then get 404 when
+/// commenting on it (PHI-125). Membership of the owning org is the rule for
+/// writes too.
+///
+/// Only humans are widened. An API key keeps the scope recorded on the key,
+/// whatever its creator belongs to. Project scoping still applies.
+pub fn is_entitled_as_member(
+    auth: &AuthUser,
+    org_id: &str,
+    project_id: Uuid,
+    member_org_ids: &[String],
+) -> bool {
+    if is_entitled(auth, org_id, project_id) {
+        return true;
+    }
+    auth.is_human()
+        && member_org_ids.iter().any(|id| id == org_id)
+        && auth.has_project_access(project_id)
+}
+
+/// Whether the caller holds an admin role *in `org_id`*.
+///
+/// `org_role` comes from the JWT and describes the active org only. Now that a
+/// human may write in another org they belong to, an admin of the active org
+/// must not be treated as an admin there.
+pub fn is_admin_of(auth: &AuthUser, org_id: &str) -> bool {
+    auth.is_admin() && auth.org_id.as_deref() == Some(org_id)
+}
+
+/// Entitlement check used by `resolve` and `require_project`.
+///
+/// The Clerk lookup runs only when the synchronous rule refuses a human, and
+/// goes through the 5-minute membership cache of `fetch_user_org_ids`. A failed
+/// lookup refuses (fail closed).
+async fn entitled(auth: &AuthUser, org_id: &str, project_id: Uuid) -> bool {
+    if is_entitled(auth, org_id, project_id) {
+        return true;
+    }
+    if !auth.is_human() {
+        return false;
+    }
+    match crate::routes::issues::fetch_user_org_ids(&auth.user_id).await {
+        Ok(member_org_ids) => is_entitled_as_member(auth, org_id, project_id, &member_org_ids),
+        Err(e) => {
+            tracing::warn!(error = %e, user_id = %auth.user_id, "membership lookup failed; cross-org access refused");
+            false
+        }
+    }
+}
+
 /// Look up the org and project owning `issue_id`, then check them against the
 /// caller's scope.
 pub async fn resolve(
@@ -89,7 +143,7 @@ pub async fn resolve(
         return Ok(IssueAccess::NotFound);
     };
 
-    if is_entitled(auth, &org_id, project_id) {
+    if entitled(auth, &org_id, project_id).await {
         return Ok(IssueAccess::Allowed(IssueScope { org_id, project_id }));
     }
 
@@ -145,7 +199,7 @@ pub async fn require_project(
         })?;
 
     match org_id {
-        Some(org_id) if is_entitled(auth, &org_id, project_id) => Ok(org_id),
+        Some(org_id) if entitled(auth, &org_id, project_id).await => Ok(org_id),
         _ => Err((
             StatusCode::NOT_FOUND,
             Json(json!({"error": "Project not found"})),
@@ -233,5 +287,89 @@ mod tests {
     fn empty_project_scope_allows_any_project_of_an_entitled_org() {
         let auth = key(Some("org_studio"), &["org_studio"], &[]);
         assert!(is_entitled(&auth, "org_studio", PROJ_B));
+    }
+
+    fn human(active: &str, role: Option<&str>) -> AuthUser {
+        AuthUser {
+            user_id: "user_3C6wp4YNAtiN9kxXQKY9BoifjI8".to_string(),
+            org_id: Some(active.to_string()),
+            org_slug: None,
+            org_role: role.map(|r| r.to_string()),
+            email: None,
+            display_name: Some("rmzlb".to_string()),
+            scoped_org_ids: vec![active.to_string()],
+            scoped_project_ids: vec![],
+            actor_kind: ActorKind::Human,
+            actor_key_id: None,
+            on_behalf_of: None,
+            permissions: vec![crate::permissions::ADMIN_FULL.to_string()],
+            legacy_full_access: false,
+        }
+    }
+
+    fn orgs(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|o| o.to_string()).collect()
+    }
+
+    // ── BAA-33 / PHI-125 failure cases, written before the fix ──────────
+    //
+    // 1. Human member of the owning org, another org active → refused (bug).
+    // 2. Human not a member of the owning org → must stay refused.
+    // 3. Membership lookup failed / empty → must not open anything.
+    // 4. API key whose creator is a member elsewhere → must not widen.
+    // 5. Project-scoped key → must stay confined to its projects.
+    // 6. Admin of the active org → must not moderate another org it joined
+    //    as a plain member (role is only known for the active org).
+
+    /// PHI-125: rmzlb reads PHI-125 (org_philoe) with org_studio active, but
+    /// commenting answered 404. Membership of the owning org is enough.
+    #[test]
+    fn human_member_may_write_outside_the_active_org() {
+        let auth = human("org_studio", None);
+        let member = orgs(&["org_studio", "org_philoe"]);
+        assert!(!is_entitled(&auth, "org_philoe", PROJ_A), "sync rule unchanged");
+        assert!(is_entitled_as_member(&auth, "org_philoe", PROJ_A, &member));
+    }
+
+    #[test]
+    fn human_non_member_stays_refused() {
+        let auth = human("org_studio", None);
+        let member = orgs(&["org_studio", "org_philoe"]);
+        assert!(!is_entitled_as_member(&auth, "org_someone_else", PROJ_A, &member));
+    }
+
+    #[test]
+    fn human_without_known_memberships_gets_only_the_active_org() {
+        let auth = human("org_studio", None);
+        assert!(!is_entitled_as_member(&auth, "org_philoe", PROJ_A, &[]));
+        assert!(is_entitled_as_member(&auth, "org_studio", PROJ_A, &[]));
+    }
+
+    /// A key never inherits its creator's Clerk memberships: its scope is the
+    /// one recorded on the key.
+    #[test]
+    fn api_key_ignores_memberships() {
+        let auth = key(Some("org_studio"), &["org_studio"], &[]);
+        let member = orgs(&["org_studio", "org_philoe"]);
+        assert!(!is_entitled_as_member(&auth, "org_philoe", PROJ_A, &member));
+        assert!(is_entitled_as_member(&auth, "org_studio", PROJ_A, &member));
+    }
+
+    #[test]
+    fn project_scoped_key_stays_confined_with_memberships() {
+        let auth = key(Some("org_studio"), &["org_studio"], &[PROJ_A]);
+        let member = orgs(&["org_studio"]);
+        assert!(is_entitled_as_member(&auth, "org_studio", PROJ_A, &member));
+        assert!(!is_entitled_as_member(&auth, "org_studio", PROJ_B, &member));
+    }
+
+    /// `org_role` describes the active org only. Once a human may write in
+    /// another org, that role must not grant admin rights there.
+    #[test]
+    fn admin_role_applies_to_the_active_org_only() {
+        let admin = human("org_studio", Some("org:admin"));
+        assert!(is_admin_of(&admin, "org_studio"));
+        assert!(!is_admin_of(&admin, "org_philoe"));
+        assert!(!is_admin_of(&human("org_studio", Some("org:member")), "org_studio"));
     }
 }
