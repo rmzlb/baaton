@@ -270,8 +270,10 @@ pub async fn list(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Vec<SlaRule>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    // Resolve the org that owns the project and check the caller's org and
+    // project scope against it (BAA-34).
+    let owner_org = crate::routes::issue_scope::require_project(&pool, &auth, project_id).await?;
+    let org_id = owner_org.as_str();
 
     let rules = sqlx::query_as::<_, SlaRule>(
         "SELECT * FROM sla_rules WHERE project_id = $1 AND org_id = $2 ORDER BY created_at ASC"
@@ -292,21 +294,10 @@ pub async fn create(
     Path(project_id): Path<Uuid>,
     Json(body): Json<CreateSlaRule>,
 ) -> Result<Json<ApiResponse<SlaRule>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
-    }
+    // Resolve the org that owns the project and check the caller's org and
+    // project scope against it (BAA-34); writes are filed under that org.
+    let owner_org = crate::routes::issue_scope::require_project(&pool, &auth, project_id).await?;
+    let org_id = owner_org.as_str();
 
     let rule = sqlx::query_as::<_, SlaRule>(
         r#"
@@ -359,21 +350,9 @@ pub async fn stats(
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<SlaStats>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
-    }
+    // Resolve the org that owns the project and check the caller's org and
+    // project scope against it (BAA-34).
+    crate::routes::issue_scope::require_project(&pool, &auth, project_id).await?;
 
     let row: (i64, i64, i64) = sqlx::query_as(
         r#"

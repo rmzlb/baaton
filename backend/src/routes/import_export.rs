@@ -63,22 +63,9 @@ pub async fn export(
     Path(project_id): Path<Uuid>,
     Query(params): Query<ExportParams>,
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // Verify project belongs to org
-    let project_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)"
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !project_exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
-    }
+    // Resolve the org that owns the project and check the caller's org and
+    // project scope against it (BAA-34).
+    crate::routes::issue_scope::require_project(&pool, &auth, project_id).await?;
 
     let issues = sqlx::query_as::<_, Issue>(
         "SELECT * FROM issues WHERE project_id = $1 ORDER BY created_at ASC"
@@ -147,8 +134,10 @@ pub async fn import(
     Path(project_id): Path<Uuid>,
     Json(body): Json<ImportBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    // Resolve the org that owns the project and check the caller's org and
+    // project scope against it (BAA-34); writes are filed under that org.
+    let owner_org = crate::routes::issue_scope::require_project(&pool, &auth, project_id).await?;
+    let org_id = owner_org.as_str();
 
     if body.issues.len() > MAX_IMPORT {
         return Err((

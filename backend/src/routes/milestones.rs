@@ -86,8 +86,11 @@ pub async fn list_by_project(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(project_id): Path<Uuid>,
-) -> Result<Json<ApiResponse<Vec<MilestoneWithCounts>>>, axum::http::StatusCode> {
-    let org_id = auth.org_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+) -> Result<Json<ApiResponse<Vec<MilestoneWithCounts>>>, (StatusCode, Json<serde_json::Value>)> {
+    // Resolve the org that owns the project and check the caller's org and
+    // project scope against it (BAA-34).
+    let owner_org = crate::routes::issue_scope::require_project(&pool, &auth, project_id).await?;
+    let org_id = owner_org.as_str();
 
     let milestones = sqlx::query_as::<_, MilestoneWithCounts>(
         r#"

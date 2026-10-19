@@ -243,25 +243,9 @@ pub async fn burndown(
     Path(project_id): Path<Uuid>,
     Query(params): Query<BurndownParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
-
-    // Verify project belongs to org
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = $2)",
-    )
-    .bind(project_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("burndown project check error: {e}");
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"})))
-    })?;
-
-    if !exists {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Project not found"}))));
-    }
+    // Resolve the org that owns the project and check the caller's org and
+    // project scope against it (BAA-34).
+    crate::routes::issue_scope::require_project(&pool, &auth, project_id).await?;
 
     let days = params.days.unwrap_or(14).clamp(1, 90);
     let since = chrono::Utc::now().date_naive() - chrono::Duration::days(days - 1);
