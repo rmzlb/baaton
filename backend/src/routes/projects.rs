@@ -13,6 +13,7 @@ use crate::models::{
     ApiResponse, CreateProject, Project, ProjectAutoAssignSettings, ProjectNotificationSettings,
     UpdateProjectAutoAssignSettings, UpdateProjectNotificationSettings,
 };
+use crate::routes::issue_scope;
 use crate::routes::issues::fetch_user_org_ids;
 use crate::routes::sse::{broadcast_event, EventSender};
 
@@ -385,17 +386,12 @@ pub async fn get_one(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
+    let org_id = issue_scope::require_project(&pool, &auth, id).await?;
 
     let project =
         sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1 AND org_id = $2")
             .bind(id)
-            .bind(org_id)
+            .bind(&org_id)
             .fetch_optional(&pool)
             .await
             .map_err(|e| {
