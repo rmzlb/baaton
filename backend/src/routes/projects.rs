@@ -607,31 +607,47 @@ pub async fn board_by_slug(
     Query(params): Query<BoardParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let start = std::time::Instant::now();
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
+    let home_org_id = auth.org_id.as_deref().ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "Organization required"})),
         )
     })?;
 
-    let project =
-        sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE slug = $1 AND org_id = $2")
-            .bind(&slug)
-            .bind(org_id)
-            .fetch_optional(&pool)
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": e.to_string()})),
-                )
-            })?
-            .ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    Json(json!({"error": "Project not found"})),
-                )
-            })?;
+    // A slug is unique per org only, so several orgs may hold it. Candidates
+    // are tried home org first, and the first one the caller is entitled to
+    // (org and project scope, as `require_project`) is the board.
+    let candidates = sqlx::query_as::<_, Project>(
+        "SELECT * FROM projects WHERE slug = $1 ORDER BY (org_id = $2) DESC, id",
+    )
+    .bind(&slug)
+    .bind(home_org_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
+
+    let mut project = None;
+    for candidate in candidates {
+        match issue_scope::require_project(&pool, &auth, candidate.id).await {
+            Ok(_) => {
+                project = Some(candidate);
+                break;
+            }
+            Err((StatusCode::NOT_FOUND, _)) => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    let project = project.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Project not found"})),
+        )
+    })?;
 
     let include_archived = params.include_archived.unwrap_or(false);
     let include_snoozed = params.include_snoozed.unwrap_or(false);
@@ -1060,10 +1076,9 @@ pub async fn update_statuses(
     Path(id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth
-        .org_id
-        .as_deref()
-        .ok_or_else(|| bad_request("Organization required"))?;
+    // Owning org, checked against the caller's org and project scope.
+    let owner_org_id = issue_scope::require_project(&pool, &auth, id).await?;
+    let org_id = owner_org_id.as_str();
 
     // ── Load existing project (org-scoped) ───────────────
     let existing: Option<(serde_json::Value,)> =
