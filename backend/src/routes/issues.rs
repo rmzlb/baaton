@@ -2739,24 +2739,10 @@ pub async fn update_position(
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
-
-    // Verify issue belongs to org
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2))"
-    )
-    .bind(id)
-    .bind(&org_ids)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "Issue not found"})),
-        ));
-    }
+    let issue_scope::IssueScope {
+        org_id: target_org_id,
+        project_id,
+    } = issue_scope::require(&pool, &auth, id, "Issue").await?;
 
     let status = body
         .get("status")
@@ -2774,24 +2760,6 @@ pub async fn update_position(
         .map(|s| s.to_string());
 
     // Validate status against project config
-    let project_id: Uuid = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
-        .bind(id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|_| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(json!({"error": "Issue not found"})),
-            )
-        })?;
-    let target_org_id: String = sqlx::query_scalar(
-        "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
-    )
-    .bind(id)
-    .bind(&org_ids)
-    .fetch_one(&pool)
-    .await
-    .map_err(internal_err)?;
     let valid_statuses = get_project_statuses(&pool, project_id, &target_org_id).await?;
     validate_status(status, &valid_statuses)?;
 
@@ -2921,29 +2889,12 @@ pub async fn remove(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
+    let target = issue_scope::require(&pool, &auth, id, "Issue").await?;
+    let target_org_id = target.org_id;
 
-    let target_org_id: Option<String> = sqlx::query_scalar(
-        "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
-    )
+    let result = sqlx::query("DELETE FROM issues WHERE id = $1 AND project_id = $2")
     .bind(id)
-    .bind(&org_ids)
-    .fetch_optional(&pool)
-    .await
-    .map_err(internal_err)?;
-
-    let target_org_id = target_org_id.ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "Issue not found"})),
-        )
-    })?;
-
-    let result = sqlx::query(
-        "DELETE FROM issues WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = ANY($2))"
-    )
-    .bind(id)
-    .bind(&org_ids)
+    .bind(target.project_id)
     .execute(&pool)
     .await
     .map_err(|e| internal_err(e))?;
@@ -3008,8 +2959,6 @@ pub async fn batch_update(
     headers: HeaderMap,
     Json(body): Json<BatchUpdateBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
-
     if body.issue_ids.is_empty() {
         return Ok(Json(json!({"updated": 0})));
     }
@@ -3019,34 +2968,27 @@ pub async fn batch_update(
         validate_priority(priority)?;
     }
 
-    // Validate status if provided — fetch project statuses from the first issue's project
-    if let Some(ref status) = body.changes.status {
-        let project_id: Option<Uuid> = sqlx::query_scalar(
-            "SELECT i.project_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
-        )
-        .bind(body.issue_ids[0])
-        .bind(&org_ids)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| internal_err(e))?;
+    let targets = require_batch(&pool, &auth, &body.issue_ids).await?;
 
-        if let Some(pid) = project_id {
-            let project_org_id: String = sqlx::query_scalar(
-                "SELECT org_id FROM projects WHERE id = $1 AND org_id = ANY($2)",
-            )
-            .bind(pid)
-            .bind(&org_ids)
-            .fetch_one(&pool)
-            .await
-            .map_err(internal_err)?;
-            let valid_statuses = get_project_statuses(&pool, pid, &project_org_id).await?;
+    // Validate status against every project the batch touches, each under its
+    // own org: a status valid in the first issue's project may not exist in
+    // the next one's.
+    if let Some(ref status) = body.changes.status {
+        let mut checked: Vec<Uuid> = Vec::new();
+        for (_, scope) in &targets {
+            if checked.contains(&scope.project_id) {
+                continue;
+            }
+            checked.push(scope.project_id);
+            let valid_statuses =
+                get_project_statuses(&pool, scope.project_id, &scope.org_id).await?;
             validate_status(status, &valid_statuses)?;
         }
     }
 
     let mut updated_count: i64 = 0;
 
-    for issue_id in &body.issue_ids {
+    for (issue_id, scope) in &targets {
         // Read before writing: a batch can contain tickets already in the target
         // status, and those are not transitions.
         let previous_status: Option<String> =
@@ -3067,7 +3009,7 @@ pub async fn batch_update(
                 status_changed_at = CASE WHEN $7::boolean THEN now() ELSE status_changed_at END,
                 updated_at = now()
             WHERE id = $1
-              AND project_id IN (SELECT id FROM projects WHERE org_id = ANY($6))
+              AND project_id = $6
             RETURNING *
             "#,
         )
@@ -3076,7 +3018,7 @@ pub async fn batch_update(
         .bind(&body.changes.priority)
         .bind(&body.changes.assignee_ids)
         .bind(&body.changes.tags)
-        .bind(&org_ids)
+        .bind(scope.project_id)
         .bind(
             body.changes
                 .status
@@ -3090,12 +3032,7 @@ pub async fn batch_update(
 
         if let Some(issue) = issue {
             updated_count += 1;
-            let issue_org_id: String =
-                sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
-                    .bind(issue.project_id)
-                    .fetch_one(&pool)
-                    .await
-                    .map_err(internal_err)?;
+            let issue_org_id = scope.org_id.clone();
 
             // Only a real transition counts. Bulk-setting 20 tickets to a status
             // 15 already had would otherwise fire 20 notifications for 5 moves.
@@ -3145,22 +3082,47 @@ pub async fn batch_delete(
     State(pool): State<PgPool>,
     Json(body): Json<BatchDeleteBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
-
     if body.issue_ids.is_empty() {
         return Ok(Json(json!({"deleted": 0})));
     }
 
+    let targets = require_batch(&pool, &auth, &body.issue_ids).await?;
+    let ids: Vec<Uuid> = targets.iter().map(|(id, _)| *id).collect();
+    let project_ids: Vec<Uuid> = targets.iter().map(|(_, s)| s.project_id).collect();
+
+    // Each id is deleted only from the project it was checked against.
     let result = sqlx::query(
-        "DELETE FROM issues WHERE id = ANY($1) AND project_id IN (SELECT id FROM projects WHERE org_id = ANY($2))"
+        "DELETE FROM issues i USING unnest($1::uuid[], $2::uuid[]) AS t(id, project_id) \
+         WHERE i.id = t.id AND i.project_id = t.project_id",
     )
-    .bind(&body.issue_ids)
-    .bind(&org_ids)
+    .bind(&ids)
+    .bind(&project_ids)
     .execute(&pool)
     .await
     .map_err(|e| internal_err(e))?;
 
     Ok(Json(json!({"deleted": result.rows_affected()})))
+}
+
+/// `issue_scope::require` for every id of a batch, before anything is written.
+///
+/// One id outside the caller's scope (or missing) refuses the whole request
+/// with the same 404 as the single-issue routes, so a batch can neither touch
+/// another project nor reveal which of its ids exist. Duplicates are dropped.
+async fn require_batch(
+    pool: &PgPool,
+    auth: &AuthUser,
+    issue_ids: &[Uuid],
+) -> Result<Vec<(Uuid, issue_scope::IssueScope)>, (StatusCode, Json<serde_json::Value>)> {
+    let mut targets: Vec<(Uuid, issue_scope::IssueScope)> = Vec::with_capacity(issue_ids.len());
+    for id in issue_ids {
+        if targets.iter().any(|(seen, _)| seen == id) {
+            continue;
+        }
+        let scope = issue_scope::require(pool, auth, *id, "Issue").await?;
+        targets.push((*id, scope));
+    }
+    Ok(targets)
 }
 
 // ─── Global Search ────────────────────────────────────
@@ -3200,6 +3162,13 @@ pub async fn search(
             Json(json!({"error": "Organization required"})),
         )
     })?;
+    // Every org the caller is scoped to (a multi-org key covers several), not
+    // the home org alone. Humans keep their active org, as before.
+    let org_ids: Vec<String> = if auth.scoped_org_ids.is_empty() {
+        vec![org_id.to_string()]
+    } else {
+        auth.scoped_org_ids.clone()
+    };
 
     if params.q.trim().is_empty() {
         return Err((
@@ -3229,7 +3198,7 @@ pub async fn search(
         FROM issues i
         JOIN projects p ON p.id = i.project_id
         WHERE i.search_vector @@ plainto_tsquery('english', $1)
-          AND p.org_id = $2
+          AND p.org_id = ANY($2)
           AND ($3::uuid IS NULL OR i.project_id = $3)
           AND (cardinality($7::uuid[]) = 0 OR i.project_id = ANY($7))
           AND ($4::text IS NULL OR i.status = $4)
@@ -3239,7 +3208,7 @@ pub async fn search(
         "#,
     )
     .bind(&params.q)
-    .bind(org_id)
+    .bind(&org_ids)
     .bind(params.project_id)
     .bind(&params.status)
     .bind(limit)
@@ -3653,33 +3622,7 @@ pub async fn archive(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
-
-    let org_id: String = sqlx::query_scalar(
-        "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
-    )
-    .bind(id)
-    .bind(&org_ids)
-    .fetch_optional(&pool)
-    .await
-    .map_err(internal_err)?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
-
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
-    )
-    .bind(id)
-    .bind(&org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "Issue not found"})),
-        ));
-    }
+    let org_id = issue_scope::require(&pool, &auth, id, "Issue").await?.org_id;
 
     let issue = sqlx::query_as::<_, Issue>(
         "UPDATE issues SET archived = true, archived_at = now(), updated_at = now() WHERE id = $1 RETURNING *"
@@ -3738,33 +3681,7 @@ pub async fn unarchive(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Issue>>, (StatusCode, Json<serde_json::Value>)> {
-    let (_current_org_id, org_ids) = require_user_org_scope(&pool, &auth).await?;
-
-    let org_id: String = sqlx::query_scalar(
-        "SELECT p.org_id FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = ANY($2)"
-    )
-    .bind(id)
-    .bind(&org_ids)
-    .fetch_optional(&pool)
-    .await
-    .map_err(internal_err)?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Issue not found"}))))?;
-
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
-    )
-    .bind(id)
-    .bind(&org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "Issue not found"})),
-        ));
-    }
+    let org_id = issue_scope::require(&pool, &auth, id, "Issue").await?.org_id;
 
     let issue = sqlx::query_as::<_, Issue>(
         "UPDATE issues SET archived = false, archived_at = NULL, updated_at = now() WHERE id = $1 RETURNING *"
