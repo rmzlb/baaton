@@ -35,7 +35,7 @@ import { IssueDrawerSkeleton } from '@/components/shared/Skeleton';
 import { CopyableId } from '@/components/shared/CopyableId';
 import { AgentRunCard } from '@/components/issues/AgentRunCard';
 import { MentionTextarea } from '@/components/issues/MentionTextarea';
-import { splitMentions } from '@/lib/mentions';
+import { mentionChipLabel, splitMentions } from '@/lib/mentions';
 import type { OrgMember } from '@/hooks/useOrgMembers';
 import type { Issue, IssueStatus, IssuePriority, IssueType, TLDR, Comment, ProjectStatus, ProjectTag, Attachment, Milestone, Sprint } from '@/lib/types';
 
@@ -2322,7 +2322,7 @@ function CommentBody({ body, members }: { body: string; members: OrgMember[] }) 
         if (seg.kind === 'text') return <span key={i}>{seg.text}</span>;
         const member = members.find((m) => m.user_id === seg.userId);
         const current = member ? `${member.first_name || ''} ${member.last_name || ''}`.trim() || member.email : '';
-        const name = current || seg.name || seg.userId.slice(0, 12);
+        const name = mentionChipLabel(current || seg.name || seg.userId.slice(0, 12));
         return (
           <span
             key={i}
