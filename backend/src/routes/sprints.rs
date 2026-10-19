@@ -6,6 +6,7 @@ use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
+use crate::routes::issue_scope;
 use crate::models::ApiResponse;
 
 // ─── Models ───────────────────────────────────────────
@@ -135,8 +136,8 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateSprint>,
 ) -> Result<Json<ApiResponse<Sprint>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let owner_org = require_sprint(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let start_date_provided = body.start_date.is_some();
     let start_date_value = body.start_date.flatten();
@@ -197,8 +198,8 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let owner_org = require_sprint(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let result = sqlx::query(
         "DELETE FROM sprints WHERE id = $1 AND project_id IN (SELECT id FROM projects WHERE org_id = $2)"
@@ -213,5 +214,28 @@ pub async fn remove(
         Ok(Json(ApiResponse::new(())))
     } else {
         Err((StatusCode::NOT_FOUND, Json(json!({"error": "Sprint not found"}))))
+    }
+}
+
+/// Org owning sprint `id` (through its project), or 404 when it is
+/// missing or outside the caller's org/project scope.
+async fn require_sprint(
+    pool: &PgPool,
+    auth: &AuthUser,
+    id: Uuid,
+) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
+    let row: Option<(String, Uuid)> = sqlx::query_as(
+        "SELECT p.org_id, p.id FROM sprints r JOIN projects p ON p.id = r.project_id WHERE r.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, %id, "sprints scope lookup failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"})))
+    })?;
+    match row {
+        Some((org_id, project_id)) if issue_scope::entitled(auth, &org_id, project_id).await => Ok(org_id),
+        _ => Err((StatusCode::NOT_FOUND, Json(json!({"error": "Sprint not found"})))),
     }
 }

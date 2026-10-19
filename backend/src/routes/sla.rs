@@ -6,6 +6,7 @@ use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
+use crate::routes::issue_scope;
 use crate::models::ApiResponse;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -325,8 +326,8 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    let owner_org = require_sla_rule(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let result = sqlx::query(
         "DELETE FROM sla_rules WHERE id = $1 AND org_id = $2"
@@ -382,4 +383,27 @@ pub async fn stats(
         breached,
         achievement_pct,
     })))
+}
+
+/// Org owning sla rule `id` (through its project), or 404 when it is
+/// missing or outside the caller's org/project scope.
+async fn require_sla_rule(
+    pool: &PgPool,
+    auth: &AuthUser,
+    id: Uuid,
+) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
+    let row: Option<(String, Uuid)> = sqlx::query_as(
+        "SELECT p.org_id, p.id FROM sla_rules r JOIN projects p ON p.id = r.project_id WHERE r.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, %id, "sla_rules scope lookup failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Database error"})))
+    })?;
+    match row {
+        Some((org_id, project_id)) if issue_scope::entitled(auth, &org_id, project_id).await => Ok(org_id),
+        _ => Err((StatusCode::NOT_FOUND, Json(json!({"error": "SLA rule not found"})))),
+    }
 }
