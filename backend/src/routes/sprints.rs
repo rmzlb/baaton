@@ -79,8 +79,10 @@ pub async fn create(
     Path(project_id): Path<Uuid>,
     Json(body): Json<CreateSprint>,
 ) -> Result<Json<ApiResponse<Sprint>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    // The project must belong to an org the caller is entitled to, and the row
+    // is filed under that owning org, not the caller's home org (BAA-34).
+    let owner_org = crate::routes::issue_scope::require_project(&pool, &auth, project_id).await?;
+    let org_id = owner_org.as_str();
 
     if body.name.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Sprint name is required"}))));
