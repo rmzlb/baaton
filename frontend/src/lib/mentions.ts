@@ -34,6 +34,15 @@ export function mentionToken(name: string, userId: string): string {
 }
 
 /**
+ * What a mention chip shows: the stored name, or for an email only the part
+ * before the @ (`eugenie.odinet@gmail.com` → `eugenie.odinet`).
+ */
+export function mentionChipLabel(name: string): string {
+  const at = name.indexOf('@');
+  return at > 0 && !name.includes(' ') ? name.slice(0, at) : name;
+}
+
+/**
  * The `@query` being typed right before the caret, if any. A mention starts at
  * the beginning of the text or after whitespace, so emails (`a@b`) don't open
  * the picker.

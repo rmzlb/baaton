@@ -1981,15 +1981,6 @@ interface CommentSectionProps {
 }
 
 function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, isPending, error, members, t, issueId, currentUserId, isAdmin, onEditComment, onDeleteComment }: CommentSectionProps) {
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-        onSubmit();
-      }
-    },
-    [onSubmit],
-  );
-
   return (
     <div>
       <label className="flex items-center gap-1.5 text-[10px] text-muted mb-2 uppercase tracking-wider font-medium">
@@ -2025,7 +2016,7 @@ function CommentSection({ comments, commentText, onCommentTextChange, onSubmit, 
           ariaLabel={t('issueDrawer.addComment', { defaultValue: 'Write a comment' })}
           rows={2}
           className="w-full bg-transparent text-xs text-primary placeholder-muted outline-none resize-none"
-          onKeyDown={handleKeyDown}
+          onSubmit={onSubmit}
         />
         {error && (
           <p role="alert" className="mt-1 flex items-start gap-1 text-[11px] text-red-400">
@@ -2289,10 +2280,8 @@ function CommentCard({
             value={draft}
             onChange={setDraft}
             members={members}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave();
-              if (e.key === 'Escape') handleCancel();
-            }}
+            onSubmit={handleSave}
+            onEscape={handleCancel}
             ariaLabel={tr('issueDrawer.editComment', 'Edit comment')}
             rows={3}
             autoFocus
