@@ -164,7 +164,7 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs text-primary">{memberLabel(m)}</span>
-                  {m.email && <span className="block truncate text-[10px] text-muted">{m.email}</span>}
+                  {m.email && m.email !== memberLabel(m) && <span className="block truncate text-[10px] text-muted">{m.email}</span>}
                 </span>
               </button>
             ))

@@ -88,6 +88,16 @@ interface IssueDrawerProps {
   onClose: () => void;
 }
 
+/**
+ * Whether a document mousedown happened outside `el`. Uses the path captured when
+ * the event was dispatched: a React handler may already have removed the target
+ * from the DOM (e.g. choosing a mention), and `contains(target)` would then
+ * wrongly report a click outside.
+ */
+function isOutside(e: MouseEvent, el: HTMLElement): boolean {
+  return !e.composedPath().includes(el);
+}
+
 /* ── Main Component ────────────────────────────── */
 
 export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDrawerProps) {
@@ -346,7 +356,7 @@ export function IssueDrawer({ issueId, statuses, projectId, onClose }: IssueDraw
     const handler = (e: MouseEvent) => {
       // Don't close drawer when lightbox, viewer or annotator is open
       if (lightboxIndex !== null || viewerAttachment !== null || annotatingIndex !== null) return;
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      if (panelRef.current && isOutside(e, panelRef.current)) {
         descriptionIsDirty.current ? setShowUnsavedModal(true) : onClose();
       }
     };
@@ -2058,7 +2068,7 @@ function DropdownSelect({
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      if (ref.current && isOutside(e, ref.current)) {
         setOpen(false);
       }
     };
