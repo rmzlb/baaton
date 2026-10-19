@@ -875,14 +875,7 @@ pub async fn list_all(
     State(pool): State<PgPool>,
     Query(params): Query<ListParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
-
-    let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
+    let (_current_org_id, all_org_ids) = require_user_org_scope(&pool, &auth).await?;
 
     let limit = params.effective_limit();
     let offset = params.offset.unwrap_or(0);
@@ -954,6 +947,7 @@ pub async fn list_all(
           AND ($9::text IS NULL OR i.created_at > $9::timestamptz)
           AND ($10::text IS NULL OR i.created_at < $10::timestamptz)
           AND (NOT $12::boolean OR COALESCE(i.status_category, '') NOT IN ('completed', 'canceled'))
+          AND (cardinality($13::uuid[]) = 0 OR i.project_id = ANY($13))
           {}
         ORDER BY {} {}
         LIMIT $6 OFFSET $7
@@ -977,6 +971,7 @@ pub async fn list_all(
         .bind(&params.created_before) // $10
         .bind(&cursor_ts) // $11 — safe parameterized cursor
         .bind(exclude_done) // $12
+        .bind(&auth.scoped_project_ids) // $13 — project-scoped keys see only their projects
         .fetch_all(&pool)
         .await
         .unwrap_or_else(|e| {
@@ -2939,15 +2934,8 @@ pub async fn list_mine(
     State(pool): State<PgPool>,
     Query(params): Query<MineParams>,
 ) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
-
     // Cross-org: show tasks assigned to user from ALL orgs
-    let all_org_ids = resolve_user_org_ids(&pool, org_id, &auth.user_id).await;
+    let (_current_org_id, all_org_ids) = require_user_org_scope(&pool, &auth).await?;
 
     let exclude_done = params.exclude_done.unwrap_or(false);
 
@@ -2958,6 +2946,7 @@ pub async fn list_mine(
         JOIN projects p ON p.id = i.project_id
         WHERE $1 = ANY(i.assignee_ids) AND p.org_id = ANY($2)
           AND (NOT $3::boolean OR COALESCE(i.status_category, '') NOT IN ('completed', 'canceled'))
+          AND (cardinality($4::uuid[]) = 0 OR i.project_id = ANY($4))
         ORDER BY
             CASE i.priority
                 WHEN 'urgent' THEN 0
@@ -2973,6 +2962,7 @@ pub async fn list_mine(
     .bind(&params.assignee_id)
     .bind(&all_org_ids)
     .bind(exclude_done)
+    .bind(&auth.scoped_project_ids)
     .fetch_all(&pool)
     .await
     .unwrap_or_else(|e| {
