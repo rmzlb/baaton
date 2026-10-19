@@ -1,3 +1,4 @@
+use crate::routes::issue_scope;
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -499,28 +500,7 @@ pub async fn list_children(
     State(pool): State<PgPool>,
     Path(parent_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
-
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1 AND p.org_id = $2)"
-    )
-    .bind(parent_id)
-    .bind(org_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap_or(false);
-
-    if !exists {
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "Parent issue not found"})),
-        ));
-    }
+    issue_scope::require(&pool, &auth, parent_id, "Parent issue").await?;
 
     let mut children = sqlx::query_as::<_, Issue>(&format!(
         "SELECT {cols} FROM issues i WHERE i.parent_id = $1 ORDER BY i.created_at ASC",
@@ -1015,34 +995,8 @@ pub async fn list_by_project(
     Path(project_id): Path<Uuid>,
     Query(params): Query<ListParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let project_org_id: Option<String> =
-        sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1")
-            .bind(project_id)
-            .fetch_optional(&pool)
-            .await
-            .map_err(|e| internal_err(e))?;
-
-    match project_org_id {
-        Some(org_id) if auth.has_org_access(&org_id) => org_id,
-        Some(_) => {
-            return Err((
-                StatusCode::FORBIDDEN,
-                Json(json!({
-                    "error": "Project exists but your API key does not have access to it. Check that the key organization scope is correct.",
-                    "hint": "List your accessible projects with GET /projects"
-                })),
-            ));
-        }
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "error": "Project not found",
-                    "hint": "List your accessible projects with GET /projects"
-                })),
-            ));
-        }
-    };
+    // Owning org + the key's project scope; a human member of the owning org is accepted.
+    issue_scope::require_project(&pool, &auth, project_id).await?;
 
     let limit = params.effective_limit();
     let offset = params.offset.unwrap_or(0);
@@ -1938,37 +1892,19 @@ pub async fn get_one(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<IssueDetail>>, (StatusCode, Json<serde_json::Value>)> {
     let start = std::time::Instant::now();
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
-
-    // Use all user org IDs (cross-org) so the drawer works from /all-issues.
-    // API keys carry their own org scope (incl. all_dynamic); the Clerk-based
-    // resolver no-ops for `apikey:` pseudo-users and would collapse access to a
-    // single org, so honor scoped_org_ids directly for keys.
-    let all_org_ids = if auth.user_id.starts_with("apikey:") {
-        if auth.scoped_org_ids.is_empty() {
-            vec![org_id.to_string()]
-        } else {
-            auth.scoped_org_ids.clone()
-        }
-    } else {
-        resolve_user_org_ids(&pool, org_id, &auth.user_id).await
-    };
+    // Same entitlement as writes: owning org, the key's project scope, and a
+    // human member of the owning org (cross-org drawer from /all-issues).
+    issue_scope::require(&pool, &auth, id, "Issue").await?;
 
     let issue = sqlx::query_as::<_, Issue>(
         r#"
         SELECT i.*, p.org_id
         FROM issues i
         JOIN projects p ON p.id = i.project_id
-        WHERE i.id = $1 AND p.org_id = ANY($2)
+        WHERE i.id = $1
         "#,
     )
     .bind(id)
-    .bind(&all_org_ids)
     .fetch_one(&pool)
     .await
     .map_err(|_| {
@@ -3295,6 +3231,7 @@ pub async fn search(
         WHERE i.search_vector @@ plainto_tsquery('english', $1)
           AND p.org_id = $2
           AND ($3::uuid IS NULL OR i.project_id = $3)
+          AND (cardinality($7::uuid[]) = 0 OR i.project_id = ANY($7))
           AND ($4::text IS NULL OR i.status = $4)
           AND (NOT $6::boolean OR (i.due_date < CURRENT_DATE AND i.status_category NOT IN ('completed', 'canceled')))
         ORDER BY ts_rank(i.search_vector, plainto_tsquery('english', $1)) DESC
@@ -3307,6 +3244,7 @@ pub async fn search(
     .bind(&params.status)
     .bind(limit)
     .bind(is_overdue)
+    .bind(&auth.scoped_project_ids) // $7 — project-scoped keys see only their projects
     .fetch_all(&pool)
     .await
     .map_err(|e| internal_err(e))?;
@@ -3413,6 +3351,7 @@ pub async fn search_global(
             OR p.prefix ILIKE $1 || '%'
           )
           AND ($3::uuid IS NULL OR i.project_id = $3)
+          AND (cardinality($8::uuid[]) = 0 OR i.project_id = ANY($8))
           AND ($4::text IS NULL OR i.status = $4)
           AND (NOT $6::boolean OR (i.due_date < CURRENT_DATE AND i.status_category NOT IN ('completed', 'canceled')))
         ORDER BY i.id, i.created_at DESC
@@ -3426,6 +3365,7 @@ pub async fn search_global(
     .bind(limit)
     .bind(is_overdue)
     .bind(&tsquery_str)
+    .bind(&auth.scoped_project_ids) // $8 — project-scoped keys see only their projects
     .fetch_all(&pool)
     .await
     .map_err(|e| internal_err(e))?;
