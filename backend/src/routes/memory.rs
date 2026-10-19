@@ -9,6 +9,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
+use crate::routes::issue_scope;
 use crate::models::{ApiResponse, CreateMemory, Memory};
 
 #[derive(Debug, Deserialize)]
@@ -99,42 +100,6 @@ fn normalize_confidence(confidence: Option<f64>) -> f64 {
     confidence.unwrap_or(0.8).clamp(0.0, 1.0)
 }
 
-async fn project_org_id(
-    pool: &PgPool,
-    project_id: Uuid,
-    org_ids: &[String],
-) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT org_id FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
-    )
-    .bind(project_id)
-    .bind(org_ids)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": e.to_string()})),
-        )
-    })?
-    .ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "Project not found"})),
-        )
-    })
-}
-
-fn auth_org_ids(auth: &AuthUser) -> Result<Vec<String>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
-    Ok(vec![org_id.to_string()])
-}
-
 pub async fn insert_memory(pool: &PgPool, input: NewMemory) -> Result<Memory, sqlx::Error> {
     sqlx::query_as::<_, Memory>(
         r#"
@@ -165,8 +130,7 @@ pub async fn create_project_memory(
     Path(project_id): Path<Uuid>,
     Json(body): Json<CreateMemory>,
 ) -> Result<Json<ApiResponse<Memory>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_ids = auth_org_ids(&auth)?;
-    let org_id = project_org_id(&pool, project_id, &org_ids).await?;
+    let org_id = issue_scope::require_project(&pool, &auth, project_id).await?;
     let source = body.source.unwrap_or_else(|| "manual".to_string());
     let kind = body.kind.unwrap_or_else(|| "fact".to_string());
     validate_source(&source)?;
@@ -212,8 +176,7 @@ pub async fn list_project_memory(
     Path(project_id): Path<Uuid>,
     Query(query): Query<ListMemoryQuery>,
 ) -> Result<Json<ApiResponse<Vec<Memory>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_ids = auth_org_ids(&auth)?;
-    let org_id = project_org_id(&pool, project_id, &org_ids).await?;
+    let org_id = issue_scope::require_project(&pool, &auth, project_id).await?;
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
 
     if let Some(kind) = query.kind.as_deref() {
@@ -262,19 +225,18 @@ pub async fn delete_project_memory(
     State(pool): State<PgPool>,
     Path((project_id, memory_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_ids = auth_org_ids(&auth)?;
-    project_org_id(&pool, project_id, &org_ids).await?;
+    let org_id = issue_scope::require_project(&pool, &auth, project_id).await?;
 
     let deleted_id: Option<Uuid> = sqlx::query_scalar(
         r#"
         DELETE FROM memories
-        WHERE id = $1 AND project_id = $2 AND org_id = ANY($3::text[])
+        WHERE id = $1 AND project_id = $2 AND org_id = $3
         RETURNING id
         "#,
     )
     .bind(memory_id)
     .bind(project_id)
-    .bind(&org_ids)
+    .bind(&org_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| {
@@ -298,7 +260,6 @@ pub async fn search_memory(
     State(pool): State<PgPool>,
     Json(body): Json<SearchMemoryRequest>,
 ) -> Result<Json<ApiResponse<Vec<Memory>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_ids = auth_org_ids(&auth)?;
     let limit = body.limit.unwrap_or(20).clamp(1, 100);
 
     if let Some(kind) = body.kind.as_deref() {
@@ -318,11 +279,21 @@ pub async fn search_memory(
         _ => None,
     };
 
+    // A named project goes through the project rule (owning org, project scope,
+    // human member of the owning org). Otherwise: the caller's scoped orgs, and
+    // for a project-limited key only its projects; org-level memories
+    // (project_id NULL) are not visible to such a key.
+    let org_ids = match project_id {
+        Some(pid) => vec![issue_scope::require_project(&pool, &auth, pid).await?],
+        None => auth.scoped_org_ids.clone(),
+    };
+
     let memories = sqlx::query_as::<_, Memory>(
         r#"
         SELECT * FROM memories
         WHERE org_id = ANY($1::text[])
           AND ($2::uuid IS NULL OR project_id = $2)
+          AND (cardinality($8::uuid[]) = 0 OR project_id = ANY($8))
           AND ($3::text IS NULL OR kind = $3)
           AND ($4::text IS NULL OR source = $4)
           AND ($5::text[] IS NULL OR tags && $5)
@@ -346,6 +317,7 @@ pub async fn search_memory(
     .bind(&body.tags)
     .bind(&body.q)
     .bind(limit)
+    .bind(&auth.scoped_project_ids)
     .fetch_all(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;

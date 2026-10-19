@@ -75,12 +75,8 @@ pub async fn refresh_github(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
+    let owner_org = issue_scope::require_project(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let row = sqlx::query_as::<_, (Option<String>,)>(
         "SELECT github_repo_url FROM projects WHERE id = $1 AND org_id = $2",
@@ -417,12 +413,8 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
+    let owner_org = issue_scope::require_project(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let auto_assign_mode = body.get("auto_assign_mode").and_then(|v| v.as_str());
     let agent_runs_public_default = body
@@ -519,12 +511,8 @@ pub async fn get_public_submit_settings(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<PublicSubmitSettings>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
+    let owner_org = issue_scope::require_project(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let row = sqlx::query_as::<_, (bool, Option<String>, String)>(
         "SELECT public_submit_enabled, public_submit_token, slug FROM projects WHERE id = $1 AND org_id = $2",
@@ -555,12 +543,8 @@ pub async fn update_public_submit_settings(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdatePublicSubmitSettings>,
 ) -> Result<Json<ApiResponse<PublicSubmitSettings>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
+    let owner_org = issue_scope::require_project(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let current = sqlx::query_as::<_, (bool, Option<String>, String)>(
         "SELECT public_submit_enabled, public_submit_token, slug FROM projects WHERE id = $1 AND org_id = $2 FOR UPDATE",
@@ -743,12 +727,8 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
+    let owner_org = issue_scope::require_project(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let result = sqlx::query("DELETE FROM projects WHERE id = $1 AND org_id = $2")
         .bind(id)
@@ -784,12 +764,8 @@ pub async fn get_auto_assign_settings(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ProjectAutoAssignSettings>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
+    let owner_org = issue_scope::require_project(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let settings = sqlx::query_as::<_, ProjectAutoAssignSettings>(
         r#"
@@ -824,12 +800,8 @@ pub async fn update_auto_assign_settings(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateProjectAutoAssignSettings>,
 ) -> Result<Json<ApiResponse<ProjectAutoAssignSettings>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
+    let owner_org = issue_scope::require_project(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     if !matches!(
         body.auto_assign_mode.as_str(),
@@ -880,12 +852,8 @@ pub async fn get_notification_settings(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ProjectNotificationSettings>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
+    let owner_org = issue_scope::require_project(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     let settings = sqlx::query_as::<_, ProjectNotificationSettings>(
         r#"
@@ -924,12 +892,8 @@ pub async fn update_notification_settings(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateProjectNotificationSettings>,
 ) -> Result<Json<ApiResponse<ProjectNotificationSettings>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref().ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Organization required"})),
-        )
-    })?;
+    let owner_org = issue_scope::require_project(&pool, &auth, id).await?;
+    let org_id = owner_org.as_str();
 
     // Validate requested status keys against *this project's* statuses, not the
     // core list: projects may define custom statuses, and a silently-ignored key
