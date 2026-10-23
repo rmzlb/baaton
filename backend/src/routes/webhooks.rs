@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
+use crate::routes::issue_scope;
 
 // ─── Event types ────────────────────────────────────
 
@@ -54,6 +55,8 @@ pub struct Webhook {
     pub org_id: String,
     pub url: String,
     pub event_types: Vec<String>,
+    /// Projects whose events are delivered; empty = the whole organization.
+    pub project_ids: Vec<Uuid>,
     /// Secret is always masked after creation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secret: Option<String>,
@@ -71,6 +74,7 @@ pub struct WebhookPublic {
     pub org_id: String,
     pub url: String,
     pub event_types: Vec<String>,
+    pub project_ids: Vec<Uuid>,
     pub enabled: bool,
     pub failure_count: i32,
     pub last_error: Option<String>,
@@ -84,6 +88,9 @@ pub struct CreateWebhookRequest {
     pub url: String,
     #[serde(default)]
     pub event_types: Vec<String>,
+    /// Only deliver events of these projects; empty = the whole organization.
+    #[serde(default)]
+    pub project_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,6 +98,7 @@ pub struct UpdateWebhookRequest {
     pub url: Option<String>,
     pub event_types: Option<Vec<String>>,
     pub enabled: Option<bool>,
+    pub project_ids: Option<Vec<Uuid>>,
 }
 
 // ─── Helpers ────────────────────────────────────────
@@ -115,6 +123,51 @@ fn validate_event_types(types: &[String]) -> Result<(), (StatusCode, Json<serde_
     Ok(())
 }
 
+/// Validate a webhook's project filter against the caller (BAA-36).
+///
+/// Every listed project must belong to the webhook's org and be within the
+/// caller's scope (404 otherwise, like any out-of-scope project). A caller
+/// limited to some projects must list a non-empty subset of them: a key limited
+/// to project A cannot subscribe an endpoint to the whole organization (403).
+async fn validate_project_filter(
+    pool: &PgPool,
+    auth: &AuthUser,
+    org_id: &str,
+    project_ids: &[Uuid],
+) -> Result<Vec<Uuid>, (StatusCode, Json<serde_json::Value>)> {
+    let mut unique: Vec<Uuid> = Vec::with_capacity(project_ids.len());
+    for id in project_ids {
+        if !unique.contains(id) {
+            unique.push(*id);
+        }
+    }
+    for id in &unique {
+        let owner = issue_scope::require_project(pool, auth, *id).await?;
+        if owner != org_id {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Project not found"})),
+            ));
+        }
+    }
+    if !issue_scope::delegates_within_scope(auth, &unique) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": "An API key limited to projects can only manage webhooks limited to those projects: set project_ids to some of them"
+            })),
+        ));
+    }
+    Ok(unique)
+}
+
+/// SQL predicate (on `webhooks`) for the hooks a caller may see and manage:
+/// all of the org for an unscoped caller, otherwise only hooks limited to a
+/// subset of the caller's projects. `$param` binds `auth.scoped_project_ids`.
+fn visible_to_caller(param: u8) -> String {
+    issue_scope::sql_delegated_within_scope("project_ids", param)
+}
+
 // ─── Retry backoff ──────────────────────────────────
 
 /// Retry intervals: 1 min, 15 min, 1 hour, 6 hours
@@ -131,14 +184,27 @@ fn retry_delay_seconds(attempt: i32) -> i64 {
 
 /// Dispatch an event to all enabled webhooks for the org.
 /// Creates delivery records for each webhook for retry tracking.
-pub async fn dispatch_event(pool: PgPool, org_id: String, event_type: &str, payload: serde_json::Value) {
+///
+/// `project_id` is the project the event belongs to. A webhook limited to some
+/// projects only receives their events; an event with no project (`None`) only
+/// reaches webhooks that cover the whole organization.
+pub async fn dispatch_event(
+    pool: PgPool,
+    org_id: String,
+    project_id: Option<Uuid>,
+    event_type: &str,
+    payload: serde_json::Value,
+) {
     let event_type = event_type.to_string();
     tokio::spawn(async move {
         let hooks = sqlx::query_as::<_, (Uuid, String, String)>(
-            "SELECT id, url, secret FROM webhooks WHERE org_id = $1 AND enabled = true AND $2 = ANY(event_types)"
+            "SELECT id, url, secret FROM webhooks \
+             WHERE org_id = $1 AND enabled = true AND $2 = ANY(event_types) \
+               AND (cardinality(project_ids) = 0 OR $3 = ANY(project_ids))",
         )
         .bind(&org_id)
         .bind(&event_type)
+        .bind(project_id)
         .fetch_all(&pool)
         .await;
 
@@ -440,6 +506,8 @@ pub async fn create(
 
     validate_event_types(&body.event_types)?;
 
+    let project_ids = validate_project_filter(&pool, &auth, org_id, &body.project_ids).await?;
+
     let event_types = if body.event_types.is_empty() {
         VALID_EVENT_TYPES.iter().map(|s| s.to_string()).collect::<Vec<_>>()
     } else {
@@ -450,8 +518,8 @@ pub async fn create(
 
     let hook = sqlx::query_as::<_, Webhook>(
         r#"
-        INSERT INTO webhooks (org_id, url, event_types, secret)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO webhooks (org_id, url, event_types, secret, project_ids)
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING *
         "#,
     )
@@ -459,6 +527,7 @@ pub async fn create(
     .bind(body.url.trim())
     .bind(&event_types)
     .bind(&secret)
+    .bind(&project_ids)
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -471,6 +540,7 @@ pub async fn create(
             "org_id": hook.org_id,
             "url": hook.url,
             "event_types": hook.event_types,
+            "project_ids": hook.project_ids,
             "secret": secret,
             "enabled": hook.enabled,
             "failure_count": hook.failure_count,
@@ -503,10 +573,13 @@ pub async fn list(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    let hooks = sqlx::query_as::<_, WebhookPublic>(
-        "SELECT id, org_id, url, event_types, enabled, failure_count, last_error, last_delivered_at, created_at, updated_at FROM webhooks WHERE org_id = $1 ORDER BY created_at DESC"
-    )
+    let hooks = sqlx::query_as::<_, WebhookPublic>(&format!(
+        "SELECT id, org_id, url, event_types, project_ids, enabled, failure_count, last_error, last_delivered_at, created_at, updated_at \
+         FROM webhooks WHERE org_id = $1 AND {} ORDER BY created_at DESC",
+        visible_to_caller(2),
+    ))
     .bind(org_id)
+    .bind(&auth.scoped_project_ids)
     .fetch_all(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -523,11 +596,14 @@ pub async fn get_one(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    let hook = sqlx::query_as::<_, WebhookPublic>(
-        "SELECT id, org_id, url, event_types, enabled, failure_count, last_error, last_delivered_at, created_at, updated_at FROM webhooks WHERE id = $1 AND org_id = $2"
-    )
+    let hook = sqlx::query_as::<_, WebhookPublic>(&format!(
+        "SELECT id, org_id, url, event_types, project_ids, enabled, failure_count, last_error, last_delivered_at, created_at, updated_at \
+         FROM webhooks WHERE id = $1 AND org_id = $2 AND {}",
+        visible_to_caller(3),
+    ))
     .bind(id)
     .bind(org_id)
+    .bind(&auth.scoped_project_ids)
     .fetch_optional(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
@@ -546,12 +622,16 @@ pub async fn update(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM webhooks WHERE id = $1 AND org_id = $2)")
-        .bind(id)
-        .bind(org_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(false);
+    let exists: bool = sqlx::query_scalar(&format!(
+        "SELECT EXISTS(SELECT 1 FROM webhooks WHERE id = $1 AND org_id = $2 AND {})",
+        visible_to_caller(3),
+    ))
+    .bind(id)
+    .bind(org_id)
+    .bind(&auth.scoped_project_ids)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
 
     if !exists {
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Webhook not found"}))));
@@ -567,15 +647,21 @@ pub async fn update(
         validate_event_types(types)?;
     }
 
+    let project_ids = match body.project_ids {
+        Some(ref ids) => Some(validate_project_filter(&pool, &auth, org_id, ids).await?),
+        None => None,
+    };
+
     let hook = sqlx::query_as::<_, WebhookPublic>(
         r#"
         UPDATE webhooks SET
             url = COALESCE($2, url),
             event_types = COALESCE($3, event_types),
             enabled = COALESCE($4, enabled),
+            project_ids = COALESCE($6, project_ids),
             updated_at = now()
         WHERE id = $1 AND org_id = $5
-        RETURNING id, org_id, url, event_types, enabled, failure_count, last_error, last_delivered_at, created_at, updated_at
+        RETURNING id, org_id, url, event_types, project_ids, enabled, failure_count, last_error, last_delivered_at, created_at, updated_at
         "#,
     )
     .bind(id)
@@ -583,6 +669,7 @@ pub async fn update(
     .bind(&body.event_types)
     .bind(body.enabled)
     .bind(org_id)
+    .bind(&project_ids)
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
@@ -599,12 +686,21 @@ pub async fn remove(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    let result = sqlx::query("DELETE FROM webhooks WHERE id = $1 AND org_id = $2")
-        .bind(id)
-        .bind(org_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+    let result = sqlx::query(&format!(
+        "DELETE FROM webhooks WHERE id = $1 AND org_id = $2 AND {}",
+        visible_to_caller(3),
+    ))
+    .bind(id)
+    .bind(org_id)
+    .bind(&auth.scoped_project_ids)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
 
     if result.rows_affected() == 0 {
         return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Webhook not found"}))));

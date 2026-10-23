@@ -40,6 +40,8 @@ pub async fn start_install(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<InstallStartResponse>>, StatusCode> {
+    // The GitHub installation belongs to the whole org (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth).map_err(|(code, _)| code)?;
     let org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
 
     let state = generate_install_state().map_err(|e| {
@@ -228,6 +230,8 @@ pub async fn get_installation(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Option<GitHubInstallation>>>, StatusCode> {
+    // The GitHub installation belongs to the whole org (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth).map_err(|(code, _)| code)?;
     let org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
 
     let installation = sqlx::query_as::<_, GitHubInstallation>(
@@ -254,6 +258,8 @@ pub async fn disconnect(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<()>>, StatusCode> {
+    // The GitHub installation belongs to the whole org (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth).map_err(|(code, _)| code)?;
     let org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
 
     sqlx::query(

@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
 use crate::permissions::ADMIN_FULL;
+use crate::routes::issue_scope;
 use crate::routes::issues::fetch_user_org_ids;
 
 const VALID_PERMISSIONS: &[&str] = &[
@@ -261,6 +262,28 @@ fn enforce_no_escalation(
     ))
 }
 
+/// A caller limited to some projects cannot mint, widen or take over a key
+/// beyond them (BAA-36): `requested` must be a non-empty subset of its own
+/// projects. An unscoped caller is not restricted here.
+fn enforce_project_narrowing(
+    auth: &AuthUser,
+    requested: &[Uuid],
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if issue_scope::delegates_within_scope(auth, requested) {
+        return Ok(());
+    }
+    tracing::warn!(
+        actor = %auth.user_id,
+        requested = ?requested,
+        held = ?auth.scoped_project_ids,
+        "api_keys.project_escalation_refused"
+    );
+    Err((
+        StatusCode::FORBIDDEN,
+        Json(json!({"error": "Cannot grant access to projects you do not hold"})),
+    ))
+}
+
 fn unique_org_ids(org_ids: &[String]) -> Vec<String> {
     let mut unique = Vec::new();
     for org_id in org_ids {
@@ -448,13 +471,15 @@ pub async fn list(
 
     let manageable_org_ids = fetch_manageable_org_ids(&auth).await;
     let sql = format!(
-        "{} WHERE k.created_by = $1 OR (k.created_by IS NULL AND k.org_id = ANY($2)) ORDER BY k.created_at DESC",
-        API_KEY_ROW_SELECT
+        "{} WHERE (k.created_by = $1 OR (k.created_by IS NULL AND k.org_id = ANY($2))) AND {} ORDER BY k.created_at DESC",
+        API_KEY_ROW_SELECT,
+        issue_scope::sql_delegated_within_scope("COALESCE(k.project_ids, '{}')", 3),
     );
 
     let mut keys = sqlx::query_as::<_, ApiKeyRow>(&sql)
         .bind(&auth.user_id)
         .bind(&manageable_org_ids)
+        .bind(&auth.scoped_project_ids)
         .fetch_all(&pool)
         .await
         .map_err(|e| {
@@ -489,6 +514,7 @@ pub async fn create(
     validate_permissions(&body.permissions)
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
     enforce_no_escalation(&auth, &body.permissions)?;
+    enforce_project_narrowing(&auth, &body.project_ids)?;
 
     validate_org_scope_mode(&body.org_scope_mode)
         .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))))?;
@@ -680,6 +706,15 @@ pub async fn update(
     };
 
     let effective_project_ids = body.project_ids.clone().unwrap_or(existing_row.2.clone());
+    // A key wider than a project-limited caller is not its to edit, and is
+    // hidden from it like in `list` (BAA-36); widening one is refused.
+    if !issue_scope::delegates_within_scope(&auth, &existing_row.2) {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "API key not found"})),
+        ));
+    }
+    enforce_project_narrowing(&auth, &effective_project_ids)?;
     validate_project_scope(&pool, &effective_project_ids, &scoped_org_ids).await?;
     let anchor_org_id = auth
         .org_id
@@ -766,15 +801,19 @@ pub async fn regenerate(
     let manageable_org_ids = fetch_manageable_org_ids(&auth).await;
     let (full_key, prefix, hash) = generate_api_key();
 
-    let result = sqlx::query(
+    // A project-limited caller cannot regenerate, and so obtain the secret of,
+    // a key wider than itself (BAA-36).
+    let result = sqlx::query(&format!(
         "UPDATE api_keys SET key_hash = $1, key_prefix = $2 \
-         WHERE id = $3 AND (created_by = $4 OR (created_by IS NULL AND org_id = ANY($5)))",
-    )
+         WHERE id = $3 AND (created_by = $4 OR (created_by IS NULL AND org_id = ANY($5))) AND {}",
+        issue_scope::sql_delegated_within_scope("COALESCE(project_ids, '{}')", 6),
+    ))
     .bind(&hash)
     .bind(&prefix)
     .bind(key_id)
     .bind(&auth.user_id)
     .bind(&manageable_org_ids)
+    .bind(&auth.scoped_project_ids)
     .execute(&pool)
     .await
     .map_err(|e| {
@@ -818,12 +857,14 @@ pub async fn remove(
 
     let manageable_org_ids = fetch_manageable_org_ids(&auth).await;
 
-    let result = sqlx::query(
-        "DELETE FROM api_keys WHERE id = $1 AND (created_by = $2 OR (created_by IS NULL AND org_id = ANY($3)))"
-    )
+    let result = sqlx::query(&format!(
+        "DELETE FROM api_keys WHERE id = $1 AND (created_by = $2 OR (created_by IS NULL AND org_id = ANY($3))) AND {}",
+        issue_scope::sql_delegated_within_scope("COALESCE(project_ids, '{}')", 4),
+    ))
     .bind(key_id)
     .bind(&auth.user_id)
     .bind(&manageable_org_ids)
+    .bind(&auth.scoped_project_ids)
     .execute(&pool)
     .await
     .map_err(|e| {

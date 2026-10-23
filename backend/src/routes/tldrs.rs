@@ -143,6 +143,7 @@ pub async fn create(
     crate::routes::webhooks::dispatch_event(
         pool.clone(),
         org_id.to_string(),
+        Some(scope.project_id),
         "tldr.created",
         serde_json::to_value(&tldr).unwrap_or_default(),
     )

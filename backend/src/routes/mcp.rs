@@ -650,11 +650,13 @@ async fn tool_list_projects(auth: &AuthUser, pool: &PgPool, args: &Value) -> Res
         "SELECT id, org_id, name, slug, description, prefix, statuses, created_at
          FROM projects
          WHERE org_id = ANY($1)
+           AND (cardinality($3::uuid[]) = 0 OR id = ANY($3))
          ORDER BY created_at DESC
          LIMIT $2",
     )
     .bind(org_ids)
     .bind(limit)
+    .bind(&auth.scoped_project_ids) // a project-limited key lists its projects only (BAA-36)
     .fetch_all(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;
@@ -718,6 +720,7 @@ async fn tool_list_issues(auth: &AuthUser, pool: &PgPool, args: &Value) -> Resul
            AND ($4::text IS NULL OR i.priority = $4)
            AND ($5::text IS NULL OR $5 = ANY(i.assignee_ids))
            AND i.archived = $6
+           AND (cardinality($8::uuid[]) = 0 OR i.project_id = ANY($8))
          ORDER BY i.updated_at DESC
          LIMIT $7",
     )
@@ -728,6 +731,7 @@ async fn tool_list_issues(auth: &AuthUser, pool: &PgPool, args: &Value) -> Resul
     .bind(&assignee_id)
     .bind(archived)
     .bind(limit)
+    .bind(&auth.scoped_project_ids) // without project_id, still only the key's projects (BAA-36)
     .fetch_all(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;
@@ -774,6 +778,7 @@ async fn tool_search_issues(auth: &AuthUser, pool: &PgPool, args: &Value) -> Res
          JOIN projects p ON p.id = i.project_id
          WHERE p.org_id = ANY($1)
            AND ($2::uuid IS NULL OR i.project_id = $2)
+           AND (cardinality($6::uuid[]) = 0 OR i.project_id = ANY($6))
            AND i.archived = false
            AND (
                i.search_vector @@ to_tsquery('english', $3)
@@ -787,6 +792,7 @@ async fn tool_search_issues(auth: &AuthUser, pool: &PgPool, args: &Value) -> Res
     .bind(&tsquery)
     .bind(format!("%{}%", q))
     .bind(limit)
+    .bind(&auth.scoped_project_ids) // without project_id, still only the key's projects (BAA-36)
     .fetch_all(pool)
     .await
     .map_err(|e| format!("DB error: {}", e))?;

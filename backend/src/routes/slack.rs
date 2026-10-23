@@ -39,6 +39,8 @@ pub async fn list(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Vec<SlackIntegration>>>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref().ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
@@ -63,6 +65,8 @@ pub async fn create(
     State(pool): State<PgPool>,
     Json(body): Json<CreateSlackIntegration>,
 ) -> Result<Json<ApiResponse<SlackIntegration>>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref().ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
@@ -95,6 +99,8 @@ pub async fn update_channels(
     axum::extract::Path(id): axum::extract::Path<uuid::Uuid>,
     Json(body): Json<UpdateChannelMapping>,
 ) -> Result<Json<ApiResponse<SlackIntegration>>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref().ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
@@ -134,6 +140,8 @@ pub async fn remove(
     State(pool): State<PgPool>,
     axum::extract::Path(id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref().ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,

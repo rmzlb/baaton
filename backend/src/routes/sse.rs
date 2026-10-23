@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
+use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 
@@ -27,6 +28,9 @@ pub struct SseEvent {
     pub id: u64,
     /// Organization scope — only clients in this org receive the event.
     pub org_id: String,
+    /// Project the event belongs to, if any. A client limited to some projects
+    /// only receives events of those projects (BAA-36).
+    pub project_id: Option<Uuid>,
     /// Event type, e.g. "issue.created", "comment.created", "sprint.updated".
     pub event_type: String,
     /// JSON-serialized payload.
@@ -58,6 +62,7 @@ pub async fn event_stream(
 ) -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
     let rx = tx.subscribe();
     let user_org_id = auth.org_id.clone().unwrap_or_default();
+    let scoped_project_ids = auth.scoped_project_ids.clone();
 
     // Parse Last-Event-ID for reconnection support
     let last_event_id: u64 = headers
@@ -74,6 +79,9 @@ pub async fn event_stream(
             Ok(evt) => {
                 // Filter by org
                 if evt.org_id != user_org_id {
+                    return None;
+                }
+                if !project_in_scope(&scoped_project_ids, evt.project_id) {
                     return None;
                 }
                 // Skip events already seen (reconnection)
@@ -127,18 +135,33 @@ pub async fn event_stream(
     )
 }
 
+/// Whether a client limited to `scoped_project_ids` (empty = whole org) may
+/// receive an event of `project_id`. An event with no project is org-level
+/// and stays hidden from a project-limited client.
+fn project_in_scope(scoped_project_ids: &[Uuid], project_id: Option<Uuid>) -> bool {
+    scoped_project_ids.is_empty() || project_id.is_some_and(|id| scoped_project_ids.contains(&id))
+}
+
 /// Broadcast a typed event to all connected SSE clients in an org.
 ///
 /// # Arguments
 /// * `tx` - The shared broadcast sender
 /// * `org_id` - Organization scope
+/// * `project_id` - Project the event belongs to (`None` for org-level events)
 /// * `event_type` - Event name (e.g. "issue.created", "comment.deleted")
 /// * `payload` - JSON string payload
-pub fn broadcast_event(tx: &EventSender, org_id: &str, event_type: &str, payload: &str) {
+pub fn broadcast_event(
+    tx: &EventSender,
+    org_id: &str,
+    project_id: Option<Uuid>,
+    event_type: &str,
+    payload: &str,
+) {
     let id = EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
     let _ = tx.send(SseEvent {
         id,
         org_id: org_id.to_string(),
+        project_id,
         event_type: event_type.to_string(),
         payload: payload.to_string(),
     });

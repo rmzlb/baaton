@@ -588,10 +588,23 @@ pub async fn create(
     }
 
     // ── Webhook dispatch (fire-and-forget) ───────────
-    dispatch_event(pool.clone(), org_id.to_string(), "comment.created", serde_json::to_value(&comment).unwrap_or_default()).await;
+    dispatch_event(
+        pool.clone(),
+        org_id.to_string(),
+        Some(scope.project_id),
+        "comment.created",
+        serde_json::to_value(&comment).unwrap_or_default(),
+    )
+    .await;
 
     // ── SSE broadcast ────────────────────────────────
-    broadcast_event(&sse_tx, org_id, "comment.created", &serde_json::to_string(&comment).unwrap_or_default());
+    broadcast_event(
+        &sse_tx,
+        org_id,
+        Some(scope.project_id),
+        "comment.created",
+        &serde_json::to_string(&comment).unwrap_or_default(),
+    );
 
     // AI-first: action hints
     let hints = vec![
@@ -717,10 +730,23 @@ pub async fn update(
     }
 
     // ── Webhook dispatch (fire-and-forget) ───────────
-    dispatch_event(pool.clone(), org_id.to_string(), "comment.updated", serde_json::to_value(&comment).unwrap_or_default()).await;
+    dispatch_event(
+        pool.clone(),
+        org_id.to_string(),
+        Some(scope.project_id),
+        "comment.updated",
+        serde_json::to_value(&comment).unwrap_or_default(),
+    )
+    .await;
 
     // ── SSE broadcast ────────────────────────────────
-    broadcast_event(&sse_tx, org_id, "comment.updated", &serde_json::to_string(&comment).unwrap_or_default());
+    broadcast_event(
+        &sse_tx,
+        org_id,
+        Some(scope.project_id),
+        "comment.updated",
+        &serde_json::to_string(&comment).unwrap_or_default(),
+    );
 
     // Rewrite S3 markers in body to presigned HTTPS URLs before returning.
     crate::s3::rewrite_str(&mut comment.body, s3.as_deref()).await;
@@ -784,10 +810,23 @@ pub async fn remove(
     );
 
     // ── Webhook dispatch (fire-and-forget) ───────────
-    dispatch_event(pool.clone(), org_id.to_string(), "comment.deleted", serde_json::json!({"id": comment_id.to_string(), "issue_id": issue_id.to_string()})).await;
+    dispatch_event(
+        pool.clone(),
+        org_id.to_string(),
+        Some(scope.project_id),
+        "comment.deleted",
+        serde_json::json!({"id": comment_id.to_string(), "issue_id": issue_id.to_string()}),
+    )
+    .await;
 
     // ── SSE broadcast ────────────────────────────────
-    broadcast_event(&sse_tx, org_id, "comment.deleted", &format!(r#"{{"id":"{}","issue_id":"{}"}}"#, comment_id, issue_id));
+    broadcast_event(
+        &sse_tx,
+        org_id,
+        Some(scope.project_id),
+        "comment.deleted",
+        &format!(r#"{{"id":"{}","issue_id":"{}"}}"#, comment_id, issue_id),
+    );
 
     Ok(Json(ApiResponse::new(())))
 }

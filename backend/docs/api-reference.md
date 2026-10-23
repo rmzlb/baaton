@@ -596,6 +596,16 @@ curl -s -X POST $BAATON/webhooks -H "Authorization: Bearer $KEY" \
 
 Secret is auto-generated and returned **only on creation**. Store it securely for signature verification.
 
+Optional `project_ids` (array of project UUIDs) limits delivery to the events of those projects; empty or omitted = every project of the organization. `PATCH /webhooks/{id}` accepts the same field.
+
+```bash
+curl -s -X POST $BAATON/webhooks -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://your-server.com/webhook","event_types":["issue.updated"],"project_ids":["<project-uuid>"]}'
+```
+
+A key limited to projects must set `project_ids` to some of its own projects (403 otherwise, 404 for a project outside its scope), and only sees and manages webhooks limited that way.
+
 ### Webhook Payload Format
 
 ```json
@@ -1005,6 +1015,10 @@ Returns the plaintext key once. Store it immediately.
 
 ### PATCH /api-keys/{id}
 Update key (name, permissions, project_ids, expires_at).
+
+### Keys limited to projects
+
+A key with `project_ids` only reaches those projects: lists, search, the event stream (`GET /events`), MCP tools and webhooks are filtered to them, and anything of another project answers 404 like a missing object. Routes that cover the whole organization answer 403 to such a key: `POST /projects`, `/dashboard/summary`, `/metrics`, `/initiatives`, `/gamification/dashboard`, `/ai/chat`, `/ai/agent`, `/ai/pm-full-review`, `/github/*` (installation, repos, mappings) and `/integrations/slack`. A key limited to projects can only create, edit, regenerate or revoke keys limited to some of its own projects.
 
 ### POST /api-keys/{id}/regenerate
 Regenerate key. Old key is immediately revoked.

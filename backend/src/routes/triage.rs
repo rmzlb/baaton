@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
+use crate::routes::issue_scope;
 use crate::routes::issues::fetch_user_org_ids;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -261,11 +262,13 @@ pub async fn list_untriaged(
             OR i.source = 'form'
           )
           AND i.status_category NOT IN ('completed', 'canceled')
+          AND (cardinality($2::uuid[]) = 0 OR i.project_id = ANY($2))
         ORDER BY i.created_at DESC
         LIMIT 100
         "#,
     )
     .bind(&org_ids)
+    .bind(&auth.scoped_project_ids) // a project-limited key triages its projects only
     .fetch_all(&pool)
     .await
     .map_err(|e| {
@@ -329,6 +332,13 @@ pub async fn batch_triage(
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "Maximum 20 issues per batch"})),
         ));
+    }
+
+    // Every id must be readable by the caller, project scope included, before
+    // any issue is sent to the model: one out-of-scope id refuses the whole
+    // batch, like `issues::batch_update` (BAA-36).
+    for issue_id in &body.issue_ids {
+        issue_scope::require(&pool, &auth, *issue_id, "Issue").await?;
     }
 
     let mut results = Vec::new();
@@ -411,6 +421,9 @@ pub async fn analyze(
         }
         org_ids
     };
+
+    // Same entitlement as reading the issue, project scope included (BAA-36).
+    issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
 
     let result = run_triage_analysis(&pool, issue_id, &org_ids)
         .await

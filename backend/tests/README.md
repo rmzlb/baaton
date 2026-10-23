@@ -34,6 +34,25 @@ checks Backlog/Not OK for self and other actors, status/project/channel filters,
 disabled subscriptions, comment self-exclusion and verified-email gating.
 It does not call Clerk, notifyd or external recipients.
 
+## Project-scoped API keys (BAA-36)
+
+`project_scope.sh` starts the API binary against a disposable local database,
+seeds two orgs with fresh ids, and checks over HTTP that a key limited to one
+project sees nothing of another project (reads, lists, search, comments, SSE,
+webhooks, MCP), cannot use the organization-wide routes (403), and only mints
+keys and webhooks within its projects, while an unscoped key and a simulated
+Clerk user keep the whole org. It refuses a database that is not on localhost.
+
+```bash
+cargo build
+DATABASE_URL_TEST=postgres://user:pass@127.0.0.1:5432/baaton_test \
+PSQL="psql postgres://user:pass@127.0.0.1:5432/baaton_test" \
+./tests/project_scope.sh target/debug/baaton-api
+```
+
+Needs bash, curl, jq, openssl and python3. The API applies the migrations at
+startup.
+
 ## Running the smoke script
 
 ```bash

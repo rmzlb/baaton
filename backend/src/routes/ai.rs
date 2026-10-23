@@ -604,6 +604,8 @@ pub async fn pm_full_review(
     State(pool): State<PgPool>,
     Json(body): Json<PmFullReviewRequest>,
 ) -> Result<Json<ApiResponse<PmFullReviewResponse>>, (StatusCode, Json<Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth
         .org_id
         .as_deref()

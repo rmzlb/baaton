@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::models::{ApiResponse, Issue};
+use crate::routes::issue_scope;
 
 // ─── Models ───────────────────────────────────────────
 
@@ -57,10 +58,14 @@ pub async fn list(
         r#"SELECT * FROM custom_views
            WHERE org_id = $1
              AND (created_by = $2 OR visibility = 'shared')
+             AND (cardinality($3::uuid[]) = 0 OR project_id IS NULL OR project_id = ANY($3))
            ORDER BY pinned DESC, created_at DESC"#
     )
     .bind(org_id)
     .bind(&auth.user_id)
+    // A project-limited key does not see views bound to other projects; an
+    // org-wide view stays listed, its issues are filtered in `get_issues`.
+    .bind(&auth.scoped_project_ids)
     .fetch_all(&pool)
     .await
     .unwrap_or_else(|e| {
@@ -83,6 +88,18 @@ pub async fn create(
     let visibility = body.visibility.as_deref().unwrap_or("personal");
     if !["personal", "shared"].contains(&visibility) {
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "visibility must be 'personal' or 'shared'"}))));
+    }
+
+    // A view bound to a project must target one the caller may read, in the
+    // org the view is created in (BAA-36).
+    if let Some(project_id) = body.project_id {
+        let owner = issue_scope::require_project(&pool, &auth, project_id).await?;
+        if owner != org_id {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "Project not found"})),
+            ));
+        }
     }
 
     let view = sqlx::query_as::<_, CustomView>(
@@ -123,6 +140,7 @@ pub async fn update(
                visibility      = COALESCE($4, visibility),
                pinned          = COALESCE($5, pinned)
            WHERE id = $6 AND org_id = $7
+             AND (cardinality($8::uuid[]) = 0 OR project_id IS NULL OR project_id = ANY($8))
            RETURNING *"#
     )
     .bind(body.name.as_deref())
@@ -132,6 +150,7 @@ pub async fn update(
     .bind(body.pinned)
     .bind(id)
     .bind(org_id)
+    .bind(&auth.scoped_project_ids)
     .fetch_optional(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
@@ -187,11 +206,13 @@ pub async fn get_issues(
     let view = sqlx::query_as::<_, CustomView>(
         r#"SELECT * FROM custom_views
            WHERE id = $1 AND org_id = $2
-             AND (created_by = $3 OR visibility = 'shared')"#
+             AND (created_by = $3 OR visibility = 'shared')
+             AND (cardinality($4::uuid[]) = 0 OR project_id IS NULL OR project_id = ANY($4))"#,
     )
     .bind(id)
     .bind(org_id)
     .bind(&auth.user_id)
+    .bind(&auth.scoped_project_ids)
     .fetch_optional(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
@@ -208,6 +229,12 @@ pub async fn get_issues(
     );
     qb.push_bind(org_id);
     qb.push(" AND i.archived = false");
+    // An org-wide view still only returns the caller's projects (BAA-36).
+    if !auth.scoped_project_ids.is_empty() {
+        qb.push(" AND i.project_id = ANY(");
+        qb.push_bind(auth.scoped_project_ids.clone());
+        qb.push(")");
+    }
 
     // filter: status
     if let Some(statuses) = filters.get("status").and_then(|v| v.as_array()) {
