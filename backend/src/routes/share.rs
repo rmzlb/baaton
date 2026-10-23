@@ -36,6 +36,7 @@ use uuid::Uuid;
 use crate::middleware::AuthUser;
 use crate::models::ApiResponse;
 use crate::routes::activity::log_activity_as;
+use crate::routes::issue_scope;
 
 /// ULID, like run cards: sortable, URL-safe, 26 chars, no ambiguous glyphs.
 /// Not a UUID — these end up in pasted links and get read aloud.
@@ -149,6 +150,9 @@ pub async fn get_issue_share(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ShareState>>, ApiErr> {
     let orgs = caller_org(&auth)?;
+    // Publishing makes the object readable by anyone with the link, so the
+    // caller must be entitled to it, project scope included (BAA-36).
+    issue_scope::require(&pool, &auth, id, "Issue").await?;
     let row = sqlx::query_as::<_, (bool, Option<String>, Option<DateTime<Utc>>, Option<String>)>(
         r#"
         SELECT i.is_public, i.public_token, i.shared_at, i.shared_by
@@ -172,6 +176,9 @@ pub async fn share_issue(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ShareState>>, ApiErr> {
     let orgs = caller_org(&auth)?;
+    // Publishing makes the object readable by anyone with the link, so the
+    // caller must be entitled to it, project scope included (BAA-36).
+    issue_scope::require(&pool, &auth, id, "Issue").await?;
 
     // Resolve org/project first: needed for the activity row, and it doubles as
     // the authorization check.
@@ -236,6 +243,9 @@ pub async fn unshare_issue(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ShareState>>, ApiErr> {
     let orgs = caller_org(&auth)?;
+    // Publishing makes the object readable by anyone with the link, so the
+    // caller must be entitled to it, project scope included (BAA-36).
+    issue_scope::require(&pool, &auth, id, "Issue").await?;
 
     let (org_id, project_id): (String, Uuid) = sqlx::query_as::<_, (String, Uuid)>(
         r#"
@@ -289,6 +299,8 @@ pub async fn get_project_share(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ShareState>>, ApiErr> {
     let orgs = caller_org(&auth)?;
+    // Same rule for a project: owning org and the key's project scope.
+    issue_scope::require_project(&pool, &auth, id).await?;
     let row = sqlx::query_as::<_, (bool, Option<String>, Option<DateTime<Utc>>, Option<String>)>(
         "SELECT is_public, public_token, shared_at, shared_by FROM projects WHERE id = $1 AND org_id = ANY($2)",
     )
@@ -308,6 +320,8 @@ pub async fn share_project(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ShareState>>, ApiErr> {
     let orgs = caller_org(&auth)?;
+    // Same rule for a project: owning org and the key's project scope.
+    issue_scope::require_project(&pool, &auth, id).await?;
 
     let (org_id, existing): (String, Option<String>) =
         sqlx::query_as::<_, (String, Option<String>)>(
@@ -363,6 +377,8 @@ pub async fn unshare_project(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<ShareState>>, ApiErr> {
     let orgs = caller_org(&auth)?;
+    // Same rule for a project: owning org and the key's project scope.
+    issue_scope::require_project(&pool, &auth, id).await?;
 
     let org_id: String =
         sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1 AND org_id = ANY($2)")

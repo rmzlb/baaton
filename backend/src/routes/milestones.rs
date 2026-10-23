@@ -180,7 +180,10 @@ pub async fn create(
 
     // Webhook dispatch
     crate::routes::webhooks::dispatch_event(
-        pool.clone(), org_id.to_string(), "milestone.created",
+        pool.clone(),
+        org_id.to_string(),
+        Some(milestone.project_id),
+        "milestone.created",
         serde_json::to_value(&milestone).unwrap_or_default(),
     ).await;
 
@@ -284,7 +287,10 @@ pub async fn update(
             // Webhook dispatch
             let event = if row.status == "completed" { "milestone.completed" } else { "milestone.updated" };
             crate::routes::webhooks::dispatch_event(
-                pool.clone(), org_id.to_string(), event,
+                pool.clone(),
+                org_id.to_string(),
+                Some(milestone.project_id),
+                event,
                 serde_json::to_value(&milestone).unwrap_or_default(),
             ).await;
 

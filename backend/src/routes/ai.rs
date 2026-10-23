@@ -14,25 +14,6 @@ use uuid::Uuid;
 
 use crate::{middleware::AuthUser, models::ApiResponse};
 
-// ─── Key Endpoint (returns Gemini API key to authenticated users) ──
-
-pub async fn get_key(
-    Extension(_auth): Extension<AuthUser>,
-) -> Response {
-    match std::env::var("GEMINI_API_KEY") {
-        Ok(k) if !k.is_empty() => {
-            Json(serde_json::json!({"key": k})).into_response()
-        }
-        _ => {
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(serde_json::json!({"error": "AI service not configured"})),
-            )
-                .into_response()
-        }
-    }
-}
-
 // ─── Request Types (from frontend) ───────────────────
 
 #[derive(Debug, Deserialize)]
@@ -604,6 +585,8 @@ pub async fn pm_full_review(
     State(pool): State<PgPool>,
     Json(body): Json<PmFullReviewRequest>,
 ) -> Result<Json<ApiResponse<PmFullReviewResponse>>, (StatusCode, Json<Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth
         .org_id
         .as_deref()

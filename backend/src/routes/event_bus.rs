@@ -56,7 +56,13 @@ pub struct AppEvent {
 pub fn emit(pool: PgPool, sse_tx: EventSender, event: AppEvent) {
     // 1. SSE broadcast (synchronous, in-memory — instant)
     let payload_str = serde_json::to_string(&event.payload).unwrap_or_default();
-    broadcast_event(&sse_tx, &event.org_id, &event.event_type, &payload_str);
+    broadcast_event(
+        &sse_tx,
+        &event.org_id,
+        event.project_id,
+        &event.event_type,
+        &payload_str,
+    );
 
     // 2. Everything else in a background task (async, fire-and-forget)
     tokio::spawn(async move {
@@ -64,6 +70,7 @@ pub fn emit(pool: PgPool, sse_tx: EventSender, event: AppEvent) {
         dispatch_event(
             pool.clone(),
             event.org_id.clone(),
+            event.project_id,
             &event.event_type,
             event.payload.clone(),
         )

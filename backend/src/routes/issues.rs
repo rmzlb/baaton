@@ -160,9 +160,10 @@ fn on_status_changed(
     {
         let pool2 = pool.clone();
         let oid = org_id.to_string();
+        let pid = issue.project_id;
         let payload = serde_json::to_value(issue).unwrap_or_default();
         tokio::spawn(async move {
-            dispatch_event(pool2, oid, "status.changed", payload).await;
+            dispatch_event(pool2, oid, Some(pid), "status.changed", payload).await;
         });
     }
 
@@ -502,11 +503,16 @@ pub async fn list_children(
 ) -> Result<Json<ApiResponse<Vec<Issue>>>, (StatusCode, Json<serde_json::Value>)> {
     issue_scope::require(&pool, &auth, parent_id, "Parent issue").await?;
 
+    // A child may live in another project than its parent; a project-limited
+    // key only sees the children in its projects (BAA-36).
     let mut children = sqlx::query_as::<_, Issue>(&format!(
-        "SELECT {cols} FROM issues i WHERE i.parent_id = $1 ORDER BY i.created_at ASC",
+        "SELECT {cols} FROM issues i WHERE i.parent_id = $1 \
+         AND (cardinality($2::uuid[]) = 0 OR i.project_id = ANY($2)) \
+         ORDER BY i.created_at ASC",
         cols = crate::models::issue_list_columns("i"),
     ))
     .bind(parent_id)
+    .bind(&auth.scoped_project_ids)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
@@ -517,6 +523,25 @@ pub async fn list_children(
     }
 
     Ok(Json(ApiResponse::new(children)))
+}
+
+/// A parent outside the caller's scope answers like a missing one, so a key
+/// cannot attach a child to, or probe for, an issue it cannot read (BAA-36).
+async fn require_visible_parent(
+    pool: &PgPool,
+    auth: &AuthUser,
+    parent_id: Uuid,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    match issue_scope::resolve(pool, auth, parent_id)
+        .await
+        .map_err(internal_err)?
+    {
+        issue_scope::IssueAccess::Allowed(_) => Ok(()),
+        _ => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Parent issue not found"})),
+        )),
+    }
 }
 
 // ─── Validation constants ─────────────────────────────
@@ -1298,6 +1323,7 @@ pub async fn create(
 
     // ── Depth validation for parent_id (max depth 2) ─────
     if let Some(pid) = body.parent_id {
+        require_visible_parent(&pool, &auth, pid).await?;
         // Fetch the parent issue's own parent_id
         let parent_parent: Option<Option<Uuid>> =
             sqlx::query_scalar("SELECT parent_id FROM issues WHERE id = $1")
@@ -1602,6 +1628,7 @@ pub async fn create(
     dispatch_event(
         pool.clone(),
         org_id.to_string(),
+        Some(issue.project_id),
         "issue.created",
         serde_json::to_value(&issue).unwrap_or_default(),
     )
@@ -1782,6 +1809,7 @@ pub async fn create(
     broadcast_event(
         &sse_tx,
         &org_id,
+        Some(issue.project_id),
         "issue.created",
         &issue_sse_payload(&issue, client_origin(&headers).as_deref()),
     );
@@ -1850,6 +1878,7 @@ pub async fn create(
                         crate::routes::webhooks::dispatch_event(
                             pool2.clone(),
                             oid.clone(),
+                            Some(pid),
                             "issue.auto_triaged",
                             serde_json::json!({
                                 "issue_id": iid.to_string(),
@@ -2214,6 +2243,7 @@ pub async fn update(
 
     // Depth check for parent_id update
     if let Some(new_parent_id) = parent_id_value {
+        require_visible_parent(&pool, &auth, new_parent_id).await?;
         let parent_parent: Option<Option<Uuid>> =
             sqlx::query_scalar("SELECT parent_id FROM issues WHERE id = $1")
                 .bind(new_parent_id)
@@ -2658,6 +2688,7 @@ pub async fn update(
         dispatch_event(
             pool.clone(),
             target_org_id.clone(),
+            Some(issue.project_id),
             "issue.updated",
             serde_json::to_value(&issue).unwrap_or_default(),
         )
@@ -2673,6 +2704,7 @@ pub async fn update(
     broadcast_event(
         &sse_tx,
         &target_org_id,
+        Some(issue.project_id),
         sse_event,
         &issue_sse_payload(&issue, client_origin(&headers).as_deref()),
     );
@@ -2819,6 +2851,7 @@ pub async fn update_position(
     broadcast_event(
         &sse_tx,
         &target_org_id,
+        Some(issue.project_id),
         "issue.updated",
         &issue_sse_payload(&issue, origin.as_deref()),
     );
@@ -2904,6 +2937,7 @@ pub async fn remove(
         dispatch_event(
             pool.clone(),
             target_org_id.clone(),
+            Some(target.project_id),
             "issue.deleted",
             serde_json::json!({"id": id.to_string()}),
         )
@@ -2912,6 +2946,7 @@ pub async fn remove(
         broadcast_event(
             &sse_tx,
             &target_org_id,
+            Some(target.project_id),
             "issue.deleted",
             &{
                 let mut del_payload = serde_json::json!({ "id": id.to_string() });
@@ -3054,6 +3089,7 @@ pub async fn batch_update(
                 dispatch_event(
                     pool.clone(),
                     issue_org_id.clone(),
+                    Some(issue.project_id),
                     "issue.updated",
                     serde_json::to_value(&issue).unwrap_or_default(),
                 )
@@ -3068,6 +3104,7 @@ pub async fn batch_update(
             broadcast_event(
                 &sse_tx,
                 &issue_org_id,
+                Some(issue.project_id),
                 sse_event,
                 &issue_sse_payload(&issue, client_origin(&headers).as_deref()),
             );
@@ -3660,6 +3697,7 @@ pub async fn archive(
     dispatch_event(
         pool.clone(),
         org_id.clone(),
+        Some(issue.project_id),
         "issue.archived",
         serde_json::to_value(&issue).unwrap_or_default(),
     )
@@ -3667,6 +3705,7 @@ pub async fn archive(
     broadcast_event(
         &sse_tx,
         &org_id,
+        Some(issue.project_id),
         "issue.archived",
         &issue_sse_payload(&issue, client_origin(&headers).as_deref()),
     );
@@ -3719,6 +3758,7 @@ pub async fn unarchive(
     dispatch_event(
         pool.clone(),
         org_id.clone(),
+        Some(issue.project_id),
         "issue.unarchived",
         serde_json::to_value(&issue).unwrap_or_default(),
     )
@@ -3726,6 +3766,7 @@ pub async fn unarchive(
     broadcast_event(
         &sse_tx,
         &org_id,
+        Some(issue.project_id),
         "issue.unarchived",
         &issue_sse_payload(&issue, client_origin(&headers).as_deref()),
     );

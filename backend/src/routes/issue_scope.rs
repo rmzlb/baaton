@@ -207,6 +207,53 @@ pub async fn require_project(
     }
 }
 
+/// Refuse a caller limited to some projects on a route that spans the whole
+/// organization (dashboards, AI over every project, org integrations).
+///
+/// Such routes aggregate every project of the org in one answer, so filtering
+/// them would mean rewriting each query; a project-limited key has no use for
+/// them, and refusing keeps the limit real (BAA-36). 403 rather than 404: the
+/// route exists and is not secret, the caller's key is simply too narrow.
+pub fn require_org_wide(auth: &AuthUser) -> Result<(), ApiErr> {
+    if auth.scoped_project_ids.is_empty() {
+        return Ok(());
+    }
+    Err((
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": "This endpoint covers the whole organization; an API key limited to projects cannot use it"
+        })),
+    ))
+}
+
+/// Whether `auth` may give something (a webhook, another key) access to
+/// `requested` projects, where an empty list means the whole organization.
+///
+/// A project-limited caller may only hand on a non-empty subset of its own
+/// projects; otherwise it could mint a wider credential than its own.
+pub fn delegates_within_scope(auth: &AuthUser, requested: &[Uuid]) -> bool {
+    if auth.scoped_project_ids.is_empty() {
+        return true;
+    }
+    !requested.is_empty()
+        && requested
+            .iter()
+            .all(|id| auth.scoped_project_ids.contains(id))
+}
+
+/// SQL counterpart of `delegates_within_scope`, for rows carrying their own
+/// project filter in `column` (a `uuid[]`, empty = whole org): webhooks, keys.
+///
+/// `$param` binds `auth.scoped_project_ids`. An unscoped caller matches every
+/// row; a project-limited caller only rows limited to a non-empty subset of its
+/// projects, so it can neither see nor reuse anything wider than itself.
+pub fn sql_delegated_within_scope(column: &str, param: u8) -> String {
+    format!(
+        "(cardinality(${param}::uuid[]) = 0 \
+          OR (cardinality({column}) > 0 AND {column} <@ ${param}::uuid[]))"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,6 +408,34 @@ mod tests {
         let member = orgs(&["org_studio"]);
         assert!(is_entitled_as_member(&auth, "org_studio", PROJ_A, &member));
         assert!(!is_entitled_as_member(&auth, "org_studio", PROJ_B, &member));
+    }
+
+    // ── BAA-36: what a project-limited caller may hand on ───────────────
+    //
+    // 1. Empty request (= whole org) from a project-limited key → refused.
+    // 2. A project outside the key's list → refused.
+    // 3. A subset of the key's projects → allowed.
+    // 4. A caller with no project limit → anything allowed, empty included.
+
+    #[test]
+    fn project_limited_caller_only_delegates_its_own_projects() {
+        let limited = key(Some("org_studio"), &["org_studio"], &[PROJ_A]);
+        assert!(!delegates_within_scope(&limited, &[]));
+        assert!(!delegates_within_scope(&limited, &[PROJ_B]));
+        assert!(!delegates_within_scope(&limited, &[PROJ_A, PROJ_B]));
+        assert!(delegates_within_scope(&limited, &[PROJ_A]));
+
+        let whole_org = key(Some("org_studio"), &["org_studio"], &[]);
+        assert!(delegates_within_scope(&whole_org, &[]));
+        assert!(delegates_within_scope(&whole_org, &[PROJ_B]));
+        assert!(delegates_within_scope(&human("org_studio", None), &[]));
+    }
+
+    #[test]
+    fn organization_wide_routes_refuse_project_limited_keys_only() {
+        assert!(require_org_wide(&key(Some("org_studio"), &["org_studio"], &[PROJ_A])).is_err());
+        assert!(require_org_wide(&key(Some("org_studio"), &["org_studio"], &[])).is_ok());
+        assert!(require_org_wide(&human("org_studio", None)).is_ok());
     }
 
     /// `org_role` describes the active org only. Once a human may write in

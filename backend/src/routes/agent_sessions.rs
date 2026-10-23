@@ -165,6 +165,10 @@ pub async fn create(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
+    // The key's project scope applies before anything about the issue is
+    // revealed (BAA-36); the org check below is unchanged.
+    issue_scope::require(&pool, &auth, body.issue_id, "Issue").await?;
+
     // Verify issue belongs to org and resolve effective public-default.
     // C3: the project's `agent_runs_public_default` must be AND'd with the org-level
     // master switch (`organizations.agent_runs_public_enabled`). Otherwise, flipping
@@ -256,12 +260,21 @@ pub async fn create(
 
     // Webhook
     crate::routes::webhooks::dispatch_event(
-        pool.clone(), org_id.to_string(), "agent_session.started",
+        pool.clone(),
+        org_id.to_string(),
+        Some(session.project_id),
+        "agent_session.started",
         serde_json::to_value(&session).unwrap_or_default(),
     ).await;
 
     // SSE broadcast
-    broadcast_event(&sse_tx, org_id, "agent_session.started", &serde_json::to_string(&session).unwrap_or_default());
+    broadcast_event(
+        &sse_tx,
+        org_id,
+        Some(session.project_id),
+        "agent_session.started",
+        &serde_json::to_string(&session).unwrap_or_default(),
+    );
 
     let hints = vec![
         ActionHint::recommended(
@@ -327,8 +340,10 @@ pub async fn list_by_issue(
     Path(issue_id): Path<Uuid>,
     Query(params): Query<SessionListParams>,
 ) -> Result<Json<ApiResponse<Vec<AgentSession>>>, (StatusCode, Json<serde_json::Value>)> {
-    let org_id = auth.org_id.as_deref()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
+    // Same entitlement as reading the issue; sessions are filed under the
+    // owning org (BAA-36).
+    let scope = issue_scope::require(&pool, &auth, issue_id, "Issue").await?;
+    let org_id = scope.org_id.as_str();
 
     let limit = params.limit.unwrap_or(20);
 
@@ -495,7 +510,10 @@ pub async fn update(
     if is_completing {
         let event = if new_status == "completed" { "agent_session.completed" } else { "agent_session.error" };
         crate::routes::webhooks::dispatch_event(
-            pool.clone(), org_id.to_string(), event,
+            pool.clone(),
+            org_id.to_string(),
+            Some(session.project_id),
+            event,
             serde_json::to_value(&session).unwrap_or_default(),
         ).await;
     }
@@ -506,7 +524,13 @@ pub async fn update(
     } else {
         "agent_session.updated"
     };
-    broadcast_event(&sse_tx, org_id, sse_event, &serde_json::to_string(&session).unwrap_or_default());
+    broadcast_event(
+        &sse_tx,
+        org_id,
+        Some(session.project_id),
+        sse_event,
+        &serde_json::to_string(&session).unwrap_or_default(),
+    );
 
     // ── Enqueue PR comment job if session just completed/errored and is publishable ──
     // S6 decision: we deliberately enqueue for `error` status too. A failed run with
@@ -608,7 +632,13 @@ pub async fn publish(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
 
-    broadcast_event(&sse_tx, org_id, "agent_session.updated", &serde_json::to_string(&session).unwrap_or_default());
+    broadcast_event(
+        &sse_tx,
+        org_id,
+        Some(session.project_id),
+        "agent_session.updated",
+        &serde_json::to_string(&session).unwrap_or_default(),
+    );
 
     // If the session is already in a terminal state when publish is called,
     // enqueue the PR comment immediately. (The normal path is publish → run →
@@ -672,7 +702,13 @@ pub async fn unpublish(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
     .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Agent session not found"}))))?;
 
-    broadcast_event(&sse_tx, org_id, "agent_session.updated", &serde_json::to_string(&session).unwrap_or_default());
+    broadcast_event(
+        &sse_tx,
+        org_id,
+        Some(session.project_id),
+        "agent_session.updated",
+        &serde_json::to_string(&session).unwrap_or_default(),
+    );
 
     Ok(Json(ApiResponse::new(session)))
 }
@@ -737,7 +773,13 @@ pub async fn create_step(
         .await;
 
     // SSE broadcast — enables live stream without DB polling
-    broadcast_event(&sse_tx, org_id, "agent_session.step", &serde_json::to_string(&step).unwrap_or_default());
+    broadcast_event(
+        &sse_tx,
+        org_id,
+        Some(session.project_id),
+        "agent_session.step",
+        &serde_json::to_string(&step).unwrap_or_default(),
+    );
 
     Ok(Json(ApiResponse::new(step)))
 }

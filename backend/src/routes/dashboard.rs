@@ -275,6 +275,8 @@ pub async fn summary(
     State(pool): State<PgPool>,
     Query(params): Query<SummaryParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     // TODO(s3): rewrite description here — current response surfaces only issue titles,
     // project descriptions, and activity metadata, none of which carry markdown bodies
     // with `s3://baaton-uploads/` markers today. Add a rewrite pass if that changes.

@@ -265,7 +265,7 @@ export function checkBudget(ctx: AIStateContext): {
   return { ok: true, percentUsed: pct };
 }
 
-// ─── Convenience Aliases (used by ai-engine.ts) ──
+// ─── Convenience Aliases ──
 
 /** Reset state to initial. */
 export const resetState = createInitialState;

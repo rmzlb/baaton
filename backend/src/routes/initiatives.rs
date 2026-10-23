@@ -71,6 +71,8 @@ pub async fn list(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Vec<Initiative>>>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
@@ -91,6 +93,8 @@ pub async fn create(
     State(pool): State<PgPool>,
     Json(body): Json<CreateInitiative>,
 ) -> Result<Json<ApiResponse<Initiative>>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
@@ -128,6 +132,8 @@ pub async fn get_one(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<InitiativeWithProgress>>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
@@ -203,6 +209,8 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateInitiative>,
 ) -> Result<Json<ApiResponse<Initiative>>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
@@ -245,6 +253,8 @@ pub async fn remove(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
@@ -269,6 +279,8 @@ pub async fn add_project(
     Path(id): Path<Uuid>,
     Json(body): Json<AddProjectBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
@@ -318,6 +330,8 @@ pub async fn remove_project(
     State(pool): State<PgPool>,
     Path((id, project_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<serde_json::Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 

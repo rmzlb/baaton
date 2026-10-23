@@ -1,4 +1,8 @@
-use axum::{extract::{Path, Query, State}, Extension, Json};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    Extension, Json,
+};
 use serde::Deserialize;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
@@ -6,6 +10,7 @@ use uuid::Uuid;
 
 use crate::middleware::{ActorKind, AuthUser};
 use crate::models::{ActivityEntry, ApiResponse};
+use crate::routes::issue_scope;
 
 #[derive(Debug, Deserialize)]
 pub struct ActivityParams {
@@ -18,8 +23,12 @@ pub async fn list_by_issue(
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
     Query(params): Query<ActivityParams>,
-) -> Json<ApiResponse<Vec<ActivityEntry>>> {
-    let org_id = auth.org_id.unwrap_or_default();
+) -> Result<Json<ApiResponse<Vec<ActivityEntry>>>, (StatusCode, Json<serde_json::Value>)> {
+    // Same entitlement as reading the issue itself: owning org and the key's
+    // project scope (BAA-36). Rows are filed under the owning org.
+    let org_id = issue_scope::require(&pool, &auth, issue_id, "Issue")
+        .await?
+        .org_id;
     let limit = params.limit.unwrap_or(50);
 
     let entries = sqlx::query_as::<_, ActivityEntry>(
@@ -46,7 +55,7 @@ pub async fn list_by_issue(
 
     let entries = resolve_on_behalf_names(entries).await;
 
-    Json(ApiResponse::new(entries))
+    Ok(Json(ApiResponse::new(entries)))
 }
 
 /// GET /api/v1/activity — recent activity across the org (for dashboard)
@@ -66,12 +75,16 @@ pub async fn list_recent(
         FROM activity_log al
         LEFT JOIN issues i ON i.id = al.issue_id
         WHERE al.org_id = $1
+          AND (cardinality($3::uuid[]) = 0 OR al.project_id = ANY($3))
         ORDER BY al.created_at DESC
         LIMIT $2
         "#,
     )
     .bind(&org_id)
     .bind(limit)
+    // A project-limited key sees its projects only; org-level rows (no
+    // project) stay hidden from it, as in `memory::search_memory`.
+    .bind(&auth.scoped_project_ids)
     .fetch_all(&pool)
     .await
     .unwrap_or_else(|e| {

@@ -92,7 +92,14 @@ pub async fn create_approval_request(
     }
 
     // Webhook
-    dispatch_event(pool.clone(), org_id.to_string(), "issue.approval_requested", serde_json::to_value(&comment).unwrap_or_default()).await;
+    dispatch_event(
+        pool.clone(),
+        org_id.to_string(),
+        Some(scope.project_id),
+        "issue.approval_requested",
+        serde_json::to_value(&comment).unwrap_or_default(),
+    )
+    .await;
 
     Ok(Json(ApiResponse::new(comment)))
 }
@@ -190,7 +197,14 @@ pub async fn create_approval_response(
     }
 
     // Webhook: dispatch approval decision
-    dispatch_event(pool.clone(), org_id.to_string(), "issue.approval_decision", serde_json::to_value(&updated).unwrap_or_default()).await;
+    dispatch_event(
+        pool.clone(),
+        org_id.to_string(),
+        Some(scope.project_id),
+        "issue.approval_decision",
+        serde_json::to_value(&updated).unwrap_or_default(),
+    )
+    .await;
 
     Ok(Json(ApiResponse::new(updated)))
 }

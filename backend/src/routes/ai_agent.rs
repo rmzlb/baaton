@@ -495,6 +495,8 @@ pub async fn agent_chat(
     State(pool): State<PgPool>,
     Json(body): Json<AgentChatRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (StatusCode, Json<Value>)> {
+    // Spans every project of the org: refused to a project-limited key (BAA-36).
+    crate::routes::issue_scope::require_org_wide(&auth)?;
     let org_id = auth
         .org_id
         .as_deref()

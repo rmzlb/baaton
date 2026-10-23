@@ -114,7 +114,10 @@ pub async fn create(
 
     // Webhook dispatch
     crate::routes::webhooks::dispatch_event(
-        pool.clone(), org_id.to_string(), "sprint.created",
+        pool.clone(),
+        org_id.to_string(),
+        Some(sprint.project_id),
+        "sprint.created",
         serde_json::to_value(&sprint).unwrap_or_default(),
     ).await;
 
@@ -174,7 +177,10 @@ pub async fn update(
         Some(s) => {
             let event = if s.status == "completed" { "sprint.completed" } else { "sprint.updated" };
             crate::routes::webhooks::dispatch_event(
-                pool.clone(), org_id.to_string(), event,
+                pool.clone(),
+                org_id.to_string(),
+                Some(s.project_id),
+                event,
                 serde_json::to_value(&s).unwrap_or_default(),
             ).await;
 

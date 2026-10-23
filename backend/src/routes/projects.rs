@@ -157,9 +157,12 @@ pub async fn list(
             vec![]
         } else {
             sqlx::query_as::<_, Project>(
-                "SELECT * FROM projects WHERE org_id = ANY($1) ORDER BY org_id, created_at DESC",
+                "SELECT * FROM projects WHERE org_id = ANY($1) \
+                 AND (cardinality($2::uuid[]) = 0 OR id = ANY($2)) \
+                 ORDER BY org_id, created_at DESC",
             )
             .bind(&org_ids)
+            .bind(&auth.scoped_project_ids) // a project-limited key lists only its projects
             .fetch_all(&pool)
             .await
             .unwrap_or_else(|e| {
@@ -169,9 +172,12 @@ pub async fn list(
         }
     } else if let Some(ref org_id) = auth.org_id {
         sqlx::query_as::<_, Project>(
-            "SELECT * FROM projects WHERE org_id = $1 ORDER BY created_at DESC",
+            "SELECT * FROM projects WHERE org_id = $1 \
+             AND (cardinality($2::uuid[]) = 0 OR id = ANY($2)) \
+             ORDER BY created_at DESC",
         )
         .bind(org_id)
+        .bind(&auth.scoped_project_ids)
         .fetch_all(&pool)
         .await
         .unwrap_or_else(|e| {
@@ -204,6 +210,8 @@ pub async fn create(
     State(pool): State<PgPool>,
     Json(body): Json<CreateProject>,
 ) -> Result<Json<ApiResponse<Project>>, (StatusCode, Json<serde_json::Value>)> {
+    // A key limited to some projects cannot add projects to the org (BAA-36).
+    issue_scope::require_org_wide(&auth)?;
     let effective_org = match &auth.org_id {
         Some(id) => id.clone(),
         None => {
@@ -350,6 +358,7 @@ pub async fn create(
     crate::routes::webhooks::dispatch_event(
         pool.clone(),
         effective_org.clone(),
+        Some(project.id),
         "project.created",
         serde_json::to_value(&project).unwrap_or_default(),
     )
@@ -479,6 +488,7 @@ pub async fn update(
             crate::routes::webhooks::dispatch_event(
                 pool.clone(),
                 org_id.to_string(),
+                Some(p.id),
                 "project.updated",
                 serde_json::to_value(&p).unwrap_or_default(),
             )
@@ -762,6 +772,7 @@ pub async fn remove(
         crate::routes::webhooks::dispatch_event(
             pool.clone(),
             org_id.to_string(),
+            Some(id),
             "project.deleted",
             serde_json::json!({"id": id.to_string()}),
         )
@@ -1313,6 +1324,7 @@ pub async fn update_statuses(
     broadcast_event(
         &sse_tx,
         org_id,
+        Some(project.id),
         "project.updated",
         &json!({
             "id": project.id,

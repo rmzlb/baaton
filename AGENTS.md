@@ -23,12 +23,14 @@ Backend routes AI use Gemini via `GEMINI_API_KEY`. Model selection is centralise
 
 | Tier | Default | Env override | Used by |
 |---|---|---|---|
-| Agentic (function calling) | **`gemini-3.7-flash`** | `GEMINI_CHAT_MODEL` | `/ai/chat` (`ai_chat/stream.rs`), `/ai/agent` (`ai_agent.rs`), proxy `ai.rs`, frontend `ai-engine.ts` (`VITE_GEMINI_CHAT_MODEL`) |
+| Agentic (function calling) | **`gemini-3.7-flash`** | `GEMINI_CHAT_MODEL` | `/ai/chat` (`ai_chat/stream.rs`), `/ai/agent` (`ai_agent.rs`), proxy `ai.rs` |
 | Utility (single-shot JSON, no tools) | **`gemini-3.5-flash-lite`** | `GEMINI_UTILITY_MODEL` | triage (`triage.rs`) |
+
+The browser never holds the Gemini key: every model call goes through the backend (BAA-37).
 
 Token usage is stored in `ai_usage` with `metadata.cached_prompt_tokens` when the API returns `cachedContentTokenCount` (implicit cache).
 
-When bumping: keep `AGENTIC_MODEL` in `frontend/src/lib/ai-engine.ts` aligned with `ai_models::DEFAULT_AGENTIC`. Verify the id exists first (`GET /v1beta/models`) — Gemini ids are not guessable.
+When bumping, verify the id exists first (`GET /v1beta/models`) — Gemini ids are not guessable.
 
 ## Frontend taste — non-negotiables
 *Distilled from `taste-skill` (minimalist + redesign chapters) and our own iterations. Read these before touching any UI in `frontend/`.*

@@ -12,6 +12,7 @@ use crate::models::github::{
     GitHubIssueLink, GitHubPrLink, GitHubCommitLink,
 };
 use crate::models::ApiResponse;
+use crate::routes::issue_scope;
 
 // ─── List Available Repos ─────────────────────────────
 
@@ -22,6 +23,8 @@ pub async fn list_available(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Vec<GitHubRepository>>>, StatusCode> {
+    // The GitHub integration is wired for the whole org (BAA-36).
+    issue_scope::require_org_wide(&auth).map_err(|(code, _)| code)?;
     let org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
 
     let repos = sqlx::query_as::<_, GitHubRepository>(
@@ -50,6 +53,8 @@ pub async fn list_mappings(
     Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
 ) -> Result<Json<ApiResponse<Vec<GitHubRepoMapping>>>, StatusCode> {
+    // The GitHub integration is wired for the whole org (BAA-36).
+    issue_scope::require_org_wide(&auth).map_err(|(code, _)| code)?;
     let org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
 
     let mappings = sqlx::query_as::<_, GitHubRepoMapping>(
@@ -81,6 +86,8 @@ pub async fn create_mapping(
     State(pool): State<PgPool>,
     Json(body): Json<CreateRepoMapping>,
 ) -> Result<Json<ApiResponse<GitHubRepoMapping>>, StatusCode> {
+    // The GitHub integration is wired for the whole org (BAA-36).
+    issue_scope::require_org_wide(&auth).map_err(|(code, _)| code)?;
     let org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
 
     // Verify project belongs to org
@@ -158,6 +165,8 @@ pub async fn update_mapping(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateRepoMapping>,
 ) -> Result<Json<ApiResponse<GitHubRepoMapping>>, StatusCode> {
+    // The GitHub integration is wired for the whole org (BAA-36).
+    issue_scope::require_org_wide(&auth).map_err(|(code, _)| code)?;
     let org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
 
     // Verify mapping belongs to org
@@ -215,6 +224,8 @@ pub async fn delete_mapping(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<()>>, StatusCode> {
+    // The GitHub integration is wired for the whole org (BAA-36).
+    issue_scope::require_org_wide(&auth).map_err(|(code, _)| code)?;
     let org_id = auth.org_id.as_deref().ok_or(StatusCode::BAD_REQUEST)?;
 
     let result = sqlx::query(
@@ -244,10 +255,17 @@ pub async fn delete_mapping(
 /// Returns all GitHub-linked data for a single issue:
 /// linked GitHub issue, PRs, commits, and a suggested branch name.
 pub async fn get_issue_github_data(
-    Extension(_auth): Extension<AuthUser>,
+    Extension(auth): Extension<AuthUser>,
     State(pool): State<PgPool>,
     Path(issue_id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<IssueGitHubData>>, StatusCode> {
+    // Same entitlement as reading the issue: owning org and project scope.
+    // This route checked nothing, so any authenticated caller of any org could
+    // read an issue's title and GitHub links by id (BAA-36).
+    issue_scope::require(&pool, &auth, issue_id, "Issue")
+        .await
+        .map_err(|(code, _)| code)?;
+
     // Fetch the issue to generate branch name
     let issue: Option<(String, String)> = sqlx::query_as(
         "SELECT display_id, title FROM issues WHERE id = $1",
