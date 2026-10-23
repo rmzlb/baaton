@@ -59,6 +59,21 @@ startup.
 BAATON_API_KEY=baa_xxx ./tests/smoke.sh https://api.baaton.dev
 ```
 
+## Server Gemini key never served (BAA-37)
+
+`ai_key_removed.sh` starts the API binary against a disposable local database
+with a marker value as `GEMINI_API_KEY`, and checks over HTTP that `GET /ai/key`
+answers 404 to a simulated Clerk user and to an admin API key, that no answer
+carries the marker, and that the `/ai/chat` proxy is still mounted. It never
+calls Gemini and refuses a database that is not on localhost.
+
+```bash
+cargo build
+DATABASE_URL_TEST=postgres://user:pass@127.0.0.1:5432/baaton_test \
+PSQL="psql postgres://user:pass@127.0.0.1:5432/baaton_test" \
+./tests/ai_key_removed.sh target/debug/baaton-api
+```
+
 ## Deferred — integration test for publish → enqueue → Octocrab loop
 
 A proper integration test for the agent-session → `github_sync_jobs` enqueue

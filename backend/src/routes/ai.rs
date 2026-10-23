@@ -14,25 +14,6 @@ use uuid::Uuid;
 
 use crate::{middleware::AuthUser, models::ApiResponse};
 
-// ─── Key Endpoint (returns Gemini API key to authenticated users) ──
-
-pub async fn get_key(
-    Extension(_auth): Extension<AuthUser>,
-) -> Response {
-    match std::env::var("GEMINI_API_KEY") {
-        Ok(k) if !k.is_empty() => {
-            Json(serde_json::json!({"key": k})).into_response()
-        }
-        _ => {
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(serde_json::json!({"error": "AI service not configured"})),
-            )
-                .into_response()
-        }
-    }
-}
-
 // ─── Request Types (from frontend) ───────────────────
 
 #[derive(Debug, Deserialize)]
