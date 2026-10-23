@@ -1,59 +1,51 @@
-# ── Stage 1: Chef — compute dependency recipe ──
-FROM rust:1.95-bookworm AS chef
-RUN cargo install cargo-chef --locked
+# syntax=docker/dockerfile:1
+# Base images are pinned by tag and digest: bump both together.
+
+# ── Stage 1: Chef — cargo-chef on the build toolchain ──
+FROM rust:1.99.1-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS chef
+RUN cargo install cargo-chef --locked --version 0.1.78
 WORKDIR /app
 
-# ── Stage 2: Planner — capture deps ────────────
+# ── Stage 2: Planner — dependency recipe ───────
 FROM chef AS planner
-# Use the committed Cargo.lock so dependency versions are reproducible
-# (do NOT regenerate: a fresh resolve can pull breaking patch releases).
 COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
-COPY docs/ docs/
 RUN cargo chef prepare --recipe-path recipe.json
 
-# ── Stage 3: Builder — cached dep compilation ──
+# ── Stage 3: Builder — cached dependency build ─
 FROM chef AS builder
-
-# Cache: compile deps separately (only recompiles when Cargo.toml changes)
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+# Dependencies only rebuild when the recipe (Cargo.toml/Cargo.lock) changes.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo chef cook --release --locked --recipe-path recipe.json
 
-# Now copy real source and build (only our code recompiles — seconds, not minutes)
 COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
+# docs/ and migrations/ are embedded in the binary with include_str!.
 COPY docs/ docs/
 COPY migrations/ migrations/
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo build --release --locked
 
-RUN cargo build --release --locked
+# ── Stage 4: Runtime ───────────────────────────
+FROM debian:trixie-20261020-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
 
-# ── Stage 4: Runtime — minimal image (~20MB) ───
-FROM debian:bookworm-slim AS runtime
-
+# ca-certificates: outbound TLS (Clerk, Gemini, S3, GitHub, Postgres).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates wget \
+    && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Non-root user for security
-RUN useradd -r -s /bin/false baaton
-
-# Pre-create upload dir with correct ownership before dropping privileges.
-RUN mkdir -p /app/data/uploads && chown -R baaton:baaton /app/data
-
-USER baaton
-
-WORKDIR /app
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin baaton \
+    && mkdir -p /app/data/uploads \
+    && chown baaton:baaton /app/data/uploads
 
 COPY --from=builder /app/target/release/baaton-api /usr/local/bin/baaton-api
-COPY --from=builder /app/migrations /app/migrations
+
+USER baaton
+WORKDIR /app
 
 ENV PORT=4000
 EXPOSE 4000
 
-# No HEALTHCHECK in Dockerfile — let Dokploy/Swarm handle it
-
-# Persistent storage for uploaded images (NotionEditor inline images).
-# In production: mount a Dokploy volume here so uploads survive redeploys.
-VOLUME ["/app/data/uploads"]
-
+# No HEALTHCHECK here — let Dokploy/Swarm handle it.
 CMD ["baaton-api"]
