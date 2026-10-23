@@ -245,7 +245,6 @@ const ALL_ENDPOINT_GROUPS: EndpointGroup[] = [
     cat: 'AI',
     endpoints: [
       { method: 'POST',   path: '/ai/chat',                           desc: 'Chat with the AI assistant (streaming)' },
-      { method: 'GET',    path: '/ai/key',                            desc: 'Get AI key/model configuration' },
       { method: 'POST',   path: '/ai/pm-full-review',                 desc: 'Full PM review of a project backlog' },
     ],
   },

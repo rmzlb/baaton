@@ -955,9 +955,6 @@ curl -s -X POST $BAATON/ai/chat -H "Authorization: Bearer $KEY" \
 
 Quota: Free=50 messages/month, Pro=2000, Enterprise=unlimited. Returns HTTP 429 when exceeded with `{ "error": "AI quota exceeded", "upgrade_url": "/billing" }`.
 
-### GET /ai/key
-Get Gemini API key (for frontend use).
-
 ### POST /ai/pm-full-review
 AI-powered full project review.
 
