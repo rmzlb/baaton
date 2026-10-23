@@ -1,8 +1,18 @@
 node_modules
 dist
 .git
-.env*
+.env
+.env.*
 *.md
 .vscode
 .eslintcache
 test-ai-modules.ts
+# E2E tests and Playwright config not needed in the build image
+e2e/
+playwright.config.ts
+# Vitest config not needed in the build image
+vitest.config.ts
+# Generated TypeScript build info
+tsconfig.tsbuildinfo
+# Local-only env overrides
+*.local

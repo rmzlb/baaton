@@ -1,0 +1,26 @@
+# ── backend/.dockerignore ──────────────────────────────────────────────────
+# Prevent accidental inclusion of local build artifacts, secrets, and dev files.
+
+# Local build output (can be GBs — never ship)
+target/
+
+# Secrets and environment files
+.env
+.env.*
+
+# Dev/CI tooling not needed at build time
+tests/
+scripts/
+
+# VCS
+.git/
+.gitignore
+
+# Editor / tool noise
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# docs/ is intentionally NOT excluded: include_str!() embeds docs/SKILL.md
+# and docs/api-reference.md at compile time.
