@@ -33,12 +33,15 @@ const frontendRoot = resolve(__dirname, '../../..');
 
 const read = (p: string) => readFileSync(resolve(repoRoot, p), 'utf8');
 
+/** Production source of a router file: its `#[cfg(test)]` module serves no request. */
+const productionSource = (file: string) => read(file).split('#[cfg(test)]')[0];
+
 /** Count real HTTP endpoints: method verbs inside each .route(...) call. */
 function countEndpoints(): number {
   const files = ['backend/src/routes/mod.rs', 'backend/src/main.rs'];
   let total = 0;
   for (const file of files) {
-    const src = read(file);
+    const src = productionSource(file);
     const routeRe = /\.route\(\s*"[^"]+"\s*,/g;
     let m: RegExpExecArray | null;
     while ((m = routeRe.exec(src)) !== null) {
@@ -393,7 +396,7 @@ describe('positioning: the count helpers are honest', () => {
 
   it('agrees with a plain shell count of route verbs', () => {
     const shell = execSync(
-      `grep -rhoE '\\b(get|post|patch|put|delete)\\(' backend/src/routes/mod.rs backend/src/main.rs | wc -l`,
+      `for f in backend/src/routes/mod.rs backend/src/main.rs; do sed '/#\\[cfg(test)\\]/,$d' "$f"; done | grep -oE '\\b(get|post|patch|put|delete)\\(' | wc -l`,
       { cwd: repoRoot, encoding: 'utf8' }
     ).trim();
     expect(countEndpoints()).toBe(Number(shell));
