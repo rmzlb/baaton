@@ -480,7 +480,11 @@ function ChannelsSection() {
     retry: false,
   });
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: cacheKey });
+  const refresh = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: cacheKey }),
+    // "What you receive" depends on the channels too.
+    queryClient.invalidateQueries({ queryKey: [...apiClient.notificationPrefs.cacheScope, 'summary'] }),
+  ]);
 
   const channelMap = new Map<string, UserNotificationChannel>(
     channels.map((c) => [c.channel, c]),
@@ -934,6 +938,7 @@ export function SubscriptionsSection() {
       ]);
 
       await queryClient.invalidateQueries({ queryKey: cacheKey });
+      await queryClient.invalidateQueries({ queryKey: [...apiClient.notificationPrefs.cacheScope, 'summary'] });
     } catch {
       setSaveError(t('notifPrefs.subscriptions.saveError', { defaultValue: 'Could not save preference.' }));
     } finally {

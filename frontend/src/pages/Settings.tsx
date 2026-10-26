@@ -8,6 +8,8 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { timeAgo } from '@/lib/utils';
 import { IntegrationsTab } from '@/components/settings/IntegrationsTab';
 import { NotificationPreferencesSection } from '@/components/settings/NotificationPreferencesSection';
+import { NotificationSummaryCard } from '@/components/settings/NotificationSummaryCard';
+import { OrgNotificationRolesSection } from '@/components/settings/OrgNotificationRolesSection';
 import { createOnboardingTour } from '@/lib/onboarding';
 import { ApiError } from '@/lib/api';
 import type { ApiKey } from '@/lib/types';
@@ -58,11 +60,17 @@ export function Settings() {
       {/* Notification Preferences (per-user) */}
       <NotificationPreferencesSection />
 
+      {/* What the person receives, per project (BAA-39) */}
+      <NotificationSummaryCard />
+
       {/* Integrations Section */}
       <IntegrationsTab />
 
       {/* Public Agent Runs (Org gate) */}
       <PublicAgentRunsSection />
+
+      {/* Notification roles, defined once for the org */}
+      <OrgNotificationRolesSection />
 
       {/* API Keys Section */}
       <ApiKeysSection />
