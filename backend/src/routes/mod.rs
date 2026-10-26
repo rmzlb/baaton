@@ -67,8 +67,16 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         .route("/projects/{id}", get(projects::get_one).patch(projects::update).delete(projects::remove))
         .route("/projects/{id}/auto-assign", get(projects::get_auto_assign_settings).patch(projects::update_auto_assign_settings))
         .route("/projects/{id}/notifications", get(projects::get_notification_settings).patch(projects::update_notification_settings))
-        .route("/projects/{id}/notification-roles", get(notification_roles::get_roles).put(notification_roles::update_roles))
-        .route("/projects/{id}/notification-roles/members/{user_id}", put(notification_roles::assign_role))
+        .route(
+            "/projects/{id}/notification-roles",
+            get(notification_roles::get_roles)
+                .put(notification_roles::update_roles)
+                .delete(notification_roles::reset_roles),
+        )
+        .route(
+            "/projects/{id}/notification-roles/members/{user_id}",
+            put(notification_roles::assign_role).delete(notification_roles::clear_role),
+        )
         .route("/projects/{id}/statuses", axum::routing::put(projects::update_statuses))
         .route("/projects/{id}/refresh-github", post(projects::refresh_github))
         .route("/projects/{id}/issues", get(issues::list_by_project))
@@ -174,6 +182,7 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
             put(notification_prefs::upsert_channel).delete(notification_prefs::delete_channel),
         )
         .route("/me/project-subscriptions", get(notification_prefs::list_subscriptions))
+        .route("/me/notification-summary", get(notification_prefs::notification_summary))
         .route(
             "/me/project-subscriptions/{project_id}",
             put(notification_prefs::update_subscription)
@@ -241,6 +250,14 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
         // Org members
         .route("/orgs/{org_id}/members", get(orgs::list_members))
         .route("/orgs/{org_id}/settings", patch(orgs::update_settings))
+        .route(
+            "/orgs/{org_id}/notification-roles",
+            get(notification_roles::get_org_roles).put(notification_roles::update_org_roles),
+        )
+        .route(
+            "/orgs/{org_id}/notification-roles/members/{user_id}",
+            put(notification_roles::assign_org_role),
+        )
         .route("/orgs/{org_id}", get(orgs::get_one))
         // Admin (BAA-1)
         .route("/admin/orgs/{id}/plan", patch(admin::set_plan))
