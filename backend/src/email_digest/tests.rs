@@ -27,6 +27,21 @@
 //! Content
 //! 14. User text reaches the HTML unescaped.
 //! 15. The footer claims a reason the person does not have.
+//!
+//! Unsubscribe (BAA-40)
+//! 16. An unknown or malformed token, or the token of someone else,
+//!     unsubscribes a person.
+//! 17. A GET on the link (a mail scanner following it) unsubscribes.
+//! 18. A one-click POST (RFC 8058) does not unsubscribe, or answers an error
+//!     the second time.
+//! 19. A recap already queued is still sent after unsubscribing: events
+//!     waiting for their slot, or a recap waiting for its retry.
+//! 20. Unsubscribing from the recap also stops @mentions.
+//! 21. Re-subscribing does not bring the recap back.
+//! 22. The mail handed to notifyd lacks `List-Unsubscribe` or
+//!     `List-Unsubscribe-Post`, or a retry carries another link than the first
+//!     attempt (the same idempotency key must carry the same mail).
+//! 23. The link stays stored in clear after the recap left.
 
 use super::*;
 use chrono::TimeZone;
@@ -218,6 +233,7 @@ fn recap_escapes_every_user_supplied_string() {
         &[l],
         utc(2026, 10, 26, 11, 0, 0),
         "https://app.baaton.dev",
+        "https://api.baaton.dev/api/v1/public/email/unsubscribe/t",
     );
     for raw in ["<script>", "<img src=x", "<b>Proj", "<i>Rev", "<Bob>"] {
         assert!(!mail.html.contains(raw), "unescaped {raw}");
@@ -238,6 +254,7 @@ fn recap_footer_states_each_projects_real_reason() {
         &lines,
         utc(2026, 10, 26, 11, 0, 0),
         "https://app.baaton.dev",
+        "https://api.baaton.dev/api/v1/public/email/unsubscribe/t",
     );
     assert!(
         mail.text.contains("SqareX : rôle Reviewer"),
@@ -257,8 +274,9 @@ fn recap_footer_states_each_projects_real_reason() {
 
 use std::sync::Mutex;
 
-/// Isolated schema on a disposable database: the real 083 migration on a stub
-/// `issues` table. Nothing outside the schema is touched; it is dropped at the end.
+/// Isolated schema on a disposable database: the real 078, 083 and 085
+/// migrations on a stub `issues` table. Nothing outside the schema is
+/// touched; it is dropped at the end.
 struct TestDb {
     pool: PgPool,
     admin: PgPool,
@@ -292,6 +310,18 @@ impl TestDb {
             .execute(&pool)
             .await
             .unwrap();
+        sqlx::raw_sql(include_str!(
+            "../../migrations/078_pending_notifications.sql"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::raw_sql(include_str!(
+            "../../migrations/085_email_recap_unsubscribe.sql"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
         Self {
             pool,
             admin,
@@ -350,6 +380,8 @@ impl TestDb {
 #[derive(Default)]
 struct Fake {
     sent: Mutex<Vec<serde_json::Value>>,
+    /// Every request handed to notifyd, failed ones included.
+    attempts: Mutex<Vec<serde_json::Value>>,
     /// Org memberships; a missing user has none.
     orgs: Mutex<std::collections::HashMap<String, Vec<String>>>,
     /// Errors returned by the next sends, in order.
@@ -389,6 +421,7 @@ impl Transport for Fake {
     async fn send(&self, body: serde_json::Value) -> Result<(), SendError> {
         // Let a concurrent tick run in between, as a real request would.
         tokio::task::yield_now().await;
+        self.attempts.lock().unwrap().push(body.clone());
         let failure = {
             let mut f = self.failures.lock().unwrap();
             if f.is_empty() {
@@ -406,6 +439,7 @@ impl Transport for Fake {
 }
 
 const URL: &str = "https://app.baaton.dev";
+const API: &str = "https://api.baaton.dev";
 
 /// 12:00 Paris on 26/10/2026 (CET) is 11:00 UTC.
 fn noon() -> DateTime<Utc> {
@@ -441,8 +475,8 @@ async fn one_recap_per_person_and_slot_across_projects_and_instances() {
     // Two instances tick at the same moment.
     let now = noon() + chrono::Duration::seconds(30);
     let (a, b) = tokio::join!(
-        tick(&db.pool, &fake, URL, now),
-        tick(&db.pool, &fake, URL, now)
+        tick(&db.pool, &fake, URL, API, now),
+        tick(&db.pool, &fake, URL, API, now)
     );
     assert_eq!(a.unwrap().sent + b.unwrap().sent, 2);
     assert_eq!(fake.sent_to("ramzi").len(), 1);
@@ -464,14 +498,20 @@ async fn one_recap_per_person_and_slot_across_projects_and_instances() {
     );
 
     // Nothing new: later ticks in the same slot send nothing.
-    let report = tick(&db.pool, &fake, URL, noon() + chrono::Duration::minutes(30))
-        .await
-        .unwrap();
+    let report = tick(
+        &db.pool,
+        &fake,
+        URL,
+        API,
+        noon() + chrono::Duration::minutes(30),
+    )
+    .await
+    .unwrap();
     assert_eq!(report, TickReport::default());
     assert_eq!(fake.sent.lock().unwrap().len(), 2);
 
     // The late event leaves at 16:00 and only it.
-    tick(&db.pool, &fake, URL, utc(2026, 10, 26, 15, 0, 5))
+    tick(&db.pool, &fake, URL, API, utc(2026, 10, 26, 15, 0, 5))
         .await
         .unwrap();
     let second = fake.sent_to("ramzi");
@@ -507,7 +547,13 @@ async fn a_failed_send_is_retried_with_the_same_content_and_key() {
         .push(SendError::Retryable("notifyd 503".into()));
 
     let first = noon() + chrono::Duration::seconds(10);
-    assert_eq!(tick(&db.pool, &fake, URL, first).await.unwrap().retried, 1);
+    assert_eq!(
+        tick(&db.pool, &fake, URL, API, first)
+            .await
+            .unwrap()
+            .retried,
+        1
+    );
     assert!(fake.sent.lock().unwrap().is_empty());
 
     // An event committed late, stamped before the slot, after the first attempt.
@@ -522,16 +568,28 @@ async fn a_failed_send_is_retried_with_the_same_content_and_key() {
 
     // Not before the backoff.
     assert_eq!(
-        tick(&db.pool, &fake, URL, first + chrono::Duration::seconds(30))
-            .await
-            .unwrap(),
+        tick(
+            &db.pool,
+            &fake,
+            URL,
+            API,
+            first + chrono::Duration::seconds(30)
+        )
+        .await
+        .unwrap(),
         TickReport::default()
     );
     assert_eq!(
-        tick(&db.pool, &fake, URL, first + chrono::Duration::minutes(2))
-            .await
-            .unwrap()
-            .sent,
+        tick(
+            &db.pool,
+            &fake,
+            URL,
+            API,
+            first + chrono::Duration::minutes(2)
+        )
+        .await
+        .unwrap()
+        .sent,
         1
     );
     let mail = &fake.sent_to("ramzi")[0];
@@ -546,7 +604,7 @@ async fn a_failed_send_is_retried_with_the_same_content_and_key() {
     );
 
     // The late event is not lost: it leaves with the next recap.
-    tick(&db.pool, &fake, URL, utc(2026, 10, 26, 15, 0, 5))
+    tick(&db.pool, &fake, URL, API, utc(2026, 10, 26, 15, 0, 5))
         .await
         .unwrap();
     assert!(fake.sent_to("ramzi")[1]["body"]
@@ -615,9 +673,15 @@ async fn a_member_removed_from_an_org_no_longer_receives_its_events() {
     .await;
     let fake = Fake::default().member("ramzi", &["org-a"]);
 
-    let report = tick(&db.pool, &fake, URL, noon() + chrono::Duration::seconds(10))
-        .await
-        .unwrap();
+    let report = tick(
+        &db.pool,
+        &fake,
+        URL,
+        API,
+        noon() + chrono::Duration::seconds(10),
+    )
+    .await
+    .unwrap();
     assert_eq!((report.sent, report.skipped), (1, 1));
     let text = fake.sent_to("ramzi")[0]["body"]
         .as_str()
@@ -657,11 +721,23 @@ async fn a_refused_request_is_not_retried() {
         .lock()
         .unwrap()
         .push(SendError::Permanent("400 invalid recipient".into()));
-    assert_eq!(tick(&db.pool, &fake, URL, noon()).await.unwrap().failed, 1);
     assert_eq!(
-        tick(&db.pool, &fake, URL, noon() + chrono::Duration::hours(2))
+        tick(&db.pool, &fake, URL, API, noon())
             .await
-            .unwrap(),
+            .unwrap()
+            .failed,
+        1
+    );
+    assert_eq!(
+        tick(
+            &db.pool,
+            &fake,
+            URL,
+            API,
+            noon() + chrono::Duration::hours(2)
+        )
+        .await
+        .unwrap(),
         TickReport::default()
     );
     assert_eq!(db.digests().await[0].2, "failed");
@@ -708,5 +784,311 @@ async fn the_same_event_queued_twice_is_mailed_once() {
         .await
         .unwrap();
     assert_eq!(n, 1);
+    db.drop().await;
+}
+
+// ───────────────────────────── unsubscribe (BAA-40) ─────────────────────────────
+
+const LINK_PREFIX: &str = "https://api.baaton.dev/api/v1/public/email/unsubscribe/";
+
+/// The token behind the `List-Unsubscribe` header of a mail sent to notifyd.
+fn link_token(mail: &serde_json::Value) -> String {
+    let header = mail["email_headers"]["List-Unsubscribe"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no List-Unsubscribe header: {mail}"));
+    header
+        .strip_prefix('<')
+        .and_then(|h| h.strip_suffix('>'))
+        .and_then(|h| h.strip_prefix(LINK_PREFIX))
+        .unwrap_or_else(|| panic!("unexpected List-Unsubscribe: {header}"))
+        .to_string()
+}
+
+fn unsubscribe_app(pool: PgPool) -> axum::Router {
+    axum::Router::new()
+        .route(
+            "/public/email/unsubscribe/{token}",
+            axum::routing::get(crate::routes::notification_prefs::unsubscribe_page)
+                .post(crate::routes::notification_prefs::unsubscribe_one_click),
+        )
+        .with_state(pool)
+}
+
+/// One request to the public link; returns the status and the body.
+async fn hit(pool: &PgPool, method: &str, token: &str, body: Option<&str>) -> (u16, String) {
+    use tower::ServiceExt;
+    let mut req = axum::http::Request::builder()
+        .method(method)
+        .uri(format!("/public/email/unsubscribe/{token}"));
+    if body.is_some() {
+        req = req.header("content-type", "application/x-www-form-urlencoded");
+    }
+    let req = req
+        .body(axum::body::Body::from(body.unwrap_or_default().to_string()))
+        .unwrap();
+    let res = unsubscribe_app(pool.clone()).oneshot(req).await.unwrap();
+    let status = res.status().as_u16();
+    let bytes = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    (status, String::from_utf8_lossy(&bytes).into_owned())
+}
+
+async fn enabled(pool: &PgPool, user: &str) -> bool {
+    unsubscribe::recap_enabled(pool, user).await.unwrap()
+}
+
+const ONE_CLICK: Option<&str> = Some("List-Unsubscribe=One-Click");
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL_TEST pointing at a disposable PostgreSQL database"]
+async fn every_recap_carries_one_click_headers_frozen_across_retries() {
+    let db = TestDb::new().await;
+    db.event(
+        "ramzi",
+        "org-a",
+        "SqareX",
+        "SQX-1",
+        utc(2026, 10, 26, 10, 0, 0),
+    )
+    .await;
+    let fake = Fake::default().member("ramzi", &["org-a"]);
+    fake.failures
+        .lock()
+        .unwrap()
+        .push(SendError::Retryable("notifyd 503".into()));
+    let first = noon() + chrono::Duration::seconds(10);
+    tick(&db.pool, &fake, URL, API, first).await.unwrap();
+    tick(
+        &db.pool,
+        &fake,
+        URL,
+        API,
+        first + chrono::Duration::minutes(2),
+    )
+    .await
+    .unwrap();
+
+    let attempts = fake.attempts.lock().unwrap().clone();
+    assert_eq!(attempts.len(), 2);
+    let mail = &attempts[1];
+    assert_eq!(
+        mail["email_headers"]["List-Unsubscribe-Post"],
+        "List-Unsubscribe=One-Click"
+    );
+    let token = link_token(mail);
+    assert!(token.len() >= 43, "at least 32 random bytes: {token}");
+    assert_eq!(
+        attempts[0]["email_headers"], mail["email_headers"],
+        "the retry carries the link of the first attempt"
+    );
+    assert_eq!(attempts[0]["body_html"], mail["body_html"]);
+    let url = format!("{LINK_PREFIX}{token}");
+    let html = mail["body_html"].as_str().unwrap();
+    assert!(
+        html.contains(&url) && html.contains("Se d&#233;sabonner du r&#233;cap"),
+        "{html}"
+    );
+    assert!(mail["body"].as_str().unwrap().contains(&url));
+
+    // Sent: the clear token is gone, only its hash remains.
+    let kept: Option<String> = sqlx::query_scalar("SELECT unsubscribe_token FROM email_digests")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(kept, None);
+    let clear: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM email_unsubscribe_tokens \
+          WHERE position(convert_to($1, 'UTF8') in token_hash) > 0",
+    )
+    .bind(&token)
+    .fetch_one(&db.pool)
+    .await
+    .unwrap();
+    assert_eq!(clear, 0);
+    db.drop().await;
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL_TEST pointing at a disposable PostgreSQL database"]
+async fn only_a_one_click_post_with_the_persons_own_token_unsubscribes() {
+    let db = TestDb::new().await;
+    db.event(
+        "ramzi",
+        "org-a",
+        "SqareX",
+        "SQX-1",
+        utc(2026, 10, 26, 10, 0, 0),
+    )
+    .await;
+    db.event(
+        "yacine",
+        "org-a",
+        "SqareX",
+        "SQX-1",
+        utc(2026, 10, 26, 10, 0, 0),
+    )
+    .await;
+    let fake = Fake::default()
+        .member("ramzi", &["org-a"])
+        .member("yacine", &["org-a"]);
+    tick(&db.pool, &fake, URL, API, noon()).await.unwrap();
+    let ramzi = link_token(&fake.sent_to("ramzi")[0]);
+
+    // A scanner following the link gets the page, and unsubscribes nobody.
+    let (status, page) = hit(&db.pool, "GET", &ramzi, None).await;
+    assert_eq!(status, 200);
+    assert!(
+        page.contains("<form") && page.contains("List-Unsubscribe"),
+        "{page}"
+    );
+    assert!(!page.contains("ramzi"), "the page names nobody: {page}");
+    assert!(enabled(&db.pool, "ramzi").await);
+
+    // Unknown, malformed, or a POST without the one-click body: nothing.
+    let unknown = unsubscribe::new_token();
+    assert_eq!(hit(&db.pool, "POST", &unknown, ONE_CLICK).await.0, 404);
+    assert_eq!(hit(&db.pool, "POST", "abc", ONE_CLICK).await.0, 404);
+    assert_eq!(hit(&db.pool, "GET", &unknown, None).await.0, 404);
+    assert_eq!(hit(&db.pool, "POST", &ramzi, None).await.0, 400);
+    assert!(enabled(&db.pool, "ramzi").await && enabled(&db.pool, "yacine").await);
+
+    // The one-click POST unsubscribes its owner only, and again is still fine.
+    let (status, body) = hit(&db.pool, "POST", &ramzi, ONE_CLICK).await;
+    assert_eq!(status, 200);
+    assert!(!body.contains("ramzi"), "{body}");
+    assert!(!enabled(&db.pool, "ramzi").await);
+    assert!(enabled(&db.pool, "yacine").await);
+    assert_eq!(hit(&db.pool, "POST", &ramzi, ONE_CLICK).await.0, 200);
+    assert!(!enabled(&db.pool, "ramzi").await);
+    db.drop().await;
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL_TEST pointing at a disposable PostgreSQL database"]
+async fn unsubscribing_stops_queued_recaps_but_not_mentions_until_resubscribed() {
+    let db = TestDb::new().await;
+    let fake = Fake::default().member("ramzi", &["org-a"]);
+    // A recap waiting for its retry, and an event waiting for 16:00.
+    db.event(
+        "ramzi",
+        "org-a",
+        "SqareX",
+        "SQX-1",
+        utc(2026, 10, 26, 10, 0, 0),
+    )
+    .await;
+    fake.failures
+        .lock()
+        .unwrap()
+        .push(SendError::Retryable("notifyd 503".into()));
+    tick(&db.pool, &fake, URL, API, noon()).await.unwrap();
+    db.event(
+        "ramzi",
+        "org-a",
+        "SqareX",
+        "SQX-2",
+        utc(2026, 10, 26, 13, 0, 0),
+    )
+    .await;
+    let token = link_token(&fake.attempts.lock().unwrap()[0]);
+
+    let issue = Uuid::new_v4();
+    sqlx::query("INSERT INTO issues VALUES ($1)")
+        .bind(issue)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+    let mention = || crate::pending_notif::DigestEvent::Mention {
+        actor: "Bob".into(),
+        body: "@ramzi regarde".into(),
+        at: Utc::now(),
+    };
+    let issue_ref = IssueRef {
+        org_id: "org-a",
+        project_id: Uuid::new_v4(),
+        project_name: "SqareX",
+        issue_id: issue,
+        display_id: "SQX-3",
+        title: "Titre",
+    };
+    let to = vec![row("ramzi", "email", "ramzi@example.invalid")];
+    let created = EventKind::IssueCreated;
+
+    assert_eq!(hit(&db.pool, "POST", &token, ONE_CLICK).await.0, 200);
+    // Queued after unsubscribing: neither the recap event nor its mail.
+    enqueue(
+        &db.pool,
+        &to,
+        &issue_ref,
+        "Bob",
+        &created,
+        "created:1",
+        Utc::now(),
+    )
+    .await;
+    crate::pending_notif::queue_digest_event(
+        &db.pool,
+        issue,
+        "SQX-3",
+        "Titre",
+        Some("SqareX"),
+        "ramzi@example.invalid",
+        &mention(),
+    )
+    .await
+    .unwrap();
+
+    for at in [
+        noon() + chrono::Duration::minutes(5),
+        utc(2026, 10, 26, 15, 0, 5),
+        utc(2026, 10, 26, 19, 0, 5),
+    ] {
+        tick(&db.pool, &fake, URL, API, at).await.unwrap();
+    }
+    assert!(
+        fake.sent_to("ramzi").is_empty(),
+        "nothing leaves after unsubscribing"
+    );
+    assert!(db
+        .digests()
+        .await
+        .iter()
+        .all(|d| d.2 != "pending" && d.2 != "sent"));
+    let queued: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM email_digest_events WHERE digest_id IS NULL")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    assert_eq!(queued, 0);
+    let mentions: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pending_notifications \
+          WHERE recipient_identity = 'ramzi@example.invalid' AND sent_at IS NULL",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .unwrap();
+    assert_eq!(mentions, 1, "the @mention still goes out");
+
+    // Back on: the next event reaches the next recap, and the old link still works.
+    unsubscribe::set_recap_enabled(&db.pool, "ramzi", true)
+        .await
+        .unwrap();
+    enqueue(
+        &db.pool,
+        &to,
+        &issue_ref,
+        "Bob",
+        &created,
+        "created:2",
+        Utc::now(),
+    )
+    .await;
+    // `enqueue` stamps the real clock: the next slot after it, whatever today is.
+    let next = slot_at_or_before(Utc::now() + chrono::Duration::hours(13)).unwrap();
+    let report = tick(&db.pool, &fake, URL, API, next).await.unwrap();
+    assert_eq!(report.sent, 1);
+    assert_eq!(hit(&db.pool, "POST", &token, ONE_CLICK).await.0, 200);
+    assert!(!enabled(&db.pool, "ramzi").await);
     db.drop().await;
 }

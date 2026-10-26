@@ -1,7 +1,9 @@
 //! User notification preferences. Baaton owns project subscriptions; notifyd
 //! owns Telegram bots, destinations, verification and delivery.
 
+mod email_recap;
 mod telegram;
+pub use email_recap::{get_email_recap, put_email_recap, unsubscribe_one_click, unsubscribe_page};
 pub use telegram::{create_telegram_link, delete_bot, get_bot, put_telegram_destination, register_bot, send_test_notification, telegram_webhook};
 
 use axum::{
