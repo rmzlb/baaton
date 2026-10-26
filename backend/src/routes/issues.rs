@@ -193,6 +193,7 @@ fn on_status_changed(
         let creator_id_for_notif = issue.created_by_id.clone();
         let reporter_email_for_notif = issue.reporter_email.clone();
         let assignee_ids_for_notif = issue.assignee_ids.clone();
+        let org = org_id.to_string();
         tokio::spawn(async move {
             let project: Option<(String, serde_json::Value, serde_json::Value)> =
                 sqlx::query_as("SELECT name, statuses, notify_statuses FROM projects WHERE id = $1")
@@ -289,13 +290,14 @@ fn on_status_changed(
             .ok()
             .flatten();
 
-            // Split: email is deferred through the digest window; Telegram
-            // (per-user) stays immediate.
-            let (email_recipients, other_recipients): (Vec<_>, Vec<_>) =
-                recipients.into_iter().partition(|r| r.channel == "email");
+            // Email goes to the recap at fixed times, without the actor;
+            // Telegram (per-user) stays immediate and unchanged.
+            let actor_owner =
+                crate::routes::comments::resolve_owner_identity(&pool2, &actor_identity).await;
+            let (email_recipients, other_recipients) =
+                crate::email_digest::split_email(recipients, &actor_owner);
             let from_label = label(&from_key);
             let to_label = label(&to_key);
-            let actor_str = actor.clone().unwrap_or_default();
 
             notifyd.issue_status_changed(
                 crate::notifyd::StatusNotice {
@@ -315,137 +317,30 @@ fn on_status_changed(
                 announce_room,
             );
 
-            // Deferred email digest.
-            for r in &email_recipients {
-                crate::pending_notif::queue_digest_event(
-                    &pool2,
+            crate::email_digest::enqueue(
+                &pool2,
+                &email_recipients,
+                &crate::email_digest::IssueRef {
+                    org_id: &org,
+                    project_id,
+                    project_name: project_name.as_deref().unwrap_or_default(),
                     issue_id,
-                    &display_id,
-                    &title,
-                    project_name.as_deref(),
-                    &r.address,
-                    &crate::pending_notif::DigestEvent::Transition {
-                        actor: actor_str.clone(),
-                        from_status: from_label.clone(),
-                        to_status: to_label.clone(),
-                        at: changed_at,
-                    },
-                )
-                .await
-                .ok();
-            }
-        });
-    }
-
-    // ── Creator notification (in_review) ──
-    // The creator is notified when their ticket reaches in_review — no
-    // subscription required. Identity resolution uses resolve_owner_identity
-    // so an agent acting through somebody's API key is identified as that
-    // person; verified email only; org membership revalidated (same gate as
-    // resolve_recipients); deduplication skips the creator email when they
-    // are also a subscriber who will already receive the status_changed mail.
-    if issue.status == "in_review" {
-        if let (Some(notifyd), Some(creator_id)) = (notifyd, issue.created_by_id.as_ref()) {
-            let pool2 = pool.clone();
-            let notifyd = notifyd.clone();
-            let creator_id = creator_id.clone();
-            let display_id = issue.display_id.clone();
-            let title = issue.title.clone();
-            let issue_id = issue.id;
-            let project_id = issue.project_id;
-            let changed_at = issue.status_changed_at.unwrap_or_else(chrono::Utc::now);
-            tokio::spawn(async move {
-                // Collapse apikey:<uuid> to the key's human owner so the
-                // creator's real identity is used for email/membership checks.
-                let resolved_creator =
-                    crate::routes::comments::resolve_owner_identity(&pool2, &creator_id).await;
-                // Verified addresses only: an unverified address was never
-                // proven to belong to this person and could expose project
-                // content to the wrong inbox.
-                let creator_email: Option<String> = sqlx::query_scalar(
-                    "SELECT address FROM user_notification_channels                      WHERE user_id = $1 AND channel = 'email' AND verified_at IS NOT NULL",
-                )
-                .bind(&resolved_creator)
-                .fetch_optional(&pool2)
-                .await
-                .ok()
-                .flatten();
-
-                let Some(email) = creator_email else {
-                    tracing::trace!(
-                        creator = %resolved_creator,
-                        "creator.in_review.no_verified_email; skip"
-                    );
-                    return;
-                };
-
-                // Revalidate org membership — a stored creator_id from a
-                // deleted membership must not receive project content.
-                let org_id: Option<String> = sqlx::query_scalar(
-                    "SELECT org_id FROM projects WHERE id = $1",
-                )
-                .bind(project_id)
-                .fetch_optional(&pool2)
-                .await
-                .ok()
-                .flatten();
-                let Some(org_id) = org_id else { return; };
-                let is_member = fetch_user_org_ids(&resolved_creator)
-                    .await
-                    .is_ok_and(|ids| ids.contains(&org_id));
-                if !is_member {
-                    tracing::trace!(
-                        creator = %resolved_creator,
-                        org = %org_id,
-                        "creator.in_review.not_in_org; skip"
-                    );
-                    return;
-                }
-
-                // Deduplication: if the creator is also a subscriber who will
-                // receive the status_changed notification for in_review on this
-                // project, skip the creator email so they get one email, not two.
-                let already_subscribed: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(                         SELECT 1 FROM project_notification_subscriptions s                         JOIN projects p ON p.id = s.project_id                         WHERE s.project_id = $1 AND s.user_id = $2 AND s.enabled                         AND COALESCE(s.notify_statuses, p.notify_statuses) @> to_jsonb('in_review'::text)                         AND (cardinality(s.channels) = 0 OR 'email' = ANY(s.channels))                     )",
-                )
-                .bind(project_id)
-                .bind(&resolved_creator)
-                .fetch_optional(&pool2)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or(false);
-
-                if already_subscribed {
-                    tracing::trace!(
-                        creator = %resolved_creator,
-                        "creator.in_review.already_subscribed; skip duplicate"
-                    );
-                    return;
-                }
-
-                let project_name: Option<String> = sqlx::query_scalar(
-                    "SELECT name FROM projects WHERE id = $1",
-                )
-                .bind(project_id)
-                .fetch_optional(&pool2)
-                .await
-                .ok()
-                .flatten();
-
-                let idempotency_key = format!(
-                    "baaton-creator-in-review-{issue_id}-{}",
+                    display_id: &display_id,
+                    title: &title,
+                },
+                actor.as_deref().unwrap_or_default(),
+                &crate::email_digest::EventKind::StatusChanged {
+                    from: &from_label,
+                    to: &to_label,
+                },
+                &format!(
+                    "status:{issue_id}:{to_key}:{}",
                     changed_at.timestamp_millis()
-                );
-                notifyd.send_creator_in_review(
-                    &display_id,
-                    &title,
-                    project_name.as_deref().unwrap_or("Baaton"),
-                    &email,
-                    &idempotency_key,
-                );
-            });
-        }
+                ),
+                changed_at,
+            )
+            .await;
+        });
     }
 }
 
@@ -1649,6 +1544,8 @@ pub async fn create(
         let project_id = issue.project_id;
         // Same rule as a status change: the person who filed it already knows.
         let creator_identity = auth.user_id.clone();
+        let org = org_id.to_string();
+        let created_at = issue.created_at;
         tokio::spawn(async move {
             let project_name: Option<String> =
                 sqlx::query_scalar("SELECT name FROM projects WHERE id = $1")
@@ -1681,6 +1578,29 @@ pub async fn create(
             .flatten()
             .unwrap_or(false);
 
+            // Email goes to the recap, without the person who filed it.
+            let actor_owner =
+                crate::routes::comments::resolve_owner_identity(&pool2, &creator_identity).await;
+            let (email_recipients, other_recipients) =
+                crate::email_digest::split_email(recipients, &actor_owner);
+            crate::email_digest::enqueue(
+                &pool2,
+                &email_recipients,
+                &crate::email_digest::IssueRef {
+                    org_id: &org,
+                    project_id,
+                    project_name: project_name.as_deref().unwrap_or_default(),
+                    issue_id,
+                    display_id: &display_id,
+                    title: &title,
+                },
+                actor.as_deref().unwrap_or_default(),
+                &crate::email_digest::EventKind::IssueCreated,
+                &format!("created:{issue_id}"),
+                created_at,
+            )
+            .await;
+
             notifyd.issue_created(
                 crate::notifyd::IssueNotice {
                     display_id,
@@ -1689,7 +1609,7 @@ pub async fn create(
                     actor,
                     issue_id,
                 },
-                recipients,
+                other_recipients,
                 announce_room,
             );
         });
@@ -1711,6 +1631,7 @@ pub async fn create(
         let project_id2 = issue.project_id;
         let actor_identity = auth.user_id.clone();
         let created_at = issue.created_at;
+        let org2 = org_id.to_string();
         tokio::spawn(async move {
             let project: Option<(String, serde_json::Value, serde_json::Value)> =
                 sqlx::query_as(
@@ -1758,12 +1679,13 @@ pub async fn create(
                     .unwrap_or(key)
                     .to_string()
             };
-            // Split: email is deferred through the digest window; Telegram
-            // (per-user) stays immediate.
-            let (email_recipients2, other_recipients2): (Vec<_>, Vec<_>) =
-                recipients.into_iter().partition(|r| r.channel == "email");
+            // Email goes to the recap, without the person who filed it;
+            // Telegram (per-user) stays immediate.
+            let actor_owner =
+                crate::routes::comments::resolve_owner_identity(&pool2, &actor_identity).await;
+            let (email_recipients2, other_recipients2) =
+                crate::email_digest::split_email(recipients, &actor_owner);
             let to_label2 = label(&to_key);
-            let actor_str2 = actor2.clone().unwrap_or_default();
 
             notifyd.issue_status_changed(
                 crate::notifyd::StatusNotice {
@@ -1783,25 +1705,29 @@ pub async fn create(
                 announce_room,
             );
 
-            // Deferred email digest (initial status on ticket creation).
-            for r in &email_recipients2 {
-                crate::pending_notif::queue_digest_event(
-                    &pool2,
-                    issue_id2,
-                    &display_id2,
-                    &title2,
-                    project_name2.as_deref(),
-                    &r.address,
-                    &crate::pending_notif::DigestEvent::Transition {
-                        actor: actor_str2.clone(),
-                        from_status: String::new(),
-                        to_status: to_label2.clone(),
-                        at: created_at,
-                    },
-                )
-                .await
-                .ok();
-            }
+            crate::email_digest::enqueue(
+                &pool2,
+                &email_recipients2,
+                &crate::email_digest::IssueRef {
+                    org_id: &org2,
+                    project_id: project_id2,
+                    project_name: project_name2.as_deref().unwrap_or_default(),
+                    issue_id: issue_id2,
+                    display_id: &display_id2,
+                    title: &title2,
+                },
+                actor2.as_deref().unwrap_or_default(),
+                &crate::email_digest::EventKind::StatusChanged {
+                    from: "",
+                    to: &to_label2,
+                },
+                &format!(
+                    "status:{issue_id2}:{to_key}:{}",
+                    created_at.timestamp_millis()
+                ),
+                created_at,
+            )
+            .await;
         });
     }
 
