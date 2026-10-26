@@ -2196,6 +2196,14 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'integrations.agentmail.feature2Desc': 'Les changements de statut et commentaires déclenchent des notifications par e-mail.',
 
   // ─── Intégration Telegram ──────────────────────────────────────────────────
+  // ─── Email recap (BAA-38) ─────────────────────────────
+  'integrations.email.description': "Un récap par e-mail à heures fixes avec ce qui a changé sur vos tickets. Les @mentions arrivent tout de suite.",
+  'integrations.email.recap.title': "Ce que vous recevez",
+  'integrations.email.recap.schedule': "Un e-mail récapitulatif à 08:00, 12:00, 16:00 et 20:00 (heure de Paris), seulement s’il y a du nouveau. Tous vos projets dans le même e-mail, groupés par projet puis par ticket.",
+  'integrations.email.recap.content': "Il contient ce que votre rôle demande sur chaque projet, vos propres tickets compris. Sans rôle : les tickets que vous avez créés, qui vous sont assignés ou que vous avez demandés, et les projets que vous suivez.",
+  'integrations.email.recap.immediate': "Les @mentions arrivent tout de suite. Vos propres actions, y compris celles de vos clés API, ne vous envoient jamais d’e-mail.",
+  'integrations.email.recap.manage': "Choisir les projets suivis",
+
   'integrations.telegram.description': 'Reçois les notifications Baaton sur Telegram.',
   'integrations.telegram.bot.title': 'Bot',
   'integrations.telegram.bot.desc': 'Crée un bot sur @BotFather et colle son token. Baaton enregistre le webhook automatiquement.',
@@ -2405,7 +2413,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'notificationRoles.roleFor': "Rôle de {{name}}",
   'notificationRoles.none': "Aucun rôle",
   'notificationRoles.roles': "Rôles",
-  'notificationRoles.rolesDesc': "Ce que chaque rôle reçoit sur ce projet. Le créateur et les assignés sont toujours prévenus pour leurs propres tickets.",
+  'notificationRoles.rolesDesc': "Ce que chaque rôle reçoit sur ce projet, sur tous les tickets, y compris ceux du membre. Un membre sans rôle est prévenu pour les tickets qu’il a créés, qui lui sont assignés ou qu’il a demandés. Par e-mail, tout arrive dans un récap à 08:00, 12:00, 16:00 et 20:00 (heure de Paris).",
   'notificationRoles.holders_one': "{{count}} membre",
   'notificationRoles.holders_other': "{{count}} membres",
   'notificationRoles.removeConfirm_one': "Supprimer ce rôle ? {{count}} membre ne recevra plus ses notifications.",

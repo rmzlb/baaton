@@ -917,7 +917,7 @@ function NotificationRolesSection({ project }: { project: Project }) {
           {t('notificationRoles.roles', { defaultValue: 'Roles' })}
         </p>
         <p className="text-xs text-muted mb-3">
-          {t('notificationRoles.rolesDesc', { defaultValue: 'What each role hears on this project. Creators and assignees are always told about their own tickets.' })}
+          {t('notificationRoles.rolesDesc', { defaultValue: 'What each role hears on this project, on every ticket, the member’s own included. A member without a role hears about the tickets they created, are assigned to or requested. By email, everything arrives in one recap at 08:00, 12:00, 16:00 and 20:00 (Paris time).' })}
         </p>
         <div className="space-y-4">
           {data.roles.map((role) => (

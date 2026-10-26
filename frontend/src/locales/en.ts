@@ -2196,6 +2196,14 @@ As a [user], I want to [action] so that [benefit].
   'integrations.agentmail.feature2Desc': 'Status changes and comments trigger email notifications to stakeholders.',
 
   // ─── Telegram Integration ─────────────────────────────
+  // ─── Email recap (BAA-38) ─────────────────────────────
+  'integrations.email.description': "One recap email at fixed times with what changed on your tickets. @mentions arrive right away.",
+  'integrations.email.recap.title': "What you receive",
+  'integrations.email.recap.schedule': "One recap email at 08:00, 12:00, 16:00 and 20:00 (Paris time), only when something new happened. All your projects in one email, grouped by project and ticket.",
+  'integrations.email.recap.content': "It holds what your role asks for on each project, your own tickets included. Without a role: tickets you created, are assigned to or requested, and the projects you follow.",
+  'integrations.email.recap.immediate': "@mentions arrive right away. Your own actions, including those of your API keys, never send you an email.",
+  'integrations.email.recap.manage': "Choose the projects you follow",
+
   'integrations.telegram.description': 'Receive Baaton notifications in Telegram.',
   'integrations.telegram.bot.title': 'Bot',
   'integrations.telegram.bot.desc': 'Create a bot on @BotFather and paste its token. Baaton registers the webhook automatically.',
@@ -2405,7 +2413,7 @@ As a [user], I want to [action] so that [benefit].
   'notificationRoles.roleFor': "Role for {{name}}",
   'notificationRoles.none': "No role",
   'notificationRoles.roles': "Roles",
-  'notificationRoles.rolesDesc': "What each role hears on this project. Creators and assignees are always told about their own tickets.",
+  'notificationRoles.rolesDesc': "What each role hears on this project, on every ticket, the member’s own included. A member without a role hears about the tickets they created, are assigned to or requested. By email, everything arrives in one recap at 08:00, 12:00, 16:00 and 20:00 (Paris time).",
   'notificationRoles.holders_one': "{{count}} member",
   'notificationRoles.holders_other': "{{count}} members",
   'notificationRoles.removeConfirm_one': "Remove this role? {{count}} member will stop receiving its notifications.",
