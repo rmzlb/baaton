@@ -44,10 +44,10 @@ Check the Baaton notifyd project's own sender overrides and allowed channels too
 
 ## 4. Delivery check
 
-Use an authorized test recipient with a verified email registered in Baaton. Trigger the requested `in_review` transition from another effective actor and confirm:
+Use an authorized test recipient with a verified email registered in Baaton. Since BAA-38, notification emails leave as one recap per person at 08:00, 12:00, 16:00 and 20:00 Europe/Paris (only @mentions are immediate, within 2 minutes). Trigger the requested `in_review` transition from another effective actor, wait for the next slot, and confirm:
 
-1. Recipient selection: current org membership, creator/actor identity, verified address and deduplication.
-2. notifyd accepts a request with `body_html` (not `html`), text fallback, subject and recipient-scoped event key.
+1. Recipient selection: current org membership, roles before the participant default, the actor (and the owner of the acting API key) excluded, verified address and deduplication.
+2. notifyd accepts a request with `body_html` (not `html`), the text part, subject and the `baaton-recap-<user>-<slot>` idempotency key. `email_digests` shows the recap `sent`; a `pending` row with `last_error` is being retried.
 3. The job reaches the Cloudflare connector, not the log connector.
 4. Cloudflare reports delivered/queued/bounced accurately, then check the actual inbox.
 5. The hosted PNG mascot, ticket CTA and notification preferences link render correctly. Queue acceptance is not proof of inbox delivery.
