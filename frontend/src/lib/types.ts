@@ -86,6 +86,11 @@ export interface ProjectSubscription {
   statuses: ProjectSubscriptionStatus[];
 }
 
+/** The person's email recap switch (BAA-40). @mentions are not affected. */
+export interface EmailRecapSetting {
+  enabled: boolean;
+}
+
 export interface UpdateProjectSubscriptionBody {
   enabled?: boolean;
   notify_statuses?: string[] | null;

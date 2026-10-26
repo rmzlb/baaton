@@ -2203,6 +2203,10 @@ As a [user], I want to [action] so that [benefit].
   'integrations.email.recap.content': "It holds what your role asks for on each project, your own tickets included. Without a role: tickets you created, are assigned to or requested, and the projects you follow.",
   'integrations.email.recap.immediate': "@mentions arrive right away. Your own actions, including those of your API keys, never send you an email.",
   'integrations.email.recap.manage': "Choose the projects you follow",
+  'integrations.email.recap.toggle': "Receive the email recap",
+  'integrations.email.recap.toggleOn': "On. Every recap has a one-click unsubscribe link.",
+  'integrations.email.recap.toggleOff': "Off: no recap is sent. @mentions still arrive by email.",
+  'integrations.email.recap.toggleError': "Could not save. Try again.",
 
   'integrations.telegram.description': 'Receive Baaton notifications in Telegram.',
   'integrations.telegram.bot.title': 'Bot',
