@@ -250,12 +250,14 @@ fn recap_line(l: &crate::email_digest::DigestLine) -> String {
 ///
 /// Grouped by project, then ticket, in the order things happened; every
 /// ticket links to itself. The footer gives, per project, the real reason this
-/// person hears about it. Every user-supplied string goes through `he` in the
-/// HTML part; the plain-text part carries the same words unescaped.
+/// person hears about it, then the one-click unsubscribe link of this recap
+/// (BAA-40). Every user-supplied string goes through `he` in the HTML part;
+/// the plain-text part carries the same words unescaped.
 pub fn recap_email(
     lines: &[crate::email_digest::DigestLine],
     slot_at: chrono::DateTime<chrono::Utc>,
     public_url: &str,
+    unsubscribe_url: &str,
 ) -> Mail {
     use chrono_tz::Europe::Paris;
     let slot_local = slot_at.with_timezone(&Paris);
@@ -366,16 +368,17 @@ pub fn recap_email(
         .collect();
     let schedule = "Un r\u{00e9}cap part \u{00e0} 08:00, 12:00, 16:00 et 20:00 (heure de Paris), seulement s'il y a du nouveau. Vos propres actions n'y figurent pas.";
     let footer = format!(
-        "Pourquoi ce mail : {}.<br>{}",
+        r#"Pourquoi ce mail : {}.<br>{}<br><a href="{}" style="color:#9c9b95;">Se d&#233;sabonner du r&#233;cap</a>"#,
         reasons
             .iter()
             .map(|r| he(r))
             .collect::<Vec<_>>()
             .join(" &middot; "),
-        he(schedule)
+        he(schedule),
+        he(unsubscribe_url)
     );
     text.push_str(&format!(
-        "\nPourquoi ce mail :\n{}\n\n{schedule}\nG\u{00e9}rer mes notifications : {}\n",
+        "\nPourquoi ce mail :\n{}\n\n{schedule}\nSe d\u{00e9}sabonner du r\u{00e9}cap : {unsubscribe_url}\nG\u{00e9}rer mes notifications : {}\n",
         reasons
             .iter()
             .map(|r| format!("- {r}"))

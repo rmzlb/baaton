@@ -203,6 +203,83 @@ function EmailAddressStep() {
   );
 }
 
+// ─── Recap switch (BAA-40) ───────────────────────────────────────────────────
+
+/**
+ * The person's recap switch: the same state the one-click link in every recap
+ * turns off, so this is also where they turn it back on.
+ */
+function RecapToggle() {
+  const { t } = useTranslation();
+  const apiClient = useApi();
+  const queryClient = useQueryClient();
+  const recapCacheKey = [...apiClient.notificationPrefs.cacheScope, 'email-recap'];
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: recapCacheKey,
+    queryFn: () => apiClient.notificationPrefs.getEmailRecap(),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const mutation = useMutation({
+    mutationFn: (enabled: boolean) => apiClient.notificationPrefs.setEmailRecap(enabled),
+    onSuccess: (setting) => queryClient.setQueryData(recapCacheKey, setting),
+  });
+
+  if (isLoading) return <Skeleton className="h-10 rounded-lg" />;
+  if (isError || !data) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+        <AlertTriangle size={13} />
+        {t('notifPrefs.channels.loadError', { defaultValue: 'Failed to load channels. Refresh to retry.' })}
+      </div>
+    );
+  }
+
+  const enabled = mutation.isPending && mutation.variables !== undefined ? mutation.variables : data.enabled;
+  const label = t('integrations.email.recap.toggle', { defaultValue: 'Receive the email recap' });
+
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-primary">{label}</p>
+        <p className="text-[11px] text-muted mt-0.5">
+          {enabled
+            ? t('integrations.email.recap.toggleOn', {
+                defaultValue: 'On. Every recap has a one-click unsubscribe link.',
+              })
+            : t('integrations.email.recap.toggleOff', {
+                defaultValue: 'Off: no recap is sent. @mentions still arrive by email.',
+              })}
+        </p>
+        {mutation.isError && (
+          <p className="text-[11px] text-red-400 mt-1">
+            {t('integrations.email.recap.toggleError', { defaultValue: 'Could not save. Try again.' })}
+          </p>
+        )}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={label}
+        disabled={mutation.isPending}
+        onClick={() => mutation.mutate(!enabled)}
+        className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] focus:outline-none focus:ring-2 focus:ring-amber-500/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 ${
+          enabled ? 'bg-accent' : 'bg-surface-hover'
+        }`}
+      >
+        <span
+          className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-surface ring-1 ring-border transition-transform duration-150 ${
+            enabled ? 'translate-x-4' : 'translate-x-0'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 // ─── Step 2 – What arrives by email ──────────────────────────────────────────
 
 /** Describes the email recap (BAA-38): one mail per person at fixed times. */
@@ -228,6 +305,7 @@ function EmailRecapStep({ hasChannel }: { hasChannel: boolean }) {
           {t('integrations.email.recap.title', { defaultValue: 'What you receive' })}
         </p>
       </div>
+      <RecapToggle />
       <ul className="space-y-1.5 text-xs text-secondary list-disc pl-4">
         {rules.map((rule) => <li key={rule}>{rule}</li>)}
       </ul>

@@ -229,6 +229,10 @@ async fn main() -> anyhow::Result<()> {
             84,
             include_str!("../migrations/084_org_notification_roles.sql"),
         ),
+        (
+            85,
+            include_str!("../migrations/085_email_recap_unsubscribe.sql"),
+        ),
     ];
 
     for &(version, sql) in migrations {
@@ -351,10 +355,17 @@ async fn main() -> anyhow::Result<()> {
             // dead. Events stay queued and leave once the URL is configured.
             tracing::error!("NOTIFYD_PUBLIC_URL is unset: the email recap worker is not started");
         } else {
+            // The unsubscribe link is served by this API, at the same origin
+            // the share and run cards already use.
+            let api_url = std::env::var("API_URL")
+                .unwrap_or_else(|_| "https://api.baaton.dev".into())
+                .trim_end_matches('/')
+                .to_string();
             tokio::spawn(email_digest::run(
                 pool.clone(),
                 notifyd_cl.clone(),
                 public_url,
+                api_url,
             ));
         }
     }

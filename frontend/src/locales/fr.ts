@@ -2203,6 +2203,10 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'integrations.email.recap.content': "Il contient ce que votre rôle demande sur chaque projet, vos propres tickets compris. Sans rôle : les tickets que vous avez créés, qui vous sont assignés ou que vous avez demandés, et les projets que vous suivez.",
   'integrations.email.recap.immediate': "Les @mentions arrivent tout de suite. Vos propres actions, y compris celles de vos clés API, ne vous envoient jamais d’e-mail.",
   'integrations.email.recap.manage': "Choisir les projets suivis",
+  'integrations.email.recap.toggle': "Recevoir le récap email",
+  'integrations.email.recap.toggleOn': "Activé. Chaque récap contient un lien de désabonnement en un clic.",
+  'integrations.email.recap.toggleOff': "Désactivé : aucun récap n’est envoyé. Les @mentions arrivent toujours par e-mail.",
+  'integrations.email.recap.toggleError': "Enregistrement impossible. Réessayez.",
 
   'integrations.telegram.description': 'Reçois les notifications Baaton sur Telegram.',
   'integrations.telegram.bot.title': 'Bot',

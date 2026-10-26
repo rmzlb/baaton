@@ -38,6 +38,7 @@ import type {
   Organization,
   OrgSettings,
   UserNotificationChannel,
+  EmailRecapSetting,
   TelegramBotInfo,
   TelegramLinkResult,
   ProjectSubscription,
@@ -1113,6 +1114,18 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.delete(`/me/project-subscriptions/${projectId}`, token);
+        }),
+
+      getEmailRecap: async (): Promise<EmailRecapSetting> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<EmailRecapSetting>('/me/email-recap', token);
+        }),
+
+      setEmailRecap: async (enabled: boolean): Promise<EmailRecapSetting> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.put<EmailRecapSetting>('/me/email-recap', { enabled }, token);
         }),
 
       testTelegramNotification: async (): Promise<void> =>

@@ -188,6 +188,21 @@ pub fn api_router(pool: PgPool, jwks: JwksKeys) -> Router {
             put(notification_prefs::update_subscription)
                 .delete(notification_prefs::delete_subscription),
         )
+        // The email recap switch (BAA-40). The person, never a channel row:
+        // a role holder without an email channel still gets the recap.
+        .route(
+            "/me/email-recap",
+            get(notification_prefs::get_email_recap).put(notification_prefs::put_email_recap),
+        )
+        // The one-click link every recap carries (RFC 8058). GET only shows a
+        // confirmation page; the POST unsubscribes. Public: a mail client has
+        // no session, the unguessable token is the only credential.
+        .route(
+            "/public/email/unsubscribe/{token}",
+            get(notification_prefs::unsubscribe_page)
+                .post(notification_prefs::unsubscribe_one_click)
+                .layer(DefaultBodyLimit::max(8 * 1024)),
+        )
         .route("/me/telegram/test", post(notification_prefs::send_test_notification))
         .route("/me/telegram/destination", put(notification_prefs::put_telegram_destination))
         // The bot lives in the database (migration 075), owned by the person who

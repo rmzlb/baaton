@@ -23,6 +23,10 @@
 //! - org membership is checked again at send time: an event from an org the
 //!   person left is removed, not mailed.
 //!
+//! A person can turn the recap off (`unsubscribe`, BAA-40): from the settings
+//! or with the one-click link every recap carries. Nothing is queued for them
+//! while it is off, and what was already queued is dropped.
+//!
 //! Telegram does not go through here and is unchanged.
 
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
@@ -187,6 +191,8 @@ pub async fn enqueue(
             body, dedupe_key, occurred_at) \
          SELECT u.user_id, u.address, u.reason, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16 \
            FROM unnest($1::text[], $2::text[], $3::text[]) AS u(user_id, address, reason) \
+          WHERE NOT EXISTS (SELECT 1 FROM user_email_settings s \
+                             WHERE s.user_id = u.user_id AND NOT s.recap_enabled) \
          ON CONFLICT (user_id, dedupe_key) DO NOTHING",
     )
     .bind(&users)
@@ -296,11 +302,14 @@ pub fn idempotency_key(user_id: &str, slot_at: DateTime<Utc>) -> String {
     format!("baaton-recap-{user_id}-{}", slot_at.timestamp())
 }
 
-/// Build, claim and send every recap due at `now`.
+/// Build, claim and send every recap due at `now`. `public_url` is the app
+/// (ticket and settings links), `api_url` the API origin that serves the
+/// unsubscribe link.
 pub async fn tick<T: Transport>(
     pool: &PgPool,
     transport: &T,
     public_url: &str,
+    api_url: &str,
     now: DateTime<Utc>,
 ) -> Result<TickReport, sqlx::Error> {
     let mut report = TickReport::default();
@@ -308,7 +317,7 @@ pub async fn tick<T: Transport>(
         return Ok(report);
     };
     for digest in claim_due(pool, slot, now).await? {
-        match deliver(pool, transport, public_url, &digest, now).await? {
+        match deliver(pool, transport, public_url, api_url, &digest, now).await? {
             Outcome::Sent => report.sent += 1,
             Outcome::Skipped => report.skipped += 1,
             Outcome::Retry => report.retried += 1,
@@ -395,9 +404,15 @@ async fn deliver<T: Transport>(
     pool: &PgPool,
     transport: &T,
     public_url: &str,
+    api_url: &str,
     digest: &ClaimedDigest,
     now: DateTime<Utc>,
 ) -> Result<Outcome, sqlx::Error> {
+    // Unsubscribed after this recap was queued.
+    if !unsubscribe::recap_enabled(pool, &digest.user_id).await? {
+        finish(pool, digest.id, "skipped", Some("unsubscribed")).await?;
+        return Ok(Outcome::Skipped);
+    }
     let lines: Vec<DigestLine> = sqlx::query_as(
         "SELECT id, address, org_id, project_id, project_name, issue_display_id, issue_title, \
                 kind, actor_name, from_status, to_status, body, reason, occurred_at, created_at \
@@ -432,7 +447,10 @@ async fn deliver<T: Transport>(
         .max_by_key(|l| (l.created_at, l.id))
         .map(|l| l.address.clone())
         .unwrap_or_default();
-    let mail = crate::email_templates::recap_email(&lines, digest.slot_at, public_url);
+    let token = unsubscribe::token_for_digest(pool, digest.id, &digest.user_id).await?;
+    let unsubscribe_url = unsubscribe::unsubscribe_url(api_url, &token);
+    let mail =
+        crate::email_templates::recap_email(&lines, digest.slot_at, public_url, &unsubscribe_url);
     let body = json!({
         "channel": "email",
         "to": address,
@@ -442,6 +460,9 @@ async fn deliver<T: Transport>(
         "body": mail.text,
         "idempotency_key": idempotency_key(&digest.user_id, digest.slot_at),
         "priority": "normal",
+        // RFC 8058 one-click. notifyd forwards them as MIME headers and never
+        // replaces a `List-Unsubscribe` set by the caller.
+        "email_headers": unsubscribe::email_headers(&unsubscribe_url),
     });
     match transport.send(body).await {
         Ok(()) => {
@@ -495,6 +516,7 @@ async fn finish(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE email_digests SET status = $2, locked_until = NULL, last_error = $3, \
+           unsubscribe_token = NULL, \
            sent_at = CASE WHEN $2 = 'sent' THEN now() ELSE sent_at END \
           WHERE id = $1",
     )
@@ -507,7 +529,12 @@ async fn finish(
 }
 
 /// The background loop started by `main`.
-pub async fn run(pool: PgPool, notifyd: crate::notifyd::NotifydClient, public_url: String) {
+pub async fn run(
+    pool: PgPool,
+    notifyd: crate::notifyd::NotifydClient,
+    public_url: String,
+    api_url: String,
+) {
     let transport = Live { notifyd };
     let mut interval = tokio::time::interval(TICK);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -515,7 +542,7 @@ pub async fn run(pool: PgPool, notifyd: crate::notifyd::NotifydClient, public_ur
     loop {
         interval.tick().await;
         let now = Utc::now();
-        match tick(&pool, &transport, &public_url, now).await {
+        match tick(&pool, &transport, &public_url, &api_url, now).await {
             Ok(r) if r != TickReport::default() => tracing::info!(
                 sent = r.sent,
                 skipped = r.skipped,
@@ -536,9 +563,15 @@ pub async fn run(pool: PgPool, notifyd: crate::notifyd::NotifydClient, public_ur
                 }
                 Err(e) => tracing::warn!(error = %e, "email_digest.purge_failed"),
             }
+            if let Err(e) = unsubscribe::purge_old_tokens(&pool).await {
+                tracing::warn!(error = %e, "email_digest.token_purge_failed");
+            }
         }
     }
 }
+
+#[path = "email_digest/unsubscribe.rs"]
+pub mod unsubscribe;
 
 #[cfg(test)]
 #[path = "email_digest/tests.rs"]

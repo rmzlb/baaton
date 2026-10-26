@@ -334,7 +334,10 @@ are not sent one by one: each person gets one recap at 08:00, 12:00, 16:00 and
 20:00 Europe/Paris, only when something new happened since the previous one.
 Anything after 20:00 leaves at 08:00. One recap covers every project and org of
 the person, grouped by project then ticket, and its footer gives the reason per
-project (`role`, project subscription, or their own ticket).
+project (`role`, project subscription, or their own ticket). Every recap carries
+a one-click unsubscribe link (RFC 8058 `List-Unsubscribe` and
+`List-Unsubscribe-Post` headers, and a link in the footer). Turning the recap off
+stops it for the person, roles included; @mentions keep arriving.
 
 **A role decides on its own.** A member holding a role hears exactly what the
 role asks for, on every ticket, their own included: a ticket creator holding
@@ -449,6 +452,24 @@ a notification as enabled while nothing ever fires.
 
 #### DELETE /me/project-subscriptions/{project_id}
 `204`. Back to not subscribed.
+
+#### GET /me/email-recap
+`{ enabled }`. On by default.
+
+#### PUT /me/email-recap
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `enabled` | bool | Yes | `false` stops the recap and drops what is already queued; `true` resumes from the next event |
+
+#### GET /public/email/unsubscribe/{token}
+HTML page with one confirmation button. The GET alone never unsubscribes, so a
+link scanner cannot. `404` for an unknown or expired token.
+
+#### POST /public/email/unsubscribe/{token}
+RFC 8058 one-click: body `List-Unsubscribe=One-Click`, `200` on every repeat,
+`400` without that body. Each recap has its own token (32 random bytes, stored as
+a hash, valid 400 days); it only unsubscribes and reveals nothing about its owner.
 
 #### GET /me/telegram-bot
 `{ bot_username, owned, webhook_registered }`, or `null` when no bot exists.
