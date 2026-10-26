@@ -936,6 +936,17 @@ Get notification preferences.
 ### PATCH /notifications/preferences
 Update preferences.
 
+### GET /me/email-recap
+`{ "data": { "enabled": true } }`. Whether the caller receives the email recap
+(one email at 08:00, 12:00, 16:00 and 20:00 Paris). On by default. An API key
+acts for its owner and needs `admin:full`.
+
+### PUT /me/email-recap
+Body `{ "enabled": false }` turns the recap off for the person, whatever address
+it reaches them at: nothing more is queued, and what was already queued is
+dropped. `{ "enabled": true }` turns it back on from the next event. @mentions
+are not affected and keep arriving by email.
+
 ---
 
 ## Search
@@ -1119,6 +1130,19 @@ Email-to-issue intake.
 
 ### GET /public/resolve/{token}
 Resolve a public action token.
+
+### GET /public/email/unsubscribe/{token}
+The unsubscribe link of an email recap, for a human. Returns an HTML page with
+one confirmation button; the GET alone changes nothing, so a link scanner cannot
+unsubscribe anyone. `404` for an unknown or expired token.
+
+### POST /public/email/unsubscribe/{token}
+RFC 8058 one-click unsubscribe. Body `List-Unsubscribe=One-Click`
+(`application/x-www-form-urlencoded` or `multipart/form-data`); anything else is
+`400`. Turns the recap off for the owner of the token and answers `200`, again
+on every repeat. Every recap carries its own token (32 random bytes, stored as a
+hash, valid 400 days) in its `List-Unsubscribe` header and footer; it can only
+unsubscribe and reveals nothing about its owner. @mentions are not affected.
 
 ---
 
