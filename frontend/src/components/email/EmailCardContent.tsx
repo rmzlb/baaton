@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useUser, useClerk } from '@clerk/clerk-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { ApiError } from '@/lib/api';
 import { Skeleton } from '@/components/shared/Skeleton';
-import { EmailStatusRules } from './EmailStatusRules';
 
 // ─── Step number badge ────────────────────────────────────────────────────────
 
@@ -203,29 +203,40 @@ function EmailAddressStep() {
   );
 }
 
-// ─── Step 2 – Subscriptions ───────────────────────────────────────────────────
+// ─── Step 2 – What arrives by email ──────────────────────────────────────────
 
-function EmailSubscriptionsStep({ hasChannel }: { hasChannel: boolean }) {
+/** Describes the email recap (BAA-38): one mail per person at fixed times. */
+function EmailRecapStep({ hasChannel }: { hasChannel: boolean }) {
   const { t } = useTranslation();
+  const rules = [
+    t('integrations.email.recap.schedule', {
+      defaultValue: 'One recap email at 08:00, 12:00, 16:00 and 20:00 (Paris time), only when something new happened. All your projects in one email, grouped by project and ticket.',
+    }),
+    t('integrations.email.recap.content', {
+      defaultValue: 'It holds what your role asks for on each project, your own tickets included. Without a role: tickets you created, are assigned to or requested, and the projects you follow.',
+    }),
+    t('integrations.email.recap.immediate', {
+      defaultValue: '@mentions arrive right away. Your own actions, including those of your API keys, never send you an email.',
+    }),
+  ];
 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <StepBadge n={2} done={false} />
+        <StepBadge n={2} done={hasChannel} />
         <p className="text-xs font-semibold text-primary uppercase tracking-wider">
-          {t('integrations.email.subs.title', { defaultValue: 'Email rules' })}
+          {t('integrations.email.recap.title', { defaultValue: 'What you receive' })}
         </p>
       </div>
-
-      {!hasChannel ? (
-        <p className="text-xs text-muted italic">
-          {t('integrations.email.subs.needsAddress', {
-            defaultValue: 'Save your email address first (step 1 above).',
-          })}
-        </p>
-      ) : (
-        <EmailStatusRules />
-      )}
+      <ul className="space-y-1.5 text-xs text-secondary list-disc pl-4">
+        {rules.map((rule) => <li key={rule}>{rule}</li>)}
+      </ul>
+      <Link
+        to="/settings"
+        className="inline-block text-xs text-accent underline underline-offset-2 rounded-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+      >
+        {t('integrations.email.recap.manage', { defaultValue: 'Choose the projects you follow' })}
+      </Link>
     </div>
   );
 }
@@ -251,9 +262,9 @@ export function EmailCardContent() {
       {/* Step 1 – Address */}
       <EmailAddressStep />
 
-      {/* Step 2 – Subscriptions */}
+      {/* Step 2 – What arrives */}
       <div className="border-t border-border pt-5">
-        <EmailSubscriptionsStep hasChannel={Boolean(emailChannel?.verified)} />
+        <EmailRecapStep hasChannel={Boolean(emailChannel?.verified)} />
       </div>
     </div>
   );

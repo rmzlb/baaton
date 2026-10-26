@@ -507,10 +507,12 @@ pub async fn create(
                 return;
             }
 
-            // Split: email is deferred through the digest window; Telegram
-            // (per-user) stays immediate so chat notifications are not delayed.
-            let (email_recipients, other_recipients): (Vec<_>, Vec<_>) =
-                recipients.into_iter().partition(|r| r.channel == "email");
+            // Email: comments go to the recap at fixed times, except for the
+            // people this comment mentions, who get it right away (2-minute
+            // window) and not a second time in their recap. Telegram (per-user)
+            // stays immediate.
+            let (email_recipients, other_recipients) =
+                crate::email_digest::split_email(recipients, &commenter);
 
             if announce_room || !other_recipients.is_empty() {
                 notifyd.issue_commented(
@@ -530,59 +532,61 @@ pub async fn create(
                 );
             }
 
-            // Deferred email digest: batched over a 2-minute window. A mentioned
-            // recipient gets the mention instead of the plain comment line, so
-            // the same comment never appears twice in one digest.
+            let (mentioned_rows, recap_rows): (Vec<_>, Vec<_>) = email_recipients
+                .into_iter()
+                .partition(|r| mentioned.contains(&r.user_id));
+            crate::email_digest::enqueue(
+                &pool2,
+                &recap_rows,
+                &crate::email_digest::IssueRef {
+                    org_id: &mention_org,
+                    project_id,
+                    project_name: project_name.as_deref().unwrap_or_default(),
+                    issue_id: iid,
+                    display_id: &display_id,
+                    title: &title,
+                },
+                &comment_author,
+                &crate::email_digest::EventKind::CommentAdded {
+                    body: &comment_body,
+                },
+                &format!("comment:{comment_id}"),
+                chrono::Utc::now(),
+            )
+            .await;
+
             let digest_at = chrono::Utc::now();
-            let mut queued: Vec<(String, crate::pending_notif::DigestEvent)> = Vec::new();
-            for r in &email_recipients {
-                let event = if mentioned.contains(&r.user_id) {
-                    crate::pending_notif::DigestEvent::Mention {
-                        actor: comment_author.clone(),
-                        body: comment_body.clone(),
-                        at: digest_at,
-                    }
-                } else {
-                    crate::pending_notif::DigestEvent::Comment {
-                        actor: comment_author.clone(),
-                        body: comment_body.clone(),
-                        at: digest_at,
-                    }
-                };
-                queued.push((r.address.clone(), event));
-            }
+            let mut queued: Vec<String> = Vec::new();
             for uid in &mentioned {
-                if email_recipients.iter().any(|r| &r.user_id == uid) {
-                    continue;
-                }
-                let Some((_, Some(address))) = crate::middleware::resolve_profile_cached(uid).await else {
-                    tracing::warn!(user_id = %uid, "comment.mention.no_email");
-                    continue;
-                };
-                if queued.iter().any(|(a, _)| a.eq_ignore_ascii_case(&address)) {
-                    continue;
-                }
-                queued.push((
-                    address,
-                    crate::pending_notif::DigestEvent::Mention {
-                        actor: comment_author.clone(),
-                        body: comment_body.clone(),
-                        at: digest_at,
+                let address = match mentioned_rows.iter().find(|r| &r.user_id == uid) {
+                    Some(r) => r.address.clone(),
+                    None => match crate::middleware::resolve_profile_cached(uid).await {
+                        Some((_, Some(address))) => address,
+                        _ => {
+                            tracing::warn!(user_id = %uid, "comment.mention.no_email");
+                            continue;
+                        }
                     },
-                ));
-            }
-            for (address, event) in &queued {
+                };
+                if queued.iter().any(|a| a.eq_ignore_ascii_case(&address)) {
+                    continue;
+                }
                 crate::pending_notif::queue_digest_event(
                     &pool2,
                     iid,
                     &display_id,
                     &title,
                     project_name.as_deref(),
-                    address,
-                    event,
+                    &address,
+                    &crate::pending_notif::DigestEvent::Mention {
+                        actor: comment_author.clone(),
+                        body: comment_body.clone(),
+                        at: digest_at,
+                    },
                 )
                 .await
                 .ok();
+                queued.push(address);
             }
         });
     }

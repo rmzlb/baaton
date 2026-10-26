@@ -446,12 +446,23 @@ async fn user_org_ids(auth: &AuthUser, user_id: &str) -> Result<Vec<String>, Api
 // unsubscribe (`enabled = false`) mutes a role too; a role key no longer
 // defined on the project grants nothing. `"*"` in statuses means every status.
 //
+// `reason` names the layer that decided, for the email footer: the member's
+// own value for this event wins, else their role, else the project default
+// reached through a subscription.
+//
 // A role holder with no email row at all gets an email row with an empty
 // address: `resolve_recipients` fills it from the account's primary email, so
 // nobody has to configure a channel to hear what their role asks for. Plain
 // subscribers keep exactly the channels they set up themselves.
 const RECIPIENTS_SQL: &str = "\
-        SELECT m.user_id, c.channel, c.address \
+        SELECT m.user_id, c.channel, c.address, \
+          CASE WHEN ($2 = 'status_changed' AND s.notify_statuses IS NOT NULL) \
+                 OR ($2 = 'comment_added' AND s.notify_comments IS NOT NULL) \
+                 OR ($2 = 'issue_created' AND s.notify_issue_created IS NOT NULL) \
+               THEN 'subscription' \
+               WHEN ro.r IS NOT NULL \
+               THEN 'role:' || COALESCE(NULLIF(trim(ro.r->>'label'), ''), mr.role) \
+               ELSE 'subscription' END AS reason \
         FROM ( \
           SELECT user_id FROM project_notification_subscriptions WHERE project_id = $1 \
           UNION SELECT user_id FROM project_member_roles WHERE project_id = $1 \
@@ -517,6 +528,10 @@ pub struct Recipient {
     pub address: String,
     #[sqlx(default)]
     pub telegram_route_id: Option<Uuid>,
+    /// Why this person hears it: `role:<label>`, `subscription` or
+    /// `participant` (their own ticket). Shown in the email footer.
+    #[sqlx(default)]
+    pub reason: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -537,8 +552,10 @@ struct TelegramRoute {
 /// opinion follows the project's setting as it evolves, and only an explicit
 /// value pins the behaviour.
 ///
-/// Status transitions and issue creation include the actor. Only comments
-/// exclude their author, resolving API-key identities to their human owner.
+/// Status transitions and issue creation include the actor (Telegram keeps
+/// them, 6c86f14); comments exclude their author, resolving API-key identities
+/// to their human owner. Email drops the actor in every case, in
+/// `email_digest::split_email`.
 pub async fn resolve_recipients(
     pool: &PgPool,
     notifyd: &crate::notifyd::NotifydClient,
@@ -736,6 +753,7 @@ pub async fn add_creator_to_recipients(
                 channel,
                 address,
                 telegram_route_id: None,
+                reason: "participant".to_string(),
             });
         }
 
@@ -763,6 +781,7 @@ pub async fn add_creator_to_recipients(
                     channel: "email".to_string(),
                     address,
                     telegram_route_id: None,
+                    reason: "participant".to_string(),
                 });
             }
         }
@@ -807,6 +826,7 @@ pub async fn add_creator_to_recipients(
                                 channel: "telegram".to_string(),
                                 address: route.address,
                                 telegram_route_id: Some(route.route_id),
+                                reason: "participant".to_string(),
                             });
                         }
                     }

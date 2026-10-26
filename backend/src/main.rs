@@ -18,6 +18,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod ai_models;
+mod email_digest;
 mod email_templates;
 mod entitlement;
 mod filter;
@@ -223,6 +224,7 @@ async fn main() -> anyhow::Result<()> {
             82,
             include_str!("../migrations/082_webhook_project_filter.sql"),
         ),
+        (83, include_str!("../migrations/083_email_digests.sql")),
     ];
 
     for &(version, sql) in migrations {
@@ -322,29 +324,36 @@ async fn main() -> anyhow::Result<()> {
     // Chat notifications for the room (None if NOTIFYD_URL/KEY/CHAT unset)
     let notifyd_client = notifyd::NotifydClient::from_env();
 
-    // Digest flush: deliver batched email notifications every 30 seconds.
+    // Email delivery: @mentions within 2 minutes (`pending_notif`), every
+    // other notification in one recap per person at 08:00, 12:00, 16:00 and
+    // 20:00 Paris (`email_digest`). Both need the public URL for ticket links.
     if let Some(ref notifyd_cl) = notifyd_client {
-        let pool_digest = pool.clone();
-        let notifyd_digest = notifyd_cl.clone();
-        let digest_public_url = std::env::var("NOTIFYD_PUBLIC_URL")
+        let public_url = std::env::var("NOTIFYD_PUBLIC_URL")
             .unwrap_or_default()
             .trim_end_matches('/')
             .to_string();
+        let pool_digest = pool.clone();
+        let notifyd_digest = notifyd_cl.clone();
+        let mention_url = public_url.clone();
         tokio::spawn(async move {
-            let mut interval =
-                tokio::time::interval(std::time::Duration::from_secs(30));
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
             loop {
                 interval.tick().await;
-                pending_notif::flush_digests(
-                    &pool_digest,
-                    &notifyd_digest,
-                    &digest_public_url,
-                )
-                .await;
+                pending_notif::flush_digests(&pool_digest, &notifyd_digest, &mention_url).await;
             }
         });
+        if public_url.is_empty() {
+            // Without it every ticket link in a recap would be relative and
+            // dead. Events stay queued and leave once the URL is configured.
+            tracing::error!("NOTIFYD_PUBLIC_URL is unset: the email recap worker is not started");
+        } else {
+            tokio::spawn(email_digest::run(
+                pool.clone(),
+                notifyd_cl.clone(),
+                public_url,
+            ));
+        }
     }
-
 
     // CORS — restrict origins in production, permissive in dev
     let cors = {

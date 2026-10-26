@@ -1,11 +1,12 @@
-//! Digest window for email notifications.
+//! Immediate email for @mentions.
 //!
-//! Instead of sending one email per event (comment, status change), events are
-//! accumulated for 2 minutes from the first one. A background task flushes
-//! rows whose `fire_at` has passed and sends a single digest email per
-//! (issue × recipient) batch.
+//! A mention is a direct request, so it does not wait for the recap at fixed
+//! times (`email_digest`): mentions are accumulated for 2 minutes from the
+//! first one and sent as one email per (issue × recipient). Every other
+//! notification email goes through the recap.
 //!
-//! Telegram (shared room and per-user) is unaffected: only email is deferred.
+//! `Comment` and `Transition` are no longer queued here. They stay readable so
+//! rows queued by the previous revision during a deploy are still delivered.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

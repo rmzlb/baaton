@@ -246,5 +246,104 @@ async fn recipient_sql_postgres_regression() {
         .await
         .unwrap()
         .is_empty());
+    // ── A ticket's creator who holds a role (BAA-38) ──
+    // Their role alone decides, their own tickets included: a Reviewer whose
+    // role asks for In Review and comments hears exactly that. The participant
+    // default must leave them alone, and email drops them when they act.
+    let review_project = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO projects VALUES ($1, '["backlog","in_progress","in_review"]', true, true, '[
+            {"key":"reviewer","label":"Reviewer","notify_statuses":["in_review"],"notify_comments":true,"notify_issue_created":false}
+        ]')"#,
+    )
+    .bind(review_project).execute(&mut conn).await.unwrap();
+    sqlx::query("INSERT INTO project_member_roles VALUES ($1, 'creator', 'reviewer'), ($1, 'pinned', 'reviewer')")
+        .bind(review_project).execute(&mut conn).await.unwrap();
+    sqlx::query("INSERT INTO project_notification_subscriptions VALUES ('pinned', $1, true, '[\"in_review\"]', NULL, NULL, '{}')")
+        .bind(review_project).execute(&mut conn).await.unwrap();
+    sqlx::raw_sql("INSERT INTO user_notification_channels VALUES ('creator', 'email', 'creator@example.invalid', now())")
+        .execute(&mut conn).await.unwrap();
+    let with_reason = |rows: Vec<Recipient>| {
+        let mut rows: Vec<_> = rows
+            .into_iter()
+            .map(|r| (r.user_id, r.channel, r.reason))
+            .collect();
+        rows.sort();
+        rows
+    };
+    let run = |event: &'static str, status: &'static str, actor: &'static str| {
+        sqlx::query_as::<_, Recipient>(RECIPIENTS_SQL)
+            .bind(review_project)
+            .bind(event)
+            .bind(status)
+            .bind(actor)
+    };
+    // The project default would announce these; the role does not ask for them.
+    for status in ["in_progress", "backlog"] {
+        assert!(
+            run("status_changed", status, "agent")
+                .fetch_all(&mut conn)
+                .await
+                .unwrap()
+                .is_empty(),
+            "{status}"
+        );
+    }
+    let r = |u: &str, c: &str, why: &str| (u.to_string(), c.to_string(), why.to_string());
+    assert_eq!(
+        with_reason(
+            run("status_changed", "in_review", "agent")
+                .fetch_all(&mut conn)
+                .await
+                .unwrap()
+        ),
+        vec![
+            r("creator", "email", "role:Reviewer"),
+            r("creator", "telegram", "role:Reviewer"),
+            // Their own value for statuses decided, not the role.
+            r("pinned", "email", "subscription"),
+            r("pinned", "telegram", "subscription"),
+        ]
+    );
+    assert_eq!(
+        with_reason(
+            run("comment_added", "", "agent")
+                .fetch_all(&mut conn)
+                .await
+                .unwrap()
+        ),
+        vec![
+            r("creator", "email", "role:Reviewer"),
+            r("creator", "telegram", "role:Reviewer"),
+            r("pinned", "email", "role:Reviewer"),
+            r("pinned", "telegram", "role:Reviewer"),
+        ]
+    );
+    assert!(run("issue_created", "", "agent")
+        .fetch_all(&mut conn)
+        .await
+        .unwrap()
+        .is_empty());
+    let excluded: Vec<String> = sqlx::query_scalar(DEFAULT_ROUTING_EXCLUDED_SQL)
+        .bind(review_project)
+        .bind(vec!["creator".to_string()])
+        .fetch_all(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(
+        excluded,
+        vec!["creator"],
+        "the participant default must not add what the role leaves out"
+    );
+    // The creator moves their own ticket to review: Telegram keeps them, email does not.
+    let own = run("status_changed", "in_review", "creator")
+        .fetch_all(&mut conn)
+        .await
+        .unwrap();
+    let (email, other) = crate::email_digest::split_email(own, "creator");
+    assert!(email.iter().all(|e| e.user_id != "creator"));
+    assert!(other
+        .iter()
+        .any(|o| o.user_id == "creator" && o.channel == "telegram"));
     conn.close().await.unwrap();
 }

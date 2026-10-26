@@ -55,25 +55,21 @@ fn cta_button(url: &str, label: &str) -> String {
 /// Shared email wrapper.
 ///
 /// `public_url` is the app base URL (e.g. `https://app.baaton.dev`), used to
-/// build absolute footer and content links.
+/// build absolute footer and content links. `footer_html` says why this person
+/// receives the mail and must already be escaped.
 ///
 /// The Pixel Tanuki logo is served from a hosted static PNG; there is no
 /// inline base64 — it inflates the message and is blocked by security-
 /// conscious mail clients (Gmail strips `data:` URIs from `<img>` tags).
-/// The parent deploys the asset at `/brand/tanuki-email.png` on baaton.dev
-/// before enabling email delivery.
-fn email_layout(accent: &str, content_html: &str, project_name: &str, public_url: &str) -> String {
-    let project_name_esc = he(project_name);
+fn email_layout(accent: &str, content_html: &str, footer_html: &str, public_url: &str) -> String {
     let tanuki_url = "https://baaton.dev/brand/tanuki-email.png";
-    // /settings is the valid frontend router path; /settings/integrations is not a route.
-    let manage_url = format!("{}/settings", public_url.trim_end_matches('/'));
-    let manage_url_esc = he(&manage_url);
+    let manage_url_esc = he(&manage_url(public_url));
     format!(
         r#"<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f6f5f3;font-family:Arial,Helvetica,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f6f5f3;">
 <tr><td align="center" style="padding:32px 16px;">
-<table cellpadding="0" cellspacing="0" border="0" style="max-width:520px;width:100%;background:#ffffff;border:1px solid #e6e5e1;border-radius:10px;margin:0 auto;">
+<table cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;background:#ffffff;border:1px solid #e6e5e1;border-radius:10px;margin:0 auto;">
 <tr><td style="height:3px;background:{accent};border-radius:10px 10px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
 <tr><td style="padding:20px 24px 16px;">
 <img src="{tanuki_url}" width="24" height="24" style="vertical-align:middle;margin-right:8px;" alt="">
@@ -81,9 +77,9 @@ fn email_layout(accent: &str, content_html: &str, project_name: &str, public_url
 </td></tr>
 <tr><td style="height:1px;background:#e6e5e1;font-size:0;line-height:0;">&nbsp;</td></tr>
 <tr><td style="padding:20px 24px;">{content_html}</td></tr>
-<tr><td style="padding:12px 24px;border-top:1px solid #f0eeea;background:#fafaf8;border-radius:0 0 10px 10px;font-size:11px;color:#9c9b95;font-family:Arial,Helvetica,sans-serif;">
-You follow <b>{project_name_esc}</b> on Baaton. &middot;
-<a href="{manage_url_esc}" style="color:#9c9b95;">Manage notifications</a>
+<tr><td style="padding:12px 24px;border-top:1px solid #f0eeea;background:#fafaf8;border-radius:0 0 10px 10px;font-size:11px;line-height:1.5;color:#9c9b95;font-family:Arial,Helvetica,sans-serif;">
+{footer_html}<br>
+<a href="{manage_url_esc}" style="color:#9c9b95;">G&#233;rer mes notifications</a>
 </td></tr>
 </table>
 </td></tr>
@@ -92,131 +88,18 @@ You follow <b>{project_name_esc}</b> on Baaton. &middot;
     )
 }
 
-pub fn issue_created_html(notice: &crate::notifyd::IssueNotice, public_url: &str) -> String {
-    let badge = status_badge("New Issue", "#f59e0b");
-    let actor_line = match notice.actor.as_deref().filter(|a| !a.trim().is_empty()) {
-        Some(actor) => format!(
-            r#"<p style="margin:4px 0 0;font-size:12px;color:#9c9b95;font-family:Arial,Helvetica,sans-serif;">Created by {}</p>"#,
-            he(actor)
-        ),
-        None => String::new(),
-    };
-    let display_id = he(&notice.display_id);
-    let title = he(&notice.title);
-    // display_id is alphanumeric + hyphen (e.g. "BAA-42") — URL-safe as-is.
-    let issue_url = format!(
-        "{}/all-issues?issue={}",
-        public_url.trim_end_matches('/'),
-        notice.display_id,
-    );
-    let cta = cta_button(&issue_url, "View Issue");
-    let content = format!(
-        r#"{badge}<h2 style="margin:12px 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;">{display_id} &middot; {title}</h2>{actor_line}{cta}"#
-    );
-    email_layout(
-        "#f59e0b",
-        &content,
-        notice.project_name.as_deref().unwrap_or("Baaton"),
-        public_url,
-    )
+/// /settings is the valid frontend route; /settings/integrations is not.
+fn manage_url(public_url: &str) -> String {
+    format!("{}/settings", public_url.trim_end_matches('/'))
 }
 
-pub fn status_changed_html(notice: &crate::notifyd::StatusNotice, public_url: &str) -> String {
-    let sc = status_color(&notice.to_status.to_lowercase());
-    let from_badge = status_badge(&he(&notice.from_status), "#9c9b95");
-    let to_badge = status_badge(&he(&notice.to_status), sc);
-    let comment_block = match &notice.last_comment {
-        Some((author, body)) => {
-            let excerpt: String = body.chars().take(200).collect();
-            format!(
-                r#"<div style="margin:12px 0;background:#f6f5f3;border-radius:6px;padding:10px 12px;font-size:12px;color:#5c5c57;font-family:Arial,Helvetica,sans-serif;">&#128172; {}: {}</div>"#,
-                he(author),
-                he(&excerpt)
-            )
-        }
-        None => String::new(),
-    };
-    let display_id = he(&notice.issue.display_id);
-    let title = he(&notice.issue.title);
-    let issue_url = format!(
+fn issue_url(public_url: &str, display_id: &str) -> String {
+    // Frontend router: /all-issues?issue=DISPLAY_ID (no /issues/:uuid route).
+    format!(
         "{}/all-issues?issue={}",
         public_url.trim_end_matches('/'),
-        notice.issue.display_id,
-    );
-    let cta = cta_button(&issue_url, "View Issue");
-    let content = format!(
-        r#"{from_badge} &#8594; {to_badge}<h2 style="margin:12px 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;">{display_id} &middot; {title}</h2>{comment_block}{cta}"#
-    );
-    email_layout(
-        sc,
-        &content,
-        notice.issue.project_name.as_deref().unwrap_or("Baaton"),
-        public_url,
+        display_id
     )
-}
-
-pub fn comment_added_html(notice: &crate::notifyd::CommentNotice, public_url: &str) -> String {
-    let badge = status_badge("New Comment", "#7c3aed");
-    let actor = he(notice.issue.actor.as_deref().unwrap_or("Someone"));
-    let excerpt: String = notice.body.chars().take(200).collect();
-    let excerpt_esc = he(&excerpt);
-    let display_id = he(&notice.issue.display_id);
-    let title = he(&notice.issue.title);
-    let issue_url = format!(
-        "{}/all-issues?issue={}",
-        public_url.trim_end_matches('/'),
-        notice.issue.display_id,
-    );
-    let cta = cta_button(&issue_url, "View Issue");
-    let content = format!(
-        r#"{badge}<h2 style="margin:12px 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;">{display_id} &middot; {title}</h2><p style="margin:12px 0 4px;font-size:12px;font-weight:700;color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;">{actor}</p><div style="background:#f6f5f3;border-radius:6px;padding:10px 12px;font-size:13px;color:#3d3d3a;font-family:Arial,Helvetica,sans-serif;">{excerpt_esc}</div>{cta}"#
-    );
-    email_layout(
-        "#7c3aed",
-        &content,
-        notice.issue.project_name.as_deref().unwrap_or("Baaton"),
-        public_url,
-    )
-}
-
-/// Template for the "In Review" creator notification.
-///
-/// Distinct from `status_changed_html` (for subscribers): the creator is
-/// notified automatically when someone transitions their ticket to `in_review`,
-/// no subscription required.
-///
-/// The `issue_id: uuid::Uuid` parameter that existed in earlier versions has
-/// been removed: the deep link now uses `display_id` via the
-/// `/all-issues?issue=` route, which is the only route the frontend router
-/// exposes for this navigation.
-pub fn in_review_creator_html(
-    display_id: &str,
-    title: &str,
-    project_name: &str,
-    public_url: &str,
-) -> String {
-    let accent = "#6366f1";
-    let badge = status_badge("IN REVIEW", accent);
-    let issue_url = format!(
-        "{}/all-issues?issue={}",
-        public_url.trim_end_matches('/'),
-        display_id,
-    );
-    let display_id_esc = he(display_id);
-    let title_esc = he(title);
-    let cta = cta_button(&issue_url, &format!("Review {display_id}"));
-    let content = format!(
-        "{badge}\
-<h2 style=\"margin:12px 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;\
-font-family:Arial,Helvetica,sans-serif;\">{display_id_esc} is ready for your review</h2>\
-<p style=\"margin:4px 0 12px;font-size:13px;color:#5c5c57;\
-font-family:Arial,Helvetica,sans-serif;\">Someone has submitted their work on this \
-ticket. Take a look when you&#39;re ready.</p>\
-<div style=\"margin:8px 0;padding:10px 12px;background:#f6f5f3;border-radius:6px;\
-font-size:13px;color:#3d3d3a;font-family:Arial,Helvetica,sans-serif;\">{title_esc}</div>\
-{cta}"
-    );
-    email_layout(accent, &content, project_name, public_url)
 }
 
 /// Digest email grouping several events on the same issue.
@@ -249,11 +132,7 @@ pub fn digest_email_html(
         ),
     };
 
-    let issue_url = format!(
-        "{}/all-issues?issue={}",
-        public_url.trim_end_matches('/'),
-        display_id,
-    );
+    let issue_url = issue_url(public_url, display_id);
 
     let mut event_blocks = String::new();
     for ev in events {
@@ -306,134 +185,215 @@ pub fn digest_email_html(
     let content = format!(
         r#"{badge}<h2 style="margin:12px 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;">{display_id_esc} &middot; {title_esc}</h2>{event_blocks}{cta}"#
     );
-    let html = email_layout(
-        "#0ea5e9",
-        &content,
-        project_name.unwrap_or("Baaton"),
-        public_url,
-    );
+    // Rows queued before the recap existed (078) can still carry plain
+    // comments and transitions; only a mention may claim to be one.
+    let footer = if mention_actor.is_some() {
+        format!(
+            "Vous recevez ce mail tout de suite parce qu&#39;on vous a mentionn&#233; sur <b>{}</b>. \
+             Le reste arrive dans le r&#233;cap de 08:00, 12:00, 16:00 et 20:00 (heure de Paris).",
+            he(project_name.unwrap_or("Baaton"))
+        )
+    } else {
+        format!(
+            "Mise &#224; jour d&#39;un ticket que vous suivez sur <b>{}</b>.",
+            he(project_name.unwrap_or("Baaton"))
+        )
+    };
+    let html = email_layout("#0ea5e9", &content, &footer, public_url);
     (subject, html)
+}
+
+/// A rendered email: subject, HTML part and plain-text part.
+pub struct Mail {
+    pub subject: String,
+    pub html: String,
+    pub text: String,
+}
+
+/// Why a person hears about a project, in the words of the footer.
+fn reason_label(reason: &str) -> String {
+    match reason.strip_prefix("role:") {
+        Some(role) => format!("r\u{00f4}le {role}"),
+        None if reason == "participant" => {
+            "vos tickets (cr\u{00e9}\u{00e9}s, assign\u{00e9}s ou demand\u{00e9}s)".to_string()
+        }
+        None => "abonnement au projet".to_string(),
+    }
+}
+
+fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n > 1 { many } else { one })
+}
+
+/// One line of the recap, without the time.
+fn recap_line(l: &crate::email_digest::DigestLine) -> String {
+    let actor = if l.actor_name.trim().is_empty() {
+        "Quelqu'un"
+    } else {
+        l.actor_name.as_str()
+    };
+    let to = l.to_status.as_deref().unwrap_or_default();
+    match l.kind.as_str() {
+        "issue_created" => format!("{actor} a cr\u{00e9}\u{00e9} le ticket"),
+        "status_changed" => match l.from_status.as_deref().filter(|f| !f.is_empty()) {
+            Some(from) => format!("{actor} : {from} \u{2192} {to}"),
+            None => format!("{actor} a cr\u{00e9}\u{00e9} le ticket en {to}"),
+        },
+        _ => format!(
+            "{actor} a comment\u{00e9} : \u{00ab} {} \u{00bb}",
+            l.body.as_deref().unwrap_or_default()
+        ),
+    }
+}
+
+/// The recap of one person for one slot (BAA-38).
+///
+/// Grouped by project, then ticket, in the order things happened; every
+/// ticket links to itself. The footer gives, per project, the real reason this
+/// person hears about it. Every user-supplied string goes through `he` in the
+/// HTML part; the plain-text part carries the same words unescaped.
+pub fn recap_email(
+    lines: &[crate::email_digest::DigestLine],
+    slot_at: chrono::DateTime<chrono::Utc>,
+    public_url: &str,
+) -> Mail {
+    use chrono_tz::Europe::Paris;
+    let slot_local = slot_at.with_timezone(&Paris);
+    let when = |t: chrono::DateTime<chrono::Utc>| {
+        let local = t.with_timezone(&Paris);
+        if local.date_naive() == slot_local.date_naive() {
+            local.format("%H:%M").to_string()
+        } else {
+            local.format("%d/%m %H:%M").to_string()
+        }
+    };
+
+    // Keyed by project id: two orgs may each have a project with the same name.
+    // (name, reasons, [(display_id, title, [lines])])
+    type Ticket<'a> = (&'a str, &'a str, Vec<&'a crate::email_digest::DigestLine>);
+    let mut ids: Vec<uuid::Uuid> = Vec::new();
+    let mut projects: Vec<(&str, Vec<String>, Vec<Ticket>)> = Vec::new();
+    for l in lines {
+        let idx = match ids.iter().position(|id| *id == l.project_id) {
+            Some(i) => i,
+            None => {
+                ids.push(l.project_id);
+                projects.push((l.project_name.as_str(), Vec::new(), Vec::new()));
+                projects.len() - 1
+            }
+        };
+        let (_, reasons, tickets) = &mut projects[idx];
+        let reason = reason_label(&l.reason);
+        if !reasons.contains(&reason) {
+            reasons.push(reason);
+        }
+        match tickets
+            .iter_mut()
+            .find(|(id, _, _)| *id == l.issue_display_id)
+        {
+            Some((_, _, ls)) => ls.push(l),
+            None => tickets.push((l.issue_display_id.as_str(), l.issue_title.as_str(), vec![l])),
+        }
+    }
+
+    // A ticket created straight into a status the person follows would read
+    // "created" twice: the initial-status line says it better.
+    for (_, _, tickets) in projects.iter_mut() {
+        for (_, _, ls) in tickets.iter_mut() {
+            let initial = ls.iter().any(|l| {
+                l.kind == "status_changed"
+                    && l.from_status.as_deref().unwrap_or_default().is_empty()
+            });
+            if initial {
+                ls.retain(|l| l.kind != "issue_created");
+            }
+        }
+    }
+
+    let updates: usize = projects
+        .iter()
+        .flat_map(|(_, _, t)| t.iter())
+        .map(|(_, _, ls)| ls.len())
+        .sum();
+    let ticket_count: usize = projects.iter().map(|(_, _, t)| t.len()).sum();
+    let summary = format!(
+        "{} sur {}",
+        plural(updates, "mise \u{00e0} jour", "mises \u{00e0} jour"),
+        plural(ticket_count, "ticket", "tickets")
+    );
+    let slot_label = slot_local.format("%H:%M").to_string();
+    let subject = format!("[Baaton] R\u{00e9}cap de {slot_label} \u{00b7} {summary}");
+
+    let mut html = format!(
+        r#"<h2 style="margin:0 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;">R&#233;cap de {}</h2><p style="margin:0 0 16px;font-size:13px;color:#5c5c57;font-family:Arial,Helvetica,sans-serif;">{}</p>"#,
+        he(&slot_label),
+        he(&summary)
+    );
+    let mut text = format!("R\u{00e9}cap Baaton de {slot_label} \u{2014} {summary}\n");
+
+    for (project, _, tickets) in &projects {
+        html.push_str(&format!(
+            r#"<p style="margin:20px 0 6px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9c9b95;font-family:Arial,Helvetica,sans-serif;">{}</p>"#,
+            he(project)
+        ));
+        text.push_str(&format!("\n== {project} ==\n"));
+        for (display_id, title, ls) in tickets {
+            let url = issue_url(public_url, display_id);
+            html.push_str(&format!(
+                r#"<div style="margin:0 0 10px;padding:10px 12px;background:#f6f5f3;border-radius:6px;font-family:Arial,Helvetica,sans-serif;"><a href="{}" style="font-size:13px;font-weight:700;color:#0a0a0a;text-decoration:none;">{} &middot; {}</a>"#,
+                he(&url),
+                he(display_id),
+                he(title)
+            ));
+            text.push_str(&format!("\n{display_id} \u{00b7} {title}\n{url}\n"));
+            for l in ls {
+                let at = when(l.occurred_at);
+                let line = recap_line(l);
+                html.push_str(&format!(
+                    r#"<div style="margin-top:6px;font-size:12px;color:#3d3d3a;"><span style="color:#9c9b95;font-family:'JetBrains Mono',monospace;">{}</span>&nbsp;&nbsp;{}</div>"#,
+                    he(&at),
+                    he(&line)
+                ));
+                text.push_str(&format!("  {at}  {line}\n"));
+            }
+            html.push_str("</div>");
+        }
+    }
+
+    let reasons: Vec<String> = projects
+        .iter()
+        .map(|(project, reasons, _)| format!("{project} : {}", reasons.join(", ")))
+        .collect();
+    let schedule = "Un r\u{00e9}cap part \u{00e0} 08:00, 12:00, 16:00 et 20:00 (heure de Paris), seulement s'il y a du nouveau. Vos propres actions n'y figurent pas.";
+    let footer = format!(
+        "Pourquoi ce mail : {}.<br>{}",
+        reasons
+            .iter()
+            .map(|r| he(r))
+            .collect::<Vec<_>>()
+            .join(" &middot; "),
+        he(schedule)
+    );
+    text.push_str(&format!(
+        "\nPourquoi ce mail :\n{}\n\n{schedule}\nG\u{00e9}rer mes notifications : {}\n",
+        reasons
+            .iter()
+            .map(|r| format!("- {r}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        manage_url(public_url)
+    ));
+
+    Mail {
+        subject,
+        html: email_layout("#f59e0b", &html, &footer, public_url),
+        text,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn notice() -> crate::notifyd::IssueNotice {
-        crate::notifyd::IssueNotice {
-            display_id: "BAA-42".into(),
-            title: "Export button unresponsive".into(),
-            project_name: Some("Baaton".into()),
-            actor: Some("agent".into()),
-            issue_id: uuid::Uuid::nil(),
-        }
-    }
-
-    /// The hosted PNG asset must appear; inline base64 SVG must not.
-    /// A base64-encoded SVG inflates the email ~4× and is stripped by Gmail.
-    #[test]
-    fn logo_is_hosted_png_not_inline_svg() {
-        let html = issue_created_html(&notice(), "https://app.baaton.dev");
-        assert!(
-            html.contains("baaton.dev/brand/tanuki-email.png"),
-            "hosted PNG expected"
-        );
-        assert!(
-            !html.contains("data:image/svg+xml;base64"),
-            "inline SVG must be removed"
-        );
-        assert!(!html.contains("data:image/"), "no inline image data-URIs");
-    }
-
-    /// The issue CTA must link to the frontend router path.
-    /// There is no /issues/:id route; the correct deep-link is
-    /// /all-issues?issue=DISPLAY_ID.
-    #[test]
-    fn cta_links_to_all_issues_deep_link() {
-        let html = issue_created_html(&notice(), "https://app.baaton.dev");
-        assert!(
-            html.contains("/all-issues?issue=BAA-42"),
-            "deep link must use display_id, got: {}",
-            html.find("href").map_or_else(String::new, |i| html[i..].chars().take(80).collect::<String>())
-        );
-        assert!(
-            !html.contains("/issues/"),
-            "UUID-based /issues/ path must be absent"
-        );
-    }
-
-    /// Trailing slash on public_url must not produce a double-slash in links.
-    #[test]
-    fn trailing_slash_trimmed_in_url() {
-        let html = issue_created_html(&notice(), "https://app.baaton.dev/");
-        assert!(
-            html.contains("https://app.baaton.dev/all-issues?issue=BAA-42"),
-            "double-slash must not appear"
-        );
-        assert!(!html.contains("//all-issues"), "double-slash in URL path");
-    }
-
-    /// User-controlled strings must be HTML-escaped.
-    /// A crafted title must not execute as a script in the reader's mail client.
-    #[test]
-    fn user_data_is_html_escaped() {
-        let mut n = notice();
-        n.title = "<script>alert(1)</script>".into();
-        n.actor = Some("Alice & Bob".into());
-        let html = issue_created_html(&n, "https://app.baaton.dev");
-        assert!(!html.contains("<script>"), "raw script tag must not appear");
-        assert!(html.contains("&lt;script&gt;"), "escaped form expected");
-        assert!(html.contains("Alice &amp; Bob"), "& must be escaped");
-    }
-
-    /// Comment bodies in status-change emails must be HTML-escaped.
-    #[test]
-    fn status_changed_escapes_comment_body() {
-        let notice = crate::notifyd::StatusNotice {
-            issue: crate::notifyd::IssueNotice {
-                display_id: "BAA-42".into(),
-                title: "Title".into(),
-                project_name: Some("Baaton".into()),
-                actor: Some("user".into()),
-                issue_id: uuid::Uuid::nil(),
-            },
-            from_status: "todo".into(),
-            to_status: "in_review".into(),
-            last_comment: Some(("Rev".into(), "<img src=x onerror=alert(1)>".into())),
-            changed_at: chrono::Utc::now(),
-        };
-        let html = status_changed_html(&notice, "https://app.baaton.dev");
-        assert!(
-            !html.contains("<img src=x"),
-            "raw HTML in comment body must be escaped"
-        );
-        assert!(html.contains("&lt;img"), "escaped form expected");
-    }
-
-    /// The footer must not present a link labelled "Unsubscribe" that navigates
-    /// to the same page as "Manage" — that is deceptive.
-    /// A single accurate "Manage notifications" link is sufficient.
-    #[test]
-    fn footer_has_no_fake_unsubscribe_link() {
-        let html = issue_created_html(&notice(), "https://app.baaton.dev");
-        assert!(
-            !html.contains(">Unsubscribe<"),
-            "fake unsubscribe label must be removed"
-        );
-        assert!(
-            html.contains("Manage notifications"),
-            "manage link must be present"
-        );
-        // /settings is the valid route; /settings/integrations does not exist.
-        assert!(
-            html.contains("app.baaton.dev/settings\""),
-            "must link to /settings, not a non-existent sub-path"
-        );
-        assert!(
-            !html.contains("/settings/integrations"),
-            "/settings/integrations is not a valid frontend route"
-        );
-    }
 
     #[test]
     fn he_escapes_all_dangerous_chars() {
@@ -441,22 +401,25 @@ mod tests {
         assert_eq!(he("a & b"), "a &amp; b");
         assert_eq!(he("\"quoted\""), "&quot;quoted&quot;");
         assert_eq!(he("it's"), "it&#x27;s");
-        // Ampersand in an already-encoded context is encoded once at the boundary.
-        assert_eq!(he("safe"), "safe");
     }
 
+    /// A mention body is user text: it must not run in the reader's client.
     #[test]
-    fn in_review_cta_says_review() {
-        let html = in_review_creator_html(
-            "BAA-42",
-            "Fix the export button",
-            "Baaton",
+    fn mention_email_escapes_the_comment() {
+        let events = vec![crate::pending_notif::DigestEvent::Mention {
+            actor: "<b>Eve</b>".into(),
+            body: "<img src=x onerror=alert(1)>".into(),
+            at: chrono::Utc::now(),
+        }];
+        let (_, html) = digest_email_html(
+            &events,
+            "BAA-1",
+            "<script>x</script>",
+            Some("P"),
             "https://app.baaton.dev",
         );
-        assert!(html.contains("Review BAA-42"), "CTA must say Review");
         assert!(
-            html.contains("/all-issues?issue=BAA-42"),
-            "deep link must be correct"
+            !html.contains("<img src=x") && !html.contains("<script>") && !html.contains("<b>Eve")
         );
     }
 }

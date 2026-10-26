@@ -81,12 +81,6 @@ pub struct CommentNotice {
     pub comment_id: uuid::Uuid,
 }
 
-/// Subject + HTML body for an email recipient in a fan-out.
-pub struct EmailPayload {
-    pub subject: String,
-    pub html: String,
-}
-
 impl NotifydClient {
     /// `None` when notifyd is not configured, which is the normal state of a
     /// deployment that does not use it.
@@ -136,15 +130,7 @@ impl NotifydClient {
         let text = notice.text("New issue");
         let url = notice.url(self.public_url.as_deref());
         let key = format!("baaton-issue-created-{}", notice.issue_id);
-        let email_payload = self.public_url.as_deref().map(|base_url| EmailPayload {
-            subject: format!(
-                "[Baaton] {} \u{00b7} {} \u{2014} New Issue",
-                notice.project_name.as_deref().unwrap_or("Baaton"),
-                notice.display_id
-            ),
-            html: crate::email_templates::issue_created_html(&notice, base_url),
-        });
-        self.fan_out(recipients, text.clone(), url.clone(), key.clone(), email_payload);
+        self.fan_out(recipients, text.clone(), url.clone(), key.clone());
         if announce_room {
             tokio::spawn(async move {
                 client.send_telegram(text, url, key).await;
@@ -171,17 +157,7 @@ impl NotifydClient {
             notice.to_status,
             notice.changed_at.timestamp_millis()
         );
-        let email_payload = self.public_url.as_deref().map(|base_url| EmailPayload {
-            subject: format!(
-                "[Baaton] {} \u{00b7} {} \u{2014} {} \u{2192} {}",
-                notice.issue.project_name.as_deref().unwrap_or("Baaton"),
-                notice.issue.display_id,
-                notice.from_status,
-                notice.to_status
-            ),
-            html: crate::email_templates::status_changed_html(&notice, base_url),
-        });
-        self.fan_out(recipients, text.clone(), url.clone(), key.clone(), email_payload);
+        self.fan_out(recipients, text.clone(), url.clone(), key.clone());
         if announce_room {
             tokio::spawn(async move {
                 client.send_telegram(text, url, key).await;
@@ -200,15 +176,7 @@ impl NotifydClient {
         let text = notice.text();
         let url = notice.issue.url(self.public_url.as_deref());
         let key = format!("baaton-comment-{}", notice.comment_id);
-        let email_payload = self.public_url.as_deref().map(|base_url| EmailPayload {
-            subject: format!(
-                "[Baaton] {} \u{00b7} {} \u{2014} New comment",
-                notice.issue.project_name.as_deref().unwrap_or("Baaton"),
-                notice.issue.display_id
-            ),
-            html: crate::email_templates::comment_added_html(&notice, base_url),
-        });
-        self.fan_out(recipients, text.clone(), url.clone(), key.clone(), email_payload);
+        self.fan_out(recipients, text.clone(), url.clone(), key.clone());
         if announce_room {
             tokio::spawn(async move {
                 client.send_telegram(text, url, key).await;
@@ -240,7 +208,13 @@ impl NotifydClient {
         self.post_send(body).await;
     }
 
-    /// Deliver one notice to every person who subscribed to it.
+    /// Deliver one notice to every person who subscribed to it, on every
+    /// channel except email.
+    ///
+    /// Email never leaves from here: it goes through the recap at fixed times
+    /// (`email_digest`), or `pending_notif` for an @mention. An email row
+    /// reaching this function is dropped, so a caller that forgets to split
+    /// cannot bring back one mail per event.
     ///
     /// The per-recipient idempotency key is the load-bearing detail: notifyd
     /// dedupes on that key, so reusing the event's key across recipients would
@@ -255,61 +229,40 @@ impl NotifydClient {
         text: String,
         url: Option<String>,
         key_base: String,
-        email_payload: Option<EmailPayload>,
     ) {
+        let recipients: Vec<_> = recipients
+            .into_iter()
+            .filter(|r| r.channel != "email")
+            .collect();
         if recipients.is_empty() {
             return;
         }
         let client = self.clone();
         tokio::spawn(async move {
-            stream::iter(recipients).for_each_concurrent(8, |r| {
-                let client = &client;
-                let text = &text;
-                let url = &url;
-                let key_base = &key_base;
-                let email_payload = &email_payload;
-                async move {
-                    if r.channel == "email" {
-                        match email_payload {
-                            None => {
-                                tracing::warn!(
-                                    user_id = %r.user_id,
-                                    "email.fan_out.no_payload; skipping"
-                                );
-                                return;
-                            }
-                            Some(ep) => {
-                                let body = json!({
-                                    "channel": "email",
-                                    "to": r.address,
-                                    "subject": ep.subject,
-                                    // notifyd SendRequest field is `body_html`, not `html`.
-                                    // The wrong name is silently ignored and the email falls
-                                    // back to plain-text-only delivery.
-                                    "body_html": ep.html,
-                                    "body": text,
-                                    "idempotency_key": format!("{key_base}-{}-email", r.user_id),
-                                    "priority": "high"
-                                });
-                                client.post_send(body).await;
-                                return;
-                            }
+            stream::iter(recipients)
+                .for_each_concurrent(8, |r| {
+                    let client = &client;
+                    let text = &text;
+                    let url = &url;
+                    let key_base = &key_base;
+                    async move {
+                        let mut body = json!({
+                            "channel": r.channel,
+                            "to": r.address,
+                            "body": text,
+                            "idempotency_key": format!("{key_base}-{}-{}", r.user_id, r.channel),
+                            "priority": "high",
+                        });
+                        if let Some(route_id) = r.telegram_route_id {
+                            body["chat"] = json!({"telegram_route_id": route_id});
                         }
+                        if let Some(url) = url.as_ref() {
+                            body["url"] = json!(url);
+                        }
+                        client.post_send(body).await;
                     }
-                    let mut body = json!({
-                        "channel": r.channel,
-                        "to": r.address,
-                        "body": text,
-                        "idempotency_key": format!("{key_base}-{}-{}", r.user_id, r.channel),
-                        "priority": "high",
-                    });
-                    if let Some(route_id) = r.telegram_route_id {
-                        body["chat"] = json!({"telegram_route_id": route_id});
-                    }
-                    if let Some(url) = url.as_ref() { body["url"] = json!(url); }
-                    client.post_send(body).await;
-                }
-            }).await;
+                })
+                .await;
         });
     }
 
@@ -334,47 +287,35 @@ impl NotifydClient {
         Ok(data)
     }
 
-
-    /// Send the "In Review" creator email to one specific address.
+    /// `POST /v1/send`, telling apart what a retry can fix.
     ///
-    /// The creator is notified automatically regardless of subscription, so
-    /// there is no recipients list to iterate and no per-channel routing —
-    /// it is always email. Fire-and-forget; errors are WARN-logged.
-    /// Send the "In Review" creator email.
-    ///
-    /// `issue_id` is no longer needed: the template now uses `display_id` to
-    /// build the `/all-issues?issue=` deep-link (the only frontend route for
-    /// per-issue navigation).  The signature was simplified accordingly.
-    pub fn send_creator_in_review(
+    /// notifyd queues the job and owns delivery retries, so a 2xx means
+    /// accepted. A repeated idempotency key also answers 2xx with the existing
+    /// job, which makes resending after an unknown outcome safe.
+    pub(crate) async fn try_send(
         &self,
-        display_id: &str,
-        title: &str,
-        project_name: &str,
-        creator_email: &str,
-        idempotency_key: &str,
-    ) {
-        let Some(base_url) = self.public_url.as_deref() else {
-            tracing::trace!("creator.in_review.no_public_url; skip");
-            return;
-        };
-        let html = crate::email_templates::in_review_creator_html(
-            display_id, title, project_name, base_url,
-        );
-        let subject = format!("[Baaton] {display_id} \u{2014} Ready for your review");
-        let body = serde_json::json!({
-            "channel": "email",
-            "to": creator_email,
-            "subject": subject,
-            // notifyd SendRequest field is `body_html`, not `html`.
-            "body_html": html,
-            "body": format!("{display_id} is ready for your review"),
-            "idempotency_key": idempotency_key,
-            "priority": "high"
-        });
-        let client = self.clone();
-        tokio::spawn(async move {
-            client.post_send(body).await;
-        });
+        body: serde_json::Value,
+    ) -> Result<(), crate::email_digest::SendError> {
+        use crate::email_digest::SendError;
+        let endpoint = format!("{}/v1/send", self.base_url);
+        let resp = self
+            .http
+            .post(&endpoint)
+            .header("x-api-key", &self.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| SendError::Retryable(format!("notifyd unreachable: {e}")))?;
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let msg = format!("notifyd answered {status}");
+        if status.is_server_error() || matches!(status.as_u16(), 408 | 409 | 429) {
+            Err(SendError::Retryable(msg))
+        } else {
+            Err(SendError::Permanent(msg))
+        }
     }
 
     pub(crate) async fn post_send(&self, body: serde_json::Value) {
@@ -461,14 +402,19 @@ impl CommentNotice {
 /// review comment cannot push the transition line off screen, and the cut is on
 /// a character boundary (`chars`, not bytes) because these comments are French.
 fn excerpt(body: &str) -> String {
+    excerpt_chars(body, COMMENT_EXCERPT_CHARS)
+}
+
+/// `excerpt` with an explicit limit, for the email recap.
+pub(crate) fn excerpt_chars(body: &str, max: usize) -> String {
     let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    if flat.chars().count() <= COMMENT_EXCERPT_CHARS {
+    if flat.chars().count() <= max {
         return flat;
     }
-    let cut: String = flat.chars().take(COMMENT_EXCERPT_CHARS).collect();
+    let cut: String = flat.chars().take(max).collect();
     // Prefer the last word boundary so the excerpt does not end mid-word.
     let cut = match cut.rsplit_once(' ') {
-        Some((head, _)) if head.chars().count() > COMMENT_EXCERPT_CHARS / 2 => head.to_string(),
+        Some((head, _)) if head.chars().count() > max / 2 => head.to_string(),
         _ => cut,
     };
     format!("{cut}…")
@@ -529,36 +475,6 @@ mod tests {
             notice().url(Some("https://baaton.dev/")),
             Some("https://baaton.dev/all-issues?issue=SQX-304".into())
         );
-    }
-
-    /// notifyd's `/v1/send` contract uses `body_html` for the HTML email body.
-    /// The old field name `html` is silently unknown and the email falls back
-    /// to plain-text-only delivery — a regression no log entry surfaces.
-    #[test]
-    fn email_fan_out_payload_uses_body_html_field() {
-        let ep = EmailPayload {
-            subject: "Test subject".into(),
-            html: "<b>hello</b>".into(),
-        };
-        let text = "hello plain";
-        let key_base = "baaton-test";
-        let user_id = "user_abc";
-        let address = "test@example.com";
-
-        // Reproduce the exact JSON body built by fan_out for an email recipient.
-        let body = serde_json::json!({
-            "channel": "email",
-            "to": address,
-            "subject": ep.subject,
-            "body_html": ep.html,
-            "body": text,
-            "idempotency_key": format!("{key_base}-{user_id}-email"),
-            "priority": "high"
-        });
-
-        assert!(body.get("body_html").is_some(), "body_html must be set");
-        assert!(body.get("html").is_none(), "`html` is not a notifyd field");
-        assert_eq!(body["body_html"], "<b>hello</b>");
     }
 
     fn status_notice() -> StatusNotice {

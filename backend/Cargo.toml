@@ -32,6 +32,8 @@ base64 = "0.21"
 # Utils
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+# Digest slots are wall-clock times in Europe/Paris: DST from the IANA database.
+chrono-tz = "0.10"
 anyhow = "1"
 thiserror = "2"
 tracing = "0.1"

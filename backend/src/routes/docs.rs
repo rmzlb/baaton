@@ -275,7 +275,7 @@ Add a comment to an issue.
 | `author_id` | string | — | Auto-filled from API key if omitted |
 | `author_name` | string | — | Auto-filled from API key name if omitted |
 
-**Mentions.** Write `@[Display Name](user_xxx)` (or a bare `@user_xxx`) in `body` to mention a member of the issue's organization; `GET /orgs/{org_id}/members` lists their `user_id`s (API keys need the `members:read` scope). Each mentioned member except the author receives an email (batched with the issue's other updates over 2 minutes). Ids that are not members of the issue's organization are ignored.
+**Mentions.** Write `@[Display Name](user_xxx)` (or a bare `@user_xxx`) in `body` to mention a member of the issue's organization; `GET /orgs/{org_id}/members` lists their `user_id`s (API keys need the `members:read` scope). Each mentioned member except the author receives an email right away (mentions on the same issue are batched over 2 minutes), and that comment is not repeated in their recap. Ids that are not members of the issue's organization are ignored.
 
 #### DELETE /issues/{issue_id}/comments/{comment_id}
 Delete a comment.
@@ -320,9 +320,23 @@ settings, so an agent can configure notifications for its human. A key whose
 creator is unknown gets `403`: there would be no person to configure. No path
 takes a user id, so a key can never reach somebody else's settings.
 
-**Nobody is notified of their own actions.** An agent acting through your key *is
-you*, so its comments and status changes never notify you. This is why a feed
-stays readable, and why testing your own setup needs a second actor.
+**Nobody is emailed about their own actions.** An agent acting through your key
+*is you*, so its tickets, comments and status changes never email you. Telegram
+skips your own comments but still announces your status changes. Testing your own
+email setup therefore needs a second actor.
+
+**Email is one recap, at fixed times.** Except for @mentions, notification emails
+are not sent one by one: each person gets one recap at 08:00, 12:00, 16:00 and
+20:00 Europe/Paris, only when something new happened since the previous one.
+Anything after 20:00 leaves at 08:00. One recap covers every project and org of
+the person, grouped by project then ticket, and its footer gives the reason per
+project (`role`, project subscription, or their own ticket).
+
+**A role decides on its own.** A member holding a project role hears exactly what
+the role asks for, on every ticket, their own included: a ticket creator holding
+Reviewer (`in_review` + comments) hears nothing about `in_progress` on their own
+ticket. A member without a role hears about tickets they created, are assigned to
+or requested, plus their subscriptions.
 
 #### GET /me/notification-channels
 Addresses are returned masked (`address_masked`). `verified` is true only when the
