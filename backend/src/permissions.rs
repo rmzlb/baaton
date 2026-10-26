@@ -816,8 +816,10 @@ mod tests {
         // decision someone makes on purpose rather than a drift nobody notices.
         // A drift alarm, not a design limit: the assertion above is the real
         // guard, since it rejects any route that is not one caller's own state.
+        // 21 since BAA-39/40: `GET /me/notification-summary` and the email
+        // recap switch (`GET`/`PUT /me/email-recap`), all the caller's own state.
         assert!(
-            lax.len() <= 20,
+            lax.len() <= 21,
             "too many scope-free authenticated routes, review these: {lax:#?}"
         );
     }

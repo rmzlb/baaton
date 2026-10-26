@@ -230,6 +230,7 @@ export interface NotificationSummary {
     address: string | null;
     source: 'channel' | 'account' | null;
     unverified: boolean;
+    recap_enabled: boolean;
     recap_hours: number[];
     time_zone: string;
   };

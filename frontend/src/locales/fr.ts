@@ -2469,6 +2469,7 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'notifSummary.emailRecap': "Récap e-mail à {{address}}, à {{hours}} (heure de Paris), seulement s’il s’est passé quelque chose.",
   'notifSummary.emailAccount': "(l’e-mail de votre compte, utilisé pour les rôles et vos tickets)",
   'notifSummary.emailUnverified': "Votre adresse e-mail n’est pas encore confirmée : aucun récap n’est envoyé avant.",
+  'notifSummary.emailRecapOff': "Récap e-mail désactivé : aucun récap n’est envoyé. Les @mentions arrivent toujours. Réactivez-le dans la carte E-mail.",
   'notifSummary.emailNone': "Aucune adresse e-mail utilisable : aucun récap n’est envoyé.",
   'notifSummary.telegramOn': "Telegram : chaque notification arrive tout de suite.",
   'notifSummary.telegramOff': "Telegram : non connecté.",

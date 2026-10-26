@@ -109,7 +109,11 @@ export function NotificationSummaryCard() {
         {sectionTitle(<Send size={11} />, t('notifSummary.channels', { defaultValue: 'Channels' }))}
         <p className="flex items-start gap-2 text-xs text-primary">
           <Mail size={13} className="text-muted mt-0.5 shrink-0" />
-          {data.email.address ? (
+          {!data.email.recap_enabled ? (
+            <span className="text-amber-300">
+              {t('notifSummary.emailRecapOff', { defaultValue: 'Email recap turned off: no recap is sent. @mentions still arrive. Turn it back on in the Email card.' })}
+            </span>
+          ) : data.email.address ? (
             <span>
               {t('notifSummary.emailRecap', { address: data.email.address, hours, defaultValue: 'Email recap to {{address}}, at {{hours}} (Paris time), only when something happened.' })}
               {data.email.source === 'account' && (

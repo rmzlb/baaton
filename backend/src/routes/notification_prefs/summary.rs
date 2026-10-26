@@ -112,6 +112,9 @@ pub struct EmailSummary {
     pub source: Option<&'static str>,
     /// An address is set but not confirmed: nothing is mailed to it.
     pub unverified: bool,
+    /// The person turned the recap off (BAA-40): no recap leaves, @mentions
+    /// still do.
+    pub recap_enabled: bool,
     pub recap_hours: [u32; 4],
     pub time_zone: &'static str,
 }
@@ -160,16 +163,23 @@ struct PersonChannels {
     has_email_row: bool,
     account_email: Option<String>,
     telegram: bool,
+    /// Off: no recap email reaches this person, whatever the rules say.
+    recap_enabled: bool,
 }
 
 impl PersonChannels {
     fn email_reachable(&self, direct: bool, fallback: bool) -> bool {
-        direct || (fallback && self.account_email.is_some())
+        self.recap_enabled && (direct || (fallback && self.account_email.is_some()))
     }
 
     fn own_tickets(&self) -> Vec<String> {
-        let mut out: Vec<String> = self.confirmed.iter().map(|(c, _)| c.clone()).collect();
-        if !self.has_email_row && self.account_email.is_some() {
+        let mut out: Vec<String> = self
+            .confirmed
+            .iter()
+            .filter(|(c, _)| self.recap_enabled || c != "email")
+            .map(|(c, _)| c.clone())
+            .collect();
+        if self.recap_enabled && !self.has_email_row && self.account_email.is_some() {
             out.push("email".into());
         }
         if self.telegram {
@@ -336,6 +346,9 @@ pub async fn notification_summary(
         has_email_row: email_row.is_some(),
         account_email,
         telegram,
+        recap_enabled: crate::email_digest::unsubscribe::recap_enabled(&pool, &user_id)
+            .await
+            .map_err(internal)?,
     };
 
     let mut out = Vec::with_capacity(projects.len());
@@ -365,6 +378,7 @@ pub async fn notification_summary(
             address: verified.map(|_| crate::models::mask_address("email", address)),
             source: verified.map(|_| "channel"),
             unverified: verified.is_none(),
+            recap_enabled: person.recap_enabled,
             recap_hours: crate::email_digest::SLOT_HOURS,
             time_zone: "Europe/Paris",
         },
@@ -375,6 +389,7 @@ pub async fn notification_summary(
                 .map(|a| crate::models::mask_address("email", a)),
             source: person.account_email.as_ref().map(|_| "account"),
             unverified: false,
+            recap_enabled: person.recap_enabled,
             recap_hours: crate::email_digest::SLOT_HOURS,
             time_zone: "Europe/Paris",
         },

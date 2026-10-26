@@ -2469,6 +2469,7 @@ As a [user], I want to [action] so that [benefit].
   'notifSummary.emailRecap': "Email recap to {{address}}, at {{hours}} (Paris time), only when something happened.",
   'notifSummary.emailAccount': "(your account email, used for roles and your own tickets)",
   'notifSummary.emailUnverified': "Your email address is not confirmed yet: no recap is sent until it is.",
+  'notifSummary.emailRecapOff': "Email recap turned off: no recap is sent. @mentions still arrive. Turn it back on in the Email card.",
   'notifSummary.emailNone': "No usable email address: no recap is sent.",
   'notifSummary.telegramOn': "Telegram: each notification arrives right away.",
   'notifSummary.telegramOff': "Telegram: not connected.",
