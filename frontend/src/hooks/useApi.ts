@@ -8,6 +8,8 @@ import type {
   ProjectNotificationSettings,
   NotificationRole,
   ProjectNotificationRoles,
+  OrgNotificationRoles,
+  NotificationSummary,
   PublicSubmitSettings,
   Issue,
   IssueDetail,
@@ -282,12 +284,30 @@ export function useApi() {
           return api.put<ProjectNotificationRoles>(`/projects/${id}/notification-roles`, { roles }, token);
         }),
 
+      /** Back to the organization's role definitions. */
+      resetNotificationRoles: async (id: string): Promise<ProjectNotificationRoles> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete<ProjectNotificationRoles>(`/projects/${id}/notification-roles`, token);
+        }),
+
+      /** A role on this project only; `null` = no role on this project. */
       assignNotificationRole: async (id: string, userId: string, role: string | null): Promise<ProjectNotificationRoles> =>
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.put<ProjectNotificationRoles>(
             `/projects/${id}/notification-roles/members/${encodeURIComponent(userId)}`,
             { role },
+            token,
+          );
+        }),
+
+      /** Drop the project assignment: the member's org role applies again. */
+      clearNotificationRole: async (id: string, userId: string): Promise<ProjectNotificationRoles> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.delete<ProjectNotificationRoles>(
+            `/projects/${id}/notification-roles/members/${encodeURIComponent(userId)}`,
             token,
           );
         }),
@@ -454,6 +474,29 @@ export function useApi() {
         withErrorHandling(async () => {
           const token = await getAuthToken();
           return api.patch<Organization>(`/orgs/${orgId}/settings`, body, token);
+        }),
+
+      getNotificationRoles: async (orgId: string): Promise<OrgNotificationRoles> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<OrgNotificationRoles>(`/orgs/${orgId}/notification-roles`, token);
+        }),
+
+      updateNotificationRoles: async (orgId: string, roles: NotificationRole[]): Promise<OrgNotificationRoles> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.put<OrgNotificationRoles>(`/orgs/${orgId}/notification-roles`, { roles }, token);
+        }),
+
+      /** A role on every project of the org; `null` removes it. */
+      assignNotificationRole: async (orgId: string, userId: string, role: string | null): Promise<OrgNotificationRoles> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.put<OrgNotificationRoles>(
+            `/orgs/${orgId}/notification-roles/members/${encodeURIComponent(userId)}`,
+            { role },
+            token,
+          );
         }),
     },
 
@@ -1038,6 +1081,13 @@ export function useApi() {
             opts ?? {},
             token,
           );
+        }),
+
+      /** What the caller receives, per project, computed like delivery. */
+      getSummary: async (): Promise<NotificationSummary> =>
+        withErrorHandling(async () => {
+          const token = await getAuthToken();
+          return api.get<NotificationSummary>('/me/notification-summary', token);
         }),
 
       listSubscriptions: async (): Promise<ProjectSubscription[]> =>

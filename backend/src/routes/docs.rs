@@ -56,6 +56,9 @@ Base URL: `https://api.baaton.dev/api/v1`
 | Set a notification channel | PUT | `/me/notification-channels/telegram` |
 | List my project subscriptions | GET | `/me/project-subscriptions` |
 | Subscribe / tune a project | PUT | `/me/project-subscriptions/{project_id}` |
+| What I receive, per project | GET | `/me/notification-summary` |
+| Org notification roles | GET / PUT | `/orgs/{org_id}/notification-roles` |
+| Project notification roles | GET / PUT / DELETE | `/projects/{id}/notification-roles` |
 | Register my Telegram bot | POST | `/me/telegram-bot` |
 | Full API docs | GET | `/public/docs` (no auth) |
 
@@ -313,6 +316,7 @@ questions, deliberately owned by three different things:
 |---|---|
 | where to reach someone | `/me/notification-channels` (a chat id belongs to a person, in every org) |
 | what they want to hear | `/me/project-subscriptions` (user x project) |
+| what their role asks for | `/orgs/{org_id}/notification-roles` (defined once for the org), `/projects/{id}/notification-roles` (a project's own) |
 | which statuses exist | `/projects/{id}/notifications` (the project's workflow) |
 
 **An API key acts as the person who created it.** `/me/*` addresses that owner's
@@ -332,11 +336,72 @@ Anything after 20:00 leaves at 08:00. One recap covers every project and org of
 the person, grouped by project then ticket, and its footer gives the reason per
 project (`role`, project subscription, or their own ticket).
 
-**A role decides on its own.** A member holding a project role hears exactly what
-the role asks for, on every ticket, their own included: a ticket creator holding
+**A role decides on its own.** A member holding a role hears exactly what the
+role asks for, on every ticket, their own included: a ticket creator holding
 Reviewer (`in_review` + comments) hears nothing about `in_progress` on their own
 ticket. A member without a role hears about tickets they created, are assigned to
 or requested, plus their subscriptions.
+
+**Roles are defined once for the organization.** Precedence, all read at send
+time (nothing is copied, so a change applies at once, to projects created later
+too):
+
+1. *Which role a member holds on a project*: the project's own assignment if it
+   has one (possibly "no role here"), else the member's org role.
+2. *What that role means*: the project's own definitions if the project was
+   customised, else the org's. A role key the definitions in force do not have
+   grants nothing.
+3. *Each setting* (statuses, comments, new tickets): the member's own value in
+   `/me/project-subscriptions`, else the role's, else the project default.
+   Unsubscribing from a project (`enabled: false`) mutes the role there too.
+
+A role is `{key, label, notify_statuses, notify_comments, notify_issue_created}`;
+`notify_statuses` holds status keys, `"*"` meaning every status. New orgs start
+with Reviewer (`in_review` + comments), Dev (`not_ok`, `backlog`) and Everything.
+A role given to someone who has left the org routes nothing.
+
+#### GET /me/notification-summary
+What the caller (an API key: its owner) receives, per project they can see,
+computed by the same rules as delivery. Per project: `role` (`assigned_in`
+`org`|`project`, `defined_in` `org`|`project`, `defined`), `subscription`
+(`none`|`subscribed`|`unsubscribed`), `statuses`, `comments`, `issue_created`
+— each `{value, source}` with `source` `personal`, `role`, `project_default` or
+`null` when not received — `own_tickets` (status changes and comments on your
+own tickets, for members no role routes there) and the `channels` reached.
+Top level: `email` (masked address, `source` `channel`|`account`, `unverified`,
+`recap_hours` in `time_zone`), `telegram_connected`, and `mentions: "immediate"`
+(an @mention is mailed within minutes, outside the recap). An empty `channels`
+with rules present means nothing can arrive: no usable address.
+
+#### GET /orgs/{org_id}/notification-roles
+`{org_id, roles, assignments: [{user_id, role}]}`. Any member of the org; a key
+limited to projects gets `403` (the roles span every project).
+
+#### PUT /orgs/{org_id}/notification-roles
+`{roles: [...]}` replaces the org's definitions (max 12; statuses must exist in
+one of the org's projects or the default workflow). Removing a role removes its
+org assignments and the project assignments of projects that follow the org.
+**Org admins only, signed in with that org active** — API keys get `403`.
+
+#### PUT /orgs/{org_id}/notification-roles/members/{user_id}
+`{role: "reviewer"}` gives a member that role on every project of the org;
+`{role: null}` removes it. Org admins only; the user must belong to the org.
+
+#### GET /projects/{id}/notification-roles
+`{project_id, org_id, inherited, roles, org_roles, assignments}`. `inherited:
+true` means the project follows the org's definitions (`roles` = `org_roles`).
+Each assignment: `{user_id, role, org_role, overridden}` — `role` is what applies
+here, `overridden` that the project gives its own (`role: null` = none here).
+
+#### PUT /projects/{id}/notification-roles
+`{roles: [...]}` customises the project: its own definitions replace the org's
+here. Statuses must exist in this project. `DELETE` goes back to the org's roles.
+Either way, project assignments naming a role that no longer exists are removed.
+
+#### PUT /projects/{id}/notification-roles/members/{user_id}
+`{role: "dev"}` gives the member that role on this project only, whatever their
+org role; `{role: null}` gives them no role here. `DELETE` removes the project
+assignment, so their org role applies again.
 
 #### GET /me/notification-channels
 Addresses are returned masked (`address_masked`). `verified` is true only when the

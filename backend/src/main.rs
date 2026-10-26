@@ -225,6 +225,10 @@ async fn main() -> anyhow::Result<()> {
             include_str!("../migrations/082_webhook_project_filter.sql"),
         ),
         (83, include_str!("../migrations/083_email_digests.sql")),
+        (
+            84,
+            include_str!("../migrations/084_org_notification_roles.sql"),
+        ),
     ];
 
     for &(version, sql) in migrations {

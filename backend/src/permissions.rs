@@ -295,6 +295,9 @@ pub fn required_permission(method: &Method, path: &str) -> Requirement {
         // ── Org / members ────────────────────────────────────────────────
         "orgs" => match segs.get(2).copied() {
             Some("settings") => Requirement::Scope(ADMIN_FULL),
+            // Reading is a members:read; the handler lets only a signed-in org
+            // admin change them, never a key.
+            Some("notification-roles") => rw(method, "members:read", ADMIN_FULL),
             _ => Requirement::Scope("members:read"),
         },
         "invites" => match verb(method) {

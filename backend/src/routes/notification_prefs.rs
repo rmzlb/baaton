@@ -1,7 +1,9 @@
 //! User notification preferences. Baaton owns project subscriptions; notifyd
 //! owns Telegram bots, destinations, verification and delivery.
 
+mod summary;
 mod telegram;
+pub use summary::notification_summary;
 pub use telegram::{create_telegram_link, delete_bot, get_bot, put_telegram_destination, register_bot, send_test_notification, telegram_webhook};
 
 use axum::{
@@ -440,85 +442,168 @@ async fn user_org_ids(auth: &AuthUser, user_id: &str) -> Result<Vec<String>, Api
 
 // ───────────────────── recipient resolution ─────────────────────
 
-// Members reach this list two ways: their own subscription, or a role a
-// project editor gave them (080). Each preference resolves field by field: the
-// member's own value, else their role's, else the project default. An
-// unsubscribe (`enabled = false`) mutes a role too; a role key no longer
-// defined on the project grants nothing. `"*"` in statuses means every status.
+// The rules of every member who has a say on project `$1`, one row each. The
+// single definition of "what does this person hear here", shared by the send
+// path (`RECIPIENTS_SQL`), the participant default (`DEFAULT_ROUTING_EXCLUDED_SQL`)
+// and the "what you receive" summary, so the screen cannot drift from the mail.
 //
-// `reason` names the layer that decided, for the email footer: the member's
-// own value for this event wins, else their role, else the project default
-// reached through a subscription.
+// Members arrive three ways: their own subscription, a role given on this
+// project, or a role given for the whole organization (084).
 //
-// A role holder with no email row at all gets an email row with an empty
-// address: `resolve_recipients` fills it from the account's primary email, so
-// nobody has to configure a channel to hear what their role asks for. Plain
-// subscribers keep exactly the channels they set up themselves.
-const RECIPIENTS_SQL: &str = "\
-        SELECT m.user_id, c.channel, c.address, \
-          CASE WHEN ($2 = 'status_changed' AND s.notify_statuses IS NOT NULL) \
-                 OR ($2 = 'comment_added' AND s.notify_comments IS NOT NULL) \
-                 OR ($2 = 'issue_created' AND s.notify_issue_created IS NOT NULL) \
-               THEN 'subscription' \
-               WHEN ro.r IS NOT NULL \
-               THEN 'role:' || COALESCE(NULLIF(trim(ro.r->>'label'), ''), mr.role) \
-               ELSE 'subscription' END AS reason \
+// - Role held: the project's own assignment (`project_member_role_overrides`,
+//   `role` NULL meaning "no role on this project") wins over the org's
+//   (`org_member_roles`).
+// - Role definition: the project's own roles if it was customised
+//   (`projects.custom_notification_roles`), else the org's
+//   (`organizations.notification_roles`), read now and never copied, so
+//   editing an org role changes every project that inherits it. A role key the
+//   deciding set does not define grants nothing.
+// - Each preference field by field: the member's own value, else their role's,
+//   else the project default. An unsubscribe (`enabled = false`) mutes a role
+//   too. `"*"` in statuses means every status.
+//
+// `*_from` names the layer that decided each field: `own`, `role` or `project`.
+macro_rules! member_rules_sql {
+    () => {
+        "SELECT m.user_id, \
+          s.user_id IS NOT NULL AS subscribed, \
+          COALESCE(s.channels, '{}') AS channels, \
+          eff.role AS role_key, \
+          eff.assigned_in AS role_assigned_in, \
+          CASE WHEN p.custom_notification_roles IS NULL THEN 'org' ELSE 'project' END AS roles_defined_in, \
+          ro.r AS role_def, \
+          COALESCE(NULLIF(trim(ro.r->>'label'), ''), eff.role) AS role_label, \
+          (s.enabled IS TRUE OR (s.user_id IS NULL AND ro.r IS NOT NULL)) AS active, \
+          COALESCE(s.notify_statuses, ro.r->'notify_statuses', p.notify_statuses) AS statuses, \
+          CASE WHEN s.notify_statuses IS NOT NULL THEN 'own' \
+               WHEN ro.r->'notify_statuses' IS NOT NULL THEN 'role' ELSE 'project' END AS statuses_from, \
+          COALESCE(s.notify_comments, (ro.r->>'notify_comments')::boolean, p.notify_comments) AS comments, \
+          CASE WHEN s.notify_comments IS NOT NULL THEN 'own' \
+               WHEN ro.r->>'notify_comments' IS NOT NULL THEN 'role' ELSE 'project' END AS comments_from, \
+          COALESCE(s.notify_issue_created, (ro.r->>'notify_issue_created')::boolean, \
+                   p.notify_issue_created) AS issue_created, \
+          CASE WHEN s.notify_issue_created IS NOT NULL THEN 'own' \
+               WHEN ro.r->>'notify_issue_created' IS NOT NULL THEN 'role' ELSE 'project' END AS issue_created_from \
         FROM ( \
           SELECT user_id FROM project_notification_subscriptions WHERE project_id = $1 \
-          UNION SELECT user_id FROM project_member_roles WHERE project_id = $1 \
+          UNION SELECT user_id FROM project_member_role_overrides WHERE project_id = $1 \
+          UNION SELECT omr.user_id FROM org_member_roles omr \
+                  JOIN projects op ON op.id = $1 AND op.org_id = omr.org_id \
         ) m \
         JOIN projects p ON p.id = $1 \
+        JOIN organizations o ON o.id = p.org_id \
         LEFT JOIN project_notification_subscriptions s \
           ON s.project_id = $1 AND s.user_id = m.user_id \
-        LEFT JOIN project_member_roles mr \
-          ON mr.project_id = $1 AND mr.user_id = m.user_id \
-        LEFT JOIN LATERAL ( \
-          SELECT r FROM jsonb_array_elements(p.notification_roles) r \
-           WHERE r->>'key' = mr.role LIMIT 1 \
-        ) ro ON true \
+        LEFT JOIN project_member_role_overrides pr \
+          ON pr.project_id = $1 AND pr.user_id = m.user_id \
+        LEFT JOIN org_member_roles omr \
+          ON omr.org_id = p.org_id AND omr.user_id = m.user_id \
         CROSS JOIN LATERAL ( \
-          SELECT channel, address FROM user_notification_channels \
-           WHERE user_id = m.user_id AND channel <> 'telegram' \
+          SELECT CASE WHEN pr.user_id IS NOT NULL THEN pr.role ELSE omr.role END AS role, \
+                 CASE WHEN pr.user_id IS NOT NULL THEN 'project' \
+                      WHEN omr.user_id IS NOT NULL THEN 'org' END AS assigned_in \
+        ) eff \
+        LEFT JOIN LATERAL ( \
+          SELECT r FROM jsonb_array_elements( \
+                   COALESCE(p.custom_notification_roles, o.notification_roles)) r \
+           WHERE r->>'key' = eff.role LIMIT 1 \
+        ) ro ON true"
+    };
+}
+
+/// `member_rules_sql!` on its own, for the migration equivalence test.
+#[cfg(test)]
+pub(crate) const MEMBER_RULES_SQL: &str = member_rules_sql!();
+
+// The channel rows one member of `rules u` can be reached on, before their own
+// channel filter. A role holder with no email row at all gets an email row with
+// an empty address: `resolve_recipients` fills it from the account's primary
+// email, so nobody has to configure a channel to hear what their role asks
+// for. Plain subscribers keep exactly the channels they set up themselves.
+// Telegram's address comes from notifyd.
+macro_rules! member_channels_sql {
+    () => {
+        "SELECT channel, address FROM user_notification_channels \
+           WHERE user_id = u.user_id AND channel <> 'telegram' \
              AND (channel <> 'email' OR verified_at IS NOT NULL) \
           UNION ALL SELECT 'email'::text, ''::text \
-           WHERE ro.r IS NOT NULL \
+           WHERE u.role_def IS NOT NULL \
              AND NOT EXISTS (SELECT 1 FROM user_notification_channels \
-                              WHERE user_id = m.user_id AND channel = 'email') \
-          UNION ALL SELECT 'telegram'::text, ''::text \
-        ) c \
-        CROSS JOIN LATERAL ( \
-          SELECT COALESCE(s.notify_statuses, ro.r->'notify_statuses', p.notify_statuses) AS statuses \
-        ) st \
-        WHERE (s.enabled IS TRUE OR (s.user_id IS NULL AND ro.r IS NOT NULL)) \
-          AND ($2 <> 'comment_added' OR m.user_id <> $4) \
-          AND (cardinality(COALESCE(s.channels, '{}')) = 0 OR c.channel = ANY(s.channels)) \
-          AND CASE $2 \
-                WHEN 'status_changed' THEN \
-                  st.statuses @> to_jsonb($3::text) OR st.statuses @> '\"*\"'::jsonb \
-                WHEN 'comment_added' THEN \
-                  COALESCE(s.notify_comments, (ro.r->>'notify_comments')::boolean, p.notify_comments) \
-                WHEN 'issue_created' THEN \
-                  COALESCE(s.notify_issue_created, (ro.r->>'notify_issue_created')::boolean, \
-                           p.notify_issue_created) \
-                ELSE false \
-              END";
+                              WHERE user_id = u.user_id AND channel = 'email') \
+          UNION ALL SELECT 'telegram'::text, ''::text"
+    };
+}
+
+// Who hears event `$2` (status `$3`) on project `$1`, `$4` being the actor.
+//
+// `reason` names the layer that decided, for the email footer: the member's
+// role (`role:<label>`) when the role's value for this event decided, else
+// `subscription` (their own value, or the project default they subscribed to).
+const RECIPIENTS_SQL: &str = concat!(
+    "WITH rules AS (",
+    member_rules_sql!(),
+    ") \
+     SELECT u.user_id, c.channel, c.address, \
+       CASE WHEN CASE $2 WHEN 'status_changed' THEN u.statuses_from \
+                         WHEN 'comment_added' THEN u.comments_from \
+                         WHEN 'issue_created' THEN u.issue_created_from END = 'role' \
+            THEN 'role:' || u.role_label ELSE 'subscription' END AS reason \
+     FROM rules u \
+     CROSS JOIN LATERAL (",
+    member_channels_sql!(),
+    ") c \
+     WHERE u.active \
+       AND ($2 <> 'comment_added' OR u.user_id <> $4) \
+       AND (cardinality(u.channels) = 0 OR c.channel = ANY(u.channels)) \
+       AND CASE $2 \
+             WHEN 'status_changed' THEN \
+               u.statuses @> to_jsonb($3::text) OR u.statuses @> '\"*\"'::jsonb \
+             WHEN 'comment_added' THEN u.comments \
+             WHEN 'issue_created' THEN u.issue_created \
+             ELSE false \
+           END"
+);
 
 /// Ticket participants the opt-out default must leave alone, among `$2`.
 ///
 /// Default-on is opt-out: an explicit unsubscribe from the project mutes it.
-/// A member holding a role the project defines is routed by that role on every
-/// ticket, their own included (`RECIPIENTS_SQL`): adding them again here would
-/// send what the role leaves out, such as every transition of a reviewer's
-/// tickets when the role asks only for `in_review`.
-const DEFAULT_ROUTING_EXCLUDED_SQL: &str = "\
-        SELECT user_id FROM project_notification_subscriptions \
-         WHERE project_id = $1 AND NOT enabled AND user_id = ANY($2) \
-        UNION \
-        SELECT mr.user_id FROM project_member_roles mr \
-          JOIN projects p ON p.id = mr.project_id \
-         WHERE mr.project_id = $1 AND mr.user_id = ANY($2) \
-           AND EXISTS (SELECT 1 FROM jsonb_array_elements(p.notification_roles) r \
-                        WHERE r->>'key' = mr.role)";
+/// A member holding a role the project defines, given on the project or for
+/// the whole org, is routed by that role on every ticket, their own included
+/// (`RECIPIENTS_SQL`): adding them again here would send what the role leaves
+/// out, such as every transition of a reviewer's tickets when the role asks
+/// only for `in_review`.
+const DEFAULT_ROUTING_EXCLUDED_SQL: &str = concat!(
+    "SELECT user_id FROM project_notification_subscriptions \
+      WHERE project_id = $1 AND NOT enabled AND user_id = ANY($2) \
+     UNION \
+     SELECT u.user_id FROM (",
+    member_rules_sql!(),
+    ") u WHERE u.role_def IS NOT NULL AND u.user_id = ANY($2)"
+);
+
+/// One member's rules on project `$1` (`$2` = user), for the "what you
+/// receive" summary: the same rows the send path reads, plus the channels
+/// those rules route to. `direct_channels` holds rows with an address of their
+/// own; `email_fallback` says the primary account email stands in.
+const MEMBER_SUMMARY_SQL: &str = concat!(
+    "WITH rules AS (",
+    member_rules_sql!(),
+    ") \
+     SELECT u.subscribed, u.role_key, u.role_assigned_in, u.roles_defined_in, \
+            u.role_def IS NOT NULL AS role_defined, u.role_label, u.active, \
+            u.statuses, u.statuses_from, u.comments, u.comments_from, \
+            u.issue_created, u.issue_created_from, \
+            ARRAY(SELECT DISTINCT c.channel FROM (",
+    member_channels_sql!(),
+    ") c WHERE (cardinality(u.channels) = 0 OR c.channel = ANY(u.channels)) \
+              AND c.address <> '') AS direct_channels, \
+            EXISTS (SELECT 1 FROM (",
+    member_channels_sql!(),
+    ") c WHERE (cardinality(u.channels) = 0 OR c.channel = ANY(u.channels)) \
+              AND c.channel = 'email' AND c.address = '') AS email_fallback, \
+            (cardinality(u.channels) = 0 OR 'telegram' = ANY(u.channels)) AS telegram_allowed \
+     FROM rules u WHERE u.user_id = $2"
+);
 
 /// One delivery: a person, a channel, an address.
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -541,6 +626,38 @@ struct TelegramRoute {
     address: String,
 }
 
+/// The Telegram route (bot + chat) of each owner that has one, from notifyd.
+/// Bounded batches: notifyd is the sole source of current bots/destinations.
+async fn telegram_routes(
+    notifyd: &crate::notifyd::NotifydClient,
+    owners: &[String],
+) -> std::collections::HashMap<String, TelegramRoute> {
+    let mut routes = std::collections::HashMap::new();
+    for owners in owners.chunks(100) {
+        match notifyd
+            .integration_request(
+                reqwest::Method::POST,
+                "/v1/telegram/lookup",
+                Some(json!({"owners": owners})),
+                None,
+            )
+            .await
+        {
+            Ok(data) => match serde_json::from_value::<Vec<TelegramRoute>>(
+                data.get("data").cloned().unwrap_or_default(),
+            ) {
+                Ok(found) => {
+                    for route in found {
+                        routes.insert(route.owner.clone(), route);
+                    }
+                }
+                Err(_) => tracing::error!("notification.telegram.invalid_lookup_response"),
+            },
+            Err(_) => tracing::error!("notification.telegram.lookup_failed"),
+        }
+    }
+    routes
+}
 
 /// Who must hear about this event on this project.
 ///
@@ -620,17 +737,7 @@ pub async fn resolve_recipients(
     let owners: Vec<_> = recipients.iter().filter(|r| r.channel == "telegram")
         .map(|r| r.user_id.clone()).collect();
     if owners.is_empty() { return recipients; }
-    let mut routes = std::collections::HashMap::new();
-    // Bounded batches: notifyd is the sole source of current bots/destinations.
-    for owners in owners.chunks(100) {
-        match notifyd.integration_request(reqwest::Method::POST, "/v1/telegram/lookup", Some(json!({"owners": owners})), None).await {
-            Ok(data) => match serde_json::from_value::<Vec<TelegramRoute>>(data.get("data").cloned().unwrap_or_default()) {
-                Ok(found) => for route in found { routes.insert(route.owner.clone(), route); },
-                Err(_) => tracing::error!("notification.telegram.invalid_lookup_response"),
-            },
-            Err(_) => tracing::error!("notification.telegram.lookup_failed"),
-        }
-    }
+    let mut routes = telegram_routes(notifyd, &owners).await;
     recipients.retain_mut(|r| {
         if r.channel != "telegram" { return true; }
         match routes.remove(&r.user_id) {

@@ -162,10 +162,75 @@ export interface NotificationRole {
   notify_issue_created: boolean;
 }
 
+/** One member's role on a project, and where it comes from. */
+export interface ProjectMemberRole {
+  user_id: string;
+  /** The role that applies on this project; null = none. */
+  role: string | null;
+  org_role: string | null;
+  /** The project gives this member its own role (possibly none). */
+  overridden: boolean;
+}
+
 export interface ProjectNotificationRoles {
   project_id: string;
+  org_id: string;
+  /** The project follows the organization's role definitions. */
+  inherited: boolean;
+  /** The definitions in force on this project. */
+  roles: NotificationRole[];
+  org_roles: NotificationRole[];
+  assignments: ProjectMemberRole[];
+}
+
+export interface OrgNotificationRoles {
+  org_id: string;
   roles: NotificationRole[];
   assignments: { user_id: string; role: string }[];
+}
+
+/** Who decided a rule: the person, their role, or the project default they subscribed to. */
+export type NotificationRuleSource = 'personal' | 'role' | 'project_default';
+
+export interface NotificationSummaryRule<T> {
+  value: T;
+  source: NotificationRuleSource | null;
+}
+
+export interface NotificationSummaryProject {
+  project_id: string;
+  project_name: string;
+  project_slug: string;
+  org_id: string;
+  org_name: string;
+  subscription: 'none' | 'subscribed' | 'unsubscribed';
+  role: {
+    key: string;
+    label: string;
+    assigned_in: 'org' | 'project';
+    defined_in: 'org' | 'project';
+    defined: boolean;
+  } | null;
+  all_statuses: boolean;
+  statuses: NotificationSummaryRule<{ key: string; label: string }[]>;
+  comments: NotificationSummaryRule<boolean>;
+  issue_created: NotificationSummaryRule<boolean>;
+  own_tickets: boolean;
+  channels: string[];
+  own_tickets_channels: string[];
+}
+
+export interface NotificationSummary {
+  email: {
+    address: string | null;
+    source: 'channel' | 'account' | null;
+    unverified: boolean;
+    recap_hours: number[];
+    time_zone: string;
+  };
+  telegram_connected: boolean;
+  mentions: 'immediate';
+  projects: NotificationSummaryProject[];
 }
 
 export interface PublicSubmitSettings {
