@@ -5,7 +5,7 @@ use crate::middleware::{auth_middleware, JwksKeys};
 
 mod projects;
 pub(crate) mod issues;
-mod comments;
+pub(crate) mod comments;
 mod approvals;
 pub(crate) mod issue_scope;
 mod tldrs;

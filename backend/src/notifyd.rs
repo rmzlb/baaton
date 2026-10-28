@@ -114,6 +114,11 @@ impl NotifydClient {
         })
     }
 
+    /// App base URL for ticket links, `None` when `NOTIFYD_PUBLIC_URL` is unset.
+    pub fn public_url(&self) -> Option<&str> {
+        self.public_url.as_deref()
+    }
+
     /// Announce a created issue. Spawned, never awaited by a handler.
     ///
     /// `announce_room` carries the project-level filter, which gates the shared

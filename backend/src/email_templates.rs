@@ -394,6 +394,131 @@ pub fn recap_email(
     }
 }
 
+/// What the In Review mail to a ticket's creator shows (`review_mail`).
+pub struct ReviewMail<'a> {
+    pub project_name: &'a str,
+    pub display_id: &'a str,
+    pub title: &'a str,
+    /// Who moved it; empty when unknown.
+    pub actor_name: &'a str,
+    /// Human labels of the transition.
+    pub from_status: &'a str,
+    pub to_status: &'a str,
+    /// `(author, body)` of the latest comment, as stored.
+    pub last_comment: Option<(&'a str, &'a str)>,
+}
+
+/// Longest excerpt of the latest comment in the In Review mail: usually the
+/// delivery note, worth more room than a recap line.
+const REVIEW_COMMENT_CHARS: usize = 600;
+
+/// Header-safe text: control characters (a title's CR/LF) become spaces.
+fn one_line(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The mail a creator gets the moment their ticket reaches In Review.
+///
+/// Every user-supplied string goes through `he` in the HTML part; the subject
+/// is kept on one line so a title cannot add a header.
+pub fn in_review_email(
+    m: &ReviewMail<'_>,
+    why: crate::review_mail::Why,
+    public_url: &str,
+) -> Mail {
+    let display_id = one_line(m.display_id);
+    let title = one_line(m.title);
+    let to = match one_line(m.to_status) {
+        t if t.is_empty() => "In Review".to_string(),
+        t => t,
+    };
+    let from = one_line(m.from_status);
+    let actor = match one_line(m.actor_name) {
+        a if a.is_empty() => "Quelqu'un".to_string(),
+        a => a,
+    };
+    let project = match one_line(m.project_name) {
+        p if p.is_empty() => "Baaton".to_string(),
+        p => p,
+    };
+    let url = issue_url(public_url, &display_id);
+    let comment = m
+        .last_comment
+        .map(|(author, body)| {
+            (
+                one_line(author),
+                crate::notifyd::excerpt_chars(
+                    &crate::novu::mentions_to_text(body),
+                    REVIEW_COMMENT_CHARS,
+                ),
+            )
+        })
+        .filter(|(_, body)| !body.is_empty());
+
+    let subject = format!("[Baaton] Votre ticket {display_id} est en {to} \u{00b7} {title}");
+
+    let to_badge = status_badge(&he(&to), status_color(crate::review_mail::STATUS));
+    let from_badge = if from.is_empty() {
+        String::new()
+    } else {
+        format!("{} &#8594; ", status_badge(&he(&from), "#9c9b95"))
+    };
+    let mut html = format!(
+        r#"{to_badge}<h2 style="margin:12px 0 4px;font-size:18px;font-weight:700;color:#0a0a0a;font-family:Arial,Helvetica,sans-serif;">{} &middot; {}</h2><p style="margin:8px 0;font-size:13px;line-height:1.6;color:#3d3d3a;font-family:Arial,Helvetica,sans-serif;"><span style="font-weight:700;">{}</span> a pass&#233; votre ticket {from_badge}{to_badge}. Il est pr&#234;t pour votre v&#233;rification.</p>"#,
+        he(&display_id),
+        he(&title),
+        he(&actor),
+    );
+    let transition = if from.is_empty() {
+        format!("{actor} a pass\u{00e9} votre ticket en {to}.")
+    } else {
+        format!("{actor} a pass\u{00e9} votre ticket de {from} \u{00e0} {to}.")
+    };
+    let mut text = format!(
+        "Votre ticket {display_id} est en {to}\n\n{display_id} \u{00b7} {title}\n{transition} Il est pr\u{00ea}t pour votre v\u{00e9}rification.\n"
+    );
+    if let Some((author, body)) = &comment {
+        let author = if author.is_empty() { "Quelqu'un" } else { author.as_str() };
+        html.push_str(&format!(
+            r#"<div style="margin:12px 0 0;background:#f6f5f3;border-radius:6px;padding:10px 12px;font-size:12px;color:#3d3d3a;font-family:Arial,Helvetica,sans-serif;">Dernier commentaire, de <span style="font-weight:700;">{}</span>&nbsp;:<br><span style="margin-top:4px;display:block;color:#5c5c57;">{}</span></div>"#,
+            he(author),
+            he(body),
+        ));
+        text.push_str(&format!(
+            "\nDernier commentaire, de {author} :\n  \u{00ab} {body} \u{00bb}\n"
+        ));
+    }
+    html.push_str(&cta_button(&url, "Voir le ticket"));
+    text.push_str(&format!("\nVoir le ticket : {url}\n"));
+
+    let reason = match why {
+        crate::review_mail::Why::Creator => "vous avez cr\u{00e9}\u{00e9} ce ticket",
+        crate::review_mail::Why::Reporter => "ce ticket a \u{00e9}t\u{00e9} ouvert \u{00e0} votre demande",
+    };
+    let schedule = "Le reste arrive dans le r\u{00e9}cap de 08:00, 12:00, 16:00 et 20:00 (heure de Paris).";
+    let footer = format!(
+        "Vous recevez ce mail tout de suite parce que {} sur <b>{}</b>, quels que soient vos r&#233;glages. {}",
+        he(reason),
+        he(&project),
+        he(schedule)
+    );
+    text.push_str(&format!(
+        "\nPourquoi ce mail : {reason} sur {project}. Il part tout de suite, quels que soient vos r\u{00e9}glages. {schedule}\nG\u{00e9}rer mes notifications : {}\n",
+        manage_url(public_url)
+    ));
+
+    Mail {
+        subject,
+        html: email_layout("#3b82f6", &html, &footer, public_url),
+        text,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,5 +549,31 @@ mod tests {
         assert!(
             !html.contains("<img src=x") && !html.contains("<script>") && !html.contains("<b>Eve")
         );
+    }
+
+    /// Title, actor and comment are user text: none may run in the reader's
+    /// client, and a title cannot add a header through the subject.
+    #[test]
+    fn in_review_email_escapes_user_text_and_keeps_the_subject_on_one_line() {
+        let mail = in_review_email(
+            &ReviewMail {
+                project_name: "SqareX",
+                display_id: "SQX-512",
+                title: "<script>x</script>\r\nBcc: eve@example.test",
+                actor_name: "<b>Eve</b>",
+                from_status: "In Progress",
+                to_status: "In Review",
+                last_comment: Some(("<i>Bob</i>", "<img src=x onerror=alert(1)>")),
+            },
+            crate::review_mail::Why::Creator,
+            "https://app.baaton.dev",
+        );
+        assert!(mail.subject.contains("SQX-512"));
+        assert!(!mail.subject.contains('\r') && !mail.subject.contains('\n'));
+        for raw in ["<script>", "<b>Eve", "<i>Bob", "<img src=x"] {
+            assert!(!mail.html.contains(raw), "{raw} reached the HTML");
+        }
+        assert!(mail.html.contains("https://app.baaton.dev/all-issues?issue=SQX-512"));
+        assert!(mail.text.contains("https://app.baaton.dev/all-issues?issue=SQX-512"));
     }
 }

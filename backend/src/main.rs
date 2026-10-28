@@ -30,6 +30,7 @@ mod novu;
 mod pending_notif;
 mod permissions;
 mod receipts;
+mod review_mail;
 mod routes;
 mod s3;
 mod text;

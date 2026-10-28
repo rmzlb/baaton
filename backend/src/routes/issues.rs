@@ -227,12 +227,12 @@ fn on_status_changed(
 
             // Creator and assignees receive status notifications by default
             // (opt-out model).
+            let reporter = crate::routes::notification_prefs::reporter_member(
+                creator_id_for_notif.as_deref(),
+                reporter_email_for_notif.as_deref(),
+            )
+            .await;
             {
-                let reporter = crate::routes::notification_prefs::reporter_member(
-                    creator_id_for_notif.as_deref(),
-                    reporter_email_for_notif.as_deref(),
-                )
-                .await;
                 let mut parts: Vec<&str> =
                     assignee_ids_for_notif.iter().map(String::as_str).collect();
                 if let Some(ref cid) = creator_id_for_notif {
@@ -260,8 +260,25 @@ fn on_status_changed(
                         .any(|k| k == to_key.as_str())
                 })
                 .unwrap_or(false);
-            // Nobody to tell, on either path: skip the two extra queries below.
-            if !announce_room && recipients.is_empty() {
+            // The creator hears right away when their ticket is ready to check,
+            // whatever their routing (`review_mail`).
+            let actor_owner =
+                crate::routes::comments::resolve_owner_identity(&pool2, &actor_identity).await;
+            let review_to = if to_key == crate::review_mail::STATUS {
+                crate::review_mail::resolve(
+                    &pool2,
+                    &org,
+                    creator_id_for_notif.as_deref(),
+                    reporter.as_deref(),
+                    &actor_owner,
+                )
+                .await
+            } else {
+                Vec::new()
+            };
+
+            // Nobody to tell, on any path: skip the two extra queries below.
+            if !announce_room && recipients.is_empty() && review_to.is_empty() {
                 return;
             }
 
@@ -292,8 +309,6 @@ fn on_status_changed(
 
             // Email goes to the recap at fixed times, without the actor;
             // Telegram (per-user) stays immediate and unchanged.
-            let actor_owner =
-                crate::routes::comments::resolve_owner_identity(&pool2, &actor_identity).await;
             let (email_recipients, other_recipients) =
                 crate::email_digest::split_email(recipients, &actor_owner);
             let from_label = label(&from_key);
@@ -310,36 +325,90 @@ fn on_status_changed(
                     },
                     from_status: from_label.clone(),
                     to_status: to_label.clone(),
-                    last_comment,
+                    last_comment: last_comment.clone(),
                     changed_at,
                 },
                 other_recipients,
                 announce_room,
             );
 
+            // Whoever gets the immediate mail does not find the same move in
+            // their recap.
+            let mailed: Vec<String> = review_to.iter().map(|p| p.user_id.clone()).collect();
+            let (review_rows, recap_rows) =
+                crate::review_mail::split_recap(email_recipients, &mailed);
+            let issue_ref = crate::email_digest::IssueRef {
+                org_id: &org,
+                project_id,
+                project_name: project_name.as_deref().unwrap_or_default(),
+                issue_id,
+                display_id: &display_id,
+                title: &title,
+            };
+            let event = crate::email_digest::EventKind::StatusChanged {
+                from: &from_label,
+                to: &to_label,
+            };
+            let dedupe_key = format!("status:{issue_id}:{to_key}:{}", changed_at.timestamp_millis());
+            let actor_name = actor.as_deref().unwrap_or_default();
             crate::email_digest::enqueue(
                 &pool2,
-                &email_recipients,
-                &crate::email_digest::IssueRef {
-                    org_id: &org,
-                    project_id,
-                    project_name: project_name.as_deref().unwrap_or_default(),
-                    issue_id,
-                    display_id: &display_id,
-                    title: &title,
-                },
-                actor.as_deref().unwrap_or_default(),
-                &crate::email_digest::EventKind::StatusChanged {
-                    from: &from_label,
-                    to: &to_label,
-                },
-                &format!(
-                    "status:{issue_id}:{to_key}:{}",
-                    changed_at.timestamp_millis()
-                ),
+                &recap_rows,
+                &issue_ref,
+                actor_name,
+                &event,
+                &dedupe_key,
                 changed_at,
             )
             .await;
+
+            if !review_to.is_empty() {
+                let unreached = crate::review_mail::deliver(
+                    &notifyd,
+                    &review_to,
+                    &crate::email_templates::ReviewMail {
+                        project_name: project_name.as_deref().unwrap_or_default(),
+                        display_id: &display_id,
+                        title: &title,
+                        actor_name,
+                        from_status: &from_label,
+                        to_status: &to_label,
+                        last_comment: last_comment
+                            .as_ref()
+                            .map(|(author, body)| (author.as_str(), body.as_str())),
+                    },
+                    issue_id,
+                    changed_at,
+                )
+                .await;
+                // Not lost: back to their recap, under the reason routing gave
+                // them if any.
+                let fallback: Vec<crate::routes::notification_prefs::Recipient> = review_to
+                    .iter()
+                    .filter(|p| unreached.contains(&p.user_id))
+                    .map(|p| crate::routes::notification_prefs::Recipient {
+                        user_id: p.user_id.clone(),
+                        channel: "email".to_string(),
+                        address: p.address.clone(),
+                        telegram_route_id: None,
+                        reason: review_rows
+                            .iter()
+                            .find(|r| r.user_id == p.user_id)
+                            .map(|r| r.reason.clone())
+                            .unwrap_or_else(|| "participant".to_string()),
+                    })
+                    .collect();
+                crate::email_digest::enqueue(
+                    &pool2,
+                    &fallback,
+                    &issue_ref,
+                    actor_name,
+                    &event,
+                    &dedupe_key,
+                    changed_at,
+                )
+                .await;
+            }
         });
     }
 }
