@@ -169,7 +169,7 @@ export default function Integrations() {
         icon={<Mail size={20} className="text-amber-500" />}
         name="Email"
         description={t('integrations.email.description', {
-          defaultValue: 'One recap email at fixed times with what changed on your tickets. @mentions arrive right away.',
+          defaultValue: 'One recap email at fixed times with what changed on your tickets. @mentions, and your tickets reaching In Review, arrive right away.',
         })}
         status={emailStatus}
         hideAction

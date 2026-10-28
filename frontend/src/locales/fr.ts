@@ -2197,15 +2197,15 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
 
   // ─── Intégration Telegram ──────────────────────────────────────────────────
   // ─── Email recap (BAA-38) ─────────────────────────────
-  'integrations.email.description': "Un récap par e-mail à heures fixes avec ce qui a changé sur vos tickets. Les @mentions arrivent tout de suite.",
+  'integrations.email.description': "Un récap par e-mail à heures fixes avec ce qui a changé sur vos tickets. Les @mentions, et vos tickets qui passent en In Review, arrivent tout de suite.",
   'integrations.email.recap.title': "Ce que vous recevez",
   'integrations.email.recap.schedule': "Un e-mail récapitulatif à 08:00, 12:00, 16:00 et 20:00 (heure de Paris), seulement s’il y a du nouveau. Tous vos projets dans le même e-mail, groupés par projet puis par ticket.",
   'integrations.email.recap.content': "Il contient ce que votre rôle demande sur chaque projet, vos propres tickets compris. Sans rôle : les tickets que vous avez créés, qui vous sont assignés ou que vous avez demandés, et les projets que vous suivez.",
-  'integrations.email.recap.immediate': "Les @mentions arrivent tout de suite. Vos propres actions, y compris celles de vos clés API, ne vous envoient jamais d’e-mail.",
+  'integrations.email.recap.immediate': "Les @mentions arrivent tout de suite, comme le passage en In Review d’un ticket que vous avez créé ou demandé, quels que soient vos réglages. Vos propres actions, y compris celles de vos clés API, ne vous envoient jamais d’e-mail.",
   'integrations.email.recap.manage': "Choisir les projets suivis",
   'integrations.email.recap.toggle': "Recevoir le récap email",
   'integrations.email.recap.toggleOn': "Activé. Chaque récap contient un lien de désabonnement en un clic.",
-  'integrations.email.recap.toggleOff': "Désactivé : aucun récap n’est envoyé. Les @mentions arrivent toujours par e-mail.",
+  'integrations.email.recap.toggleOff': "Désactivé : aucun récap n’est envoyé. Les @mentions et vos tickets qui passent en In Review arrivent toujours par e-mail.",
   'integrations.email.recap.toggleError': "Enregistrement impossible. Réessayez.",
 
   'integrations.telegram.description': 'Reçois les notifications Baaton sur Telegram.',
@@ -2469,11 +2469,12 @@ En tant que [utilisateur], je veux [action] afin de [bénéfice].
   'notifSummary.emailRecap': "Récap e-mail à {{address}}, à {{hours}} (heure de Paris), seulement s’il s’est passé quelque chose.",
   'notifSummary.emailAccount': "(l’e-mail de votre compte, utilisé pour les rôles et vos tickets)",
   'notifSummary.emailUnverified': "Votre adresse e-mail n’est pas encore confirmée : aucun récap n’est envoyé avant.",
-  'notifSummary.emailRecapOff': "Récap e-mail désactivé : aucun récap n’est envoyé. Les @mentions arrivent toujours. Réactivez-le dans la carte E-mail.",
+  'notifSummary.emailRecapOff': "Récap e-mail désactivé : aucun récap n’est envoyé. Les @mentions et vos tickets qui passent en In Review arrivent toujours. Réactivez-le dans la carte E-mail.",
   'notifSummary.emailNone': "Aucune adresse e-mail utilisable : aucun récap n’est envoyé.",
   'notifSummary.telegramOn': "Telegram : chaque notification arrive tout de suite.",
   'notifSummary.telegramOff': "Telegram : non connecté.",
   'notifSummary.mentions': "@mentions : envoyées par e-mail en quelques minutes, hors récap.",
+  'notifSummary.inReview': "Vos tickets qui passent en In Review (créés ou demandés par vous) : envoyés par e-mail tout de suite, hors récap, quels que soient vos réglages.",
   'notifSummary.projects': "Projets",
   'notifSummary.noProjects': "Aucun projet pour l’instant : rien à recevoir.",
   'notifSummary.allStatuses': "Tous les statuts",

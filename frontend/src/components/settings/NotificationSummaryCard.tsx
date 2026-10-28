@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { AtSign, Inbox, Mail, Send } from 'lucide-react';
+import { AtSign, Eye, Inbox, Mail, Send } from 'lucide-react';
 import { useApi } from '@/hooks/useApi';
 import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
@@ -111,7 +111,7 @@ export function NotificationSummaryCard() {
           <Mail size={13} className="text-muted mt-0.5 shrink-0" />
           {!data.email.recap_enabled ? (
             <span className="text-amber-300">
-              {t('notifSummary.emailRecapOff', { defaultValue: 'Email recap turned off: no recap is sent. @mentions still arrive. Turn it back on in the Email card.' })}
+              {t('notifSummary.emailRecapOff', { defaultValue: 'Email recap turned off: no recap is sent. @mentions and your tickets reaching In Review still arrive. Turn it back on in the Email card.' })}
             </span>
           ) : data.email.address ? (
             <span>
@@ -137,6 +137,10 @@ export function NotificationSummaryCard() {
         <p className="flex items-start gap-2 text-xs text-primary">
           <AtSign size={13} className="text-muted mt-0.5 shrink-0" />
           {t('notifSummary.mentions', { defaultValue: '@mentions: emailed within minutes, outside the recap.' })}
+        </p>
+        <p className="flex items-start gap-2 text-xs text-primary">
+          <Eye size={13} className="text-muted mt-0.5 shrink-0" />
+          {t('notifSummary.inReview', { defaultValue: 'Your tickets reaching In Review (created or requested by you): emailed right away, outside the recap, whatever your settings.' })}
         </p>
       </div>
 

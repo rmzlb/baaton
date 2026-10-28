@@ -2197,15 +2197,15 @@ As a [user], I want to [action] so that [benefit].
 
   // ─── Telegram Integration ─────────────────────────────
   // ─── Email recap (BAA-38) ─────────────────────────────
-  'integrations.email.description': "One recap email at fixed times with what changed on your tickets. @mentions arrive right away.",
+  'integrations.email.description': "One recap email at fixed times with what changed on your tickets. @mentions, and your tickets reaching In Review, arrive right away.",
   'integrations.email.recap.title': "What you receive",
   'integrations.email.recap.schedule': "One recap email at 08:00, 12:00, 16:00 and 20:00 (Paris time), only when something new happened. All your projects in one email, grouped by project and ticket.",
   'integrations.email.recap.content': "It holds what your role asks for on each project, your own tickets included. Without a role: tickets you created, are assigned to or requested, and the projects you follow.",
-  'integrations.email.recap.immediate': "@mentions arrive right away. Your own actions, including those of your API keys, never send you an email.",
+  'integrations.email.recap.immediate': "@mentions arrive right away, and so does a ticket you created or requested reaching In Review, whatever your settings. Your own actions, including those of your API keys, never send you an email.",
   'integrations.email.recap.manage': "Choose the projects you follow",
   'integrations.email.recap.toggle': "Receive the email recap",
   'integrations.email.recap.toggleOn': "On. Every recap has a one-click unsubscribe link.",
-  'integrations.email.recap.toggleOff': "Off: no recap is sent. @mentions still arrive by email.",
+  'integrations.email.recap.toggleOff': "Off: no recap is sent. @mentions and your tickets reaching In Review still arrive by email.",
   'integrations.email.recap.toggleError': "Could not save. Try again.",
 
   'integrations.telegram.description': 'Receive Baaton notifications in Telegram.',
@@ -2469,11 +2469,12 @@ As a [user], I want to [action] so that [benefit].
   'notifSummary.emailRecap': "Email recap to {{address}}, at {{hours}} (Paris time), only when something happened.",
   'notifSummary.emailAccount': "(your account email, used for roles and your own tickets)",
   'notifSummary.emailUnverified': "Your email address is not confirmed yet: no recap is sent until it is.",
-  'notifSummary.emailRecapOff': "Email recap turned off: no recap is sent. @mentions still arrive. Turn it back on in the Email card.",
+  'notifSummary.emailRecapOff': "Email recap turned off: no recap is sent. @mentions and your tickets reaching In Review still arrive. Turn it back on in the Email card.",
   'notifSummary.emailNone': "No usable email address: no recap is sent.",
   'notifSummary.telegramOn': "Telegram: each notification arrives right away.",
   'notifSummary.telegramOff': "Telegram: not connected.",
   'notifSummary.mentions': "@mentions: emailed within minutes, outside the recap.",
+  'notifSummary.inReview': "Your tickets reaching In Review (created or requested by you): emailed right away, outside the recap, whatever your settings.",
   'notifSummary.projects': "Projects",
   'notifSummary.noProjects': "No project yet: nothing to receive.",
   'notifSummary.allStatuses': "Every status",

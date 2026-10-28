@@ -250,7 +250,7 @@ function RecapToggle() {
                 defaultValue: 'On. Every recap has a one-click unsubscribe link.',
               })
             : t('integrations.email.recap.toggleOff', {
-                defaultValue: 'Off: no recap is sent. @mentions still arrive by email.',
+                defaultValue: 'Off: no recap is sent. @mentions and your tickets reaching In Review still arrive by email.',
               })}
         </p>
         {mutation.isError && (
@@ -293,7 +293,7 @@ function EmailRecapStep({ hasChannel }: { hasChannel: boolean }) {
       defaultValue: 'It holds what your role asks for on each project, your own tickets included. Without a role: tickets you created, are assigned to or requested, and the projects you follow.',
     }),
     t('integrations.email.recap.immediate', {
-      defaultValue: '@mentions arrive right away. Your own actions, including those of your API keys, never send you an email.',
+      defaultValue: '@mentions arrive right away, and so does a ticket you created or requested reaching In Review, whatever your settings. Your own actions, including those of your API keys, never send you an email.',
     }),
   ];
 
