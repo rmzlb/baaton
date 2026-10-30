@@ -329,32 +329,20 @@ takes a user id, so a key can never reach somebody else's settings.
 skips your own comments but still announces your status changes. Testing your own
 email setup therefore needs a second actor.
 
-**Email is one recap, at fixed times.** Except for @mentions and a creator's
-ticket reaching review (below), notification emails are not sent one by one: each person gets one recap at 08:00, 12:00, 16:00 and
+**Email is one recap, at fixed times.** Except for @mentions, notification emails
+are not sent one by one: each person gets one recap at 08:00, 12:00, 16:00 and
 20:00 Europe/Paris, only when something new happened since the previous one.
 Anything after 20:00 leaves at 08:00. One recap covers every project and org of
 the person, grouped by project then ticket, and its footer gives the reason per
 project (`role`, project subscription, or their own ticket). Every recap carries
 a one-click unsubscribe link (RFC 8058 `List-Unsubscribe` and
 `List-Unsubscribe-Post` headers, and a link in the footer). Turning the recap off
-stops it for the person, roles included; @mentions and the In Review mail below
-keep arriving.
-
-**Your ticket reaching review is mailed at once.** When a ticket moves to
-`in_review`, the people behind it get an email right away: whoever filed it (an
-API key counts as its owner; a key with no owner is nobody) and, when a key filed
-it, the member named in `reporter_email`. It goes out whatever their role,
-subscriptions or recap switch, to current org members only, and never to whoever
-made the move (directly or through their own key). The address is their
-confirmed notification email, else their account email. That move is not
-repeated in their recap; if notifyd cannot take the mail, it goes to the recap
-instead.
+stops it for the person, roles included; @mentions keep arriving.
 
 **A role decides on its own.** A member holding a role hears exactly what the
 role asks for, on every ticket, their own included: a ticket creator holding
 Reviewer (`in_review` + comments) hears nothing about `in_progress` on their own
-ticket. The one exception is the In Review mail above, sent to a ticket's
-creator whatever their role. A member without a role hears about tickets they created, are assigned to
+ticket. A member without a role hears about tickets they created, are assigned to
 or requested, plus their subscriptions.
 
 **Roles are defined once for the organization.** Precedence, all read at send

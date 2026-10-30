@@ -945,7 +945,17 @@ acts for its owner and needs `admin:full`.
 Body `{ "enabled": false }` turns the recap off for the person, whatever address
 it reaches them at: nothing more is queued, and what was already queued is
 dropped. `{ "enabled": true }` turns it back on from the next event. @mentions
-are not affected and keep arriving by email.
+and the In Review mail below are not affected and keep arriving by email.
+
+**A ticket reaching review is mailed to its creator at once.** When a ticket
+moves to `in_review`, the people behind it get an email right away, outside the
+recap: whoever filed it (an API key counts as its owner; a key with no owner is
+nobody) and, when a key filed it, the member named in `reporter_email`. It goes
+out whatever their role, subscriptions or recap switch, to current org members
+only, and never to whoever made the move (directly or through their own key).
+The address is their confirmed notification email, else their account email.
+That move is not repeated in their recap; if the mail cannot be sent, it goes
+to the recap instead.
 
 ---
 
@@ -1142,7 +1152,8 @@ RFC 8058 one-click unsubscribe. Body `List-Unsubscribe=One-Click`
 `400`. Turns the recap off for the owner of the token and answers `200`, again
 on every repeat. Every recap carries its own token (32 random bytes, stored as a
 hash, valid 400 days) in its `List-Unsubscribe` header and footer; it can only
-unsubscribe and reveals nothing about its owner. @mentions are not affected.
+unsubscribe and reveals nothing about its owner. @mentions and the In Review
+mail to a ticket's creator are not affected.
 
 ---
 
