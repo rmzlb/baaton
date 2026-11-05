@@ -97,7 +97,7 @@ pub struct SetPlanBody {
 }
 
 /// PATCH /admin/orgs/{id}/plan — set the organization's plan.
-/// Superadmin: can set any plan. Org admin: can only set free/pro/enterprise on own org.
+/// Superadmin only: set an organization's plan.
 /// The plan is the org's entitlement (entitlement.rs): every member and every
 /// API key of the org consume it. Nothing is copied onto members' own plans —
 /// that copy (migration 040 era) made a paid plan leak into members' other orgs
@@ -109,20 +109,11 @@ pub async fn set_plan(
     Json(body): Json<SetPlanBody>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let sa = is_super_admin(&pool, &auth).await;
-    let is_org_admin = auth.org_role.as_deref()
-        .map(|r| r.contains("admin"))
-        .unwrap_or(false);
-    let is_own_org = auth.org_id.as_deref() == Some(org_id.as_str());
-
-    // Special plans require superadmin
-    let special_plans = ["partner", "tester", "unlimited"];
-    if special_plans.contains(&body.plan.as_str()) && !sa {
-        return Err(forbidden());
-    }
-
-    // Regular plans: need org admin or superadmin
-    if !sa && !(is_org_admin && is_own_org) {
-        return Err(forbidden());
+    if !sa {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "Superadmin access required to change plans"})),
+        ));
     }
 
     if !VALID_PLANS.contains(&body.plan.as_str()) {

@@ -22,14 +22,30 @@ pub struct EmailPayload {
 
 pub async fn intake(
     State(pool): State<PgPool>,
+    headers: axum::http::HeaderMap,
     Path(slug): Path<String>,
     Json(body): Json<EmailPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    // Find project by slug
+    if let Ok(expected_secret) = std::env::var("EMAIL_INTAKE_SECRET") {
+        if !expected_secret.trim().is_empty() {
+            let provided = headers
+                .get("x-email-intake-secret")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            if provided.as_bytes() != expected_secret.trim().as_bytes() {
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"error": "Invalid or missing X-Email-Intake-Secret"})),
+                ));
+            }
+        }
+    }
+
+    // Find project by slug (only when public_submit_enabled is true)
     let project = sqlx::query_as::<_, (Uuid, String, String, i64)>(
         r#"SELECT id, org_id, prefix, 
            (SELECT COALESCE(MAX(issue_number), 0) FROM issues WHERE project_id = projects.id)
-           FROM projects WHERE slug = $1"#,
+           FROM projects WHERE slug = $1 AND COALESCE(public_submit_enabled, false) = true"#,
     )
     .bind(&slug)
     .fetch_optional(&pool)
@@ -94,32 +110,6 @@ pub async fn intake(
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
-
-    crate::routes::memory::record_memory_best_effort(
-        &pool,
-        crate::routes::memory::NewMemory {
-            org_id: org_id.clone(),
-            project_id: Some(project_id),
-            source: "email".to_string(),
-            kind: "note".to_string(),
-            content: format!("Email intake created {}: {}\n\n{}", display_id, title, desc),
-            tags: vec!["email".to_string(), "intake".to_string()],
-            confidence: 0.7,
-            external_url: None,
-            metadata: json!({
-                "issue_id": issue_id.0,
-                "display_id": display_id,
-                "from_name": body.from_name.clone(),
-                "from_email": body.from_email.clone(),
-            }),
-            created_by: body
-                .from_email
-                .clone()
-                .map(|email| format!("email:{}", email)),
-            created_by_name: body.from_name.clone(),
-        },
-    )
-    .await;
 
     Ok(Json(json!({
         "data": {

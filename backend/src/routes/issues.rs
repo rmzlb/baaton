@@ -423,7 +423,7 @@ fn on_status_changed(
     clippy::string_slice,
     reason = "all indices come from str::find or from the ASCII-only \"data:\" prefix length, so they land on char boundaries"
 )]
-fn sanitize_description(desc: &str) -> String {
+pub(crate) fn sanitize_description(desc: &str) -> String {
     // Regex-free approach: find data: URIs and replace them
     let mut result = String::with_capacity(desc.len());
     let mut remaining = desc;

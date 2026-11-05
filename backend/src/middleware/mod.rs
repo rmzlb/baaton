@@ -450,12 +450,12 @@ fn verify_jwt(
 
     let claims = token_data.claims;
 
-    // Validate azp if present and authorized_parties is configured
+    // Validate azp when authorized_parties is configured
     if !authorized_parties.is_empty() {
-        if let Some(ref azp) = claims.azp {
-            if !authorized_parties.iter().any(|p| p == azp) {
-                return Err(format!("Unauthorized party: {}", azp));
-            }
+        match claims.azp.as_ref() {
+            Some(azp) if authorized_parties.iter().any(|p| p == azp) => {}
+            Some(azp) => return Err(format!("Unauthorized party: {}", azp)),
+            None => return Err("Missing azp claim".to_string()),
         }
     }
 
@@ -535,8 +535,10 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    // Fallback: accept ?token= query param (needed for EventSource/SSE which can't send headers)
-    let query_token: Option<String> = if auth_header.is_none() {
+    // Fallback: accept ?token= query param ONLY for SSE events endpoint
+    // (EventSource cannot send custom Authorization headers).
+    let is_sse_events = path == "/api/v1/events" || path == "/events";
+    let query_token: Option<String> = if auth_header.is_none() && is_sse_events {
         req.uri().query().and_then(|q| {
             q.split('&')
                 .find_map(|p| p.strip_prefix("token="))

@@ -101,6 +101,18 @@ enum McpAuth {
     Invalid(String),
 }
 
+impl McpAuth {
+    #[allow(dead_code)]
+    fn has_permission(&self, perm: &str) -> bool {
+        match self {
+            McpAuth::Authenticated(u) => {
+                u.is_human() || u.legacy_full_access || u.has_permission(perm)
+            }
+            _ => false,
+        }
+    }
+}
+
 async fn extract_mcp_auth(
     headers: &HeaderMap,
     pool: &PgPool,
@@ -235,6 +247,21 @@ async fn validate_clerk_jwt(token: &str, jwks: &JwksKeys) -> McpAuth {
         Err(e) => return McpAuth::Invalid(format!("JWT invalid: {}", e)),
     };
 
+    if let Ok(raw_parties) = std::env::var("CLERK_AUTHORIZED_PARTIES") {
+        let authorized_parties: Vec<&str> = raw_parties
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !authorized_parties.is_empty() {
+            match claims.azp.as_deref() {
+                Some(azp) if authorized_parties.contains(&azp) => {}
+                Some(azp) => return McpAuth::Invalid(format!("Unauthorized party: {}", azp)),
+                None => return McpAuth::Invalid("Missing azp claim".into()),
+            }
+        }
+    }
+
     if claims.sts.as_deref() == Some("pending") {
         return McpAuth::Invalid("Session pending — user must join an org".into());
     }
@@ -312,11 +339,16 @@ pub async fn handle_mcp(
         // Private methods require auth
         if let McpAuth::Invalid(msg) = &auth {
             let resp = McpResponse::err(req.id.clone(), -32001, msg.clone());
+            let www_auth = axum::http::HeaderValue::from_str(&www_authenticate_header())
+                .unwrap_or_else(|_| axum::http::HeaderValue::from_static("Bearer"));
             return (
                 StatusCode::UNAUTHORIZED,
                 [
-                    ("content-type", "application/json"),
-                    ("www-authenticate", Box::leak(www_authenticate_header().into_boxed_str())),
+                    (
+                        axum::http::header::CONTENT_TYPE,
+                        axum::http::HeaderValue::from_static("application/json"),
+                    ),
+                    (axum::http::header::WWW_AUTHENTICATE, www_auth),
                 ],
                 Json(resp),
             )
@@ -573,6 +605,21 @@ async fn handle_tools_call(params: Value, auth: &AuthUser, pool: &PgPool) -> Val
         None => return tool_error("Missing tool name"),
     };
     let args = params.get("arguments").cloned().unwrap_or(json!({}));
+
+    let required_perm = match name.as_str() {
+        "get_profile" => None,
+        "list_projects" => Some("projects:read"),
+        "list_issues" | "search_issues" | "get_issue" => Some("issues:read"),
+        "create_issue" | "update_issue" | "add_comment" | "post_tldr" => Some("issues:write"),
+        unknown => return tool_error(format!("Unknown tool: {}", unknown)),
+    };
+
+    if let Some(perm) = required_perm {
+        let allowed = auth.is_human() || auth.legacy_full_access || auth.has_permission(perm);
+        if !allowed {
+            return tool_error(format!("Insufficient permissions. Required: {}", perm));
+        }
+    }
 
     let result = match name.as_str() {
         "get_profile" => tool_get_profile(auth).await,
@@ -912,7 +959,25 @@ async fn tool_create_issue(auth: &AuthUser, pool: &PgPool, args: &Value) -> Resu
         return Err("Access denied to this project".into());
     }
 
-    let description = args.get("description").and_then(|v| v.as_str());
+    if let Err((_status, Json(err_body))) = crate::middleware::plan_guard::enforce_quota(
+        pool,
+        auth,
+        &org_id,
+        crate::middleware::plan_guard::QuotaKind::Issues,
+    )
+    .await
+    {
+        let msg = err_body
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Issue quota exceeded");
+        return Err(msg.to_string());
+    }
+
+    let description = args
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(crate::routes::issues::sanitize_description);
     let priority = args.get("priority").and_then(|v| v.as_str()).unwrap_or("medium");
     let issue_type = args.get("issue_type").and_then(|v| v.as_str()).unwrap_or("feature");
     let assignee_ids: Vec<String> = args.get("assignee_ids")
@@ -973,7 +1038,7 @@ async fn tool_create_issue(auth: &AuthUser, pool: &PgPool, args: &Value) -> Resu
     .bind(project_id)
     .bind(&display_id)
     .bind(title)
-    .bind(description)
+    .bind(description.as_deref())
     .bind(issue_type)
     .bind(&initial_status)
     .bind(priority)
@@ -1041,7 +1106,10 @@ async fn tool_update_issue(auth: &AuthUser, pool: &PgPool, args: &Value) -> Resu
     }
     if let Some(v) = args.get("description").and_then(|v| v.as_str()) {
         sets.push("description".to_string());
-        fields.insert("description", json!(v));
+        fields.insert(
+            "description",
+            json!(crate::routes::issues::sanitize_description(v)),
+        );
     }
 
     if sets.is_empty() {
