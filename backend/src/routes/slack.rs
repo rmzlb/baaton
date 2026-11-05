@@ -164,12 +164,118 @@ pub async fn remove(
     Ok(Json(json!({"deleted": true})))
 }
 
+fn verify_slack_signature(
+    headers: &axum::http::HeaderMap,
+    raw_body: &[u8],
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    let signing_secret = std::env::var("SLACK_SIGNING_SECRET")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"error": "Slack integration is not configured (missing SLACK_SIGNING_SECRET)"})),
+            )
+        })?;
+
+    let timestamp_str = headers
+        .get("x-slack-request-timestamp")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Missing X-Slack-Request-Timestamp header"})),
+            )
+        })?;
+
+    let timestamp: i64 = timestamp_str.parse().map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Invalid X-Slack-Request-Timestamp header"})),
+        )
+    })?;
+
+    let now = chrono::Utc::now().timestamp();
+    if (now - timestamp).abs() > 300 {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Slack request timestamp expired"})),
+        ));
+    }
+
+    let sig_header = headers
+        .get("x-slack-signature")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("v0="))
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Missing or invalid X-Slack-Signature header"})),
+            )
+        })?;
+
+    let sig_bytes = hex::decode(sig_header).map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Invalid X-Slack-Signature hex"})),
+        )
+    })?;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(signing_secret.as_bytes()).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Failed to initialize HMAC"})),
+        )
+    })?;
+    mac.update(b"v0:");
+    mac.update(timestamp_str.as_bytes());
+    mac.update(b":");
+    mac.update(raw_body);
+
+    mac.verify_slice(&sig_bytes).map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Invalid Slack signature"})),
+        )
+    })
+}
+
 /// POST /integrations/slack/command — handle Slack slash command
 /// This is a public endpoint (Slack sends webhooks directly)
 pub async fn handle_command(
     State(pool): State<PgPool>,
-    axum::extract::Form(form): axum::extract::Form<std::collections::HashMap<String, String>>,
+    headers: axum::http::HeaderMap,
+    raw_body: axum::body::Bytes,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    verify_slack_signature(&headers, &raw_body)?;
+
+    use axum::extract::FromRequest;
+    let req = axum::http::Request::builder()
+        .method(axum::http::Method::POST)
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .body(axum::body::Body::from(raw_body))
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "Invalid request body"})),
+            )
+        })?;
+    let axum::extract::Form(form) =
+        axum::extract::Form::<std::collections::HashMap<String, String>>::from_request(req, &())
+            .await
+            .map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "Invalid form payload"})),
+                )
+            })?;
+
     let team_id = form.get("team_id").cloned().unwrap_or_default();
     let text = form.get("text").cloned().unwrap_or_default();
     let user_name = form.get("user_name").cloned().unwrap_or_default();
@@ -234,7 +340,7 @@ pub async fn handle_command(
 
     let display_id = format!("{}-{}", prefix.0, issue_number.0);
 
-    let issue_id: uuid::Uuid = sqlx::query_scalar(
+    let _issue_id: uuid::Uuid = sqlx::query_scalar(
         r#"INSERT INTO issues (project_id, org_id, title, status, priority, issue_type, issue_number, display_id, source)
            VALUES ($1, $2, $3, 'backlog', 'medium', 'feature', $4, $5, 'slack')
            RETURNING id"#,
@@ -247,20 +353,6 @@ pub async fn handle_command(
     .fetch_one(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
-
-    crate::routes::memory::record_memory_best_effort(&pool, crate::routes::memory::NewMemory {
-        org_id: org_id.clone(),
-        project_id: Some(pid),
-        source: "slack".to_string(),
-        kind: "note".to_string(),
-        content: format!("Slack command created {}: {}", display_id, text),
-        tags: vec!["slack".to_string(), "intake".to_string()],
-        confidence: 0.7,
-        external_url: None,
-        metadata: json!({ "issue_id": issue_id, "display_id": display_id, "channel_id": channel_id }),
-        created_by: Some(format!("slack:{}", user_name)),
-        created_by_name: Some(user_name.clone()),
-    }).await;
 
     Ok(Json(json!({
         "response_type": "in_channel",

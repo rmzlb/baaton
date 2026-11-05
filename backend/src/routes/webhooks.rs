@@ -108,6 +108,103 @@ fn generate_webhook_secret() -> String {
     format!("whsec_{}", hex::encode(bytes))
 }
 
+fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let octets = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_multicast()
+                || v4.is_broadcast()
+                || v4.is_unspecified()
+                || octets[0] == 0
+                // CGNAT / Tailscale (100.64.0.0/10)
+                || (octets[0] == 100 && (octets[1] & 0b1100_0000) == 64)
+                // IETF protocol / documentation / benchmarking / reserved ranges
+                || (octets[0] == 192 && octets[1] == 0 && (octets[2] == 0 || octets[2] == 2))
+                || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19))
+                || (octets[0] == 198 && octets[1] == 51 && octets[2] == 100)
+                || (octets[0] == 203 && octets[1] == 0 && octets[2] == 113)
+                || (octets[0] & 0xf0) == 240
+        }
+        std::net::IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_disallowed_ip(std::net::IpAddr::V4(v4));
+            }
+            let seg0 = v6.segments()[0];
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                // Unique local (fc00::/7)
+                || (seg0 & 0xfe00) == 0xfc00
+                // Link-local (fe80::/10)
+                || (seg0 & 0xffc0) == 0xfe80
+        }
+    }
+}
+
+pub(crate) fn validate_webhook_url(raw: &str) -> Result<reqwest::Url, &'static str> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("URL is required");
+    }
+    let parsed = reqwest::Url::parse(trimmed)
+        .map_err(|_| "Invalid webhook URL")?;
+
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("URL must start with http:// or https://");
+    }
+
+    let host_str = parsed
+        .host_str()
+        .ok_or("Webhook URL must have a valid host")?;
+    let host_lower = host_str.trim_matches(|c| c == '[' || c == ']').to_ascii_lowercase();
+
+    if host_lower == "localhost"
+        || host_lower.ends_with(".localhost")
+        || host_lower.ends_with(".local")
+        || host_lower.ends_with(".internal")
+        || host_lower.ends_with(".ts.net")
+    {
+        return Err("Webhook URL host is not allowed");
+    }
+
+    if let Ok(ip) = host_lower.parse::<std::net::IpAddr>() {
+        if is_disallowed_ip(ip) {
+            return Err("Webhook URL IP address is not allowed");
+        }
+    }
+
+    Ok(parsed)
+}
+
+pub(crate) async fn resolve_and_check_public_ip(url: &reqwest::Url) -> Result<(), &'static str> {
+    let host = url
+        .host_str()
+        .ok_or("Webhook URL must have a valid host")?
+        .trim_matches(|c| c == '[' || c == ']');
+    let port = url.port_or_known_default().unwrap_or(443);
+
+    let addrs = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|_| "Failed to resolve webhook URL host")?;
+
+    let mut found = false;
+    for addr in addrs {
+        found = true;
+        if is_disallowed_ip(addr.ip()) {
+            return Err("Webhook URL resolves to a private or disallowed IP address");
+        }
+    }
+
+    if !found {
+        return Err("Webhook URL host did not resolve to any IP address");
+    }
+
+    Ok(())
+}
+
 fn validate_event_types(types: &[String]) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
     for et in types {
         if !VALID_EVENT_TYPES.contains(&et.as_str()) {
@@ -230,6 +327,7 @@ pub async fn dispatch_event(
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_default();
 
@@ -249,6 +347,34 @@ pub async fn dispatch_event(
             .bind(per_hook_delivery_id)
             .execute(&pool)
             .await;
+
+            // Validate URL and resolved IP against SSRF before dispatching
+            let ssrf_check = match validate_webhook_url(&url) {
+                Ok(parsed) => resolve_and_check_public_ip(&parsed).await,
+                Err(e) => Err(e),
+            };
+            if let Err(err_reason) = ssrf_check {
+                let err_msg = format!("Blocked by SSRF filter: {}", err_reason);
+                let _ = sqlx::query(
+                    r#"UPDATE webhook_deliveries SET status = 'failed', attempts = 1,
+                       last_attempt_at = now(), last_error = $2
+                       WHERE delivery_id = $1"#,
+                )
+                .bind(per_hook_delivery_id)
+                .bind(&err_msg)
+                .execute(&pool)
+                .await;
+
+                let _ = sqlx::query(
+                    "UPDATE webhooks SET failure_count = failure_count + 1, last_error = $2, updated_at = now() WHERE id = $1",
+                )
+                .bind(hook_id)
+                .bind(&err_msg)
+                .execute(&pool)
+                .await;
+                tracing::warn!(hook_id = %hook_id, url = %url, reason = %err_reason, "webhooks.dispatch: blocked by SSRF filter");
+                continue;
+            }
 
             // Compute HMAC-SHA256 signature
             let signature = compute_signature(&secret, &body_str);
@@ -374,10 +500,29 @@ pub async fn retry_worker(pool: PgPool) {
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_default();
 
         for (delivery_id, webhook_id, url, payload, attempts) in deliveries {
+            let ssrf_check = match validate_webhook_url(&url) {
+                Ok(parsed) => resolve_and_check_public_ip(&parsed).await,
+                Err(e) => Err(e),
+            };
+            if let Err(err_reason) = ssrf_check {
+                let err_msg = format!("Blocked by SSRF filter: {}", err_reason);
+                let _ = sqlx::query(
+                    "UPDATE webhook_deliveries SET status = 'failed', attempts = $2, last_attempt_at = now(), last_error = $3 WHERE delivery_id = $1",
+                )
+                .bind(delivery_id)
+                .bind(attempts + 1)
+                .bind(&err_msg)
+                .execute(&pool)
+                .await;
+                tracing::warn!(delivery_id = %delivery_id, webhook_id = %webhook_id, reason = %err_reason, "webhook_retry: blocked by SSRF filter");
+                continue;
+            }
+
             let body_str = serde_json::to_string(&payload).unwrap_or_default();
 
             // Get secret for this webhook
@@ -497,12 +642,11 @@ pub async fn create(
     let org_id = auth.org_id.as_deref()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(json!({"error": "Organization required"}))))?;
 
-    if body.url.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "URL is required"}))));
-    }
-    if !body.url.starts_with("http://") && !body.url.starts_with("https://") {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "URL must start with http:// or https://"}))));
-    }
+    let parsed_url = validate_webhook_url(&body.url)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({"error": e}))))?;
+    resolve_and_check_public_ip(&parsed_url)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({"error": e}))))?;
 
     validate_event_types(&body.event_types)?;
 
@@ -638,9 +782,11 @@ pub async fn update(
     }
 
     if let Some(ref url) = body.url {
-        if !url.starts_with("http://") && !url.starts_with("https://") {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "URL must start with http:// or https://"}))));
-        }
+        let parsed_url = validate_webhook_url(url)
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({"error": e}))))?;
+        resolve_and_check_public_ip(&parsed_url)
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({"error": e}))))?;
     }
 
     if let Some(ref types) = body.event_types {

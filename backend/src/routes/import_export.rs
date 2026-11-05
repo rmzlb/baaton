@@ -85,16 +85,28 @@ pub async fn export(
             }
             let body = lines.join("\n");
             let filename = format!("issues-{}.csv", project_id);
+            let disposition = axum::http::HeaderValue::from_str(&format!(
+                "attachment; filename=\"{}\"",
+                filename
+            ))
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": e.to_string()})),
+                )
+            })?;
 
             Ok((
                 [
-                    (header::CONTENT_TYPE, "text/csv; charset=utf-8"),
-                    (header::CONTENT_DISPOSITION, Box::leak(
-                        format!("attachment; filename=\"{}\"", filename).into_boxed_str()
-                    )),
+                    (
+                        header::CONTENT_TYPE,
+                        axum::http::HeaderValue::from_static("text/csv; charset=utf-8"),
+                    ),
+                    (header::CONTENT_DISPOSITION, disposition),
                 ],
                 body,
-            ).into_response())
+            )
+                .into_response())
         }
         "json" => {
             Ok(Json(json!({ "data": issues })).into_response())

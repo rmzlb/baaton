@@ -141,6 +141,7 @@ pub async fn update(
                pinned          = COALESCE($5, pinned)
            WHERE id = $6 AND org_id = $7
              AND (cardinality($8::uuid[]) = 0 OR project_id IS NULL OR project_id = ANY($8))
+             AND created_by = $9
            RETURNING *"#
     )
     .bind(body.name.as_deref())
@@ -151,6 +152,7 @@ pub async fn update(
     .bind(id)
     .bind(org_id)
     .bind(&auth.scoped_project_ids)
+    .bind(&auth.user_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?

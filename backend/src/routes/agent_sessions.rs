@@ -425,6 +425,22 @@ pub async fn update(
     let new_status = body.status.as_deref().unwrap_or(&existing.status);
     let is_completing = (new_status == "completed" || new_status == "error") && existing.status != new_status;
 
+    if let Some(ref pr_url) = body.pr_url {
+        let trimmed = pr_url.trim();
+        if !trimmed.is_empty()
+            && !trimmed.starts_with("https://")
+            && !trimmed.starts_with("http://")
+        {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "pr_url must start with https:// or http://",
+                    "field": "pr_url"
+                })),
+            ));
+        }
+    }
+
     let session = sqlx::query_as::<_, AgentSession>(
         r#"
         UPDATE agent_sessions SET

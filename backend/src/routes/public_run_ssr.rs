@@ -116,12 +116,12 @@ fn render_html(token: &str, r: &RunRow) -> String {
     );
 
     let pr_block = match &r.pr_url {
-        Some(url) => format!(
+        Some(url) if url.starts_with("https://") || url.starts_with("http://") => format!(
             r#"<div class="meta-row"><span class="meta-label">PR</span><a class="meta-link" href="{}" rel="noopener nofollow">{}</a></div>"#,
             esc(url),
             esc(url)
         ),
-        None => String::new(),
+        _ => String::new(),
     };
 
     let files_block = if r.files_changed.is_empty() {

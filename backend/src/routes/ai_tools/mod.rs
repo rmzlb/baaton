@@ -1646,7 +1646,15 @@ async fn exec_export_project(
 
 async fn resolve_project_id(pool: &PgPool, org_ids: &[String], raw: &str) -> Option<Uuid> {
     if let Ok(uuid) = raw.parse::<Uuid>() {
-        return Some(uuid);
+        return sqlx::query_scalar(
+            "SELECT id FROM projects WHERE id = $1 AND org_id = ANY($2::text[]) LIMIT 1",
+        )
+        .bind(uuid)
+        .bind(org_ids)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
     }
 
     // Try prefix match (case-insensitive)
@@ -1681,7 +1689,18 @@ async fn resolve_project_id(pool: &PgPool, org_ids: &[String], raw: &str) -> Opt
 
 async fn resolve_issue_id(pool: &PgPool, org_ids: &[String], raw: &str) -> Option<Uuid> {
     if let Ok(uuid) = raw.parse::<Uuid>() {
-        return Some(uuid);
+        return sqlx::query_scalar(
+            "SELECT i.id FROM issues i
+             JOIN projects p ON p.id = i.project_id
+             WHERE i.id = $1 AND p.org_id = ANY($2::text[])
+             LIMIT 1",
+        )
+        .bind(uuid)
+        .bind(org_ids)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
     }
     sqlx::query_scalar(
         "SELECT i.id FROM issues i
@@ -2338,15 +2357,19 @@ async fn exec_compare_projects(
 
     let mut rows = Vec::new();
     for uuid in &project_uuids {
-        let info: Option<(String, String)> =
-            sqlx::query_as("SELECT name, prefix FROM projects WHERE id = $1")
-                .bind(uuid)
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten();
+        let info: Option<(String, String)> = sqlx::query_as(
+            "SELECT name, prefix FROM projects WHERE id = $1 AND org_id = ANY($2::text[])",
+        )
+        .bind(uuid)
+        .bind(org_ids)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
 
-        let (name, prefix) = info.unwrap_or_else(|| (uuid.to_string(), "?".into()));
+        let Some((name, prefix)) = info else {
+            continue;
+        };
 
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE project_id = $1")
             .bind(uuid)
@@ -4999,6 +5022,30 @@ async fn ai_manage_initiatives(
                 .parse()
                 .map_err(|_| "Invalid project_id".to_string())?;
 
+            let valid_initiative: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM initiatives WHERE id = $1 AND org_id = ANY($2::text[]))",
+            )
+            .bind(initiative_uuid)
+            .bind(org_ids)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            if !valid_initiative {
+                return Err("Initiative not found or access denied".to_string());
+            }
+
+            let valid_project: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = ANY($2::text[]))",
+            )
+            .bind(project_uuid)
+            .bind(org_ids)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            if !valid_project {
+                return Err("Project not found or access denied".to_string());
+            }
+
             sqlx::query(
                 "INSERT INTO initiative_projects (initiative_id, project_id)
                  VALUES ($1, $2) ON CONFLICT DO NOTHING",
@@ -5035,6 +5082,30 @@ async fn ai_manage_initiatives(
             let project_uuid: Uuid = project_id
                 .parse()
                 .map_err(|_| "Invalid project_id".to_string())?;
+
+            let valid_initiative: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM initiatives WHERE id = $1 AND org_id = ANY($2::text[]))",
+            )
+            .bind(initiative_uuid)
+            .bind(org_ids)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            if !valid_initiative {
+                return Err("Initiative not found or access denied".to_string());
+            }
+
+            let valid_project: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = ANY($2::text[]))",
+            )
+            .bind(project_uuid)
+            .bind(org_ids)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            if !valid_project {
+                return Err("Project not found or access denied".to_string());
+            }
 
             sqlx::query(
                 "DELETE FROM initiative_projects WHERE initiative_id = $1 AND project_id = $2",
@@ -5080,6 +5151,18 @@ async fn ai_manage_automations(
     let project_id: Uuid = project_id_str
         .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
+
+    let valid_project: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = ANY($2::text[]))",
+    )
+    .bind(project_id)
+    .bind(org_ids)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if !valid_project {
+        return Err("Project not found or access denied".to_string());
+    }
 
     match action {
         "list" => {
@@ -5260,6 +5343,18 @@ async fn ai_manage_sla(
         .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
 
+    let valid_project: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = ANY($2::text[]))",
+    )
+    .bind(project_id)
+    .bind(org_ids)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if !valid_project {
+        return Err("Project not found or access denied".to_string());
+    }
+
     match action {
         "list_rules" => {
             let rows = sqlx::query(
@@ -5427,6 +5522,18 @@ async fn ai_manage_templates(
         .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
 
+    let valid_project: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = ANY($2::text[]))",
+    )
+    .bind(project_id)
+    .bind(org_ids)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if !valid_project {
+        return Err("Project not found or access denied".to_string());
+    }
+
     match action {
         "list" => {
             let rows = sqlx::query(
@@ -5552,6 +5659,18 @@ async fn ai_manage_recurring(
     let project_id: Uuid = project_id_str
         .parse()
         .map_err(|_| "Invalid project_id".to_string())?;
+
+    let valid_project: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND org_id = ANY($2::text[]))",
+    )
+    .bind(project_id)
+    .bind(org_ids)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if !valid_project {
+        return Err("Project not found or access denied".to_string());
+    }
 
     match action {
         "list" => {

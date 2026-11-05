@@ -147,17 +147,18 @@ pub async fn get_one(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?
     .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Initiative not found"}))))?;
 
-    // Linked projects
+    // Linked projects (filtered to the initiative's org so cross-tenant links cannot leak)
     let projects = sqlx::query_as::<_, LinkedProject>(
         r#"
         SELECT p.id, p.name, p.slug
         FROM projects p
         JOIN initiative_projects ip ON ip.project_id = p.id
-        WHERE ip.initiative_id = $1
+        WHERE ip.initiative_id = $1 AND p.org_id = $2
         ORDER BY p.name ASC
         "#,
     )
     .bind(id)
+    .bind(org_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();

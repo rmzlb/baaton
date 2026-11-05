@@ -45,6 +45,22 @@ pub async fn create(
     };
     let org_id = scope.org_id.as_str();
 
+    if let Some(ref pr_url) = body.pr_url {
+        let trimmed = pr_url.trim();
+        if !trimmed.is_empty()
+            && !trimmed.starts_with("https://")
+            && !trimmed.starts_with("http://")
+        {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "pr_url must start with https:// or http://",
+                    "field": "pr_url"
+                })),
+            ));
+        }
+    }
+
     let decisions_made = body.decisions_made.clone().unwrap_or_default();
     let edge_cases = body.edge_cases.clone().unwrap_or_default();
     let context_updates = body.context_updates.clone().unwrap_or_default();
